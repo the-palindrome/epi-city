@@ -84,7 +84,7 @@ A texture set lives under `public/assets/textures/<name>`. The current `gta` man
   "name": "gta",
   "tileSize": 32,
   "atlas": {
-    "file": "gta1-liberty-city-hd.webp",
+    "file": "liberty-city-atlas.webp",
     "width": 3277,
     "height": 3277
   },
@@ -105,7 +105,7 @@ The extraction script checks every map cell against the original image. Each `te
 
 `renderCity()` groups sprites into 16x16 tile containers. Grouping keeps the display tree structured by map region while preserving per-cell source textures. If a texture frame is missing, the renderer draws a simple flat-color fallback for the affected cell.
 
-The source texture set is extracted from `tmp/liberty_city_gangsta_bang_map/source/gta1-liberty-city-hd.webp`. The checked-in runtime assets live in `public/assets/textures/gta` so Vite can serve them directly.
+The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in runtime assets live in `public/assets/textures/gta` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
 
 ## Debugging Hooks
 

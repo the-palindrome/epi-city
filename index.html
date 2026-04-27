@@ -19,6 +19,8 @@
         width: 100vw;
         height: 100vh;
         background: #ffffff;
+        image-rendering: crisp-edges;
+        image-rendering: pixelated;
         touch-action: none;
       }
 
@@ -80,6 +82,8 @@
         gta: './assets/textures/gta/manifest.json'
       });
 
+      const PIXEL_ART_SCALE_MODE = 'nearest';
+
       const PASSABLE_MASKS = Object.freeze({
         pedestrian: (1 << TILE_TYPES.sidewalk) |
           (1 << TILE_TYPES.bridge),
@@ -118,6 +122,8 @@
         parkEdge: 0x4f6d2d
       });
 
+      configurePixelArtRendering();
+
       async function main() {
         const status = document.getElementById('status');
         const app = new PIXI.Application();
@@ -134,9 +140,11 @@
             resizeTo: window,
             autoDensity: true,
             antialias: false,
+            roundPixels: true,
             resolution: window.devicePixelRatio || 1
           });
 
+          app.renderer.roundPixels = true;
           document.body.appendChild(app.canvas);
 
           const world = new PIXI.Container();
@@ -152,10 +160,13 @@
             y: window.innerHeight / 2,
             zoom: 1,
             minZoom: 0.08,
-            maxZoom: 8
+            maxZoom: 8,
+            worldWidth: 0,
+            worldHeight: 0
           };
 
           function applyCamera() {
+            constrainCamera(camera);
             world.position.set(camera.x, camera.y);
             world.scale.set(camera.zoom);
           }
@@ -163,9 +174,11 @@
           function centerCameraOnCity(city) {
             const worldWidth = city.width * city.tileSize;
             const worldHeight = city.height * city.tileSize;
-            const fitZoom = Math.min(window.innerWidth / worldWidth, window.innerHeight / worldHeight) * 0.92;
 
-            camera.zoom = clamp(fitZoom, camera.minZoom, camera.maxZoom);
+            camera.worldWidth = worldWidth;
+            camera.worldHeight = worldHeight;
+            refreshCameraZoomBounds(camera);
+            camera.zoom = camera.minZoom;
             camera.x = window.innerWidth / 2 - (worldWidth * camera.zoom) / 2;
             camera.y = window.innerHeight / 2 - (worldHeight * camera.zoom) / 2;
             applyCamera();
@@ -267,6 +280,7 @@
           const worldX = (pointer.x - camera.x) / camera.zoom;
           const worldY = (pointer.y - camera.y) / camera.zoom;
           const zoomFactor = Math.exp(-event.deltaY * 0.001);
+          refreshCameraZoomBounds(camera);
           const nextZoom = clamp(camera.zoom * zoomFactor, camera.minZoom, camera.maxZoom);
 
           camera.x = pointer.x - worldX * nextZoom;
@@ -278,6 +292,48 @@
         window.addEventListener('resize', () => {
           applyCamera();
         });
+      }
+
+      function refreshCameraZoomBounds(camera) {
+        if (!camera.worldWidth || !camera.worldHeight) {
+          return;
+        }
+
+        // The minimum zoom covers the full viewport, preventing white canvas from showing.
+        camera.minZoom = Math.max(
+          window.innerWidth / camera.worldWidth,
+          window.innerHeight / camera.worldHeight
+        );
+
+        if (camera.maxZoom < camera.minZoom) {
+          camera.maxZoom = camera.minZoom;
+        }
+
+        camera.zoom = clamp(camera.zoom, camera.minZoom, camera.maxZoom);
+      }
+
+      function constrainCamera(camera) {
+        if (!camera.worldWidth || !camera.worldHeight) {
+          return;
+        }
+
+        refreshCameraZoomBounds(camera);
+
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const scaledWorldWidth = camera.worldWidth * camera.zoom;
+        const scaledWorldHeight = camera.worldHeight * camera.zoom;
+
+        camera.x = constrainAxis(camera.x, viewportWidth, scaledWorldWidth);
+        camera.y = constrainAxis(camera.y, viewportHeight, scaledWorldHeight);
+      }
+
+      function constrainAxis(position, viewportSize, scaledWorldSize) {
+        if (scaledWorldSize <= viewportSize) {
+          return (viewportSize - scaledWorldSize) / 2;
+        }
+
+        return clamp(position, viewportSize - scaledWorldSize, 0);
       }
 
       function clamp(value, min, max) {
@@ -337,6 +393,8 @@
         }
 
         const atlasTexture = await PIXI.Assets.load(baseUrl + manifest.atlas.file);
+        applyNearestSampling(atlasTexture);
+
         const textureCache = new Array(manifest.frames.length);
 
         function getTexture(id) {
@@ -350,6 +408,7 @@
               source: atlasTexture.source,
               frame: new PIXI.Rectangle(frame[0], frame[1], frame[2], frame[3])
             });
+            applyNearestSampling(textureCache[id]);
           }
 
           return textureCache[id];
@@ -362,6 +421,39 @@
           frames: manifest.frames,
           getTexture
         };
+      }
+
+      function configurePixelArtRendering() {
+        // Pixi defaults to linear filtering. Nearest sampling keeps source pixels sharp while zooming.
+        if (PIXI.TextureStyle && PIXI.TextureStyle.defaultOptions) {
+          PIXI.TextureStyle.defaultOptions.scaleMode = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureStyle.defaultOptions.magFilter = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureStyle.defaultOptions.minFilter = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureStyle.defaultOptions.mipmapFilter = PIXEL_ART_SCALE_MODE;
+        }
+
+        if (PIXI.TextureSource && PIXI.TextureSource.defaultOptions) {
+          PIXI.TextureSource.defaultOptions.scaleMode = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureSource.defaultOptions.autoGenerateMipmaps = false;
+        }
+      }
+
+      function applyNearestSampling(texture) {
+        const source = texture && texture.source;
+
+        if (!source) {
+          return;
+        }
+
+        source.scaleMode = PIXEL_ART_SCALE_MODE;
+        source.magFilter = PIXEL_ART_SCALE_MODE;
+        source.minFilter = PIXEL_ART_SCALE_MODE;
+        source.mipmapFilter = PIXEL_ART_SCALE_MODE;
+        source.autoGenerateMipmaps = false;
+
+        if (source.style && typeof source.style.update === 'function') {
+          source.style.update();
+        }
       }
 
       /**
@@ -859,6 +951,7 @@
                   const sprite = new PIXI.Sprite(texture);
 
                   sprite.eventMode = 'none';
+                  sprite.roundPixels = true;
                   sprite.x = x * city.tileSize;
                   sprite.y = y * city.tileSize;
                   sprite.width = city.tileSize;

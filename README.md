@@ -24,7 +24,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.j
 - `index.html` contains the Pixi app, camera controls, map validation, runtime city API, atlas texture renderer, and pathfinding.
 - `public/liberty-city.json` contains the static Liberty City tile map.
 - `public/assets/textures/gta/manifest.json` describes the source atlas frames used by the texture set.
-- `public/assets/textures/gta/gta1-liberty-city-hd.webp` is the source atlas image used by the renderer.
+- `public/assets/textures/gta/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
+- `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
 - `vite.config.ts` configures local development and preview server ports.
 
