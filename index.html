@@ -58,7 +58,9 @@
         commercial: 3,
         water: 4,
         bridge: 5,
-        park: 6
+        park: 6,
+        structure: 7,
+        crossing: 8
       });
 
       // Names mirror TILE_TYPES order and are returned by the public getTile() helper.
@@ -69,7 +71,9 @@
         'commercial',
         'water',
         'bridge',
-        'park'
+        'park',
+        'structure',
+        'crossing'
       ]);
 
       // city-map.json stays readable by using one-character row symbols.
@@ -80,7 +84,9 @@
         c: TILE_TYPES.commercial,
         w: TILE_TYPES.water,
         b: TILE_TYPES.bridge,
-        p: TILE_TYPES.park
+        p: TILE_TYPES.park,
+        x: TILE_TYPES.structure,
+        m: TILE_TYPES.crossing
       });
 
       // The legend is validated so future generators cannot silently drift from runtime meaning.
@@ -91,13 +97,20 @@
         c: 'commercial',
         w: 'water',
         b: 'bridge',
-        p: 'park'
+        p: 'park',
+        x: 'structure',
+        m: 'crossing'
       });
 
-      // Bridge is intentionally shared by both modes: it covers water crossings and crosswalk tiles.
+      // Crossings are road-like tiles that also allow pedestrian movement through street junctions.
       const PASSABLE_MASKS = Object.freeze({
-        pedestrian: (1 << TILE_TYPES.sidewalk) | (1 << TILE_TYPES.park) | (1 << TILE_TYPES.bridge),
-        vehicle: (1 << TILE_TYPES.road) | (1 << TILE_TYPES.bridge)
+        pedestrian: (1 << TILE_TYPES.sidewalk) |
+          (1 << TILE_TYPES.park) |
+          (1 << TILE_TYPES.bridge) |
+          (1 << TILE_TYPES.crossing),
+        vehicle: (1 << TILE_TYPES.road) |
+          (1 << TILE_TYPES.bridge) |
+          (1 << TILE_TYPES.crossing)
       });
 
       // A* uses integer movement costs: 10 for cardinal movement, 14 for diagonals.
@@ -128,6 +141,7 @@
         bank: 0x5f7734,
         bridge: 0x4a473a,
         bridgeRail: 0x80663f,
+        structure: 0x394038,
         park: 0x83a944,
         parkEdge: 0x4f6d2d
       });
@@ -685,7 +699,7 @@
       function renderCity(city, mapLayer) {
         mapLayer.removeChildren();
 
-        // Chunking keeps Pixi display objects low: 256x256 tiles become 16x16 Graphics objects.
+        // Chunking keeps Pixi display objects low even when maps contain hundreds of thousands of tiles.
         const chunkSize = 16;
 
         for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
@@ -721,6 +735,10 @@
           drawRoad(graphics, city, x, y, true);
         } else if (tileId === TILE_TYPES.park) {
           drawPark(graphics, city, x, y);
+        } else if (tileId === TILE_TYPES.structure) {
+          drawStructure(graphics, city, x, y);
+        } else if (tileId === TILE_TYPES.crossing) {
+          drawRoad(graphics, city, x, y, false);
         }
       }
 
@@ -777,6 +795,10 @@
 
       function drawCommercial(graphics, city, x, y) {
         drawBuildingBlockBase(graphics, city, x, y, SPRITE_COLORS.commercial);
+      }
+
+      function drawStructure(graphics, city, x, y) {
+        drawBuildingBlockBase(graphics, city, x, y, SPRITE_COLORS.structure);
       }
 
       function drawWater(graphics, city, x, y) {
@@ -907,15 +929,21 @@
       }
 
       function isRoadLikeId(tileId) {
-        return tileId === TILE_TYPES.road || tileId === TILE_TYPES.bridge;
+        return tileId === TILE_TYPES.road ||
+          tileId === TILE_TYPES.bridge ||
+          tileId === TILE_TYPES.crossing;
       }
 
       function isSidewalkLikeId(tileId) {
-        return tileId === TILE_TYPES.sidewalk || tileId === TILE_TYPES.bridge;
+        return tileId === TILE_TYPES.sidewalk ||
+          tileId === TILE_TYPES.bridge ||
+          tileId === TILE_TYPES.crossing;
       }
 
       function isBuildingLikeId(tileId) {
-        return tileId === TILE_TYPES.residential || tileId === TILE_TYPES.commercial;
+        return tileId === TILE_TYPES.residential ||
+          tileId === TILE_TYPES.commercial ||
+          tileId === TILE_TYPES.structure;
       }
 
       function isParkLikeId(tileId) {
@@ -932,7 +960,9 @@
         }
 
         const tileId = city.tiles[city.index(x, y)];
-        return tileId === TILE_TYPES.road || tileId === TILE_TYPES.bridge;
+        return tileId === TILE_TYPES.road ||
+          tileId === TILE_TYPES.bridge ||
+          tileId === TILE_TYPES.crossing;
       }
 
       function touchesTile(city, x, y, targetTileId, radius) {

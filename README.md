@@ -1,6 +1,6 @@
 # Epi City
 
-Epi City is a top-down city simulation prototype built with Pixi.js and Vite. The current version renders a 256x256 tile city, supports mouse camera controls, and exposes grid/pathfinding helpers for future NPC and epidemic simulation work.
+Epi City is a top-down city simulation prototype built with Pixi.js and Vite. The current version renders a 512x512 tile city, supports mouse camera controls, and exposes grid/pathfinding helpers for future NPC and epidemic simulation work.
 
 ## Quick Start
 
@@ -22,8 +22,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/city-map.json`
 ## Project Structure
 
 - `index.html` contains the Pixi app, camera controls, map validation, runtime city API, renderer, and pathfinding.
-- `public/city-map.json` contains the static authored tile map that Vite serves at runtime.
-- `public/liberty-city.json` contains an alternate reference-style map that can be loaded manually later.
+- `public/city-map.json` contains the static imported tile map that Vite serves at runtime.
+- `public/liberty-city.json` contains the same imported layout for manual loading or comparison later.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
 - `vite.config.ts` configures local development and preview server ports.
 
@@ -40,10 +40,14 @@ The map uses one symbol per cell. The app validates every symbol before it compi
 | `w` | water | no | no |
 | `b` | bridge | yes | yes |
 | `p` | park | no | yes |
+| `x` | structure | no | no |
+| `m` | crossing | yes | yes |
 
-The `bridge` tile currently does two jobs: it represents water crossings and shared road-crossing tiles.
+The `bridge` tile represents water crossings. The `crossing` tile renders like road but is also pedestrian-passable, which keeps imported street junctions usable for NPC pathfinding.
 
-The authored map keeps a six-tile non-passable edge band. Land edges become building blocks, while water is allowed to continue to the border so shorelines do not terminate against artificial buildings.
+The `structure` tile captures non-passable dark map details, roof outlines, and dense structural marks that should not become driveable roads.
+
+The imported map keeps its source shoreline and edge behavior. Water can continue to the border, and waterfront land is represented with walkable sidewalk where possible.
 
 ## Debugging From The Console
 

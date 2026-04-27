@@ -23,9 +23,9 @@ Startup follows this sequence:
 ```json
 {
   "schemaVersion": 1,
-  "width": 256,
-  "height": 256,
-  "tileSize": 32,
+  "width": 512,
+  "height": 512,
+  "tileSize": 16,
   "legend": {
     "r": "road",
     "s": "sidewalk",
@@ -33,7 +33,9 @@ Startup follows this sequence:
     "c": "commercial",
     "w": "water",
     "b": "bridge",
-    "p": "park"
+    "p": "park",
+    "x": "structure",
+    "m": "crossing"
   },
   "rows": ["..."]
 }
@@ -41,7 +43,7 @@ Startup follows this sequence:
 
 Each row must be a string with exactly `width` symbols. The file must contain exactly `height` rows. The validator fails fast for unknown symbols, wrong dimensions, invalid metadata, or legend drift.
 
-The current map reserves a six-tile non-passable outer band. Land cells in that band become residential or commercial building cells, but water cells are preserved so channels and bays can reach the map boundary naturally.
+The current map is a static import from a source image. It preserves source shorelines and allows water to reach the map boundary naturally. The `x`/`structure` tile is non-passable and exists to keep dark roof, dock, and structural details visually readable without treating those details as driveable roads. The `m`/`crossing` tile renders like road while remaining passable to both vehicles and pedestrians.
 
 ## Runtime City Object
 
@@ -64,7 +66,7 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses two passability masks. Vehicles use `road` and `bridge`; pedestrians use `sidewalk`, `park`, and `bridge`.
+Movement uses two passability masks. Vehicles use `road`, `bridge`, and `crossing`; pedestrians use `sidewalk`, `park`, `bridge`, and `crossing`. Residential, commercial, water, and structure tiles are blocked.
 
 A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Diagonal movement rejects corner cutting by requiring both adjacent cardinal cells to be passable.
 
