@@ -116,6 +116,7 @@
         asphalt: 0x252a25,
         asphaltEdge: 0x151a16,
         crosswalk: 0xd8d2b6,
+        laneMarking: 0x98a12c,
         sidewalk: 0xaeb5a7,
         sidewalkEdge: 0x7b8578,
         curb: 0x526044,
@@ -732,14 +733,31 @@
 
         fillRect(graphics, px, py, t, t, bridgeOverWater ? SPRITE_COLORS.bridge : SPRITE_COLORS.asphalt);
 
-        if (isBridge && !bridgeOverWater) {
-          fillRect(graphics, px, py, t, t, SPRITE_COLORS.crosswalk, 0.32);
-        }
-
         drawTileBoundary(graphics, city, x, y, isRoadLikeId, SPRITE_COLORS.asphaltEdge, 2);
+        drawRoadLaneMarking(graphics, city, x, y, bridgeOverWater);
 
         if (bridgeOverWater) {
           drawBridgeRails(graphics, city, x, y);
+        }
+      }
+
+      function drawRoadLaneMarking(graphics, city, x, y, bridgeOverWater) {
+        if (bridgeOverWater) {
+          return;
+        }
+
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+        const horizontal = isRoadLike(city, x - 1, y) || isRoadLike(city, x + 1, y);
+        const vertical = isRoadLike(city, x, y - 1) || isRoadLike(city, x, y + 1);
+
+        if (horizontal && !vertical && x % 4 < 2) {
+          fillRect(graphics, px + t * 0.25, py + Math.floor(t / 2) - 1, t * 0.5, 2, SPRITE_COLORS.laneMarking, 0.68);
+        }
+
+        if (vertical && !horizontal && y % 4 < 2) {
+          fillRect(graphics, px + Math.floor(t / 2) - 1, py + t * 0.25, 2, t * 0.5, SPRITE_COLORS.laneMarking, 0.68);
         }
       }
 

@@ -137,6 +137,9 @@ The generator should run local checks before returning:
 - The generated vehicle road layer should be one connected component after tiny road specks are removed.
 - Roads should use even-width corridors so lane counts read consistently.
 - Pedestrian connectivity has useful access across `sidewalk`, `park`, and `bridge` tiles.
+- Water-land boundaries should emit walkable shoreline sidewalks instead of building blocks.
+- Land between roads should begin as walkable sidewalk/plaza space, then buildings should be stamped onto it in a second pass.
+- Building stamps should use setbacks, notches, and open courtyards so blocks gain shape without creating sealed walkable pockets.
 - Roads crossing water use `bridge`; raw `road` should not overwrite `water`.
 - Pedestrian crossings may also use `bridge`, but the generator avoids adding those crossing tiles right against shorelines so they do not read as stray water bridges.
 - Sidewalk emission should not leave one-tile `road`/`sidewalk`/`road` slivers between parallel roads.

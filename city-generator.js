@@ -39,7 +39,7 @@ const LAND = 0;
  * @property {number=} waterCoverageTarget Approximate fraction of map covered by water.
  * @property {number=} arterialSpacing Approximate spacing between major roads.
  * @property {number=} collectorSpacing Approximate spacing between secondary roads.
- * @property {number=} localRoadChance Chance to add short local streets inside large land masses.
+ * @property {number=} localRoadChance Chance to add through local streets inside large land blocks.
  * @property {number=} bridgeChance Random priority boost for eligible road-water crossings.
  * @property {number=} maxWaterBridges Maximum number of water-crossing bridge corridors.
  * @property {number=} minBridgeDistance Minimum tile distance between water bridge corridors.
@@ -283,7 +283,6 @@ function buildCity(config, rng, attempts) {
   const roadSegments = createRoads(roadLayer, terrain, width, height, config, rng);
   const bridges = createBridges(roadLayer, bridgeLayer, terrain, width, height, config, rng);
   trimUnbridgedWaterRoadEnds(roadLayer, bridgeLayer, terrain, width, height);
-  addSideAccessRoads(roadLayer, terrain, bridgeLayer, width, height, config, rng);
   collapseNarrowRoadGaps(roadLayer, bridgeLayer, terrain, width, height);
   bridges.push(...connectRoadNetwork(roadLayer, bridgeLayer, terrain, width, height, bridges.length));
   trimUnbridgedWaterRoadEnds(roadLayer, bridgeLayer, terrain, width, height);
@@ -308,8 +307,10 @@ function buildCity(config, rng, attempts) {
     buildingLayer,
     landmarkLayer,
     districts,
-    parcels
+    parcels,
+    buildings
   });
+  tiles.rows = repairSmallWalkablePockets(tiles.rows, width, height);
 
   return {
     config,
@@ -488,57 +489,33 @@ function createDistricts(districtLayer, terrain, width, height, rng) {
  */
 function createRoads(roadLayer, terrain, width, height, config, rng) {
   const roads = [];
-  const margin = Math.max(config.edgeBand + 2, Math.floor(Math.min(width, height) / 48));
+  const margin = Math.max(config.edgeBand + 4, Math.floor(Math.min(width, height) / 36));
   const arterialSpacing = Math.min(config.arterialSpacing, Math.max(12, Math.floor(Math.min(width, height) / 2)));
   const collectorSpacing = Math.min(config.collectorSpacing, Math.max(8, Math.floor(Math.min(width, height) / 3)));
-  const centerX = Math.floor(width / 2);
-  const centerY = Math.floor(height / 2);
-  const xs = uniqueSorted([
-    margin,
-    width - margin - 1,
-    centerX,
-    ...jitteredLines(margin + arterialSpacing, width - margin, arterialSpacing, rng, 4)
-  ]);
-  const ys = uniqueSorted([
-    margin,
-    height - margin - 1,
-    centerY,
-    ...jitteredLines(margin + arterialSpacing, height - margin, arterialSpacing, rng, 4)
-  ]);
+  const maxX = width - margin - 1;
+  const maxY = height - margin - 1;
+  const arterialXs = createPrimaryRoadAxes(margin, maxX, arterialSpacing, rng);
+  const arterialYs = createPrimaryRoadAxes(margin, maxY, arterialSpacing, rng);
+  const collectorXs = createCollectorRoadAxes(margin, maxX, collectorSpacing, arterialXs, rng);
+  const collectorYs = createCollectorRoadAxes(margin, maxY, collectorSpacing, arterialYs, rng);
+  const structuralXs = uniqueSorted([...arterialXs, ...collectorXs]);
+  const structuralYs = uniqueSorted([...arterialYs, ...collectorYs]);
 
-  for (const x of xs) {
+  for (const x of arterialXs) {
     roads.push(drawRoadLine(roadLayer, width, height, x, margin, x, height - margin - 1, 'vertical', 'arterial'));
   }
-  for (const y of ys) {
+  for (const y of arterialYs) {
     roads.push(drawRoadLine(roadLayer, width, height, margin, y, width - margin - 1, y, 'horizontal', 'arterial'));
   }
 
-  for (const x of jitteredLines(margin + collectorSpacing, width - margin, collectorSpacing, rng, 3)) {
-    if (!nearAny(x, xs, Math.max(5, Math.floor(collectorSpacing / 3)))) {
-      roads.push(...drawSegmentedRoadLine(roadLayer, width, height, x, margin, x, height - margin - 1, 'vertical', 'collector', rng));
-    }
+  for (const x of collectorXs) {
+    roads.push(drawRoadLine(roadLayer, width, height, x, margin, x, height - margin - 1, 'vertical', 'collector'));
   }
-  for (const y of jitteredLines(margin + collectorSpacing, height - margin, collectorSpacing, rng, 3)) {
-    if (!nearAny(y, ys, Math.max(5, Math.floor(collectorSpacing / 3)))) {
-      roads.push(...drawSegmentedRoadLine(roadLayer, width, height, margin, y, width - margin - 1, y, 'horizontal', 'collector', rng));
-    }
+  for (const y of collectorYs) {
+    roads.push(drawRoadLine(roadLayer, width, height, margin, y, width - margin - 1, y, 'horizontal', 'collector'));
   }
 
-  const localSpacing = Math.max(10, Math.floor(collectorSpacing * 0.65));
-  for (let y = margin + localSpacing; y < height - margin; y += localSpacing) {
-    if (rng.chance(config.localRoadChance)) {
-      const start = rng.int(margin, Math.max(margin, Math.floor(width * 0.25)));
-      const end = rng.int(Math.min(width - margin - 1, Math.floor(width * 0.75)), width - margin - 1);
-      roads.push(drawRoadLine(roadLayer, width, height, start, y + rng.int(-2, 2), end, y + rng.int(-2, 2), 'horizontal', 'local'));
-    }
-  }
-  for (let x = margin + localSpacing; x < width - margin; x += localSpacing) {
-    if (rng.chance(config.localRoadChance * 0.75)) {
-      const start = rng.int(margin, Math.max(margin, Math.floor(height * 0.25)));
-      const end = rng.int(Math.min(height - margin - 1, Math.floor(height * 0.75)), height - margin - 1);
-      roads.push(drawRoadLine(roadLayer, width, height, x + rng.int(-2, 2), start, x + rng.int(-2, 2), end, 'vertical', 'local'));
-    }
-  }
+  roads.push(...addFunctionalLocalRoads(roadLayer, terrain, width, height, structuralXs, structuralYs, config, rng));
 
   return roads.filter(Boolean).map((road, id) => Object.assign(road, { id }));
 }
@@ -807,15 +784,15 @@ function createBuildings(buildingLayer, parcels, terrain, roadLayer, bridgeLayer
 
   for (const parcel of parcels) {
     if (parcel.use === 'park') continue;
-    const inset = parcel.use === 'commercial' ? 1 : rng.int(1, 2);
-    const footprint = insetRect(parcel.bounds, inset);
+    const inset = chooseBuildingSetback(parcel, rng);
+    const footprint = chooseBuildingFootprint(parcel.bounds, inset, rng);
     if (footprint.width < 2 || footprint.height < 2) continue;
 
     let usable = 0;
     forEachRect(footprint, width, height, (x, y, index) => {
       if (terrain[index] !== WATER && roadLayer[index] === 0 && bridgeLayer[index] === 0) usable += 1;
     });
-    if (usable < Math.max(4, Math.floor(footprint.width * footprint.height * 0.55))) continue;
+    if (usable < Math.max(4, Math.floor(footprint.width * footprint.height * 0.45))) continue;
 
     const use = parcel.use === 'civic' ? 'civic' : parcel.use === 'commercial' ? 'commercial' : 'residential';
     const building = {
@@ -826,12 +803,147 @@ function createBuildings(buildingLayer, parcels, terrain, roadLayer, bridgeLayer
       use
     };
     buildings.push(building);
-    forEachRect(footprint, width, height, (x, y, index) => {
-      if (terrain[index] !== WATER && roadLayer[index] === 0 && bridgeLayer[index] === 0) buildingLayer[index] = building.id;
-    });
+    paintBuildingStamp(buildingLayer, terrain, roadLayer, bridgeLayer, width, height, footprint, building.id, rng);
   }
 
   return buildings;
+}
+
+/**
+ * @param {Parcel} parcel
+ * @param {SeededRandom} rng
+ * @returns {number}
+ */
+function chooseBuildingSetback(parcel, rng) {
+  if (parcel.use === 'commercial') return rng.int(1, 3);
+  if (parcel.use === 'civic') return rng.int(2, 4);
+  return rng.int(2, 5);
+}
+
+/**
+ * @param {Rect} bounds
+ * @param {number} inset
+ * @param {SeededRandom} rng
+ * @returns {Rect}
+ */
+function chooseBuildingFootprint(bounds, inset, rng) {
+  const lot = insetRect(bounds, inset);
+  if (lot.width < 2 || lot.height < 2) return lot;
+
+  const widthScale = rng.chance(0.55) ? rng.next() * 0.25 + 0.62 : rng.next() * 0.2 + 0.78;
+  const heightScale = rng.chance(0.55) ? rng.next() * 0.25 + 0.62 : rng.next() * 0.2 + 0.78;
+  const footprintWidth = clamp(Math.floor(lot.width * widthScale), 2, lot.width);
+  const footprintHeight = clamp(Math.floor(lot.height * heightScale), 2, lot.height);
+  const x = lot.x + (lot.width === footprintWidth ? 0 : rng.int(0, lot.width - footprintWidth));
+  const y = lot.y + (lot.height === footprintHeight ? 0 : rng.int(0, lot.height - footprintHeight));
+
+  return { x, y, width: footprintWidth, height: footprintHeight };
+}
+
+/**
+ * @param {Int32Array} buildingLayer
+ * @param {Uint8Array} terrain
+ * @param {Uint8Array} roadLayer
+ * @param {Uint8Array} bridgeLayer
+ * @param {number} width
+ * @param {number} height
+ * @param {Rect} footprint
+ * @param {number} buildingId
+ * @param {SeededRandom} rng
+ */
+function paintBuildingStamp(buildingLayer, terrain, roadLayer, bridgeLayer, width, height, footprint, buildingId, rng) {
+  const stampType = chooseBuildingStampType(footprint, rng);
+  const courtyard = stampType === 'courtyard' ? insetRect(footprint, Math.max(1, Math.floor(Math.min(footprint.width, footprint.height) / 4))) : null;
+  const courtyardOpening = courtyard ? chooseCourtyardOpening(footprint, courtyard, rng) : null;
+  const notch = stampType === 'notched' ? chooseNotch(footprint, rng) : null;
+
+  forEachRect(footprint, width, height, (x, y, index) => {
+    if (terrain[index] === WATER || roadLayer[index] > 0 || bridgeLayer[index] > 0) return;
+    if (courtyard && x >= courtyard.x && y >= courtyard.y && x < courtyard.x + courtyard.width && y < courtyard.y + courtyard.height) return;
+    if (courtyardOpening && x >= courtyardOpening.x && y >= courtyardOpening.y && x < courtyardOpening.x + courtyardOpening.width && y < courtyardOpening.y + courtyardOpening.height) return;
+    if (notch && x >= notch.x && y >= notch.y && x < notch.x + notch.width && y < notch.y + notch.height) return;
+    buildingLayer[index] = buildingId;
+  });
+}
+
+/**
+ * @param {Rect} footprint
+ * @param {SeededRandom} rng
+ * @returns {'solid'|'notched'|'courtyard'}
+ */
+function chooseBuildingStampType(footprint, rng) {
+  const area = footprint.width * footprint.height;
+  if (area >= 90 && footprint.width >= 8 && footprint.height >= 8 && rng.chance(0.28)) return 'courtyard';
+  if (area >= 45 && footprint.width >= 5 && footprint.height >= 5 && rng.chance(0.45)) return 'notched';
+  return 'solid';
+}
+
+/**
+ * Creates an open courtyard cut so walkable interior space always connects to
+ * the surrounding first-pass sidewalk/plaza surface.
+ *
+ * @param {Rect} footprint
+ * @param {Rect} courtyard
+ * @param {SeededRandom} rng
+ * @returns {Rect}
+ */
+function chooseCourtyardOpening(footprint, courtyard, rng) {
+  const side = rng.pick(['north', 'east', 'south', 'west']);
+  const openingWidth = Math.max(2, Math.floor(Math.min(courtyard.width, courtyard.height) / 3));
+
+  if (side === 'north') {
+    const width = Math.min(openingWidth, courtyard.width);
+    return {
+      x: courtyard.x + rng.int(0, Math.max(0, courtyard.width - width)),
+      y: footprint.y,
+      width,
+      height: Math.max(1, courtyard.y - footprint.y)
+    };
+  }
+
+  if (side === 'south') {
+    const width = Math.min(openingWidth, courtyard.width);
+    return {
+      x: courtyard.x + rng.int(0, Math.max(0, courtyard.width - width)),
+      y: courtyard.y + courtyard.height,
+      width,
+      height: Math.max(1, footprint.y + footprint.height - (courtyard.y + courtyard.height))
+    };
+  }
+
+  if (side === 'east') {
+    const height = Math.min(openingWidth, courtyard.height);
+    return {
+      x: courtyard.x + courtyard.width,
+      y: courtyard.y + rng.int(0, Math.max(0, courtyard.height - height)),
+      width: Math.max(1, footprint.x + footprint.width - (courtyard.x + courtyard.width)),
+      height
+    };
+  }
+
+  const height = Math.min(openingWidth, courtyard.height);
+  return {
+    x: footprint.x,
+    y: courtyard.y + rng.int(0, Math.max(0, courtyard.height - height)),
+    width: Math.max(1, courtyard.x - footprint.x),
+    height
+  };
+}
+
+/**
+ * @param {Rect} footprint
+ * @param {SeededRandom} rng
+ * @returns {Rect}
+ */
+function chooseNotch(footprint, rng) {
+  const side = rng.pick(['north', 'east', 'south', 'west']);
+  const notchWidth = clamp(Math.floor(footprint.width * (rng.next() * 0.18 + 0.22)), 1, Math.max(1, footprint.width - 2));
+  const notchHeight = clamp(Math.floor(footprint.height * (rng.next() * 0.18 + 0.22)), 1, Math.max(1, footprint.height - 2));
+
+  if (side === 'north') return { x: footprint.x + rng.int(0, Math.max(0, footprint.width - notchWidth)), y: footprint.y, width: notchWidth, height: notchHeight };
+  if (side === 'south') return { x: footprint.x + rng.int(0, Math.max(0, footprint.width - notchWidth)), y: footprint.y + footprint.height - notchHeight, width: notchWidth, height: notchHeight };
+  if (side === 'east') return { x: footprint.x + footprint.width - notchWidth, y: footprint.y + rng.int(0, Math.max(0, footprint.height - notchHeight)), width: notchWidth, height: notchHeight };
+  return { x: footprint.x, y: footprint.y + rng.int(0, Math.max(0, footprint.height - notchHeight)), width: notchWidth, height: notchHeight };
 }
 
 /**
@@ -940,6 +1052,7 @@ function createGameplay(gameplayLayer, roadLayer, bridgeLayer, terrain, landmark
  * @param {Int16Array} args.landmarkLayer
  * @param {District[]} args.districts
  * @param {Parcel[]} args.parcels
+ * @param {Building[]} args.buildings
  * @returns {CityTiles}
  */
 function rasterizeTiles(args) {
@@ -949,25 +1062,31 @@ function rasterizeTiles(args) {
   for (let y = 0; y < args.height; y += 1) {
     for (let x = 0; x < args.width; x += 1) {
       const index = toIndex(x, y, args.width);
-      let symbol = TILE_SYMBOLS.residential;
+      let landUseSymbol = TILE_SYMBOLS.residential;
+      let symbol = TILE_SYMBOLS.sidewalk;
 
       if (args.districtLayer[index] >= 0) {
         const district = args.districts[args.districtLayer[index]];
         if (district && (district.type === 'commercial' || district.type === 'downtown' || district.type === 'waterfront')) {
-          symbol = TILE_SYMBOLS.commercial;
+          landUseSymbol = TILE_SYMBOLS.commercial;
         }
         if (district && district.type === 'park') symbol = TILE_SYMBOLS.park;
       }
 
       if (args.parcelLayer[index] >= 0) {
         const parcel = args.parcels[args.parcelLayer[index]];
-        if (parcel && parcel.use === 'commercial') symbol = TILE_SYMBOLS.commercial;
+        if (parcel && parcel.use === 'commercial') landUseSymbol = TILE_SYMBOLS.commercial;
         if (parcel && parcel.use === 'park') symbol = TILE_SYMBOLS.park;
       }
 
-      if (args.landmarkLayer[index] >= 0) symbol = TILE_SYMBOLS.commercial;
-      if (args.buildingLayer[index] >= 0 && symbol === TILE_SYMBOLS.park) symbol = TILE_SYMBOLS.residential;
-      if (isSidewalk(args.terrain, args.roadLayer, args.bridgeLayer, args.width, args.height, x, y)) symbol = TILE_SYMBOLS.sidewalk;
+      if (args.landmarkLayer[index] >= 0) landUseSymbol = TILE_SYMBOLS.commercial;
+      if (args.buildingLayer[index] >= 0) {
+        const building = args.buildings[args.buildingLayer[index]];
+        symbol = building && building.use === 'commercial' ? TILE_SYMBOLS.commercial : landUseSymbol;
+      }
+      if (symbol !== TILE_SYMBOLS.park && isTerrainAdjacentWater(args.terrain, args.width, args.height, x, y)) {
+        symbol = TILE_SYMBOLS.sidewalk;
+      }
       if (args.roadLayer[index] > 0 && args.terrain[index] !== WATER) symbol = TILE_SYMBOLS.road;
       if (args.terrain[index] === WATER) symbol = TILE_SYMBOLS.water;
       if (args.bridgeLayer[index] > 0) symbol = TILE_SYMBOLS.bridge;
@@ -990,6 +1109,102 @@ function rasterizeTiles(args) {
   };
 }
 
+/**
+ * Remove tiny, sealed sidewalk/park fragments left by building stamps. The
+ * first land pass stays walkable, but second-pass buildings should not leave
+ * postage-stamp pedestrian islands that NPCs can never sensibly reach.
+ *
+ * @param {string[]} rows
+ * @param {number} width
+ * @param {number} height
+ * @returns {string[]}
+ */
+function repairSmallWalkablePockets(rows, width, height) {
+  const grid = rows.map((row) => row.split(''));
+  const visited = new Uint8Array(width * height);
+  const maxPocketSize = 31;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const start = toIndex(x, y, width);
+      if (visited[start] || !isSidewalkOrParkSymbol(grid[y][x])) continue;
+
+      const cells = [];
+      let touchesWater = false;
+      const queue = [start];
+      visited[start] = 1;
+
+      for (let qi = 0; qi < queue.length; qi += 1) {
+        const index = queue[qi];
+        const cx = index % width;
+        const cy = Math.floor(index / width);
+        cells.push(index);
+        if (cellTouchesSymbol(grid, width, height, cx, cy, TILE_SYMBOLS.water)) touchesWater = true;
+
+        for (const next of cardinalNeighbors(cx, cy, width, height)) {
+          const nx = next % width;
+          const ny = Math.floor(next / width);
+          if (visited[next] || !isSidewalkOrParkSymbol(grid[ny][nx])) continue;
+          visited[next] = 1;
+          queue.push(next);
+        }
+      }
+
+      if (cells.length > maxPocketSize || touchesWater) continue;
+
+      for (const index of cells) {
+        const cx = index % width;
+        const cy = Math.floor(index / width);
+        grid[cy][cx] = choosePocketReplacement(grid, width, height, cx, cy);
+      }
+    }
+  }
+
+  return grid.map((row) => row.join(''));
+}
+
+/**
+ * @param {string[][]} grid
+ * @param {number} width
+ * @param {number} height
+ * @param {number} x
+ * @param {number} y
+ * @returns {string}
+ */
+function choosePocketReplacement(grid, width, height, x, y) {
+  let residential = 0;
+  let commercial = 0;
+
+  for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy += 1) {
+    for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx += 1) {
+      if (xx === x && yy === y) continue;
+      if (grid[yy][xx] === TILE_SYMBOLS.commercial) commercial += 1;
+      if (grid[yy][xx] === TILE_SYMBOLS.residential) residential += 1;
+    }
+  }
+
+  return commercial > residential ? TILE_SYMBOLS.commercial : TILE_SYMBOLS.residential;
+}
+
+/**
+ * @param {string[][]} grid
+ * @param {number} width
+ * @param {number} height
+ * @param {number} x
+ * @param {number} y
+ * @param {string} symbol
+ * @returns {boolean}
+ */
+function cellTouchesSymbol(grid, width, height, x, y, symbol) {
+  for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy += 1) {
+    for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx += 1) {
+      if (xx === x && yy === y) continue;
+      if (grid[yy][xx] === symbol) return true;
+    }
+  }
+  return false;
+}
+
 /** @param {GeneratedCity} city @returns {string[]} */
 function validateGeneratedCity(city) {
   const warnings = [];
@@ -1008,9 +1223,12 @@ function validateGeneratedCity(city) {
   const counts = countSymbols(rows);
   if ((counts.w || 0) < area * 0.025) warnings.push('Water coverage is too low.');
   if ((counts.r || 0) + (counts.b || 0) < area * 0.025) warnings.push('Road coverage is too low.');
-  if ((counts.h || 0) + (counts.c || 0) + (counts.p || 0) < area * 0.35) warnings.push('Developable land coverage is too low.');
+  if ((counts.h || 0) + (counts.c || 0) + (counts.p || 0) + (counts.s || 0) < area * 0.35) warnings.push('Developable land coverage is too low.');
+  if ((counts.h || 0) + (counts.c || 0) < area * 0.08) warnings.push('Building coverage is too low.');
   if (countVehicleRowComponents(rows, width, height) > 1) warnings.push('Vehicle road network is disconnected.');
   if (countRoadSidewalkRoadArtifacts(rows, width, height) > 0) warnings.push('Road-sidewalk-road artifacts remain.');
+  if (countBlockedWaterfrontEdges(rows, width, height, city.config.edgeBand) > 0) warnings.push('Waterfront edges contain building blocks.');
+  if (countSmallWalkablePockets(rows, width, height) > 0) warnings.push('Tiny isolated sidewalk or park pockets remain.');
   if (city.semantics.blocks.length < Math.max(3, Math.floor(area / 9000))) warnings.push('Too few blocks were extracted.');
   if (city.semantics.parcels.length < Math.max(3, Math.floor(area / 6000))) warnings.push('Too few parcels were created.');
   if (city.semantics.bridges.length < 1 && Math.min(width, height) >= 48) warnings.push('No bridges were created.');
@@ -1430,6 +1648,186 @@ function uniqueSorted(values) {
 /** @param {number} value @param {number[]} values @param {number} distanceLimit @returns {boolean} */
 function nearAny(value, values, distanceLimit) {
   return values.some((other) => Math.abs(value - other) <= distanceLimit);
+}
+
+/**
+ * @param {number} min
+ * @param {number} max
+ * @param {number} spacing
+ * @param {SeededRandom} rng
+ * @returns {number[]}
+ */
+function createPrimaryRoadAxes(min, max, spacing, rng) {
+  const axes = [min, max];
+  const center = Math.round((min + max) / 2);
+  const minGap = Math.max(18, Math.floor(spacing * 0.48));
+
+  for (let value = min + spacing; value < max - minGap; value += spacing) {
+    axes.push(clamp(Math.round(value + rng.int(-2, 2)), min, max));
+  }
+  if (!nearAny(center, axes, minGap)) axes.push(center);
+
+  return enforceRoadAxisSpacing(axes, min, max, minGap);
+}
+
+/**
+ * @param {number} min
+ * @param {number} max
+ * @param {number} spacing
+ * @param {number[]} primaryAxes
+ * @param {SeededRandom} rng
+ * @returns {number[]}
+ */
+function createCollectorRoadAxes(min, max, spacing, primaryAxes, rng) {
+  const axes = [];
+  const sorted = uniqueSorted(primaryAxes);
+  const minGap = Math.max(12, Math.floor(spacing * 0.52));
+
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const left = sorted[i];
+    const right = sorted[i + 1];
+    const gap = right - left;
+    if (gap < spacing * 1.15) continue;
+
+    const count = gap >= spacing * 2.25 ? 2 : 1;
+    for (let part = 1; part <= count; part += 1) {
+      const ratio = part / (count + 1);
+      const candidate = clamp(Math.round(left + gap * ratio + rng.int(-1, 1)), left + minGap, right - minGap);
+      if (!nearAny(candidate, sorted, minGap) && !nearAny(candidate, axes, minGap)) axes.push(candidate);
+    }
+  }
+
+  return enforceRoadAxisSpacing(axes, min, max, minGap);
+}
+
+/**
+ * @param {number[]} axes
+ * @param {number} min
+ * @param {number} max
+ * @param {number} minGap
+ * @returns {number[]}
+ */
+function enforceRoadAxisSpacing(axes, min, max, minGap) {
+  const sorted = uniqueSorted(axes.map((axis) => clamp(axis, min, max)));
+  const result = [];
+
+  for (const axis of sorted) {
+    if (result.length === 0 || axis - result[result.length - 1] >= minGap || axis === min || axis === max) {
+      result.push(axis);
+    }
+  }
+
+  return uniqueSorted(result);
+}
+
+/**
+ * Adds only through-streets that connect two existing structural roads. This
+ * gives large blocks useful internal circulation without creating random spurs.
+ *
+ * @param {Uint8Array} roadLayer
+ * @param {Uint8Array} terrain
+ * @param {number} width
+ * @param {number} height
+ * @param {number[]} structuralXs
+ * @param {number[]} structuralYs
+ * @param {Required<CityGeneratorConfig>} config
+ * @param {SeededRandom} rng
+ * @returns {RoadSegment[]}
+ */
+function addFunctionalLocalRoads(roadLayer, terrain, width, height, structuralXs, structuralYs, config, rng) {
+  const roads = [];
+  const minGap = Math.max(30, Math.floor(config.collectorSpacing * 1.3));
+  const edgeInset = Math.max(7, Math.floor(config.collectorSpacing * 0.32));
+
+  for (let yi = 0; yi < structuralYs.length - 1; yi += 1) {
+    for (let xi = 0; xi < structuralXs.length - 1; xi += 1) {
+      const left = structuralXs[xi];
+      const right = structuralXs[xi + 1];
+      const top = structuralYs[yi];
+      const bottom = structuralYs[yi + 1];
+      const gapX = right - left;
+      const gapY = bottom - top;
+
+      if (gapX < minGap && gapY < minGap) continue;
+      if (cellWaterRatio(terrain, width, height, left + 2, top + 2, Math.max(1, gapX - 4), Math.max(1, gapY - 4)) > 0.22) continue;
+
+      if (gapX >= minGap && rng.chance(config.localRoadChance)) {
+        const x = clamp(Math.round((left + right) / 2 + rng.int(-2, 2)), left + edgeInset, right - edgeInset);
+        if (canSupportLocalRoad(terrain, width, height, x, top, x, bottom, 'vertical')) {
+          roads.push(drawRoadLine(roadLayer, width, height, x, top, x, bottom, 'vertical', 'local'));
+        }
+      }
+
+      if (gapY >= minGap && rng.chance(config.localRoadChance * 0.85)) {
+        const y = clamp(Math.round((top + bottom) / 2 + rng.int(-2, 2)), top + edgeInset, bottom - edgeInset);
+        if (canSupportLocalRoad(terrain, width, height, left, y, right, y, 'horizontal')) {
+          roads.push(drawRoadLine(roadLayer, width, height, left, y, right, y, 'horizontal', 'local'));
+        }
+      }
+    }
+  }
+
+  return roads;
+}
+
+/**
+ * @param {Uint8Array} terrain
+ * @param {number} width
+ * @param {number} height
+ * @param {number} x
+ * @param {number} y
+ * @param {number} rectWidth
+ * @param {number} rectHeight
+ * @returns {number}
+ */
+function cellWaterRatio(terrain, width, height, x, y, rectWidth, rectHeight) {
+  let total = 0;
+  let water = 0;
+  for (let yy = Math.max(0, y); yy < Math.min(height, y + rectHeight); yy += 1) {
+    for (let xx = Math.max(0, x); xx < Math.min(width, x + rectWidth); xx += 1) {
+      total += 1;
+      if (terrain[toIndex(xx, yy, width)] === WATER) water += 1;
+    }
+  }
+  return total === 0 ? 1 : water / total;
+}
+
+/**
+ * @param {Uint8Array} terrain
+ * @param {number} width
+ * @param {number} height
+ * @param {number} x1
+ * @param {number} y1
+ * @param {number} x2
+ * @param {number} y2
+ * @param {'horizontal'|'vertical'} orientation
+ * @returns {boolean}
+ */
+function canSupportLocalRoad(terrain, width, height, x1, y1, x2, y2, orientation) {
+  let cells = 0;
+  let water = 0;
+
+  if (orientation === 'horizontal') {
+    for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x += 1) {
+      for (let dy = 0; dy < 2; dy += 1) {
+        const y = y1 + dy;
+        if (x < 0 || y < 0 || x >= width || y >= height) continue;
+        cells += 1;
+        if (terrain[toIndex(x, y, width)] === WATER) water += 1;
+      }
+    }
+  } else {
+    for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y += 1) {
+      for (let dx = 0; dx < 2; dx += 1) {
+        const x = x1 + dx;
+        if (x < 0 || y < 0 || x >= width || y >= height) continue;
+        cells += 1;
+        if (terrain[toIndex(x, y, width)] === WATER) water += 1;
+      }
+    }
+  }
+
+  return cells > 0 && water === 0;
 }
 
 /**
@@ -1952,6 +2350,27 @@ function isRoadLayerCell(roadLayer, width, height, x, y) {
  */
 function isWaterCell(terrain, width, height, x, y) {
   return x >= 0 && y >= 0 && x < width && y < height && terrain[toIndex(x, y, width)] === WATER;
+}
+
+/**
+ * @param {Uint8Array} terrain
+ * @param {number} width
+ * @param {number} height
+ * @param {number} x
+ * @param {number} y
+ * @returns {boolean}
+ */
+function isTerrainAdjacentWater(terrain, width, height, x, y) {
+  const index = toIndex(x, y, width);
+  if (terrain[index] === WATER) return false;
+
+  for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy += 1) {
+    for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx += 1) {
+      if (terrain[toIndex(xx, yy, width)] === WATER) return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -2522,33 +2941,6 @@ function splitBlock(bounds, rng) {
   return parcels;
 }
 
-/**
- * @param {Uint8Array} terrain
- * @param {Uint8Array} roadLayer
- * @param {Uint8Array} bridgeLayer
- * @param {number} width
- * @param {number} height
- * @param {number} x
- * @param {number} y
- * @returns {boolean}
- */
-function isSidewalk(terrain, roadLayer, bridgeLayer, width, height, x, y) {
-  const index = toIndex(x, y, width);
-  if (terrain[index] === WATER || roadLayer[index] > 0 || bridgeLayer[index] > 0) return false;
-  if ((isVehicleLayerPoint(roadLayer, bridgeLayer, width, height, x - 1, y) && isVehicleLayerPoint(roadLayer, bridgeLayer, width, height, x + 1, y))
-    || (isVehicleLayerPoint(roadLayer, bridgeLayer, width, height, x, y - 1) && isVehicleLayerPoint(roadLayer, bridgeLayer, width, height, x, y + 1))) {
-    return false;
-  }
-
-  for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy += 1) {
-    for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx += 1) {
-      const neighbor = toIndex(xx, yy, width);
-      if (roadLayer[neighbor] > 0 || bridgeLayer[neighbor] > 0) return true;
-    }
-  }
-  return false;
-}
-
 /** @param {string[]} rows @returns {Record<string, number>} */
 function countSymbols(rows) {
   const counts = {};
@@ -2620,9 +3012,94 @@ function countRoadSidewalkRoadArtifacts(rows, width, height) {
   return artifacts;
 }
 
+/**
+ * @param {string[]} rows
+ * @param {number} width
+ * @param {number} height
+ * @param {number} edgeBand
+ * @returns {number}
+ */
+function countBlockedWaterfrontEdges(rows, width, height, edgeBand) {
+  let blocked = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (isEdgeBand(x, y, width, height, edgeBand)) continue;
+      const symbol = rows[y][x];
+      if (symbol !== TILE_SYMBOLS.residential && symbol !== TILE_SYMBOLS.commercial) continue;
+
+      for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy += 1) {
+        for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx += 1) {
+          if (rows[yy][xx] === TILE_SYMBOLS.water) {
+            blocked += 1;
+            yy = height;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return blocked;
+}
+
+/**
+ * @param {string[]} rows
+ * @param {number} width
+ * @param {number} height
+ * @returns {number}
+ */
+function countSmallWalkablePockets(rows, width, height) {
+  const visited = new Uint8Array(width * height);
+  const maxPocketSize = 31;
+  let pockets = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const start = toIndex(x, y, width);
+      if (visited[start] || !isSidewalkOrParkSymbol(rows[y][x])) continue;
+
+      const cells = [];
+      let touchesWater = false;
+      const queue = [start];
+      visited[start] = 1;
+
+      for (let qi = 0; qi < queue.length; qi += 1) {
+        const index = queue[qi];
+        const cx = index % width;
+        const cy = Math.floor(index / width);
+        cells.push(index);
+
+        for (let yy = Math.max(0, cy - 1); yy <= Math.min(height - 1, cy + 1); yy += 1) {
+          for (let xx = Math.max(0, cx - 1); xx <= Math.min(width - 1, cx + 1); xx += 1) {
+            if (rows[yy][xx] === TILE_SYMBOLS.water) touchesWater = true;
+          }
+        }
+
+        for (const next of cardinalNeighbors(cx, cy, width, height)) {
+          const nx = next % width;
+          const ny = Math.floor(next / width);
+          if (visited[next] || !isSidewalkOrParkSymbol(rows[ny][nx])) continue;
+          visited[next] = 1;
+          queue.push(next);
+        }
+      }
+
+      if (cells.length <= maxPocketSize && !touchesWater) pockets += 1;
+    }
+  }
+
+  return pockets;
+}
+
 /** @param {string} symbol @returns {boolean} */
 function isVehicleSymbol(symbol) {
   return symbol === TILE_SYMBOLS.road || symbol === TILE_SYMBOLS.bridge;
+}
+
+/** @param {string} symbol @returns {boolean} */
+function isSidewalkOrParkSymbol(symbol) {
+  return symbol === TILE_SYMBOLS.sidewalk || symbol === TILE_SYMBOLS.park;
 }
 
 if (typeof window !== 'undefined') {

@@ -76,6 +76,8 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 Tile graphics stay intentionally minimal. Each tile type uses a flat fill, and the renderer only draws borders where neighboring cells leave the same visual group. This makes contiguous roads, sidewalks, parks, building blocks, and water regions read as connected areas instead of repeated tile stamps.
 
+Waterfront land cells should be walkable `sidewalk` cells rather than building blocks. The generator uses a two-pass land fill: land between roads starts as walkable sidewalk/plaza space, then residential and commercial building stamps are placed on top with setbacks, notches, and open courtyards.
+
 The `bridge` tile has two visual modes. Water bridge corridors are selected by the generator as sparse semantic bridge objects, while non-water `bridge` cells are shared pedestrian road crossings. Rendering checks nearby water to decide whether a bridge cell should read as deck/rails or as a low-contrast crossing.
 
 ## Debugging Hooks
