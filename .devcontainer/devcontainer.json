@@ -1,0 +1,25 @@
+{
+  "name": "Codex Sandbox",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "codex",
+  "containerUser": "codex",
+  "runArgs": [
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges",
+    "--pids-limit=512"
+  ],
+  "mounts": [
+    "source=${localEnv:HOME}/.codex,target=/home/codex/.codex,type=bind"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode-remote.remote-containers",
+        "ms-python.python",
+        "openai.chatgpt"
+      ]
+    }
+  }
+}

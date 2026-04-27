@@ -1,0 +1,2 @@
+We'll build a city simulation from a top-down viewpoint in this session.
+In the first step, create a single index.html page with a single pixi.js canvas that fills the entire page. The canvas should be white. The camera should be be movable/zoomable via the mouse. (Holding right click and dragging the mouse should pan the camera. THe scrollwheel should zoom it.)
