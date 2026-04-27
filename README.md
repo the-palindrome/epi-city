@@ -1,6 +1,6 @@
 # Epi City
 
-Epi City is a top-down city simulation prototype built with Pixi.js and Vite. The current version renders a 256x256 tile city, supports mouse camera controls, and exposes grid/pathfinding helpers for future NPC and epidemic simulation work.
+Epi City is a top-down city simulation prototype built with Pixi.js and Vite. The current version renders a pre-generated 256x256 Liberty City tile map, supports mouse camera controls, and exposes grid/pathfinding helpers for future NPC and epidemic simulation work.
 
 ## Quick Start
 
@@ -11,38 +11,53 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. Vite serves `public/city-map.json` as `/city-map.json`, which lets the app load the city layout with a normal `fetch('./city-map.json')` request.
+Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.json` as `/liberty-city.json`, and the app loads it with `fetch('./liberty-city.json')`.
 
 ## Controls
 
-- Hold left mouse button and drag to pan the camera.
+- Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
 
-- `index.html` contains the Pixi app, camera controls, map validation, runtime city API, renderer, and pathfinding.
-- `public/city-map.json` contains the externally authored tile map that Vite serves at runtime.
+- `index.html` contains the Pixi app, camera controls, map validation, runtime city API, atlas texture renderer, and pathfinding.
+- `public/liberty-city.json` contains the static Liberty City tile map.
+- `public/assets/textures/gta/manifest.json` describes the source atlas frames used by the texture set.
+- `public/assets/textures/gta/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
+- `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
 - `vite.config.ts` configures local development and preview server ports.
 
-## City Tiles
+## Map Format
 
-The map uses one symbol per cell. The app validates every symbol before it compiles the map into a numeric `Uint8Array`.
+The map stores semantics and visuals separately. `rows` contains one legend symbol per cell for gameplay classification. `textureRows` contains one deduplicated source texture ID per cell for exact rendering.
 
-| Symbol | Tile type | Vehicle passable | Pedestrian passable |
-| --- | --- | --- | --- |
-| `r` | road | yes | no |
-| `s` | sidewalk | no | yes |
-| `h` | residential | no | no |
-| `c` | commercial | no | no |
-| `w` | water | no | no |
-| `b` | bridge | yes | yes |
-| `p` | park | no | yes |
+```json
+{
+  "width": 256,
+  "height": 256,
+  "tileSize": 32,
+  "textureSet": "gta",
+  "legend": {
+    "A": {
+      "category": "road",
+      "subcategory": "horizontal",
+      "walkable": false,
+      "drivable": true,
+      "parkable": false
+    }
+  },
+  "rows": ["..."],
+  "textureRows": [[0, 1, 2]]
+}
+```
 
-The `bridge` tile currently does two jobs: it represents water crossings and shared road-crossing tiles. Rendering checks nearby water to draw those cases differently.
+The runtime supports five base categories: `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories preserve semantic detail such as road orientation, waterfront sidewalks, water edge masks, and building roof styles. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules.
 
-The authored map keeps a six-tile non-passable building band around the outer edge. This border gives the city a block-like boundary and prevents NPC movement systems from treating the map edge as an exit.
+## Movement Rules
+
+Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Sidewalks are walkable, roadside sidewalks are parkable, parks are walkable only, roads are drivable, mixed curb/road crossing tiles can also be walkable, and water or buildings are blocked.
 
 ## Debugging From The Console
 
@@ -52,12 +67,28 @@ After the app loads, `window.citySim.city` exposes the main runtime API:
 const { city } = window.citySim
 
 city.getTile(10, 10)
+city.getTileVariant(10, 10)
+city.getTextureId(10, 10)
+city.getTextureKey(10, 10)
+city.isWalkable(10, 10)
+city.isDrivable(10, 10)
+city.isParkable(10, 10)
 city.isPassable(10, 10, 'vehicle')
 city.neighbors(10, 10, 'pedestrian')
 city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 ```
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
+
+## Texture Sets
+
+The current texture set is `gta`. The app loads `public/assets/textures/gta/manifest.json`, then loads the atlas image and creates Pixi subtextures from the manifest frame list. The generated manifest deduplicates exact source crops, so repeated map cells share one atlas frame while every cell still matches its original source tile.
+
+In the console, switch texture sets with:
+
+```js
+window.citySim.setTextureSet('gta')
+```
 
 ## Build
 

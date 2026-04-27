@@ -19,6 +19,8 @@
         width: 100vw;
         height: 100vh;
         background: #ffffff;
+        image-rendering: crisp-edges;
+        image-rendering: pixelated;
         touch-action: none;
       }
 
@@ -54,50 +56,37 @@
       const TILE_TYPES = Object.freeze({
         road: 0,
         sidewalk: 1,
-        residential: 2,
-        commercial: 3,
-        water: 4,
-        bridge: 5,
-        park: 6
+        water: 2,
+        bridge: 3,
+        building: 4
       });
 
       // Names mirror TILE_TYPES order and are returned by the public getTile() helper.
       const TILE_NAMES = Object.freeze([
         'road',
         'sidewalk',
-        'residential',
-        'commercial',
         'water',
         'bridge',
-        'park'
+        'building'
       ]);
 
-      // city-map.json stays readable by using one-character row symbols.
-      const SYMBOL_TO_TILE = Object.freeze({
-        r: TILE_TYPES.road,
-        s: TILE_TYPES.sidewalk,
-        h: TILE_TYPES.residential,
-        c: TILE_TYPES.commercial,
-        w: TILE_TYPES.water,
-        b: TILE_TYPES.bridge,
-        p: TILE_TYPES.park
+      const CATEGORY_TO_TILE = Object.freeze({
+        road: TILE_TYPES.road,
+        sidewalk: TILE_TYPES.sidewalk,
+        water: TILE_TYPES.water,
+        bridge: TILE_TYPES.bridge,
+        building: TILE_TYPES.building
       });
 
-      // The legend is validated so future generators cannot silently drift from runtime meaning.
-      const REQUIRED_LEGEND = Object.freeze({
-        r: 'road',
-        s: 'sidewalk',
-        h: 'residential',
-        c: 'commercial',
-        w: 'water',
-        b: 'bridge',
-        p: 'park'
+      const TEXTURE_SET_PATHS = Object.freeze({
+        gta: './assets/textures/gta/manifest.json'
       });
 
-      // Bridge is intentionally shared by both modes: it covers water crossings and crosswalk tiles.
-      const PASSABLE_MASKS = Object.freeze({
-        pedestrian: (1 << TILE_TYPES.sidewalk) | (1 << TILE_TYPES.park) | (1 << TILE_TYPES.bridge),
-        vehicle: (1 << TILE_TYPES.road) | (1 << TILE_TYPES.bridge)
+      const PIXEL_ART_SCALE_MODE = 'nearest';
+
+      const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
+        pedestrian: 'walkable',
+        vehicle: 'drivable'
       });
 
       // A* uses integer movement costs: 10 for cardinal movement, 14 for diagonals.
@@ -116,20 +105,22 @@
         asphalt: 0x252a25,
         asphaltEdge: 0x151a16,
         crosswalk: 0xd8d2b6,
+        laneMarking: 0x98a12c,
         sidewalk: 0xaeb5a7,
         sidewalkEdge: 0x7b8578,
         curb: 0x526044,
-        residential: 0x7f877b,
-        commercial: 0x747d78,
         buildingEdge: 0x3f4a32,
         water: 0x0786c8,
         waterEdge: 0x006da8,
         bank: 0x5f7734,
         bridge: 0x4a473a,
         bridgeRail: 0x80663f,
+        building: 0x747d78,
         park: 0x83a944,
         parkEdge: 0x4f6d2d
       });
+
+      configurePixelArtRendering();
 
       async function main() {
         const status = document.getElementById('status');
@@ -147,9 +138,11 @@
             resizeTo: window,
             autoDensity: true,
             antialias: false,
+            roundPixels: true,
             resolution: window.devicePixelRatio || 1
           });
 
+          app.renderer.roundPixels = true;
           document.body.appendChild(app.canvas);
 
           const world = new PIXI.Container();
@@ -165,10 +158,13 @@
             y: window.innerHeight / 2,
             zoom: 1,
             minZoom: 0.08,
-            maxZoom: 8
+            maxZoom: 8,
+            worldWidth: 0,
+            worldHeight: 0
           };
 
           function applyCamera() {
+            constrainCamera(camera);
             world.position.set(camera.x, camera.y);
             world.scale.set(camera.zoom);
           }
@@ -176,9 +172,11 @@
           function centerCameraOnCity(city) {
             const worldWidth = city.width * city.tileSize;
             const worldHeight = city.height * city.tileSize;
-            const fitZoom = Math.min(window.innerWidth / worldWidth, window.innerHeight / worldHeight) * 0.92;
 
-            camera.zoom = clamp(fitZoom, camera.minZoom, camera.maxZoom);
+            camera.worldWidth = worldWidth;
+            camera.worldHeight = worldHeight;
+            refreshCameraZoomBounds(camera);
+            camera.zoom = camera.minZoom;
             camera.x = window.innerWidth / 2 - (worldWidth * camera.zoom) / 2;
             camera.y = window.innerHeight / 2 - (worldHeight * camera.zoom) / 2;
             applyCamera();
@@ -200,20 +198,31 @@
           applyCamera();
           installCameraControls(app, camera, applyCamera);
 
-          // Keep map data external so the later procedural generator can target the same format.
-          const mapData = await loadCityMap('./city-map.json');
+          // Keep map data pre-generated so the app has a stable, fast startup path.
+          const mapData = await loadCityMap('./liberty-city.json');
           const city = compileCityMap(mapData);
+          let textureSet = await loadTextureSet(city.textureSetName);
 
-          renderCity(city, mapLayer);
+          renderCity(city, mapLayer, textureSet);
           centerCameraOnCity(city);
+
+          async function setTextureSet(name) {
+            textureSet = await loadTextureSet(name);
+            city.textureSetName = name;
+            renderCity(city, mapLayer, textureSet);
+            window.citySim.textureSet = textureSet;
+          }
 
           Object.assign(window.citySim, {
             city,
             mapData,
+            textureSet,
             loadCityMap,
+            loadTextureSet,
+            setTextureSet,
             validateCityMap,
             compileCityMap,
-            renderCity: () => renderCity(city, mapLayer),
+            renderCity: () => renderCity(city, mapLayer, textureSet),
             centerCameraOnCity: () => centerCameraOnCity(city)
           });
 
@@ -269,6 +278,7 @@
           const worldX = (pointer.x - camera.x) / camera.zoom;
           const worldY = (pointer.y - camera.y) / camera.zoom;
           const zoomFactor = Math.exp(-event.deltaY * 0.001);
+          refreshCameraZoomBounds(camera);
           const nextZoom = clamp(camera.zoom * zoomFactor, camera.minZoom, camera.maxZoom);
 
           camera.x = pointer.x - worldX * nextZoom;
@@ -280,6 +290,48 @@
         window.addEventListener('resize', () => {
           applyCamera();
         });
+      }
+
+      function refreshCameraZoomBounds(camera) {
+        if (!camera.worldWidth || !camera.worldHeight) {
+          return;
+        }
+
+        // The minimum zoom covers the full viewport, preventing white canvas from showing.
+        camera.minZoom = Math.max(
+          window.innerWidth / camera.worldWidth,
+          window.innerHeight / camera.worldHeight
+        );
+
+        if (camera.maxZoom < camera.minZoom) {
+          camera.maxZoom = camera.minZoom;
+        }
+
+        camera.zoom = clamp(camera.zoom, camera.minZoom, camera.maxZoom);
+      }
+
+      function constrainCamera(camera) {
+        if (!camera.worldWidth || !camera.worldHeight) {
+          return;
+        }
+
+        refreshCameraZoomBounds(camera);
+
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const scaledWorldWidth = camera.worldWidth * camera.zoom;
+        const scaledWorldHeight = camera.worldHeight * camera.zoom;
+
+        camera.x = constrainAxis(camera.x, viewportWidth, scaledWorldWidth);
+        camera.y = constrainAxis(camera.y, viewportHeight, scaledWorldHeight);
+      }
+
+      function constrainAxis(position, viewportSize, scaledWorldSize) {
+        if (scaledWorldSize <= viewportSize) {
+          return (viewportSize - scaledWorldSize) / 2;
+        }
+
+        return clamp(position, viewportSize - scaledWorldSize, 0);
       }
 
       function clamp(value, min, max) {
@@ -310,61 +362,207 @@
         return data;
       }
 
+      async function loadTextureSet(name) {
+        if (!name) {
+          return null;
+        }
+
+        const manifestUrl = TEXTURE_SET_PATHS[name];
+
+        if (!manifestUrl) {
+          throw new Error(`Unknown texture set "${name}".`);
+        }
+
+        const response = await fetch(manifestUrl);
+
+        if (!response.ok) {
+          throw new Error(`Could not load ${manifestUrl}: ${response.status} ${response.statusText}`);
+        }
+
+        const manifest = await response.json();
+        const baseUrl = manifestUrl.slice(0, manifestUrl.lastIndexOf('/') + 1);
+
+        if (!manifest.atlas || typeof manifest.atlas.file !== 'string') {
+          throw new Error(`Texture set "${name}" must include an atlas file.`);
+        }
+
+        if (!Array.isArray(manifest.frames)) {
+          throw new Error(`Texture set "${name}" must include atlas frames.`);
+        }
+
+        const atlasTexture = await PIXI.Assets.load(baseUrl + manifest.atlas.file);
+        applyNearestSampling(atlasTexture);
+
+        const textureCache = new Array(manifest.frames.length);
+
+        function getTexture(id) {
+          if (!Number.isInteger(id) || id < 0 || id >= manifest.frames.length) {
+            return null;
+          }
+
+          if (!textureCache[id]) {
+            const frame = manifest.frames[id];
+            textureCache[id] = new PIXI.Texture({
+              source: atlasTexture.source,
+              frame: new PIXI.Rectangle(frame[0], frame[1], frame[2], frame[3])
+            });
+            applyNearestSampling(textureCache[id]);
+          }
+
+          return textureCache[id];
+        }
+
+        return {
+          name: manifest.name || name,
+          tileSize: manifest.tileSize,
+          atlas: atlasTexture,
+          frames: manifest.frames,
+          getTexture
+        };
+      }
+
+      function configurePixelArtRendering() {
+        // Pixi defaults to linear filtering. Nearest sampling keeps source pixels sharp while zooming.
+        if (PIXI.TextureStyle && PIXI.TextureStyle.defaultOptions) {
+          PIXI.TextureStyle.defaultOptions.scaleMode = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureStyle.defaultOptions.magFilter = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureStyle.defaultOptions.minFilter = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureStyle.defaultOptions.mipmapFilter = PIXEL_ART_SCALE_MODE;
+        }
+
+        if (PIXI.TextureSource && PIXI.TextureSource.defaultOptions) {
+          PIXI.TextureSource.defaultOptions.scaleMode = PIXEL_ART_SCALE_MODE;
+          PIXI.TextureSource.defaultOptions.autoGenerateMipmaps = false;
+        }
+      }
+
+      function applyNearestSampling(texture) {
+        const source = texture && texture.source;
+
+        if (!source) {
+          return;
+        }
+
+        source.scaleMode = PIXEL_ART_SCALE_MODE;
+        source.magFilter = PIXEL_ART_SCALE_MODE;
+        source.minFilter = PIXEL_ART_SCALE_MODE;
+        source.mipmapFilter = PIXEL_ART_SCALE_MODE;
+        source.autoGenerateMipmaps = false;
+
+        if (source.style && typeof source.style.update === 'function') {
+          source.style.update();
+        }
+      }
+
       /**
-       * Validates city-map.json aggressively so bad generated maps fail with useful messages.
+       * Validates map JSON aggressively so bad map data fails with useful messages.
        */
       function validateCityMap(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
-          throw new Error('city-map.json must contain a JSON object.');
-        }
-
-        if (data.schemaVersion !== 1) {
-          throw new Error('city-map.json schemaVersion must be 1.');
+          throw new Error('Map JSON must contain a JSON object.');
         }
 
         if (!Number.isInteger(data.width) || data.width <= 0) {
-          throw new Error('city-map.json width must be a positive integer.');
+          throw new Error('Map JSON width must be a positive integer.');
         }
 
         if (!Number.isInteger(data.height) || data.height <= 0) {
-          throw new Error('city-map.json height must be a positive integer.');
+          throw new Error('Map JSON height must be a positive integer.');
         }
 
         if (!Number.isInteger(data.tileSize) || data.tileSize <= 0) {
-          throw new Error('city-map.json tileSize must be a positive integer.');
+          throw new Error('Map JSON tileSize must be a positive integer.');
+        }
+
+        if (typeof data.textureSet !== 'string' || data.textureSet.length === 0) {
+          throw new Error('Map JSON textureSet must be a non-empty string.');
         }
 
         if (!data.legend || typeof data.legend !== 'object' || Array.isArray(data.legend)) {
-          throw new Error('city-map.json legend must be an object.');
+          throw new Error('Map JSON legend must be an object.');
         }
 
-        for (const [symbol, tileName] of Object.entries(REQUIRED_LEGEND)) {
-          if (data.legend[symbol] !== tileName) {
-            throw new Error(`city-map.json legend must map "${symbol}" to "${tileName}".`);
-          }
-        }
+        const legendEntries = normalizeLegend(data.legend);
 
         if (!Array.isArray(data.rows) || data.rows.length !== data.height) {
-          throw new Error(`city-map.json rows must contain exactly ${data.height} rows.`);
+          throw new Error(`Map JSON rows must contain exactly ${data.height} rows.`);
         }
 
         for (let y = 0; y < data.height; y += 1) {
           const row = data.rows[y];
 
           if (typeof row !== 'string') {
-            throw new Error(`city-map.json row ${y} must be a string.`);
+            throw new Error(`Map JSON row ${y} must be a string.`);
           }
 
           if (row.length !== data.width) {
-            throw new Error(`city-map.json row ${y} must be ${data.width} symbols long.`);
+            throw new Error(`Map JSON row ${y} must be ${data.width} symbols long.`);
           }
 
           for (let x = 0; x < data.width; x += 1) {
-            if (!(row[x] in SYMBOL_TO_TILE)) {
-              throw new Error(`city-map.json has unknown symbol "${row[x]}" at ${x},${y}.`);
+            if (!legendEntries[row[x]]) {
+              throw new Error(`Map JSON has unknown symbol "${row[x]}" at ${x},${y}.`);
             }
           }
         }
+
+        if (!Array.isArray(data.textureRows) || data.textureRows.length !== data.height) {
+          throw new Error(`Map JSON textureRows must contain exactly ${data.height} rows.`);
+        }
+
+        for (let y = 0; y < data.height; y += 1) {
+          const row = data.textureRows[y];
+
+          if (!Array.isArray(row) || row.length !== data.width) {
+            throw new Error(`Map JSON texture row ${y} must contain exactly ${data.width} texture IDs.`);
+          }
+
+          for (let x = 0; x < data.width; x += 1) {
+            if (!Number.isInteger(row[x]) || row[x] < 0) {
+              throw new Error(`Map JSON textureRows has invalid texture ID at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function normalizeLegend(legend) {
+        const entries = {};
+
+        for (const [symbol, value] of Object.entries(legend)) {
+          if (symbol.length !== 1) {
+            throw new Error(`Map JSON legend symbol "${symbol}" must be one character.`);
+          }
+
+          if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error(`Map JSON legend entry "${symbol}" must be an object.`);
+          }
+
+          const category = value.category;
+
+          if (!CATEGORY_TO_TILE.hasOwnProperty(category)) {
+            throw new Error(`Map JSON legend entry "${symbol}" has unknown category "${category}".`);
+          }
+
+          if (typeof value.subcategory !== 'string' || value.subcategory.length === 0) {
+            throw new Error(`Map JSON legend entry "${symbol}" must include a subcategory.`);
+          }
+
+          for (const property of ['walkable', 'drivable', 'parkable']) {
+            if (typeof value[property] !== 'boolean') {
+              throw new Error(`Map JSON legend entry "${symbol}" must include boolean ${property}.`);
+            }
+          }
+
+          entries[symbol] = {
+            category,
+            subcategory: value.subcategory,
+            walkable: value.walkable,
+            drivable: value.drivable,
+            parkable: value.parkable
+          };
+        }
+
+        return entries;
       }
 
       /**
@@ -374,13 +572,33 @@
         const width = data.width;
         const height = data.height;
         const tileSize = data.tileSize;
+        const legendEntries = normalizeLegend(data.legend);
         const tiles = new Uint8Array(width * height);
+        const tileTextureIds = new Uint32Array(width * height);
+        const tileWalkable = new Uint8Array(width * height);
+        const tileDrivable = new Uint8Array(width * height);
+        const tileParkable = new Uint8Array(width * height);
+        const tileLegendSymbols = new Array(width * height);
 
         for (let y = 0; y < height; y += 1) {
           const row = data.rows[y];
+          const textureRow = data.textureRows[y];
 
           for (let x = 0; x < width; x += 1) {
-            tiles[indexOf(x, y, width)] = SYMBOL_TO_TILE[row[x]];
+            const symbol = row[x];
+            const entry = legendEntries[symbol];
+            const index = indexOf(x, y, width);
+
+            if (!entry) {
+              throw new Error(`Map JSON has unknown symbol "${symbol}" at ${x},${y}.`);
+            }
+
+            tiles[index] = CATEGORY_TO_TILE[entry.category];
+            tileTextureIds[index] = textureRow[x];
+            tileWalkable[index] = entry.walkable ? 1 : 0;
+            tileDrivable[index] = entry.drivable ? 1 : 0;
+            tileParkable[index] = entry.parkable ? 1 : 0;
+            tileLegendSymbols[index] = symbol;
           }
         }
 
@@ -401,30 +619,68 @@
           return tileId === null ? null : TILE_NAMES[tileId];
         }
 
-        function modeMask(mode) {
-          const mask = PASSABLE_MASKS[mode];
+        function getTileVariant(x, y) {
+          if (!inBounds(x, y)) {
+            return null;
+          }
 
-          if (mask === undefined) {
+          const index = indexOf(x, y, width);
+
+          return {
+            ...legendEntries[tileLegendSymbols[index]],
+            textureId: tileTextureIds[index]
+          };
+        }
+
+        function getTextureId(x, y) {
+          if (!inBounds(x, y)) {
+            return null;
+          }
+
+          return tileTextureIds[indexOf(x, y, width)];
+        }
+
+        function getTextureKey(x, y) {
+          const textureId = getTextureId(x, y);
+          return textureId === null ? null : `tile-${textureId}`;
+        }
+
+        const tilePropertyLayers = {
+          walkable: tileWalkable,
+          drivable: tileDrivable,
+          parkable: tileParkable
+        };
+
+        function modeProperty(mode) {
+          const property = MOVEMENT_PROPERTY_BY_MODE[mode];
+
+          if (!property) {
             throw new Error(`Unknown pathfinding mode "${mode}". Use "pedestrian" or "vehicle".`);
           }
 
-          return mask;
+          return property;
         }
 
-        function isPassableWithMask(x, y, mask) {
+        function hasTileProperty(x, y, property) {
           if (!inBounds(x, y)) {
             return false;
           }
 
-          return (mask & (1 << tiles[indexOf(x, y, width)])) !== 0;
+          const layer = tilePropertyLayers[property];
+
+          if (!layer) {
+            throw new Error(`Unknown tile property "${property}".`);
+          }
+
+          return layer[indexOf(x, y, width)] === 1;
         }
 
         function isPassable(x, y, mode) {
-          return isPassableWithMask(x, y, modeMask(mode));
+          return hasTileProperty(x, y, modeProperty(mode));
         }
 
-        function canStepWithMask(fromX, fromY, toX, toY, mask) {
-          if (!isPassableWithMask(toX, toY, mask)) {
+        function canStepWithProperty(fromX, fromY, toX, toY, property) {
+          if (!hasTileProperty(toX, toY, property)) {
             return false;
           }
 
@@ -433,17 +689,17 @@
 
           if (Math.abs(dx) === 1 && Math.abs(dy) === 1) {
             // Diagonals cannot squeeze through two blocked cardinal neighbors.
-            return isPassableWithMask(fromX + dx, fromY, mask) && isPassableWithMask(fromX, fromY + dy, mask);
+            return hasTileProperty(fromX + dx, fromY, property) && hasTileProperty(fromX, fromY + dy, property);
           }
 
           return true;
         }
 
         function neighbors(x, y, mode) {
-          const mask = modeMask(mode);
+          const property = modeProperty(mode);
           const result = [];
 
-          if (!isPassableWithMask(x, y, mask)) {
+          if (!hasTileProperty(x, y, property)) {
             return result;
           }
 
@@ -451,7 +707,7 @@
             const nx = x + direction.dx;
             const ny = y + direction.dy;
 
-            if (canStepWithMask(x, y, nx, ny, mask)) {
+            if (canStepWithProperty(x, y, nx, ny, property)) {
               result.push({ x: nx, y: ny, cost: direction.cost });
             }
           }
@@ -460,11 +716,11 @@
         }
 
         function nearestPassableTile(x, y, mode, maxRadius = Math.max(width, height)) {
-          const mask = modeMask(mode);
+          const property = modeProperty(mode);
           const startX = clamp(Math.round(x), 0, width - 1);
           const startY = clamp(Math.round(y), 0, height - 1);
 
-          if (isPassableWithMask(startX, startY, mask)) {
+          if (hasTileProperty(startX, startY, property)) {
             return { x: startX, y: startY };
           }
 
@@ -478,7 +734,7 @@
               for (let xx = minX; xx <= maxX; xx += 1) {
                 const onRing = xx === minX || xx === maxX || yy === minY || yy === maxY;
 
-                if (onRing && isPassableWithMask(xx, yy, mask)) {
+                if (onRing && hasTileProperty(xx, yy, property)) {
                   return { x: xx, y: yy };
                 }
               }
@@ -489,7 +745,7 @@
         }
 
         function findPath(start, end, mode) {
-          const mask = modeMask(mode);
+          const property = modeProperty(mode);
           // Simulation callers can pass approximate cells; paths snap to the nearest legal tile.
           const startTile = nearestPassableTile(start.x, start.y, mode);
           const endTile = nearestPassableTile(end.x, end.y, mode);
@@ -535,7 +791,7 @@
               const nextX = currentX + direction.dx;
               const nextY = currentY + direction.dy;
 
-              if (!canStepWithMask(currentX, currentY, nextX, nextY, mask)) {
+              if (!canStepWithProperty(currentX, currentY, nextX, nextY, property)) {
                 continue;
               }
 
@@ -566,12 +822,23 @@
           width,
           height,
           tileSize,
+          textureSetName: data.textureSet,
           tiles,
-          legend: data.legend,
+          tileTextureIds,
+          tileWalkable,
+          tileDrivable,
+          tileParkable,
+          legend: legendEntries,
           index: (x, y) => indexOf(x, y, width),
           getTile,
           getTileId,
+          getTileVariant,
+          getTextureId,
+          getTextureKey,
           inBounds,
+          isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
+          isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
+          isParkable: (x, y) => hasTileProperty(x, y, 'parkable'),
           isPassable,
           neighbors,
           nearestPassableTile,
@@ -681,184 +948,129 @@
         }
       }
 
-      function renderCity(city, mapLayer) {
-        mapLayer.removeChildren();
+      function renderCity(city, mapLayer, textureSet) {
+        for (const child of mapLayer.removeChildren()) {
+          child.destroy({ children: true });
+        }
 
-        // Chunking keeps Pixi display objects low: 256x256 tiles become 16x16 Graphics objects.
+        // Chunks keep the display tree inspectable while grouping nearby sprites.
         const chunkSize = 16;
 
         for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
           for (let chunkX = 0; chunkX < city.width; chunkX += chunkSize) {
-            const graphics = new PIXI.Graphics();
-            graphics.eventMode = 'none';
+            const chunk = new PIXI.Container();
+            let fallbackGraphics = null;
+
+            chunk.eventMode = 'none';
+
+            function fallbackLayer() {
+              if (!fallbackGraphics) {
+                fallbackGraphics = new PIXI.Graphics();
+                fallbackGraphics.eventMode = 'none';
+                chunk.addChild(fallbackGraphics);
+              }
+
+              return fallbackGraphics;
+            }
 
             for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
               for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
-                drawTile(graphics, city, x, y);
+                const index = city.index(x, y);
+                const texture = textureSet && textureSet.getTexture(city.tileTextureIds[index]);
+
+                if (texture) {
+                  const sprite = new PIXI.Sprite(texture);
+
+                  sprite.eventMode = 'none';
+                  sprite.roundPixels = true;
+                  sprite.x = x * city.tileSize;
+                  sprite.y = y * city.tileSize;
+                  sprite.width = city.tileSize;
+                  sprite.height = city.tileSize;
+                  chunk.addChild(sprite);
+                } else {
+                  drawFallbackTile(fallbackLayer(), city, x, y);
+                }
               }
             }
 
-            mapLayer.addChild(graphics);
+            mapLayer.addChild(chunk);
           }
         }
       }
 
-      function drawTile(graphics, city, x, y) {
+      function drawFallbackTile(graphics, city, x, y) {
         const tileId = city.tiles[city.index(x, y)];
 
         if (tileId === TILE_TYPES.road) {
-          drawRoad(graphics, city, x, y, false);
+          drawFallbackRoad(graphics, city, x, y, false);
         } else if (tileId === TILE_TYPES.sidewalk) {
-          drawSidewalk(graphics, city, x, y);
-        } else if (tileId === TILE_TYPES.residential) {
-          drawResidential(graphics, city, x, y);
-        } else if (tileId === TILE_TYPES.commercial) {
-          drawCommercial(graphics, city, x, y);
+          drawFallbackSidewalk(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.water) {
-          drawWater(graphics, city, x, y);
+          drawFallbackWater(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.bridge) {
-          drawRoad(graphics, city, x, y, true);
-        } else if (tileId === TILE_TYPES.park) {
-          drawPark(graphics, city, x, y);
+          drawFallbackRoad(graphics, city, x, y, true);
+        } else if (tileId === TILE_TYPES.building) {
+          drawFallbackBuilding(graphics, city, x, y);
         }
       }
 
-      function drawRoad(graphics, city, x, y, isBridge) {
+      function drawFallbackRoad(graphics, city, x, y, isBridge) {
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
-        // Bridge cells also mark pedestrian crossings; nearby water decides the visual style.
-        const bridgeOverWater = isBridge && touchesTile(city, x, y, TILE_TYPES.water, 2);
 
-        fillRect(graphics, px, py, t, t, bridgeOverWater ? SPRITE_COLORS.bridge : SPRITE_COLORS.asphalt);
+        fillRect(graphics, px, py, t, t, isBridge ? SPRITE_COLORS.bridge : SPRITE_COLORS.asphalt);
+        drawFallbackBoundary(graphics, city, x, y, isRoadLikeId, SPRITE_COLORS.asphaltEdge, 2);
 
-        if (isBridge && !bridgeOverWater) {
-          fillRect(graphics, px, py, t, t, SPRITE_COLORS.crosswalk, 0.32);
-        }
-
-        drawTileBoundary(graphics, city, x, y, isRoadLikeId, SPRITE_COLORS.asphaltEdge, 2);
-
-        if (bridgeOverWater) {
-          drawBridgeRails(graphics, city, x, y);
+        if (!isBridge) {
+          drawFallbackRoadLane(graphics, city, x, y);
         }
       }
 
-      function drawSidewalk(graphics, city, x, y) {
+      function drawFallbackRoadLane(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+        const horizontal = isRoadLike(city, x - 1, y) || isRoadLike(city, x + 1, y);
+        const vertical = isRoadLike(city, x, y - 1) || isRoadLike(city, x, y + 1);
+
+        if (horizontal && !vertical && x % 4 < 2) {
+          fillRect(graphics, px + t * 0.25, py + Math.floor(t / 2) - 1, t * 0.5, 2, SPRITE_COLORS.laneMarking, 0.68);
+        }
+
+        if (vertical && !horizontal && y % 4 < 2) {
+          fillRect(graphics, px + Math.floor(t / 2) - 1, py + t * 0.25, 2, t * 0.5, SPRITE_COLORS.laneMarking, 0.68);
+        }
+      }
+
+      function drawFallbackSidewalk(graphics, city, x, y) {
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
 
         fillRect(graphics, px, py, t, t, SPRITE_COLORS.sidewalk);
-        drawTileBoundary(graphics, city, x, y, isSidewalkLikeId, SPRITE_COLORS.sidewalkEdge, 1);
-        drawCurbAgainstRoad(graphics, city, x, y);
+        drawFallbackBoundary(graphics, city, x, y, isSidewalkLikeId, SPRITE_COLORS.sidewalkEdge, 1);
       }
 
-      function drawResidential(graphics, city, x, y) {
-        drawBuildingBlockBase(graphics, city, x, y, SPRITE_COLORS.residential);
-      }
-
-      function drawCommercial(graphics, city, x, y) {
-        drawBuildingBlockBase(graphics, city, x, y, SPRITE_COLORS.commercial);
-      }
-
-      function drawWater(graphics, city, x, y) {
+      function drawFallbackWater(graphics, city, x, y) {
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
 
         fillRect(graphics, px, py, t, t, SPRITE_COLORS.water);
-        drawWaterBank(graphics, city, x, y);
       }
 
-      function drawPark(graphics, city, x, y) {
+      function drawFallbackBuilding(graphics, city, x, y) {
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
 
-        fillRect(graphics, px, py, t, t, SPRITE_COLORS.park);
-        drawTileBoundary(graphics, city, x, y, isParkLikeId, SPRITE_COLORS.parkEdge, 2);
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.building);
+        drawFallbackBoundary(graphics, city, x, y, isBuildingLikeId, SPRITE_COLORS.buildingEdge, 2);
       }
 
-      function drawBuildingBlockBase(graphics, city, x, y, color) {
-        const t = city.tileSize;
-        const px = x * t;
-        const py = y * t;
-
-        fillRect(graphics, px, py, t, t, color);
-        drawTileBoundary(graphics, city, x, y, isBuildingLikeId, SPRITE_COLORS.buildingEdge, 2);
-      }
-
-      function drawBridgeRails(graphics, city, x, y) {
-        const t = city.tileSize;
-        const px = x * t;
-        const py = y * t;
-
-        if (isWaterLike(city, x, y - 1)) {
-          fillRect(graphics, px, py, t, 3, SPRITE_COLORS.bridgeRail);
-        }
-
-        if (isWaterLike(city, x, y + 1)) {
-          fillRect(graphics, px, py + t - 3, t, 3, SPRITE_COLORS.bridgeRail);
-        }
-
-        if (isWaterLike(city, x - 1, y)) {
-          fillRect(graphics, px, py, 3, t, SPRITE_COLORS.bridgeRail);
-        }
-
-        if (isWaterLike(city, x + 1, y)) {
-          fillRect(graphics, px + t - 3, py, 3, t, SPRITE_COLORS.bridgeRail);
-        }
-      }
-
-      function drawCurbAgainstRoad(graphics, city, x, y) {
-        const t = city.tileSize;
-        const px = x * t;
-        const py = y * t;
-
-        if (isRoadLike(city, x - 1, y)) {
-          fillRect(graphics, px, py, 2, t, SPRITE_COLORS.curb);
-        }
-
-        if (isRoadLike(city, x + 1, y)) {
-          fillRect(graphics, px + t - 2, py, 2, t, SPRITE_COLORS.curb);
-        }
-
-        if (isRoadLike(city, x, y - 1)) {
-          fillRect(graphics, px, py, t, 2, SPRITE_COLORS.curb);
-        }
-
-        if (isRoadLike(city, x, y + 1)) {
-          fillRect(graphics, px, py + t - 2, t, 2, SPRITE_COLORS.curb);
-        }
-      }
-
-      function drawWaterBank(graphics, city, x, y) {
-        const t = city.tileSize;
-        const px = x * t;
-        const py = y * t;
-
-        if (!isWaterLike(city, x - 1, y)) {
-          fillRect(graphics, px, py, 3, t, SPRITE_COLORS.bank);
-          fillRect(graphics, px + 3, py, 2, t, SPRITE_COLORS.waterEdge, 0.5);
-        }
-
-        if (!isWaterLike(city, x + 1, y)) {
-          fillRect(graphics, px + t - 3, py, 3, t, SPRITE_COLORS.bank);
-          fillRect(graphics, px + t - 5, py, 2, t, SPRITE_COLORS.waterEdge, 0.5);
-        }
-
-        if (!isWaterLike(city, x, y - 1)) {
-          fillRect(graphics, px, py, t, 3, SPRITE_COLORS.bank);
-          fillRect(graphics, px, py + 3, t, 2, SPRITE_COLORS.waterEdge, 0.5);
-        }
-
-        if (!isWaterLike(city, x, y + 1)) {
-          fillRect(graphics, px, py + t - 3, t, 3, SPRITE_COLORS.bank);
-          fillRect(graphics, px, py + t - 5, t, 2, SPRITE_COLORS.waterEdge, 0.5);
-        }
-      }
-
-      function drawTileBoundary(graphics, city, x, y, sameGroup, color, thickness) {
+      function drawFallbackBoundary(graphics, city, x, y, sameGroup, color, thickness) {
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
@@ -893,15 +1105,11 @@
       }
 
       function isSidewalkLikeId(tileId) {
-        return tileId === TILE_TYPES.sidewalk || tileId === TILE_TYPES.bridge;
+        return tileId === TILE_TYPES.sidewalk;
       }
 
       function isBuildingLikeId(tileId) {
-        return tileId === TILE_TYPES.residential || tileId === TILE_TYPES.commercial;
-      }
-
-      function isParkLikeId(tileId) {
-        return tileId === TILE_TYPES.park;
+        return tileId === TILE_TYPES.building;
       }
 
       function fillRect(graphics, x, y, width, height, color, alpha = 1) {
