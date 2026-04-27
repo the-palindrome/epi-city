@@ -19,6 +19,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.j
 - Use the mouse wheel to zoom around the cursor.
 - Press `d` to toggle the debug dashboard in the top-right corner.
 - Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
+- Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, park green, water blue, bridge brown, and building slate.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
@@ -63,7 +64,9 @@ Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. P
 
 ## NPC Prototype
 
-The app spawns 1000 pedestrian NPCs when the city loads. NPCs render as small `#e5c748` pixel blobs and choose random neighboring walkable tiles. Collision uses two tile grids: one for occupied cells and one for reserved destination cells, so NPCs avoid blocked map tiles and do not move into the same cell.
+The app spawns 1000 pedestrian NPCs when the city loads. NPCs render as small `#e5c748` pixel blobs and choose random neighboring walkable tiles.
+
+Each walkable tile has two NPC slots. Collision uses occupied and reserved slot grids, so up to two NPCs can share one tile without stacking visually. Slot anchors sit side by side inside the tile, and NPCs interpolate smoothly between slot positions.
 
 ## Debugging From The Console
 

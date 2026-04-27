@@ -85,9 +85,9 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 ## NPC Simulation
 
-`createNpcSimulation()` spawns 1000 pedestrian NPCs after the map renders. NPCs start on unique walkable cells, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs, and move from tile center to tile center.
+`createNpcSimulation()` spawns 1000 pedestrian NPCs after the map renders. NPCs start on walkable tile slots, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs, and move smoothly from slot anchor to slot anchor.
 
-Collision uses two `Int32Array` grids with the same indexing as the city tiles. `occupiedTiles` stores each NPC's current cell, and `reservedTiles` stores destination cells for NPCs already in motion. An NPC can only start a move when the target cell is walkable, unoccupied, and unreserved.
+Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved.
 
 ## Texture Sets
 
@@ -125,7 +125,9 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboard
 
-Press `d` to toggle the top-right debug dashboard. The dashboard currently exposes `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Each overlay paints green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+
+The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, bridge brown, and building slate. Parks are detected through the `sidewalk` category with the `park` subcategory.
 
 `renderDebugOverlays()` redraws only the overlay layer. It uses the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 

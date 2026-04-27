@@ -148,6 +148,8 @@
 
       const NPC_CONFIG = Object.freeze({
         count: 1000,
+        tileCapacity: 2,
+        slotSpacing: 11,
         color: 0xe5c748,
         size: 9,
         minSpeed: 34,
@@ -155,6 +157,7 @@
       });
 
       const DASHBOARD_OVERLAYS = Object.freeze([
+        { id: 'tileType', label: 'overlay tile type', kind: 'tileType' },
         { id: 'walkable', label: 'overlay walkable', layer: 'tileWalkable' },
         { id: 'parkable', label: 'overlay parkable', layer: 'tileParkable' },
         { id: 'drivable', label: 'overlay drivable', layer: 'tileDrivable' }
@@ -165,6 +168,16 @@
         disabled: 0xe3504f,
         enabledAlpha: 0.42,
         disabledAlpha: 0.34
+      });
+
+      const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
+        sidewalk: 0x9aa09a,
+        road: 0x151a16,
+        park: 0x4fa43d,
+        water: 0x0786c8,
+        bridge: 0x80663f,
+        building: 0x5f6762,
+        alpha: 0.86
       });
 
       // A* uses integer movement costs: 10 for cardinal movement, 14 for diagonals.
@@ -552,9 +565,47 @@
           const layer = new PIXI.Container();
 
           layer.eventMode = 'none';
-          drawBehaviorOverlay(city, layer, city[overlay.layer]);
+
+          if (overlay.kind === 'tileType') {
+            drawTileTypeOverlay(city, layer);
+          } else {
+            drawBehaviorOverlay(city, layer, city[overlay.layer]);
+          }
+
           overlayLayer.addChild(layer);
         }
+      }
+
+      function drawTileTypeOverlay(city, layer) {
+        const chunkSize = 16;
+
+        for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
+          for (let chunkX = 0; chunkX < city.width; chunkX += chunkSize) {
+            const graphics = new PIXI.Graphics();
+
+            graphics.eventMode = 'none';
+
+            for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
+              for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
+                const color = getTileTypeOverlayColor(city, x, y);
+
+                fillRect(graphics, x * city.tileSize, y * city.tileSize, city.tileSize, city.tileSize, color, TILE_TYPE_OVERLAY_COLORS.alpha);
+              }
+            }
+
+            layer.addChild(graphics);
+          }
+        }
+      }
+
+      function getTileTypeOverlayColor(city, x, y) {
+        const variant = city.getTileVariant(x, y);
+
+        if (variant.category === 'sidewalk' && variant.subcategory === 'park') {
+          return TILE_TYPE_OVERLAY_COLORS.park;
+        }
+
+        return TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.building;
       }
 
       function drawBehaviorOverlay(city, layer, propertyLayer) {
@@ -1118,35 +1169,41 @@
 
       function createNpcSimulation(city, actorLayer, app, config) {
         const graphics = new PIXI.Graphics();
-        const occupiedTiles = new Int32Array(city.tiles.length);
-        const reservedTiles = new Int32Array(city.tiles.length);
-        const spawnTiles = collectNpcSpawnTiles(city);
+        const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity);
+        const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity);
+        const spawnSlots = collectNpcSpawnSlots(city, config.tileCapacity);
         const npcs = [];
 
-        occupiedTiles.fill(-1);
-        reservedTiles.fill(-1);
+        occupiedSlots.fill(-1);
+        reservedSlots.fill(-1);
         graphics.eventMode = 'none';
         actorLayer.eventMode = 'none';
         actorLayer.addChild(graphics);
 
-        for (let id = 0; id < config.count && spawnTiles.length > 0; id += 1) {
-          const spawnIndex = takeRandomArrayItem(spawnTiles);
-          const tileX = spawnIndex % city.width;
-          const tileY = Math.floor(spawnIndex / city.width);
-          const position = tileCenter(city, tileX, tileY);
+        for (let id = 0; id < config.count && spawnSlots.length > 0; id += 1) {
+          const spawnSlotIndex = takeRandomArrayItem(spawnSlots);
+          const spawnSlot = npcSlotFromIndex(spawnSlotIndex, config.tileCapacity);
+          const tileIndex = spawnSlot.tileIndex;
+          const tileX = tileIndex % city.width;
+          const tileY = Math.floor(tileIndex / city.width);
+          const position = tileSlotPosition(city, tileX, tileY, spawnSlot.slot, config);
 
-          occupiedTiles[spawnIndex] = id;
+          occupiedSlots[spawnSlotIndex] = id;
           npcs.push({
             id,
             x: position.x,
             y: position.y,
             tileX,
             tileY,
-            tileIndex: spawnIndex,
+            tileIndex,
+            slot: spawnSlot.slot,
+            slotIndex: spawnSlotIndex,
             targetX: position.x,
             targetY: position.y,
             targetTileX: tileX,
             targetTileY: tileY,
+            targetTileIndex: tileIndex,
+            targetSlot: spawnSlot.slot,
             targetIndex: -1,
             speed: randomBetween(config.minSpeed, config.maxSpeed)
           });
@@ -1156,7 +1213,7 @@
           const safeDelta = Math.min(deltaSeconds, 0.1);
 
           for (const npc of npcs) {
-            updateNpc(npc, safeDelta, city, occupiedTiles, reservedTiles);
+            updateNpc(npc, safeDelta, city, occupiedSlots, reservedSlots, config);
           }
 
           drawNpcs(graphics, npcs, config);
@@ -1171,8 +1228,9 @@
 
         return {
           npcs,
-          occupiedTiles,
-          reservedTiles,
+          occupiedSlots,
+          reservedSlots,
+          tileCapacity: config.tileCapacity,
           graphics,
           update,
           destroy() {
@@ -1182,44 +1240,48 @@
         };
       }
 
-      function collectNpcSpawnTiles(city) {
-        const tiles = [];
+      function collectNpcSpawnSlots(city, tileCapacity) {
+        const slots = [];
 
         for (let index = 0; index < city.tileWalkable.length; index += 1) {
           if (city.tileWalkable[index]) {
-            tiles.push(index);
+            for (let slot = 0; slot < tileCapacity; slot += 1) {
+              slots.push(npcSlotIndex(index, slot, tileCapacity));
+            }
           }
         }
 
-        return tiles;
+        return slots;
       }
 
-      function updateNpc(npc, deltaSeconds, city, occupiedTiles, reservedTiles) {
+      function updateNpc(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config) {
         if (npc.targetIndex !== -1) {
-          moveNpcTowardTarget(npc, deltaSeconds, city, occupiedTiles, reservedTiles);
+          moveNpcTowardTarget(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config);
           return;
         }
 
-        chooseNpcNextTile(npc, city, occupiedTiles, reservedTiles);
+        chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config);
       }
 
-      function moveNpcTowardTarget(npc, deltaSeconds, city, occupiedTiles, reservedTiles) {
+      function moveNpcTowardTarget(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config) {
         const dx = npc.targetX - npc.x;
         const dy = npc.targetY - npc.y;
         const distance = Math.hypot(dx, dy);
         const maxStep = npc.speed * deltaSeconds;
 
         if (distance <= maxStep || distance === 0) {
-          occupiedTiles[npc.tileIndex] = -1;
-          reservedTiles[npc.targetIndex] = -1;
-          occupiedTiles[npc.targetIndex] = npc.id;
+          occupiedSlots[npc.slotIndex] = -1;
+          reservedSlots[npc.targetIndex] = -1;
+          occupiedSlots[npc.targetIndex] = npc.id;
           npc.x = npc.targetX;
           npc.y = npc.targetY;
           npc.tileX = npc.targetTileX;
           npc.tileY = npc.targetTileY;
-          npc.tileIndex = npc.targetIndex;
+          npc.tileIndex = npc.targetTileIndex;
+          npc.slot = npc.targetSlot;
+          npc.slotIndex = npc.targetIndex;
           npc.targetIndex = -1;
-          chooseNpcNextTile(npc, city, occupiedTiles, reservedTiles);
+          chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config);
           return;
         }
 
@@ -1228,7 +1290,7 @@
         npc.y += dy * ratio;
       }
 
-      function chooseNpcNextTile(npc, city, occupiedTiles, reservedTiles) {
+      function chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config) {
         const neighbors = city.neighbors(npc.tileX, npc.tileY, 'pedestrian');
 
         if (neighbors.length === 0) {
@@ -1240,27 +1302,60 @@
         for (let offset = 0; offset < neighbors.length; offset += 1) {
           const candidate = neighbors[(start + offset) % neighbors.length];
           const targetIndex = city.index(candidate.x, candidate.y);
+          const targetSlot = findAvailableNpcSlot(targetIndex, occupiedSlots, reservedSlots, config.tileCapacity);
 
-          if (occupiedTiles[targetIndex] !== -1 || reservedTiles[targetIndex] !== -1) {
+          if (!targetSlot) {
             continue;
           }
 
-          const target = tileCenter(city, candidate.x, candidate.y);
+          const target = tileSlotPosition(city, candidate.x, candidate.y, targetSlot.slot, config);
 
-          reservedTiles[targetIndex] = npc.id;
+          reservedSlots[targetSlot.slotIndex] = npc.id;
           npc.targetTileX = candidate.x;
           npc.targetTileY = candidate.y;
-          npc.targetIndex = targetIndex;
+          npc.targetTileIndex = targetIndex;
+          npc.targetSlot = targetSlot.slot;
+          npc.targetIndex = targetSlot.slotIndex;
           npc.targetX = target.x;
           npc.targetY = target.y;
           return;
         }
       }
 
-      function tileCenter(city, tileX, tileY) {
+      function findAvailableNpcSlot(tileIndex, occupiedSlots, reservedSlots, tileCapacity) {
+        const startSlot = Math.floor(Math.random() * tileCapacity);
+
+        for (let offset = 0; offset < tileCapacity; offset += 1) {
+          const slot = (startSlot + offset) % tileCapacity;
+          const slotIndex = npcSlotIndex(tileIndex, slot, tileCapacity);
+
+          if (occupiedSlots[slotIndex] === -1 && reservedSlots[slotIndex] === -1) {
+            return { slot, slotIndex };
+          }
+        }
+
+        return null;
+      }
+
+      function npcSlotIndex(tileIndex, slot, tileCapacity) {
+        return tileIndex * tileCapacity + slot;
+      }
+
+      function npcSlotFromIndex(slotIndex, tileCapacity) {
         return {
-          x: (tileX + 0.5) * city.tileSize,
-          y: (tileY + 0.5) * city.tileSize
+          tileIndex: Math.floor(slotIndex / tileCapacity),
+          slot: slotIndex % tileCapacity
+        };
+      }
+
+      function tileSlotPosition(city, tileX, tileY, slot, config) {
+        const centerX = (tileX + 0.5) * city.tileSize;
+        const centerY = (tileY + 0.5) * city.tileSize;
+        const offsetIndex = slot - (config.tileCapacity - 1) / 2;
+
+        return {
+          x: centerX + offsetIndex * config.slotSpacing,
+          y: centerY
         };
       }
 
