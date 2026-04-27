@@ -42,6 +42,8 @@ The map uses one symbol per cell. The app validates every symbol before it compi
 
 The `bridge` tile currently does two jobs: it represents water crossings and shared road-crossing tiles. Rendering checks nearby water to draw those cases differently.
 
+The authored map keeps a six-tile non-passable building band around the outer edge. This border gives the city a block-like boundary and prevents NPC movement systems from treating the map edge as an exit.
+
 ## Debugging From The Console
 
 After the app loads, `window.citySim.city` exposes the main runtime API:

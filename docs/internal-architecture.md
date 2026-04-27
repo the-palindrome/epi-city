@@ -40,6 +40,8 @@ Startup follows this sequence:
 
 Each row must be a string with exactly `width` symbols. The file must contain exactly `height` rows. The validator fails fast for unknown symbols, wrong dimensions, invalid metadata, or legend drift.
 
+The current map reserves a six-tile outer band for residential or commercial building cells. Procedural generators should preserve a non-passable edge band unless the simulation explicitly adds entrances, exits, or neighboring maps.
+
 ## Runtime City Object
 
 `compileCityMap()` returns the runtime city object. `window.citySim.city` exposes it for debugging and later simulation systems.
@@ -71,7 +73,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `renderCity()` draws tiles into `PIXI.Graphics` chunks of 16x16 cells. This keeps display-object count low while still allowing the map to be redrawn from the authoritative tile array.
 
-Tile detail is procedural and deterministic. `tileHash(x, y, salt)` creates stable local variation without storing extra art data in the map file. The renderer uses that hash for roof offsets, park details, pavement marks, and water bands.
+Tile graphics stay intentionally minimal. Each tile type uses a flat fill, and the renderer only draws borders where neighboring cells leave the same visual group. This makes contiguous roads, sidewalks, parks, building blocks, and water regions read as connected areas instead of repeated tile stamps.
 
 The `bridge` tile has two visual modes. If nearby water exists, it renders as a bridge deck. Otherwise, it renders as a shared crossing tile at road intersections so pedestrians can cross the road network without adding a separate crosswalk tile type.
 

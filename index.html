@@ -112,6 +112,25 @@
         { dx: -1, dy: -1, cost: 14 }
       ]);
 
+      const SPRITE_COLORS = Object.freeze({
+        asphalt: 0x252a25,
+        asphaltEdge: 0x151a16,
+        crosswalk: 0xd8d2b6,
+        sidewalk: 0xaeb5a7,
+        sidewalkEdge: 0x7b8578,
+        curb: 0x526044,
+        residential: 0x7f877b,
+        commercial: 0x747d78,
+        buildingEdge: 0x3f4a32,
+        water: 0x0786c8,
+        waterEdge: 0x006da8,
+        bank: 0x5f7734,
+        bridge: 0x4a473a,
+        bridgeRail: 0x80663f,
+        park: 0x83a944,
+        parkEdge: 0x4f6d2d
+      });
+
       async function main() {
         const status = document.getElementById('status');
         const app = new PIXI.Application();
@@ -708,46 +727,19 @@
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
-        const horizontal = isRoadLike(city, x - 1, y) || isRoadLike(city, x + 1, y);
-        const vertical = isRoadLike(city, x, y - 1) || isRoadLike(city, x, y + 1);
         // Bridge cells also mark pedestrian crossings; nearby water decides the visual style.
         const bridgeOverWater = isBridge && touchesTile(city, x, y, TILE_TYPES.water, 2);
-        const base = bridgeOverWater ? 0x4a4740 : 0x30332f;
 
-        fillRect(graphics, px, py, t, t, base);
-        fillRect(graphics, px, py, t, 2, bridgeOverWater ? 0x6a5a40 : 0x252923);
-        fillRect(graphics, px, py + t - 2, t, 2, bridgeOverWater ? 0x2f2a24 : 0x20231e);
+        fillRect(graphics, px, py, t, t, bridgeOverWater ? SPRITE_COLORS.bridge : SPRITE_COLORS.asphalt);
+
+        if (isBridge && !bridgeOverWater) {
+          fillRect(graphics, px, py, t, t, SPRITE_COLORS.crosswalk, 0.32);
+        }
+
+        drawTileBoundary(graphics, city, x, y, isRoadLikeId, SPRITE_COLORS.asphaltEdge, 2);
 
         if (bridgeOverWater) {
-          if (horizontal) {
-            fillRect(graphics, px, py + 4, t, 3, 0x8a6a3e);
-            fillRect(graphics, px, py + t - 7, t, 3, 0x8a6a3e);
-          }
-
-          if (vertical) {
-            fillRect(graphics, px + 4, py, 3, t, 0x8a6a3e);
-            fillRect(graphics, px + t - 7, py, 3, t, 0x8a6a3e);
-          }
-        } else if (isBridge) {
-          for (let offset = 5; offset < t - 3; offset += 7) {
-            fillRect(graphics, px + 6, py + offset, t - 12, 3, 0xe5e0ca, 0.9);
-          }
-        }
-
-        if (horizontal && !vertical) {
-          if (x % 2 === 0) {
-            fillRect(graphics, px + 8, py + 15, 16, 2, 0xc7b84c);
-          }
-        } else if (vertical && !horizontal) {
-          if (y % 2 === 0) {
-            fillRect(graphics, px + 15, py + 8, 2, 16, 0xc7b84c);
-          }
-        } else {
-          fillRect(graphics, px + 14, py + 14, 4, 4, 0xb1a448);
-        }
-
-        if ((tileHash(x, y, 1) & 3) === 0) {
-          fillRect(graphics, px + 5 + (tileHash(x, y, 2) % 18), py + 5 + (tileHash(x, y, 3) % 18), 2, 2, 0x44483f, 0.65);
+          drawBridgeRails(graphics, city, x, y);
         }
       }
 
@@ -756,65 +748,17 @@
         const px = x * t;
         const py = y * t;
 
-        fillRect(graphics, px, py, t, t, 0xbfc1b4);
-        fillRect(graphics, px, py, t, 1, 0xd8dacd);
-        fillRect(graphics, px, py, 1, t, 0xd8dacd);
-        fillRect(graphics, px + t - 1, py, 1, t, 0xa7aa9d);
-        fillRect(graphics, px, py + t - 1, t, 1, 0xa7aa9d);
-
-        if ((x + y) % 3 === 0) {
-          fillRect(graphics, px + 15, py + 2, 1, t - 4, 0xd1d3c6, 0.65);
-        }
-
-        if ((tileHash(x, y, 4) & 7) === 0) {
-          fillRect(graphics, px + 8 + (tileHash(x, y, 5) % 14), py + 8 + (tileHash(x, y, 6) % 14), 2, 2, 0x909486, 0.55);
-        }
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.sidewalk);
+        drawTileBoundary(graphics, city, x, y, isSidewalkLikeId, SPRITE_COLORS.sidewalkEdge, 1);
+        drawCurbAgainstRoad(graphics, city, x, y);
       }
 
       function drawResidential(graphics, city, x, y) {
-        const t = city.tileSize;
-        const px = x * t;
-        const py = y * t;
-        const roofColors = [0x9c9d99, 0xa9a39c, 0x8f9790, 0xb1aca4];
-        const margin = 4 + (tileHash(x, y, 7) % 5);
-        const insetX = margin;
-        const insetY = 5 + (tileHash(x, y, 8) % 4);
-        const width = t - insetX - margin;
-        const height = t - insetY - margin;
-        const roof = roofColors[tileHash(x, y, 9) % roofColors.length];
-
-        fillRect(graphics, px, py, t, t, 0x6f7868);
-        fillRect(graphics, px + insetX + 2, py + insetY + 2, width, height, 0x51584f, 0.55);
-        fillRect(graphics, px + insetX, py + insetY, width, height, roof);
-        drawBox(graphics, px + insetX, py + insetY, width, height, 0x696d68, 0xd1cec4);
-
-        if ((tileHash(x, y, 10) & 1) === 0) {
-          fillRect(graphics, px + insetX + 5, py + insetY + 5, Math.max(4, width - 10), 2, 0x7b7f7a, 0.8);
-        } else {
-          fillRect(graphics, px + insetX + 5, py + insetY + 5, 2, Math.max(4, height - 10), 0x7b7f7a, 0.8);
-        }
+        drawBuildingBlockBase(graphics, city, x, y, SPRITE_COLORS.residential);
       }
 
       function drawCommercial(graphics, city, x, y) {
-        const t = city.tileSize;
-        const px = x * t;
-        const py = y * t;
-        const margin = 3 + (tileHash(x, y, 11) % 4);
-        const width = t - margin * 2;
-        const height = t - margin * 2;
-        const roofColors = [0x7d8384, 0x8d908d, 0x777a75, 0x969792];
-        const roof = roofColors[tileHash(x, y, 12) % roofColors.length];
-
-        fillRect(graphics, px, py, t, t, 0x687066);
-        fillRect(graphics, px + margin + 2, py + margin + 2, width, height, 0x40443f, 0.65);
-        fillRect(graphics, px + margin, py + margin, width, height, roof);
-        drawBox(graphics, px + margin, py + margin, width, height, 0x5c625d, 0xc4c6bd);
-        fillRect(graphics, px + margin + 5, py + margin + 5, 6, 5, 0x555c5d);
-        fillRect(graphics, px + margin + width - 12, py + margin + 7, 6, 4, 0x555c5d);
-
-        if ((tileHash(x, y, 13) & 3) === 0) {
-          fillRect(graphics, px + margin + 4, py + margin + height - 5, 12, 2, 0xb64132);
-        }
+        drawBuildingBlockBase(graphics, city, x, y, SPRITE_COLORS.commercial);
       }
 
       function drawWater(graphics, city, x, y) {
@@ -822,15 +766,8 @@
         const px = x * t;
         const py = y * t;
 
-        fillRect(graphics, px, py, t, t, 0x087fc1);
-
-        if ((x + y) % 2 === 0) {
-          fillRect(graphics, px, py + 8, t, 2, 0x1ba1dc, 0.85);
-        }
-
-        if ((x * 2 + y) % 5 === 0) {
-          fillRect(graphics, px + 4, py + 21, t - 8, 2, 0x006ea9, 0.65);
-        }
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.water);
+        drawWaterBank(graphics, city, x, y);
       }
 
       function drawPark(graphics, city, x, y) {
@@ -838,30 +775,137 @@
         const px = x * t;
         const py = y * t;
 
-        fillRect(graphics, px, py, t, t, 0x79a84a);
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.park);
+        drawTileBoundary(graphics, city, x, y, isParkLikeId, SPRITE_COLORS.parkEdge, 2);
+      }
 
-        if ((x + y) % 4 === 0) {
-          fillRect(graphics, px, py + 14, t, 4, 0xb0b37b, 0.85);
-        } else if ((x - y) % 5 === 0) {
-          fillRect(graphics, px + 14, py, 4, t, 0xb0b37b, 0.85);
+      function drawBuildingBlockBase(graphics, city, x, y, color) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        fillRect(graphics, px, py, t, t, color);
+        drawTileBoundary(graphics, city, x, y, isBuildingLikeId, SPRITE_COLORS.buildingEdge, 2);
+      }
+
+      function drawBridgeRails(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        if (isWaterLike(city, x, y - 1)) {
+          fillRect(graphics, px, py, t, 3, SPRITE_COLORS.bridgeRail);
         }
 
-        fillRect(graphics, px + 7 + (tileHash(x, y, 14) % 14), py + 7 + (tileHash(x, y, 15) % 14), 4, 4, 0x3f742f);
-
-        if ((tileHash(x, y, 16) & 3) === 0) {
-          fillRect(graphics, px + 4 + (tileHash(x, y, 17) % 20), py + 4 + (tileHash(x, y, 18) % 20), 3, 3, 0x96bf63);
+        if (isWaterLike(city, x, y + 1)) {
+          fillRect(graphics, px, py + t - 3, t, 3, SPRITE_COLORS.bridgeRail);
         }
+
+        if (isWaterLike(city, x - 1, y)) {
+          fillRect(graphics, px, py, 3, t, SPRITE_COLORS.bridgeRail);
+        }
+
+        if (isWaterLike(city, x + 1, y)) {
+          fillRect(graphics, px + t - 3, py, 3, t, SPRITE_COLORS.bridgeRail);
+        }
+      }
+
+      function drawCurbAgainstRoad(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        if (isRoadLike(city, x - 1, y)) {
+          fillRect(graphics, px, py, 2, t, SPRITE_COLORS.curb);
+        }
+
+        if (isRoadLike(city, x + 1, y)) {
+          fillRect(graphics, px + t - 2, py, 2, t, SPRITE_COLORS.curb);
+        }
+
+        if (isRoadLike(city, x, y - 1)) {
+          fillRect(graphics, px, py, t, 2, SPRITE_COLORS.curb);
+        }
+
+        if (isRoadLike(city, x, y + 1)) {
+          fillRect(graphics, px, py + t - 2, t, 2, SPRITE_COLORS.curb);
+        }
+      }
+
+      function drawWaterBank(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        if (!isWaterLike(city, x - 1, y)) {
+          fillRect(graphics, px, py, 3, t, SPRITE_COLORS.bank);
+          fillRect(graphics, px + 3, py, 2, t, SPRITE_COLORS.waterEdge, 0.5);
+        }
+
+        if (!isWaterLike(city, x + 1, y)) {
+          fillRect(graphics, px + t - 3, py, 3, t, SPRITE_COLORS.bank);
+          fillRect(graphics, px + t - 5, py, 2, t, SPRITE_COLORS.waterEdge, 0.5);
+        }
+
+        if (!isWaterLike(city, x, y - 1)) {
+          fillRect(graphics, px, py, t, 3, SPRITE_COLORS.bank);
+          fillRect(graphics, px, py + 3, t, 2, SPRITE_COLORS.waterEdge, 0.5);
+        }
+
+        if (!isWaterLike(city, x, y + 1)) {
+          fillRect(graphics, px, py + t - 3, t, 3, SPRITE_COLORS.bank);
+          fillRect(graphics, px, py + t - 5, t, 2, SPRITE_COLORS.waterEdge, 0.5);
+        }
+      }
+
+      function drawTileBoundary(graphics, city, x, y, sameGroup, color, thickness) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        if (!matchesTileGroup(city, x - 1, y, sameGroup)) {
+          fillRect(graphics, px, py, thickness, t, color);
+        }
+
+        if (!matchesTileGroup(city, x + 1, y, sameGroup)) {
+          fillRect(graphics, px + t - thickness, py, thickness, t, color);
+        }
+
+        if (!matchesTileGroup(city, x, y - 1, sameGroup)) {
+          fillRect(graphics, px, py, t, thickness, color);
+        }
+
+        if (!matchesTileGroup(city, x, y + 1, sameGroup)) {
+          fillRect(graphics, px, py + t - thickness, t, thickness, color);
+        }
+      }
+
+      function matchesTileGroup(city, x, y, predicate) {
+        if (!city.inBounds(x, y)) {
+          return false;
+        }
+
+        return predicate(city.tiles[city.index(x, y)]);
+      }
+
+      function isRoadLikeId(tileId) {
+        return tileId === TILE_TYPES.road || tileId === TILE_TYPES.bridge;
+      }
+
+      function isSidewalkLikeId(tileId) {
+        return tileId === TILE_TYPES.sidewalk || tileId === TILE_TYPES.bridge;
+      }
+
+      function isBuildingLikeId(tileId) {
+        return tileId === TILE_TYPES.residential || tileId === TILE_TYPES.commercial;
+      }
+
+      function isParkLikeId(tileId) {
+        return tileId === TILE_TYPES.park;
       }
 
       function fillRect(graphics, x, y, width, height, color, alpha = 1) {
         graphics.rect(x, y, width, height).fill({ color, alpha });
-      }
-
-      function drawBox(graphics, x, y, width, height, darkColor, lightColor) {
-        fillRect(graphics, x, y, width, 1, lightColor, 0.8);
-        fillRect(graphics, x, y, 1, height, lightColor, 0.8);
-        fillRect(graphics, x + width - 1, y, 1, height, darkColor, 0.8);
-        fillRect(graphics, x, y + height - 1, width, 1, darkColor, 0.8);
       }
 
       function isRoadLike(city, x, y) {
@@ -885,15 +929,16 @@
         return false;
       }
 
-      function tileHash(x, y, salt) {
-        // Deterministic pseudo-randomness gives tiles variety without storing per-tile art data.
-        let hash = Math.imul(x + 374761393, 668265263) ^ Math.imul(y + 1442695041, 2246822519) ^ Math.imul(salt + 3266489917, 3266489917);
-        hash ^= hash >>> 13;
-        hash = Math.imul(hash, 1274126177);
-        hash ^= hash >>> 16;
+      function isWaterLike(city, x, y) {
+        if (!city.inBounds(x, y)) {
+          return false;
+        }
 
-        return hash >>> 0;
+        const tileId = city.tiles[city.index(x, y)];
+        return tileId === TILE_TYPES.water || (tileId === TILE_TYPES.bridge && touchesTile(city, x, y, TILE_TYPES.water, 2));
       }
+
+
 
       main();
     </script>
