@@ -5,7 +5,7 @@ Epi City currently keeps the implementation in one `index.html` file so early si
 ## Map Data Flow
 
 The app loads `./city-map.json` at startup. Vite serves `public/city-map.json` from the site root, so the same relative fetch works in development and production builds.
-`city-generator.js` can pre-generate that JSON from the command line, but the Pixi app does not run generation at startup.
+There is currently no procedural generator in the project. Map JSON is authored or replaced as a static asset.
 
 Startup follows this sequence:
 
@@ -76,9 +76,9 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 Tile graphics stay intentionally minimal. Each tile type uses a flat fill, and the renderer only draws borders where neighboring cells leave the same visual group. This makes contiguous roads, sidewalks, parks, building blocks, and water regions read as connected areas instead of repeated tile stamps.
 
-Waterfront land cells should be walkable `sidewalk` cells rather than building blocks. The generator uses a two-pass land fill: land between roads starts as walkable sidewalk/plaza space, then residential and commercial building stamps are placed on top with setbacks, notches, and open courtyards.
+Waterfront land cells should generally be walkable `sidewalk` cells rather than building blocks so future pedestrian NPCs can move along shorelines.
 
-The `bridge` tile has two visual modes. Water bridge corridors are selected by the generator as sparse semantic bridge objects, while non-water `bridge` cells are shared pedestrian road crossings. Rendering checks nearby water to decide whether a bridge cell should read as deck/rails or as a low-contrast crossing.
+The `bridge` tile has two visual modes. Rendering checks nearby water to decide whether a bridge cell should read as deck/rails or as a low-contrast road crossing.
 
 ## Debugging Hooks
 
@@ -95,7 +95,7 @@ window.citySim.centerCameraOnCity()
 
 ## Near-Term Extension Points
 
-- Replace the hand-authored JSON with a procedural generator that outputs the same schema.
+- Keep map JSON schema stable so a future generator or editor can output the same format.
 - Move code from `index.html` into modules once simulation systems grow beyond the prototype stage.
 - Add route caching or navigation graphs before many NPCs request long paths frequently.
 - Add actor rendering to `window.citySim.layers.actors` so NPCs stay separate from the static map layer.
