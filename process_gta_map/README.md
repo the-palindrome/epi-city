@@ -40,11 +40,12 @@ The script performs these steps:
 
 1. Loads `process_gta_map/source/gta1-liberty-city-hd.webp`.
 2. Classifies each of the 256x256 grid cells into gameplay categories.
-3. Decomposes the source image into 65,536 source tiles.
-4. Deduplicates exact duplicate source crops.
-5. Writes `textureRows` so every cell points to its exact source tile frame.
-6. Verifies each `textureRows` entry against the original source pixels.
-7. Writes a preview image to `tmp/gta-256-textured-preview.png`.
+3. Applies tile behavior abstractions to generate `walkable`, `drivable`, and `parkable` legend properties.
+4. Decomposes the source image into 65,536 source tiles.
+5. Deduplicates exact duplicate source crops.
+6. Writes `textureRows` so every cell points to its exact source tile frame.
+7. Verifies each `textureRows` entry against the original source pixels.
+8. Writes a preview image to `tmp/gta-256-textured-preview.png`.
 
 Expected current stats:
 
@@ -73,6 +74,7 @@ The preview should match the source map tile-by-tile. If it does not, treat the 
 ## Notes
 
 - The map format is intentionally unversioned while the app is pre-release.
-- `rows` stores gameplay semantics.
+- `rows` stores gameplay semantics through legend symbols.
+- The legend stores generated `walkable`, `drivable`, and `parkable` booleans for each symbol.
 - `textureRows` stores exact atlas frame IDs for rendering.
 - Do not keep legacy import formats in this folder.

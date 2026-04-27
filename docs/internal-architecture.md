@@ -29,7 +29,10 @@ Startup follows this sequence:
   "legend": {
     "A": {
       "category": "road",
-      "subcategory": "horizontal"
+      "subcategory": "horizontal",
+      "walkable": false,
+      "drivable": true,
+      "parkable": false
     }
   },
   "rows": ["..."],
@@ -37,11 +40,11 @@ Startup follows this sequence:
 }
 ```
 
-Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` and a `subcategory`.
+Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category`, a `subcategory`, and boolean `walkable`, `drivable`, and `parkable` properties.
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture IDs refer to atlas frames in `public/assets/textures/gta/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
-The base categories are `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories carry semantic detail without changing movement masks. For example, a road can be `horizontal`, `vertical`, `intersection`, `corner-ne`, or another orientation-specific variant.
+The base categories are `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories carry semantic detail such as `horizontal`, `vertical`, `intersection`, `corner-ne`, `waterfront-roadside`, or `large-roof`. Movement uses the generated behavior booleans instead of hard-coded category masks.
 
 ## Runtime City Object
 
@@ -52,14 +55,16 @@ The base categories are `road`, `sidewalk`, `water`, `bridge`, and `building`. S
 | `width`, `height`, `tileSize` | Map dimensions and world-space tile size. |
 | `tiles` | Numeric `Uint8Array` with one base category ID per cell. |
 | `tileTextureIds` | Numeric `Uint32Array` with one atlas-frame ID per cell. |
+| `tileWalkable`, `tileDrivable`, `tileParkable` | Numeric `Uint8Array` layers with generated gameplay behavior per cell. |
 | `legend` | Normalized symbol metadata keyed by map symbol. |
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, subcategory, textureId }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, subcategory, walkable, drivable, parkable, textureId }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getTextureKey(x, y)` | Returns a stable debug string such as `tile-123`. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
+| `isWalkable(x, y)`, `isDrivable(x, y)`, `isParkable(x, y)` | Checks generated tile behavior layers directly. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
 | `neighbors(x, y, mode)` | Returns passable 8-way neighbors with movement costs. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
@@ -69,7 +74,9 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses two passability masks. Vehicles use `road` and `bridge`. Pedestrians use `sidewalk` and `bridge`. `water` and `building` are blocked.
+Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Water and buildings are not walkable, drivable, or parkable.
+
+The importer derives behavior from tile abstractions rather than hand-filled legend entries. Sidewalks are walkable, roadside sidewalks are also parkable, parks are walkable only, roads are drivable, mixed road/curb crossing tiles are also walkable, bridges are walkable and drivable, and water or buildings are blocked.
 
 A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Diagonal movement rejects corner cutting by requiring both adjacent cardinal cells to be passable.
 

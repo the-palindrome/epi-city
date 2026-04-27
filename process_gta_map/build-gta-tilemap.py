@@ -39,11 +39,26 @@ CATEGORY_PRIORITY = {"water": 0, "bridge": 1, "road": 2, "building": 3, "sidewal
 
 
 @dataclass(frozen=True)
+class TileDefinition:
+    category: str
+    subcategory: str
+    walkable: bool
+    drivable: bool
+    parkable: bool
+
+
+@dataclass(frozen=True)
 class Cell:
     x: int
     y: int
     category: str
     subcategory: str
+    walkable: bool
+    drivable: bool
+    parkable: bool
+
+
+WALKABLE_ROAD_SUFFIX = "-walkable"
 
 
 def parse_args() -> argparse.Namespace:
@@ -312,11 +327,68 @@ def edge_subcategory(category: np.ndarray, x: int, y: int, target: str) -> str:
     return f"mask-{mask:02d}"
 
 
+def has_cardinal_neighbor(category: np.ndarray, x: int, y: int, target: str) -> bool:
+    size = category.shape[0]
+    return (
+        (y > 0 and category[y - 1, x] == target)
+        or (x + 1 < size and category[y, x + 1] == target)
+        or (y + 1 < size and category[y + 1, x] == target)
+        or (x > 0 and category[y, x - 1] == target)
+    )
+
+
+def tile_definition(category: str, subcategory: str) -> TileDefinition:
+    """Return generated gameplay metadata for a semantic tile variant."""
+
+    if category == "sidewalk":
+        return TileDefinition(
+            category=category,
+            subcategory=subcategory,
+            walkable=True,
+            drivable=False,
+            parkable="roadside" in subcategory and subcategory != "park",
+        )
+
+    if category == "road":
+        return TileDefinition(
+            category=category,
+            subcategory=subcategory,
+            # Mixed road/curb tiles act as pedestrian crossing edges without opening full traffic lanes.
+            walkable=subcategory.endswith(WALKABLE_ROAD_SUFFIX),
+            drivable=True,
+            parkable=False,
+        )
+
+    if category == "bridge":
+        return TileDefinition(
+            category=category,
+            subcategory=subcategory,
+            walkable=True,
+            drivable=True,
+            parkable=False,
+        )
+
+    return TileDefinition(
+        category=category,
+        subcategory=subcategory,
+        walkable=False,
+        drivable=False,
+        parkable=False,
+    )
+
+
+def is_walkable_road(features: dict[str, np.ndarray], x: int, y: int) -> bool:
+    return (
+        features["sidewalk"][y, x] > 0.20
+        and features["edge"][y, x] > 0.30
+        and features["asphalt"][y, x] < 0.75
+    )
+
+
 def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]) -> list[Cell]:
     size = category.shape[0]
     roadlike = (category == "road") | (category == "bridge")
     water_near = dilate(category == "water", 1)
-    road_near = dilate(roadlike, 1)
 
     cells: list[Cell] = []
     for y in range(size):
@@ -333,14 +405,20 @@ def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]
                 if x > 0 and roadlike[y, x - 1]:
                     mask |= 8
                 sub = road_subcategory(mask)
+                if cat == "road" and is_walkable_road(features, x, y):
+                    sub = f"{sub}{WALKABLE_ROAD_SUFFIX}"
             elif cat == "water":
                 sub = edge_subcategory(category, x, y, "water")
             elif cat == "sidewalk":
+                road_near = has_cardinal_neighbor(category, x, y, "road")
+
                 if features["park"][y, x] > 0.22:
                     sub = "park"
+                elif water_near[y, x] and road_near:
+                    sub = "waterfront-roadside"
                 elif water_near[y, x]:
                     sub = "waterfront"
-                elif road_near[y, x]:
+                elif road_near:
                     sub = "roadside"
                 else:
                     sub = "concrete"
@@ -353,7 +431,18 @@ def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]
                     sub = "large-roof"
                 else:
                     sub = "roof"
-            cells.append(Cell(x=x, y=y, category=cat, subcategory=sub))
+            definition = tile_definition(cat, sub)
+            cells.append(
+                Cell(
+                    x=x,
+                    y=y,
+                    category=definition.category,
+                    subcategory=definition.subcategory,
+                    walkable=definition.walkable,
+                    drivable=definition.drivable,
+                    parkable=definition.parkable,
+                )
+            )
     return cells
 
 
@@ -411,14 +500,14 @@ def symbol_stream() -> Iterable[str]:
     yield from SAFE_SYMBOLS
 
 
-def assign_symbols(cells: list[Cell], grid_size: int) -> tuple[dict[str, dict[str, str]], list[str]]:
-    groups: dict[tuple[str, str], str] = {}
-    legend: dict[str, dict[str, str]] = {}
+def assign_symbols(cells: list[Cell], grid_size: int) -> tuple[dict[str, dict[str, object]], list[str]]:
+    groups: dict[tuple[str, str, bool, bool, bool], str] = {}
+    legend: dict[str, dict[str, object]] = {}
     symbols = symbol_stream()
     symbol_by_cell: dict[tuple[int, int], str] = {}
 
     for cell in sorted(cells, key=lambda item: (CATEGORY_PRIORITY[item.category], item.category, item.subcategory, item.y, item.x)):
-        key = (cell.category, cell.subcategory)
+        key = (cell.category, cell.subcategory, cell.walkable, cell.drivable, cell.parkable)
 
         if key not in groups:
             symbol = next(symbols)
@@ -426,6 +515,9 @@ def assign_symbols(cells: list[Cell], grid_size: int) -> tuple[dict[str, dict[st
             legend[symbol] = {
                 "category": cell.category,
                 "subcategory": cell.subcategory,
+                "walkable": cell.walkable,
+                "drivable": cell.drivable,
+                "parkable": cell.parkable,
             }
 
         symbol_by_cell[(cell.x, cell.y)] = groups[key]

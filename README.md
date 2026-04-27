@@ -42,7 +42,10 @@ The map stores semantics and visuals separately. `rows` contains one legend symb
   "legend": {
     "A": {
       "category": "road",
-      "subcategory": "horizontal"
+      "subcategory": "horizontal",
+      "walkable": false,
+      "drivable": true,
+      "parkable": false
     }
   },
   "rows": ["..."],
@@ -50,11 +53,11 @@ The map stores semantics and visuals separately. `rows` contains one legend symb
 }
 ```
 
-The runtime supports five base categories: `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories preserve semantic detail such as road orientation, waterfront sidewalks, water edge masks, and building roof styles.
+The runtime supports five base categories: `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories preserve semantic detail such as road orientation, waterfront sidewalks, water edge masks, and building roof styles. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules.
 
 ## Movement Rules
 
-Vehicles can use `road` and `bridge` tiles. Pedestrians can use `sidewalk` and `bridge` tiles. `water` and `building` tiles are blocked for both modes.
+Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Sidewalks are walkable, roadside sidewalks are parkable, parks are walkable only, roads are drivable, mixed curb/road crossing tiles can also be walkable, and water or buildings are blocked.
 
 ## Debugging From The Console
 
@@ -67,6 +70,9 @@ city.getTile(10, 10)
 city.getTileVariant(10, 10)
 city.getTextureId(10, 10)
 city.getTextureKey(10, 10)
+city.isWalkable(10, 10)
+city.isDrivable(10, 10)
+city.isParkable(10, 10)
 city.isPassable(10, 10, 'vehicle')
 city.neighbors(10, 10, 'pedestrian')
 city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')

@@ -84,11 +84,9 @@
 
       const PIXEL_ART_SCALE_MODE = 'nearest';
 
-      const PASSABLE_MASKS = Object.freeze({
-        pedestrian: (1 << TILE_TYPES.sidewalk) |
-          (1 << TILE_TYPES.bridge),
-        vehicle: (1 << TILE_TYPES.road) |
-          (1 << TILE_TYPES.bridge)
+      const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
+        pedestrian: 'walkable',
+        vehicle: 'drivable'
       });
 
       // A* uses integer movement costs: 10 for cardinal movement, 14 for diagonals.
@@ -549,9 +547,18 @@
             throw new Error(`Map JSON legend entry "${symbol}" must include a subcategory.`);
           }
 
+          for (const property of ['walkable', 'drivable', 'parkable']) {
+            if (typeof value[property] !== 'boolean') {
+              throw new Error(`Map JSON legend entry "${symbol}" must include boolean ${property}.`);
+            }
+          }
+
           entries[symbol] = {
             category,
-            subcategory: value.subcategory
+            subcategory: value.subcategory,
+            walkable: value.walkable,
+            drivable: value.drivable,
+            parkable: value.parkable
           };
         }
 
@@ -568,6 +575,9 @@
         const legendEntries = normalizeLegend(data.legend);
         const tiles = new Uint8Array(width * height);
         const tileTextureIds = new Uint32Array(width * height);
+        const tileWalkable = new Uint8Array(width * height);
+        const tileDrivable = new Uint8Array(width * height);
+        const tileParkable = new Uint8Array(width * height);
         const tileLegendSymbols = new Array(width * height);
 
         for (let y = 0; y < height; y += 1) {
@@ -585,6 +595,9 @@
 
             tiles[index] = CATEGORY_TO_TILE[entry.category];
             tileTextureIds[index] = textureRow[x];
+            tileWalkable[index] = entry.walkable ? 1 : 0;
+            tileDrivable[index] = entry.drivable ? 1 : 0;
+            tileParkable[index] = entry.parkable ? 1 : 0;
             tileLegendSymbols[index] = symbol;
           }
         }
@@ -632,30 +645,42 @@
           return textureId === null ? null : `tile-${textureId}`;
         }
 
-        function modeMask(mode) {
-          const mask = PASSABLE_MASKS[mode];
+        const tilePropertyLayers = {
+          walkable: tileWalkable,
+          drivable: tileDrivable,
+          parkable: tileParkable
+        };
 
-          if (mask === undefined) {
+        function modeProperty(mode) {
+          const property = MOVEMENT_PROPERTY_BY_MODE[mode];
+
+          if (!property) {
             throw new Error(`Unknown pathfinding mode "${mode}". Use "pedestrian" or "vehicle".`);
           }
 
-          return mask;
+          return property;
         }
 
-        function isPassableWithMask(x, y, mask) {
+        function hasTileProperty(x, y, property) {
           if (!inBounds(x, y)) {
             return false;
           }
 
-          return (mask & (1 << tiles[indexOf(x, y, width)])) !== 0;
+          const layer = tilePropertyLayers[property];
+
+          if (!layer) {
+            throw new Error(`Unknown tile property "${property}".`);
+          }
+
+          return layer[indexOf(x, y, width)] === 1;
         }
 
         function isPassable(x, y, mode) {
-          return isPassableWithMask(x, y, modeMask(mode));
+          return hasTileProperty(x, y, modeProperty(mode));
         }
 
-        function canStepWithMask(fromX, fromY, toX, toY, mask) {
-          if (!isPassableWithMask(toX, toY, mask)) {
+        function canStepWithProperty(fromX, fromY, toX, toY, property) {
+          if (!hasTileProperty(toX, toY, property)) {
             return false;
           }
 
@@ -664,17 +689,17 @@
 
           if (Math.abs(dx) === 1 && Math.abs(dy) === 1) {
             // Diagonals cannot squeeze through two blocked cardinal neighbors.
-            return isPassableWithMask(fromX + dx, fromY, mask) && isPassableWithMask(fromX, fromY + dy, mask);
+            return hasTileProperty(fromX + dx, fromY, property) && hasTileProperty(fromX, fromY + dy, property);
           }
 
           return true;
         }
 
         function neighbors(x, y, mode) {
-          const mask = modeMask(mode);
+          const property = modeProperty(mode);
           const result = [];
 
-          if (!isPassableWithMask(x, y, mask)) {
+          if (!hasTileProperty(x, y, property)) {
             return result;
           }
 
@@ -682,7 +707,7 @@
             const nx = x + direction.dx;
             const ny = y + direction.dy;
 
-            if (canStepWithMask(x, y, nx, ny, mask)) {
+            if (canStepWithProperty(x, y, nx, ny, property)) {
               result.push({ x: nx, y: ny, cost: direction.cost });
             }
           }
@@ -691,11 +716,11 @@
         }
 
         function nearestPassableTile(x, y, mode, maxRadius = Math.max(width, height)) {
-          const mask = modeMask(mode);
+          const property = modeProperty(mode);
           const startX = clamp(Math.round(x), 0, width - 1);
           const startY = clamp(Math.round(y), 0, height - 1);
 
-          if (isPassableWithMask(startX, startY, mask)) {
+          if (hasTileProperty(startX, startY, property)) {
             return { x: startX, y: startY };
           }
 
@@ -709,7 +734,7 @@
               for (let xx = minX; xx <= maxX; xx += 1) {
                 const onRing = xx === minX || xx === maxX || yy === minY || yy === maxY;
 
-                if (onRing && isPassableWithMask(xx, yy, mask)) {
+                if (onRing && hasTileProperty(xx, yy, property)) {
                   return { x: xx, y: yy };
                 }
               }
@@ -720,7 +745,7 @@
         }
 
         function findPath(start, end, mode) {
-          const mask = modeMask(mode);
+          const property = modeProperty(mode);
           // Simulation callers can pass approximate cells; paths snap to the nearest legal tile.
           const startTile = nearestPassableTile(start.x, start.y, mode);
           const endTile = nearestPassableTile(end.x, end.y, mode);
@@ -766,7 +791,7 @@
               const nextX = currentX + direction.dx;
               const nextY = currentY + direction.dy;
 
-              if (!canStepWithMask(currentX, currentY, nextX, nextY, mask)) {
+              if (!canStepWithProperty(currentX, currentY, nextX, nextY, property)) {
                 continue;
               }
 
@@ -800,6 +825,9 @@
           textureSetName: data.textureSet,
           tiles,
           tileTextureIds,
+          tileWalkable,
+          tileDrivable,
+          tileParkable,
           legend: legendEntries,
           index: (x, y) => indexOf(x, y, width),
           getTile,
@@ -808,6 +836,9 @@
           getTextureId,
           getTextureKey,
           inBounds,
+          isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
+          isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
+          isParkable: (x, y) => hasTileProperty(x, y, 'parkable'),
           isPassable,
           neighbors,
           nearestPassableTile,
