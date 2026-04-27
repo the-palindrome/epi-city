@@ -22,8 +22,10 @@ Open `http://localhost:5173` in your browser. Vite serves `public/city-map.json`
 ## Project Structure
 
 - `index.html` contains the Pixi app, camera controls, map validation, runtime city API, renderer, and pathfinding.
+- `city-generator.js` contains the command-line procedural generator that writes pre-generated map JSON.
 - `public/city-map.json` contains the externally authored tile map that Vite serves at runtime.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
+- `docs/procedural-generator.md` explains the generator pipeline, semantic layers, validation, and CLI usage.
 - `vite.config.ts` configures local development and preview server ports.
 
 ## City Tiles
@@ -40,9 +42,31 @@ The map uses one symbol per cell. The app validates every symbol before it compi
 | `b` | bridge | yes | yes |
 | `p` | park | no | yes |
 
-The `bridge` tile currently does two jobs: it represents water crossings and shared road-crossing tiles. Rendering checks nearby water to draw those cases differently.
+The `bridge` tile currently does two jobs: it represents water crossings and shared road-crossing tiles. The generator caps water bridges separately from pedestrian crossings so actual bridge corridors stay sparse and intentional.
 
-The authored map keeps a six-tile non-passable building band around the outer edge. This border gives the city a block-like boundary and prevents NPC movement systems from treating the map edge as an exit.
+The authored map keeps a six-tile non-passable edge band. Land edges become building blocks, while water is allowed to continue to the border so shorelines do not terminate against artificial buildings.
+
+## Procedural Map Generation
+
+Generate a new pre-built map JSON with:
+
+```bash
+npm run generate:map -- --seed epi-city --width 256 --height 256 --tileSize 32 --edgeBand 6
+```
+
+The Pixi app does not run the generator at startup. It loads `public/city-map.json`, so generated maps should be written to that file before launching the app.
+
+You can also call the generator directly:
+
+```bash
+node city-generator.js --seed experiment-01 --width 192 --height 192 --tileSize 32 --out public/city-map.json --pretty
+```
+
+Bridge density is controlled from the CLI:
+
+```bash
+node city-generator.js --seed island-run --width 256 --height 256 --maxWaterBridges 6 --minBridgeDistance 18 --out public/city-map.json --pretty
+```
 
 ## Debugging From The Console
 

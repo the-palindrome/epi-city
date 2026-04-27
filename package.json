@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "generate:map": "node city-generator.js --out public/city-map.json --pretty",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },

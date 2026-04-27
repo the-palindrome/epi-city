@@ -5,6 +5,7 @@ Epi City currently keeps the implementation in one `index.html` file so early si
 ## Map Data Flow
 
 The app loads `./city-map.json` at startup. Vite serves `public/city-map.json` from the site root, so the same relative fetch works in development and production builds.
+`city-generator.js` can pre-generate that JSON from the command line, but the Pixi app does not run generation at startup.
 
 Startup follows this sequence:
 
@@ -40,7 +41,7 @@ Startup follows this sequence:
 
 Each row must be a string with exactly `width` symbols. The file must contain exactly `height` rows. The validator fails fast for unknown symbols, wrong dimensions, invalid metadata, or legend drift.
 
-The current map reserves a six-tile outer band for residential or commercial building cells. Procedural generators should preserve a non-passable edge band unless the simulation explicitly adds entrances, exits, or neighboring maps.
+The current map reserves a six-tile non-passable outer band. Land cells in that band become residential or commercial building cells, but water cells are preserved so channels and bays can reach the map boundary naturally.
 
 ## Runtime City Object
 
@@ -75,7 +76,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 Tile graphics stay intentionally minimal. Each tile type uses a flat fill, and the renderer only draws borders where neighboring cells leave the same visual group. This makes contiguous roads, sidewalks, parks, building blocks, and water regions read as connected areas instead of repeated tile stamps.
 
-The `bridge` tile has two visual modes. If nearby water exists, it renders as a bridge deck. Otherwise, it renders as a shared crossing tile at road intersections so pedestrians can cross the road network without adding a separate crosswalk tile type.
+The `bridge` tile has two visual modes. Water bridge corridors are selected by the generator as sparse semantic bridge objects, while non-water `bridge` cells are shared pedestrian road crossings. Rendering checks nearby water to decide whether a bridge cell should read as deck/rails or as a low-contrast crossing.
 
 ## Debugging Hooks
 

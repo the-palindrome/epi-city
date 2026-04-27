@@ -200,7 +200,7 @@
           applyCamera();
           installCameraControls(app, camera, applyCamera);
 
-          // Keep map data external so the later procedural generator can target the same format.
+          // Keep map data pre-generated so the app has a stable, fast startup path.
           const mapData = await loadCityMap('./city-map.json');
           const city = compileCityMap(mapData);
 
