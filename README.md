@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. Vite serves `public/city-map.json` as `/city-map.json`, which lets the app load the city layout with a normal `fetch('./city-map.json')` request.
+Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.json` as `/liberty-city.json`, which lets the app load the Liberty City layout with a normal `fetch('./liberty-city.json')` request.
 
 ## Controls
 
@@ -22,8 +22,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/city-map.json`
 ## Project Structure
 
 - `index.html` contains the Pixi app, camera controls, map validation, runtime city API, renderer, and pathfinding.
-- `public/city-map.json` contains the static imported tile map that Vite serves at runtime.
-- `public/liberty-city.json` contains the same imported layout for manual loading or comparison later.
+- `public/liberty-city.json` contains the static Liberty City tile map that Vite serves at runtime.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
 - `vite.config.ts` configures local development and preview server ports.
 

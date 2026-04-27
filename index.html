@@ -76,7 +76,7 @@
         'crossing'
       ]);
 
-      // city-map.json stays readable by using one-character row symbols.
+      // liberty-city.json stays readable by using one-character row symbols.
       const SYMBOL_TO_TILE = Object.freeze({
         r: TILE_TYPES.road,
         s: TILE_TYPES.sidewalk,
@@ -216,7 +216,7 @@
           installCameraControls(app, camera, applyCamera);
 
           // Keep map data pre-generated so the app has a stable, fast startup path.
-          const mapData = await loadCityMap('./city-map.json');
+          const mapData = await loadCityMap('./liberty-city.json');
           const city = compileCityMap(mapData);
 
           renderCity(city, mapLayer);
@@ -326,57 +326,57 @@
       }
 
       /**
-       * Validates city-map.json aggressively so bad generated maps fail with useful messages.
+       * Validates map JSON aggressively so bad map data fails with useful messages.
        */
       function validateCityMap(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
-          throw new Error('city-map.json must contain a JSON object.');
+          throw new Error('Map JSON must contain a JSON object.');
         }
 
         if (data.schemaVersion !== 1) {
-          throw new Error('city-map.json schemaVersion must be 1.');
+          throw new Error('Map JSON schemaVersion must be 1.');
         }
 
         if (!Number.isInteger(data.width) || data.width <= 0) {
-          throw new Error('city-map.json width must be a positive integer.');
+          throw new Error('Map JSON width must be a positive integer.');
         }
 
         if (!Number.isInteger(data.height) || data.height <= 0) {
-          throw new Error('city-map.json height must be a positive integer.');
+          throw new Error('Map JSON height must be a positive integer.');
         }
 
         if (!Number.isInteger(data.tileSize) || data.tileSize <= 0) {
-          throw new Error('city-map.json tileSize must be a positive integer.');
+          throw new Error('Map JSON tileSize must be a positive integer.');
         }
 
         if (!data.legend || typeof data.legend !== 'object' || Array.isArray(data.legend)) {
-          throw new Error('city-map.json legend must be an object.');
+          throw new Error('Map JSON legend must be an object.');
         }
 
         for (const [symbol, tileName] of Object.entries(REQUIRED_LEGEND)) {
           if (data.legend[symbol] !== tileName) {
-            throw new Error(`city-map.json legend must map "${symbol}" to "${tileName}".`);
+            throw new Error(`Map JSON legend must map "${symbol}" to "${tileName}".`);
           }
         }
 
         if (!Array.isArray(data.rows) || data.rows.length !== data.height) {
-          throw new Error(`city-map.json rows must contain exactly ${data.height} rows.`);
+          throw new Error(`Map JSON rows must contain exactly ${data.height} rows.`);
         }
 
         for (let y = 0; y < data.height; y += 1) {
           const row = data.rows[y];
 
           if (typeof row !== 'string') {
-            throw new Error(`city-map.json row ${y} must be a string.`);
+            throw new Error(`Map JSON row ${y} must be a string.`);
           }
 
           if (row.length !== data.width) {
-            throw new Error(`city-map.json row ${y} must be ${data.width} symbols long.`);
+            throw new Error(`Map JSON row ${y} must be ${data.width} symbols long.`);
           }
 
           for (let x = 0; x < data.width; x += 1) {
             if (!(row[x] in SYMBOL_TO_TILE)) {
-              throw new Error(`city-map.json has unknown symbol "${row[x]}" at ${x},${y}.`);
+              throw new Error(`Map JSON has unknown symbol "${row[x]}" at ${x},${y}.`);
             }
           }
         }
@@ -746,7 +746,7 @@
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
-        // Bridge cells also mark pedestrian crossings; nearby water decides the visual style.
+        // Bridge cells only receive deck/rail styling when they are actually near water.
         const bridgeOverWater = isBridge && touchesTile(city, x, y, TILE_TYPES.water, 2);
 
         fillRect(graphics, px, py, t, t, bridgeOverWater ? SPRITE_COLORS.bridge : SPRITE_COLORS.asphalt);

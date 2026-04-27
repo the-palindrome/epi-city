@@ -1,11 +1,11 @@
 # Internal Architecture
 
-Epi City currently keeps the implementation in one `index.html` file so early simulation ideas can move quickly. The public map data lives in `public/city-map.json`, while the browser compiles that file into a faster runtime representation after validation.
+Epi City currently keeps the implementation in one `index.html` file so early simulation ideas can move quickly. The public map data lives in `public/liberty-city.json`, while the browser compiles that file into a faster runtime representation after validation.
 
 ## Map Data Flow
 
-The app loads `./city-map.json` at startup. Vite serves `public/city-map.json` from the site root, so the same relative fetch works in development and production builds.
-There is currently no procedural generator in the project. Map JSON is authored or replaced as a static asset.
+The app loads `./liberty-city.json` at startup. Vite serves `public/liberty-city.json` from the site root, so the same relative fetch works in development and production builds.
+There is currently no procedural generator in the project. Map JSON is checked in as a static asset.
 
 Startup follows this sequence:
 
@@ -18,7 +18,7 @@ Startup follows this sequence:
 
 ## Map Schema
 
-`public/city-map.json` uses this shape:
+`public/liberty-city.json` uses this shape:
 
 ```json
 {
@@ -80,7 +80,7 @@ Tile graphics stay intentionally minimal. Each tile type uses a flat fill, and t
 
 Waterfront land cells should generally be walkable `sidewalk` cells rather than building blocks so future pedestrian NPCs can move along shorelines.
 
-The `bridge` tile has two visual modes. Rendering checks nearby water to decide whether a bridge cell should read as deck/rails or as a low-contrast road crossing.
+The `bridge` tile has two visual modes. Rendering checks nearby water to decide whether a bridge cell should read as deck/rails or as normal asphalt.
 
 ## Debugging Hooks
 
