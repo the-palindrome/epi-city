@@ -17,6 +17,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.j
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
+- Press `d` to toggle the debug dashboard in the top-right corner.
+- Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
@@ -59,6 +61,10 @@ The runtime supports five base categories: `road`, `sidewalk`, `water`, `bridge`
 
 Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Sidewalks are walkable, roadside sidewalks are parkable, parks are walkable only, roads are drivable, mixed curb/road crossing tiles can also be walkable, and water or buildings are blocked.
 
+## NPC Prototype
+
+The app spawns 1000 pedestrian NPCs when the city loads. NPCs render as small `#e5c748` pixel blobs and choose random neighboring walkable tiles. Collision uses two tile grids: one for occupied cells and one for reserved destination cells, so NPCs avoid blocked map tiles and do not move into the same cell.
+
 ## Debugging From The Console
 
 After the app loads, `window.citySim.city` exposes the main runtime API:
@@ -76,9 +82,18 @@ city.isParkable(10, 10)
 city.isPassable(10, 10, 'vehicle')
 city.neighbors(10, 10, 'pedestrian')
 city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
+window.citySim.npcs.length
 ```
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
+
+The debug dashboard is available through `window.citySim.dashboard`. It exposes `setOverlay(id, enabled)`, `toggle(force)`, and `render()` for quick checks from the console:
+
+```js
+window.citySim.dashboard.toggle(true)
+window.citySim.dashboard.setOverlay('walkable', true)
+window.citySim.dashboard.setOverlay('drivable', true)
+```
 
 ## Texture Sets
 

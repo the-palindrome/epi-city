@@ -15,6 +15,7 @@ Startup follows this sequence:
 5. `loadTextureSet()` loads the selected texture manifest and atlas image.
 6. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
 7. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
+8. `installDebugDashboard()` adds keyboard-controlled behavior overlays for movement debugging.
 
 ## Map Schema
 
@@ -78,9 +79,15 @@ Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestri
 
 The importer derives behavior from tile abstractions rather than hand-filled legend entries. Sidewalks are walkable, roadside sidewalks are also parkable, parks are walkable only, roads are drivable, mixed road/curb crossing tiles are also walkable, bridges are walkable and drivable, and water or buildings are blocked.
 
-A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Diagonal movement rejects corner cutting by requiring both adjacent cardinal cells to be passable.
+A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Pedestrian movement exposes every adjacent `walkable` tile, including diagonal neighbors. Vehicle movement keeps stricter diagonal corner checks by requiring both adjacent cardinal cells to be drivable.
 
 `findPath()` currently runs on demand and allocates fresh search arrays per request. This is simple and correct for the current prototype. If hundreds of NPCs request routes every frame, add route caching, hierarchical routing, or per-mode navigation graphs before tuning visual rendering.
+
+## NPC Simulation
+
+`createNpcSimulation()` spawns 1000 pedestrian NPCs after the map renders. NPCs start on unique walkable cells, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs, and move from tile center to tile center.
+
+Collision uses two `Int32Array` grids with the same indexing as the city tiles. `occupiedTiles` stores each NPC's current cell, and `reservedTiles` stores destination cells for NPCs already in motion. An NPC can only start a move when the target cell is walkable, unoccupied, and unreserved.
 
 ## Texture Sets
 
@@ -110,9 +117,17 @@ The extraction script checks every map cell against the original image. Each `te
 
 ## Rendering Strategy
 
+The `world` container has separate `map`, `overlays`, and `actors` layers. Map sprites stay at the bottom, debug overlays render above the city, and NPC actors render on top.
+
 `renderCity()` groups sprites into 16x16 tile containers. Grouping keeps the display tree structured by map region while preserving per-cell source textures. If a texture frame is missing, the renderer draws a simple flat-color fallback for the affected cell.
 
 The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in runtime assets live in `public/assets/textures/gta` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
+
+## Debug Dashboard
+
+Press `d` to toggle the top-right debug dashboard. The dashboard currently exposes `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Each overlay paints green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+
+`renderDebugOverlays()` redraws only the overlay layer. It uses the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 
 ## Debugging Hooks
 
@@ -128,6 +143,7 @@ window.citySim.city.getTextureKey(100, 100)
 window.citySim.city.nearestPassableTile(120, 140, 'pedestrian')
 window.citySim.city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.centerCameraOnCity()
+window.citySim.dashboard.setOverlay('walkable', true)
 ```
 
 ## Near-Term Extension Points

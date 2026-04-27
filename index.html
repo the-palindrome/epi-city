@@ -46,10 +46,67 @@
         border-color: #d77a7a;
         color: #8f2020;
       }
+
+      #debug-dashboard {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        width: 220px;
+        padding: 12px;
+        border: 1px solid rgba(40, 48, 36, 0.28);
+        border-radius: 10px;
+        background: rgba(248, 250, 244, 0.94);
+        box-shadow: 0 12px 36px rgba(20, 24, 18, 0.16);
+        color: #20261d;
+        font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        user-select: none;
+        z-index: 2;
+      }
+
+      #debug-dashboard.hidden {
+        display: none;
+      }
+
+      .dashboard-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .dashboard-shortcut {
+        padding: 1px 6px 2px;
+        border: 1px solid rgba(40, 48, 36, 0.22);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.62);
+        color: #526044;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: none;
+      }
+
+      .dashboard-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 0;
+        cursor: pointer;
+      }
+
+      .dashboard-toggle input {
+        width: 14px;
+        height: 14px;
+        accent-color: #2c9a54;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
     <div id="status">Loading city...</div>
+    <div id="debug-dashboard" class="hidden" aria-label="Debug dashboard"></div>
     <script src="https://pixijs.download/release/pixi.min.js"></script>
     <script>
       // Stable numeric tile IDs keep the renderer and pathfinder on compact typed arrays.
@@ -87,6 +144,27 @@
       const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
         pedestrian: 'walkable',
         vehicle: 'drivable'
+      });
+
+      const NPC_CONFIG = Object.freeze({
+        count: 1000,
+        color: 0xe5c748,
+        size: 9,
+        minSpeed: 34,
+        maxSpeed: 58
+      });
+
+      const DASHBOARD_OVERLAYS = Object.freeze([
+        { id: 'walkable', label: 'overlay walkable', layer: 'tileWalkable' },
+        { id: 'parkable', label: 'overlay parkable', layer: 'tileParkable' },
+        { id: 'drivable', label: 'overlay drivable', layer: 'tileDrivable' }
+      ]);
+
+      const DEBUG_OVERLAY_COLORS = Object.freeze({
+        enabled: 0x35d46f,
+        disabled: 0xe3504f,
+        enabledAlpha: 0.42,
+        disabledAlpha: 0.34
       });
 
       // A* uses integer movement costs: 10 for cardinal movement, 14 for diagonals.
@@ -147,9 +225,11 @@
 
           const world = new PIXI.Container();
           const mapLayer = new PIXI.Container();
+          const overlayLayer = new PIXI.Container();
           const actorLayer = new PIXI.Container();
 
           world.addChild(mapLayer);
+          world.addChild(overlayLayer);
           world.addChild(actorLayer);
           app.stage.addChild(world);
 
@@ -188,6 +268,7 @@
             world,
             layers: {
               map: mapLayer,
+              overlays: overlayLayer,
               actors: actorLayer
             },
             tileTypes: TILE_TYPES,
@@ -205,6 +286,8 @@
 
           renderCity(city, mapLayer, textureSet);
           centerCameraOnCity(city);
+          const dashboard = installDebugDashboard(city, overlayLayer);
+          const npcSimulation = createNpcSimulation(city, actorLayer, app, NPC_CONFIG);
 
           async function setTextureSet(name) {
             textureSet = await loadTextureSet(name);
@@ -217,6 +300,9 @@
             city,
             mapData,
             textureSet,
+            dashboard,
+            npcSimulation,
+            npcs: npcSimulation.npcs,
             loadCityMap,
             loadTextureSet,
             setTextureSet,
@@ -345,6 +431,161 @@
           x: event.clientX - bounds.left,
           y: event.clientY - bounds.top
         };
+      }
+
+      function installDebugDashboard(city, overlayLayer) {
+        const dashboard = document.getElementById('debug-dashboard');
+        const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]));
+        const controls = new Map();
+
+        dashboard.innerHTML = '';
+        dashboard.appendChild(createDashboardTitle());
+
+        for (const overlay of DASHBOARD_OVERLAYS) {
+          const control = createOverlayToggle(overlay);
+
+          controls.set(overlay.id, control.input);
+          dashboard.appendChild(control.label);
+
+          control.input.addEventListener('change', () => {
+            setOverlay(overlay.id, control.input.checked);
+          });
+        }
+
+        function render() {
+          renderDebugOverlays(city, overlayLayer, overlayState);
+        }
+
+        function setOverlay(id, enabled) {
+          if (!Object.prototype.hasOwnProperty.call(overlayState, id)) {
+            throw new Error(`Unknown debug overlay "${id}".`);
+          }
+
+          overlayState[id] = Boolean(enabled);
+          controls.get(id).checked = overlayState[id];
+          render();
+        }
+
+        function toggleDashboard(force) {
+          const shouldHide = typeof force === 'boolean' ? !force : !dashboard.classList.contains('hidden');
+          dashboard.classList.toggle('hidden', shouldHide);
+        }
+
+        function onKeyDown(event) {
+          if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+          }
+
+          if (event.key.toLowerCase() !== 'd' || isEditableTarget(event.target)) {
+            return;
+          }
+
+          event.preventDefault();
+          toggleDashboard();
+        }
+
+        document.addEventListener('keydown', onKeyDown);
+
+        return {
+          element: dashboard,
+          overlays: overlayState,
+          setOverlay,
+          toggle: toggleDashboard,
+          render,
+          destroy() {
+            document.removeEventListener('keydown', onKeyDown);
+            clearPixiContainer(overlayLayer);
+            dashboard.innerHTML = '';
+          }
+        };
+      }
+
+      function createDashboardTitle() {
+        const title = document.createElement('div');
+        const shortcut = document.createElement('span');
+
+        title.className = 'dashboard-title';
+        title.textContent = 'Dashboard';
+        shortcut.className = 'dashboard-shortcut';
+        shortcut.textContent = 'D';
+        title.appendChild(shortcut);
+
+        return title;
+      }
+
+      function createOverlayToggle(overlay) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        const text = document.createElement('span');
+
+        label.className = 'dashboard-toggle';
+        input.type = 'checkbox';
+        input.dataset.overlayToggle = overlay.id;
+        text.textContent = overlay.label;
+
+        label.appendChild(input);
+        label.appendChild(text);
+
+        return { label, input };
+      }
+
+      function isEditableTarget(target) {
+        if (!target || !target.tagName) {
+          return false;
+        }
+
+        if (target.tagName === 'INPUT' && target.type === 'checkbox') {
+          return false;
+        }
+
+        return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+      }
+
+      function renderDebugOverlays(city, overlayLayer, overlayState) {
+        clearPixiContainer(overlayLayer);
+
+        for (const overlay of DASHBOARD_OVERLAYS) {
+          if (!overlayState[overlay.id]) {
+            continue;
+          }
+
+          const layer = new PIXI.Container();
+
+          layer.eventMode = 'none';
+          drawBehaviorOverlay(city, layer, city[overlay.layer]);
+          overlayLayer.addChild(layer);
+        }
+      }
+
+      function drawBehaviorOverlay(city, layer, propertyLayer) {
+        const chunkSize = 16;
+
+        for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
+          for (let chunkX = 0; chunkX < city.width; chunkX += chunkSize) {
+            const graphics = new PIXI.Graphics();
+
+            graphics.eventMode = 'none';
+
+            for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
+              for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
+                const index = city.index(x, y);
+                const enabled = propertyLayer[index] === 1;
+                const color = enabled ? DEBUG_OVERLAY_COLORS.enabled : DEBUG_OVERLAY_COLORS.disabled;
+                const alpha = enabled ? DEBUG_OVERLAY_COLORS.enabledAlpha : DEBUG_OVERLAY_COLORS.disabledAlpha;
+
+                fillRect(graphics, x * city.tileSize, y * city.tileSize, city.tileSize, city.tileSize, color, alpha);
+              }
+            }
+
+            layer.addChild(graphics);
+          }
+        }
+      }
+
+      function clearPixiContainer(container) {
+        for (const child of container.removeChildren()) {
+          child.destroy({ children: true });
+        }
       }
 
       /**
@@ -687,8 +928,8 @@
           const dx = toX - fromX;
           const dy = toY - fromY;
 
-          if (Math.abs(dx) === 1 && Math.abs(dy) === 1) {
-            // Diagonals cannot squeeze through two blocked cardinal neighbors.
+          if (property !== 'walkable' && Math.abs(dx) === 1 && Math.abs(dy) === 1) {
+            // Vehicles keep stricter corner constraints; pedestrians can use every adjacent walkable tile.
             return hasTileProperty(fromX + dx, fromY, property) && hasTileProperty(fromX, fromY + dy, property);
           }
 
@@ -875,6 +1116,184 @@
         return path;
       }
 
+      function createNpcSimulation(city, actorLayer, app, config) {
+        const graphics = new PIXI.Graphics();
+        const occupiedTiles = new Int32Array(city.tiles.length);
+        const reservedTiles = new Int32Array(city.tiles.length);
+        const spawnTiles = collectNpcSpawnTiles(city);
+        const npcs = [];
+
+        occupiedTiles.fill(-1);
+        reservedTiles.fill(-1);
+        graphics.eventMode = 'none';
+        actorLayer.eventMode = 'none';
+        actorLayer.addChild(graphics);
+
+        for (let id = 0; id < config.count && spawnTiles.length > 0; id += 1) {
+          const spawnIndex = takeRandomArrayItem(spawnTiles);
+          const tileX = spawnIndex % city.width;
+          const tileY = Math.floor(spawnIndex / city.width);
+          const position = tileCenter(city, tileX, tileY);
+
+          occupiedTiles[spawnIndex] = id;
+          npcs.push({
+            id,
+            x: position.x,
+            y: position.y,
+            tileX,
+            tileY,
+            tileIndex: spawnIndex,
+            targetX: position.x,
+            targetY: position.y,
+            targetTileX: tileX,
+            targetTileY: tileY,
+            targetIndex: -1,
+            speed: randomBetween(config.minSpeed, config.maxSpeed)
+          });
+        }
+
+        function update(deltaSeconds) {
+          const safeDelta = Math.min(deltaSeconds, 0.1);
+
+          for (const npc of npcs) {
+            updateNpc(npc, safeDelta, city, occupiedTiles, reservedTiles);
+          }
+
+          drawNpcs(graphics, npcs, config);
+        }
+
+        const tickerUpdate = (ticker) => {
+          update(ticker.deltaMS / 1000);
+        };
+
+        app.ticker.add(tickerUpdate);
+        drawNpcs(graphics, npcs, config);
+
+        return {
+          npcs,
+          occupiedTiles,
+          reservedTiles,
+          graphics,
+          update,
+          destroy() {
+            app.ticker.remove(tickerUpdate);
+            graphics.destroy();
+          }
+        };
+      }
+
+      function collectNpcSpawnTiles(city) {
+        const tiles = [];
+
+        for (let index = 0; index < city.tileWalkable.length; index += 1) {
+          if (city.tileWalkable[index]) {
+            tiles.push(index);
+          }
+        }
+
+        return tiles;
+      }
+
+      function updateNpc(npc, deltaSeconds, city, occupiedTiles, reservedTiles) {
+        if (npc.targetIndex !== -1) {
+          moveNpcTowardTarget(npc, deltaSeconds, city, occupiedTiles, reservedTiles);
+          return;
+        }
+
+        chooseNpcNextTile(npc, city, occupiedTiles, reservedTiles);
+      }
+
+      function moveNpcTowardTarget(npc, deltaSeconds, city, occupiedTiles, reservedTiles) {
+        const dx = npc.targetX - npc.x;
+        const dy = npc.targetY - npc.y;
+        const distance = Math.hypot(dx, dy);
+        const maxStep = npc.speed * deltaSeconds;
+
+        if (distance <= maxStep || distance === 0) {
+          occupiedTiles[npc.tileIndex] = -1;
+          reservedTiles[npc.targetIndex] = -1;
+          occupiedTiles[npc.targetIndex] = npc.id;
+          npc.x = npc.targetX;
+          npc.y = npc.targetY;
+          npc.tileX = npc.targetTileX;
+          npc.tileY = npc.targetTileY;
+          npc.tileIndex = npc.targetIndex;
+          npc.targetIndex = -1;
+          chooseNpcNextTile(npc, city, occupiedTiles, reservedTiles);
+          return;
+        }
+
+        const ratio = maxStep / distance;
+        npc.x += dx * ratio;
+        npc.y += dy * ratio;
+      }
+
+      function chooseNpcNextTile(npc, city, occupiedTiles, reservedTiles) {
+        const neighbors = city.neighbors(npc.tileX, npc.tileY, 'pedestrian');
+
+        if (neighbors.length === 0) {
+          return;
+        }
+
+        const start = Math.floor(Math.random() * neighbors.length);
+
+        for (let offset = 0; offset < neighbors.length; offset += 1) {
+          const candidate = neighbors[(start + offset) % neighbors.length];
+          const targetIndex = city.index(candidate.x, candidate.y);
+
+          if (occupiedTiles[targetIndex] !== -1 || reservedTiles[targetIndex] !== -1) {
+            continue;
+          }
+
+          const target = tileCenter(city, candidate.x, candidate.y);
+
+          reservedTiles[targetIndex] = npc.id;
+          npc.targetTileX = candidate.x;
+          npc.targetTileY = candidate.y;
+          npc.targetIndex = targetIndex;
+          npc.targetX = target.x;
+          npc.targetY = target.y;
+          return;
+        }
+      }
+
+      function tileCenter(city, tileX, tileY) {
+        return {
+          x: (tileX + 0.5) * city.tileSize,
+          y: (tileY + 0.5) * city.tileSize
+        };
+      }
+
+      function drawNpcs(graphics, npcs, config) {
+        graphics.clear();
+
+        for (const npc of npcs) {
+          drawNpcBlob(graphics, npc.x, npc.y, config.size, config.color);
+        }
+      }
+
+      function drawNpcBlob(graphics, x, y, size, color) {
+        const px = Math.round(x - size / 2);
+        const py = Math.round(y - size / 2);
+
+        fillRect(graphics, px + 1, py, size - 2, size, color);
+        fillRect(graphics, px, py + 2, size, size - 4, color);
+      }
+
+      function takeRandomArrayItem(items) {
+        const index = Math.floor(Math.random() * items.length);
+        const item = items[index];
+
+        items[index] = items[items.length - 1];
+        items.pop();
+
+        return item;
+      }
+
+      function randomBetween(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
       /**
        * Tiny binary heap used as A*'s priority queue.
        */
@@ -949,9 +1368,7 @@
       }
 
       function renderCity(city, mapLayer, textureSet) {
-        for (const child of mapLayer.removeChildren()) {
-          child.destroy({ children: true });
-        }
+        clearPixiContainer(mapLayer);
 
         // Chunks keep the display tree inspectable while grouping nearby sprites.
         const chunkSize = 16;

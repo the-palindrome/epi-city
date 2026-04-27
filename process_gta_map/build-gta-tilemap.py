@@ -248,26 +248,77 @@ def keep_road_components(category: np.ndarray, features: dict[str, np.ndarray]) 
     category[rejected & ~(features["roof"] > 0.34)] = "sidewalk"
 
 
+def fill_building_enclosures(category: np.ndarray) -> int:
+    """Fill non-building pockets that are fully enclosed by building tiles."""
+
+    height, width = category.shape
+    building = category == "building"
+    outside = np.zeros(category.shape, dtype=bool)
+    q: deque[tuple[int, int]] = deque()
+
+    def enqueue(x: int, y: int) -> None:
+        if not building[y, x] and not outside[y, x]:
+            outside[y, x] = True
+            q.append((x, y))
+
+    for x in range(width):
+        enqueue(x, 0)
+        enqueue(x, height - 1)
+
+    for y in range(height):
+        enqueue(0, y)
+        enqueue(width - 1, y)
+
+    while q:
+        x, y = q.popleft()
+
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < width and 0 <= ny < height:
+                enqueue(nx, ny)
+
+    enclosed = ~building & ~outside
+    category[enclosed] = "building"
+
+    return int(np.count_nonzero(enclosed))
+
+
+def block_rooflike_walkable_islands(category: np.ndarray, features: dict[str, np.ndarray]) -> int:
+    """Block isolated gray roof surfaces that otherwise resemble concrete walkways."""
+
+    road_near = dilate(category == "road", 1)
+    rooflike_island = (
+        (category == "sidewalk")
+        & ~road_near
+        & (features["roof"] > 0.85)
+        & (features["asphalt"] < 0.30)
+        & (features["park"] < 0.20)
+    )
+
+    category[rooflike_island] = "building"
+
+    return int(np.count_nonzero(rooflike_island))
+
+
 def refine_categories(category: np.ndarray, features: dict[str, np.ndarray]) -> None:
     keep_road_components(category, features)
     water_near = dilate(category == "water", 1)
     category[(category == "building") & water_near] = "sidewalk"
 
-    for _ in range(2):
+    for _ in range(4):
+        road_near = dilate(category == "road", 1)
         building_near = neighbor_count(category == "building")
         grow = (
             (category == "sidewalk")
-            & (building_near >= 3)
+            & (building_near >= 2)
             & ~water_near
+            & ~road_near
             & (features["roof"] > 0.42)
-            & (features["edge"] > 0.08)
-            & (features["asphalt"] < 0.32)
+            & (features["edge"] > 0.06)
+            & (features["asphalt"] < 0.34)
         )
         category[grow] = "building"
 
-    # Keep a concrete ring around roads and shorelines.
-    road_near = dilate(category == "road", 1)
-    category[(category == "building") & road_near & (features["asphalt"] < 0.62)] = "sidewalk"
+    # Keep shoreline edges walkable, but do not carve roof edges back into sidewalk.
     category[(category == "building") & water_near] = "sidewalk"
 
     # Reconnect small one-cell road gaps caused by lane markings or seams.
@@ -277,6 +328,9 @@ def refine_categories(category: np.ndarray, features: dict[str, np.ndarray]) -> 
         vertical_gap = (category == "sidewalk") & shift(road, 0, 1) & shift(road, 0, -1)
         gap = (horizontal_gap | vertical_gap) & ((features["asphalt"] > 0.20) | (features["lane"] > 0.01))
         category[gap] = "road"
+
+    fill_building_enclosures(category)
+    block_rooflike_walkable_islands(category, features)
 
 
 def mark_bridges(category: np.ndarray, features: dict[str, np.ndarray]) -> None:
@@ -382,6 +436,7 @@ def is_walkable_road(features: dict[str, np.ndarray], x: int, y: int) -> bool:
         features["sidewalk"][y, x] > 0.20
         and features["edge"][y, x] > 0.30
         and features["asphalt"][y, x] < 0.75
+        and features["roof"][y, x] < 0.85
     )
 
 
