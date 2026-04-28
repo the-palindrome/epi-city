@@ -1,6 +1,6 @@
 # Epi City Map Editor
 
-This is the project tool for manually labeling source-map tiles before training classifiers and writing corrected Epi City map JSON.
+The map editor is a local maintenance tool for correcting semantic tile types and behavior attributes while keeping the source texture atlas unchanged. It displays the source map image, keeps one editable 256x256 map state in the browser, trains from sparse labels, and saves complete Epi City JSON through a browser Save As flow.
 
 ## Run
 
@@ -13,7 +13,19 @@ npm run map-editor
 
 Open `http://localhost:5174`.
 
-The dependency command creates or repairs `map-editor/.venv` and installs the Python training packages there. The setup uses copied Python binaries instead of symlinks, which makes broken or partially-created virtualenvs easier to recover from. The server automatically uses that local Python environment when it exists. To use a different interpreter for setup, run `MAP_EDITOR_BOOTSTRAP_PYTHON=/path/to/python npm run map-editor:deps`. To use a different interpreter at runtime, start the server with `MAP_EDITOR_PYTHON=/path/to/python npm run map-editor`.
+The dependency command creates or repairs `map-editor/.venv` and installs the Python training packages there. The setup uses copied Python binaries instead of symlinks, which makes broken or partially-created virtualenvs easier to recover from. The server automatically uses that local Python environment when it exists.
+
+To choose the setup interpreter, run:
+
+```bash
+MAP_EDITOR_BOOTSTRAP_PYTHON=/path/to/python npm run map-editor:deps
+```
+
+To choose the runtime training interpreter, run:
+
+```bash
+MAP_EDITOR_PYTHON=/path/to/python npm run map-editor
+```
 
 Set a different port when needed:
 
@@ -21,84 +33,120 @@ Set a different port when needed:
 PORT=5180 npm run map-editor
 ```
 
-## What It Loads
+## Source Image
 
-- Source image: `process_gta_map/source/gta1-liberty-city-hd.webp`
-- Current generated map: `public/liberty-city.json`
-- Label output: `map-editor/labels/tile-labels.json`
+The editor serves `process_gta_map/source/gta1-liberty-city-hd.webp` as the visual reference. It splits that image into the same 256x256 proportional grid used by `process_gta_map/build-gta-tilemap.py`.
 
-The source image is split into the same 256x256 proportional grid used by `process_gta_map/build-gta-tilemap.py`.
+The source image is read-only. Editing labels never changes the atlas or the extracted texture files.
 
-## Label Layers
+## Startup State
 
-Use the `Paint layer` selector to choose what you are labeling:
-
-- `tile type`: `road`, `sidewalk`, `park`, `water`, `bridge`, or `building`.
-- `walkable`: `true`, `false`, or `erase`.
-- `parkable`: `true`, `false`, or `erase`.
-- `drivable`: `true`, `false`, or `erase`.
-
-The generated overlay always shows the currently selected layer. The manual overlay also shows only the currently selected layer, which keeps behavior labels easy to inspect.
-
-## Random Forest Training
-
-Click `Train random forest` after saving or painting labels. The app saves the current label file, trains local random-forest models, predicts every tile, and switches the overlay source to `model prediction`.
-
-Training uses `map-editor/train_random_forest.py`, which wraps `sklearn.ensemble.RandomForestClassifier`. Each layer trains independently:
-
-- `tile type` trains from `typeLabels`.
-- `walkable` trains from `behaviorLabels.walkable`.
-- `parkable` trains from `behaviorLabels.parkable`.
-- `drivable` trains from `behaviorLabels.drivable`.
-
-A layer needs at least two distinct classes or boolean values before it can train. Layers without enough labels fall back to the current map classification. After prediction, paint corrections with the brush and click `Train random forest` again to iterate.
-
-## Epi City JSON Round-Trip
-
-Use `Load Epi JSON` to reload the currently loaded map JSON classification into the map editor. The default loaded map is `public/liberty-city.json`. Manual brush labels remain active as overrides, so you can reload the base map without losing training examples.
-
-Use `Save Epi JSON` to write the active overlay source back into the loaded map JSON in the app's runtime map format. The save operation:
-
-- Uses the selected overlay source: `current map` or `model prediction`.
-- Applies all manual tile-type and behavior labels as overrides.
-- Preserves `textureRows`, `textureSet`, `width`, `height`, and `tileSize`.
-- Regenerates the compact semantic `legend` and `rows` fields.
-
-This updates the app-facing map JSON. The texture atlas is not modified.
-
-Use `Reset labels` to clear all manual labels in the editor. The reset does not modify `map-editor/labels/tile-labels.json` until you click `Save labels`.
-
-## Controls
-
-- Left drag paints labels.
-- Right drag, middle drag, or hold `Space` to pan.
-- Mouse wheel zooms around the cursor.
-- For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` bridge, `6` building, `e` erase.
-- For behavior layers: `t` true, `f` false, `e` erase.
-- `Ctrl+S` saves labels.
-- `Ctrl+Z` undoes.
-- `Ctrl+Y` redoes.
-
-Use the generated-classification overlay to find weak areas, then paint representative correct labels on top. You do not need to label every tile; label enough varied examples for each class and behavior state.
-
-## Output Format
+On startup, the editor creates a sparse editable map in memory. Every tile starts with an empty tile type and empty behavior attributes:
 
 ```json
 {
-  "sourceImage": "process_gta_map/source/gta1-liberty-city-hd.webp",
-  "generatedMap": "public/liberty-city.json",
-  "gridSize": 256,
-  "typeLabels": [
-    { "x": 12, "y": 40, "label": "road" }
-  ],
-  "behaviorLabels": {
-    "walkable": [
-      { "x": 12, "y": 40, "value": false }
-    ],
-    "parkable": [],
-    "drivable": []
-  }
+  "type": null,
+  "walkable": null,
+  "parkable": null,
+  "drivable": null
 }
 ```
 
-The next processing step will train classifiers from this file and rewrite the semantic rows and behavior booleans in `public/liberty-city.json`.
+The default state uses `width: 256`, `height: 256`, `tileSize: 32`, and `textureSet: "gta"`. It exists only in the browser until you save it.
+
+## Loading Maps
+
+Click `Load JSON` to choose a local Epi City map JSON file from disk. The browser reads the file and replaces the current editable state with that map.
+
+The editor does not automatically load or overwrite `public/liberty-city.json`. If you want to edit the app map, choose that file explicitly with `Load JSON`, then use `Save As JSON` when you are done.
+
+## Editing State
+
+The editor always displays the current editable map state. There is no separate manual-label overlay or hidden generated-label layer. Painting with the brush directly changes the current map state.
+
+Use the `Paint layer` selector to choose what the brush updates:
+
+- `tile type` sets the tile to empty, `road`, `sidewalk`, `park`, `water`, `bridge`, or `building`.
+- `walkable` sets the current tile's walkable value to empty, `true`, or `false`.
+- `parkable` sets the current tile's parkable value to empty, `true`, or `false`.
+- `drivable` sets the current tile's drivable value to empty, `true`, or `false`.
+
+Painting a tile type does not auto-fill behavior attributes. This keeps labels sparse and lets the trainer learn each layer independently.
+
+## Training And Prediction
+
+Click `Train random forest` to train from the current sparse labels. The browser posts the full `rows` and `behaviorRows` grids to the local server, but the Python trainer uses only non-empty cells as training samples for each layer.
+
+Each layer trains independently:
+
+- `tile type` trains from non-empty tile type labels.
+- `walkable` trains from non-empty walkable labels.
+- `parkable` trains from non-empty parkable labels.
+- `drivable` trains from non-empty drivable labels.
+
+A layer needs at least two distinct non-empty classes or boolean values. If a layer does not have enough variation, the trainer marks it as skipped and returns the current sparse values unchanged for that layer.
+
+Training stores the latest prediction but does not change the editable map. Click `Predict labels` to apply the latest prediction to the current map. Prediction application is one undoable operation, so `Undo` restores the previous sparse labels in a single step.
+
+## Resetting
+
+Click `Reset to defaults` to discard the current browser state and return to the empty sparse-label map. This does not modify any file on disk.
+
+## Saving
+
+Click `Save As JSON` to save the current state as an Epi City map JSON file. Browsers with the File System Access API show a native Save As dialog. Other browsers download the file.
+
+Saving never overwrites `public/liberty-city.json` automatically. Replace the app map manually only after you review the saved output.
+
+Runtime Epi City JSON cannot contain empty labels. Save As reports the first missing tile type or behavior values if the map is incomplete. Fill them manually or run `Predict labels` before saving.
+
+The saved JSON preserves `textureRows`, `textureSet`, `width`, `height`, and `tileSize` from a loaded map. It also preserves a loaded tile's semantic subcategory when the edited tile type stays the same. New or changed tile types receive default subcategories.
+
+## Controls
+
+- Left drag paints the current layer.
+- One paint drag creates one undoable stroke.
+- Right drag, middle drag, or hold `Space` to pan.
+- Mouse wheel zooms around the cursor.
+- For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` bridge, `6` building, `e` empty.
+- For behavior layers: `t` true, `f` false, and `e` empty.
+- `Ctrl+S` opens Save As.
+- `Ctrl+Z` undoes.
+- `Ctrl+Shift+Z` redoes.
+- `Ctrl+Y` redoes.
+
+## Server API
+
+The browser UI talks to the local Node server through a small API:
+
+- `GET /api/config` returns editor options and source paths.
+- `GET /source-image` serves the source map image.
+- `POST /api/train` trains from posted sparse `rows` and `behaviorRows` and returns predicted grids.
+
+The old sparse label and server-side map write endpoints return `410 Gone`. Loading happens through the browser file picker, and saving happens through browser Save As.
+
+## Saved Map Format
+
+The editor saves complete maps in the runtime Epi City JSON format:
+
+```json
+{
+  "width": 256,
+  "height": 256,
+  "tileSize": 32,
+  "textureSet": "gta",
+  "legend": {
+    "A": {
+      "category": "sidewalk",
+      "subcategory": "classified",
+      "walkable": true,
+      "parkable": false,
+      "drivable": false
+    }
+  },
+  "rows": ["..."],
+  "textureRows": [[0, 1, 2]]
+}
+```
+
+`rows` stores semantic legend symbols. `textureRows` stores visual texture IDs and remains separate from the edited semantic labels.

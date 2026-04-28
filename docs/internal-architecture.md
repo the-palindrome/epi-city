@@ -131,6 +131,29 @@ The tile-type overlay paints semantic categories with fixed debug colors: sidewa
 
 `renderDebugOverlays()` redraws only the overlay layer. It uses the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 
+## Map Editor
+
+The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
+
+The browser owns the editable map state. Startup creates a default 256x256 sparse-label map where tile type, `walkable`, `parkable`, and `drivable` are all `null`. `Load JSON` reads a local Epi City map file through the browser file picker and replaces that state with concrete labels from the file. `Reset to defaults` discards the current browser state and rebuilds the empty sparse map. `Save As JSON` writes the current state through the browser, so the editor does not automatically overwrite `public/liberty-city.json`.
+
+The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected layer.
+
+`POST /api/train` runs `map-editor/train_random_forest.py` through the local `map-editor/.venv` interpreter when it exists. The browser posts the full current `rows` and `behaviorRows` grids, and the trainer validates that state before fitting `sklearn.ensemble.RandomForestClassifier` models. Each layer trains only from non-empty labels. Layers without at least two distinct non-empty values are skipped and return their current sparse values unchanged.
+
+Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. Runtime JSON saving requires complete tile type and behavior labels and reports missing values instead of producing invalid app maps.
+
+The map editor server only serves `/`, `/source-image`, `/api/config`, and `/api/train`. Older sparse label and server-side map load/write endpoints return `410 Gone`, which keeps loading and saving explicit in the browser.
+
+Run the map editor with:
+
+```bash
+npm run map-editor:deps
+npm run map-editor
+```
+
+The dependency command creates or repairs `map-editor/.venv` with copied Python binaries, then installs the Python requirements. Set `MAP_EDITOR_BOOTSTRAP_PYTHON` to choose the setup interpreter or `MAP_EDITOR_PYTHON` to choose the runtime training interpreter.
+
 ## Debugging Hooks
 
 `window.citySim` exposes the Pixi app, camera, world container, layers, tile constants, map data, compiled city, and texture-set helpers. This is intentional during prototyping because the browser console is the fastest way to inspect paths, passability, textures, and rendering state.

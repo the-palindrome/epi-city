@@ -69,6 +69,12 @@
         border-top: 1px solid var(--line);
       }
 
+      .divider {
+        height: 1px;
+        margin: 12px 0;
+        background: var(--line);
+      }
+
       .row {
         display: flex;
         align-items: center;
@@ -138,6 +144,12 @@
         flex: 0 0 auto;
       }
 
+      .swatch.empty {
+        background:
+          linear-gradient(135deg, transparent 44%, rgba(242, 204, 71, 0.92) 45%, rgba(242, 204, 71, 0.92) 55%, transparent 56%),
+          rgba(255, 255, 255, 0.05);
+      }
+
       .stats {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -173,10 +185,11 @@
   </head>
   <body>
     <canvas id="map"></canvas>
+    <input id="json-file" type="file" accept="application/json,.json" hidden>
 
     <aside class="panel">
       <h1>Map Editor</h1>
-      <p class="hint">Paint tile types or behavior booleans onto the 256x256 source grid. Wheel zooms, right/middle drag or hold Space pans, left drag paints.</p>
+      <p class="hint">Paint the current editable 256x256 map state directly. Wheel zooms, right/middle drag or hold Space pans, left drag paints.</p>
 
       <div class="section">
         <div class="row">
@@ -201,28 +214,14 @@
           </select>
         </div>
         <div class="row">
-          <label for="manual-opacity">Manual opacity</label>
-          <input id="manual-opacity" type="range" min="0.15" max="1" step="0.05" value="0.82">
-        </div>
-        <div class="row">
-          <label for="generated-opacity">Generated opacity</label>
-          <input id="generated-opacity" type="range" min="0.05" max="0.85" step="0.05" value="0.28">
-        </div>
-        <div class="row">
-          <label for="overlay-source">Overlay source</label>
-          <select id="overlay-source">
-            <option value="generated">current map</option>
-            <option value="model">model prediction</option>
-          </select>
+          <label for="overlay-opacity">Layer opacity</label>
+          <input id="overlay-opacity" type="range" min="0.15" max="1" step="0.05" value="0.72">
         </div>
       </div>
 
       <div class="section">
         <div class="row">
-          <label><input id="show-generated" type="checkbox" checked> generated current layer</label>
-        </div>
-        <div class="row">
-          <label><input id="show-labels" type="checkbox" checked> manual current layer</label>
+          <label><input id="show-overlay" type="checkbox" checked> current layer</label>
         </div>
         <div class="row">
           <label><input id="show-grid" type="checkbox" checked> grid</label>
@@ -231,26 +230,38 @@
 
       <div class="section">
         <div class="button-grid">
-          <button id="save" class="primary" type="button">Save labels</button>
-          <button id="train" class="primary" type="button">Train random forest</button>
-          <button id="load-epi-json" type="button">Load Epi JSON</button>
-          <button id="save-epi-json" type="button">Save Epi JSON</button>
-          <button id="reset-labels" type="button">Reset labels</button>
+          <button id="load-json" type="button">Load JSON</button>
+          <button id="save-as" class="primary" type="button">Save As JSON</button>
+          <button id="reset-defaults" type="button">Reset to defaults</button>
           <button id="fit" type="button">Fit map</button>
           <button id="undo" type="button">Undo</button>
           <button id="redo" type="button">Redo</button>
         </div>
       </div>
 
+      <div class="section">
+        <div class="divider"></div>
+        <div class="button-grid">
+          <button id="train" class="primary" type="button">Train random forest</button>
+          <button id="predict" type="button">Predict labels</button>
+        </div>
+        <div class="divider"></div>
+      </div>
+
       <div class="section stats" id="stats"></div>
       <div class="section status" id="status">Loading...</div>
       <div class="footer">
         Current tile: <span class="badge" id="cursor-tile">outside</span><br>
-        Labels save to <span class="badge" id="labels-path">map-editor/labels/tile-labels.json</span>
+        Editing: <span class="badge" id="map-name">untitled default map</span>
       </div>
     </aside>
 
     <script type="module">
+      const GRID_SIZE = 256;
+      const DEFAULT_TILE_SIZE = 32;
+      const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'bridge', 'building']);
+      const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
+      const EMPTY_LABEL_VALUE = null;
       const TYPE_COLORS = Object.freeze({
         road: '#111611',
         sidewalk: '#a6aca3',
@@ -258,16 +269,12 @@
         water: '#0786c8',
         bridge: '#80613a',
         building: '#68716b',
-        erase: '#d94a48',
         unknown: '#ffffff'
       });
-
       const BEHAVIOR_COLORS = Object.freeze({
         true: '#2bd36f',
-        false: '#d94a48',
-        erase: '#f2cc47'
+        false: '#d94a48'
       });
-
       const TYPE_KEYS = Object.freeze({
         '1': 'road',
         '2': 'sidewalk',
@@ -275,54 +282,54 @@
         '4': 'water',
         '5': 'bridge',
         '6': 'building',
-        e: 'erase'
+        e: ''
       });
-
       const BEHAVIOR_KEYS = Object.freeze({
         t: true,
         f: false,
         e: null
       });
+      const SAFE_SYMBOLS = Object.freeze([...('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~')]);
+      const DEFAULT_SUBCATEGORY_BY_TYPE = Object.freeze({
+        road: 'classified',
+        sidewalk: 'classified',
+        park: 'park',
+        water: 'classified',
+        bridge: 'classified',
+        building: 'classified'
+      });
 
       const canvas = document.getElementById('map');
       const ctx = canvas.getContext('2d', { alpha: false });
+      const fileInput = document.getElementById('json-file');
       const paintLayer = document.getElementById('paint-layer');
       const labelButtons = document.getElementById('label-buttons');
       const brushSize = document.getElementById('brush-size');
-      const manualOpacity = document.getElementById('manual-opacity');
-      const generatedOpacity = document.getElementById('generated-opacity');
-      const overlaySource = document.getElementById('overlay-source');
-      const showGenerated = document.getElementById('show-generated');
-      const showLabels = document.getElementById('show-labels');
+      const overlayOpacity = document.getElementById('overlay-opacity');
+      const showOverlay = document.getElementById('show-overlay');
       const showGrid = document.getElementById('show-grid');
       const trainButton = document.getElementById('train');
-      const loadEpiJsonButton = document.getElementById('load-epi-json');
-      const saveEpiJsonButton = document.getElementById('save-epi-json');
-      const resetLabelsButton = document.getElementById('reset-labels');
+      const predictButton = document.getElementById('predict');
       const status = document.getElementById('status');
       const stats = document.getElementById('stats');
       const cursorTile = document.getElementById('cursor-tile');
-      const labelsPath = document.getElementById('labels-path');
+      const mapName = document.getElementById('map-name');
 
       const state = {
         config: null,
         image: null,
-        generatedRows: null,
-        generatedBehaviorRows: null,
-        modelRows: null,
-        modelBehaviorRows: null,
+        map: createDefaultEditableMap(),
+        latestPrediction: null,
         trainingSummary: null,
-        loadedMapPath: null,
-        selectedTypeLabel: 'road',
-        selectedBehaviorValue: true,
-        typeLabels: new Map(),
-        behaviorLabels: {},
+        selectedTypeLabel: EMPTY_LABEL_VALUE,
+        selectedBehaviorValue: EMPTY_LABEL_VALUE,
         undoStack: [],
         redoStack: [],
         dirty: false,
         isPainting: false,
         isPanning: false,
         spaceDown: false,
+        currentStroke: null,
         lastPointer: { x: 0, y: 0 },
         hoverTile: null,
         view: { x: 0, y: 0, zoom: 1 }
@@ -334,105 +341,49 @@
       });
 
       async function init() {
-        state.config = await fetchJson('/api/config');
-        labelsPath.textContent = state.config.labelsPath;
-        state.behaviorLabels = Object.fromEntries(state.config.behaviorLabels.map((property) => [property, new Map()]));
-
-        const [labelsFile, generated] = await Promise.all([
-          fetchJson('/api/labels'),
-          fetchJson('/api/current-classification')
-        ]);
-
-        state.generatedRows = generated.rows;
-        state.generatedBehaviorRows = generated.behaviorRows;
-        state.loadedMapPath = generated.mapPath || generated.sourceMap || state.config.defaultMapPath;
-        loadLabels(labelsFile);
-        state.image = await loadImage(state.config.sourceImageUrl);
+        state.config = await fetchJson('/api/config').catch(() => ({ sourceImageUrl: '/source-image' }));
+        state.map = createDefaultEditableMap();
+        state.image = await loadImage(state.config.sourceImageUrl || '/source-image');
         createLabelButtons();
         resizeCanvas();
         fitMap();
         installEvents();
         updateStats();
-        setStatus('Ready. Pick a layer, paint labels, then Save labels.');
+        setStatus('Ready. Editing an empty 256x256 sparse-label map; Load JSON can replace it, Save As downloads a complete map copy.');
         draw();
       }
 
-      function createLabelButtons() {
-        labelButtons.innerHTML = '';
-        const layer = paintLayer.value;
-        const buttons = layer === 'type'
-          ? [...state.config.typeLabels.map((label) => ({ value: label, label, color: TYPE_COLORS[label] })), { value: 'erase', label: 'erase', color: TYPE_COLORS.erase }]
-          : [
-              { value: 'true', label: `${layer}: true`, color: BEHAVIOR_COLORS.true },
-              { value: 'false', label: `${layer}: false`, color: BEHAVIOR_COLORS.false },
-              { value: 'erase', label: 'erase', color: BEHAVIOR_COLORS.erase }
-            ];
-
-        for (const buttonInfo of buttons) {
-          const button = document.createElement('button');
-          const swatch = document.createElement('span');
-          const text = document.createElement('span');
-
-          swatch.className = 'swatch';
-          swatch.style.background = buttonInfo.color;
-          text.textContent = buttonInfo.label;
-          button.type = 'button';
-          button.dataset.value = buttonInfo.value;
-          button.appendChild(swatch);
-          button.appendChild(text);
-          button.addEventListener('click', () => setSelectedPaintValue(buttonInfo.value));
-          labelButtons.appendChild(button);
-        }
-
-        refreshActiveButton();
+      function createDefaultEditableMap() {
+        return createFilledEditableMap(EMPTY_LABEL_VALUE, 'untitled-default-map.json', {
+          sourceName: 'untitled default map',
+          tileSize: DEFAULT_TILE_SIZE,
+          textureSet: 'gta'
+        });
       }
 
-      function setSelectedPaintValue(value) {
-        if (paintLayer.value === 'type') {
-          state.selectedTypeLabel = value;
-        } else if (value === 'erase') {
-          state.selectedBehaviorValue = null;
-        } else {
-          state.selectedBehaviorValue = value === 'true';
-        }
+      function createFilledEditableMap(type, fileName, metadata = {}) {
+        const rows = Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => type));
+        const behaviorRows = Object.fromEntries(BEHAVIOR_LABELS.map((property) => [
+          property,
+          Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => EMPTY_LABEL_VALUE))
+        ]));
 
-        refreshActiveButton();
+        return {
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          tileSize: metadata.tileSize || DEFAULT_TILE_SIZE,
+          textureSet: metadata.textureSet || 'gta',
+          sourceName: metadata.sourceName || fileName,
+          fileName,
+          rows,
+          behaviorRows,
+          textureRows: createDefaultTextureRows(),
+          originalMap: null
+        };
       }
 
-      function selectedPaintValue() {
-        if (paintLayer.value === 'type') {
-          return state.selectedTypeLabel;
-        }
-
-        if (state.selectedBehaviorValue === null) {
-          return 'erase';
-        }
-
-        return String(state.selectedBehaviorValue);
-      }
-
-      function refreshActiveButton() {
-        const selected = selectedPaintValue();
-
-        for (const button of labelButtons.querySelectorAll('button')) {
-          button.classList.toggle('active', button.dataset.value === selected);
-        }
-      }
-
-      function loadLabels(file) {
-        state.typeLabels.clear();
-
-        for (const entry of file.typeLabels) {
-          state.typeLabels.set(tileKey(entry.x, entry.y), entry.label);
-        }
-
-        for (const property of state.config.behaviorLabels) {
-          state.behaviorLabels[property].clear();
-
-          for (const entry of file.behaviorLabels[property]) {
-            state.behaviorLabels[property].set(tileKey(entry.x, entry.y), entry.value);
-          }
-        }
+      function createDefaultTextureRows() {
+        return Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => 0));
       }
 
       function installEvents() {
@@ -446,6 +397,8 @@
         canvas.addEventListener('pointerdown', onPointerDown);
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', endPointerAction);
+        window.addEventListener('blur', endPointerAction);
 
         paintLayer.addEventListener('change', () => {
           createLabelButtons();
@@ -453,16 +406,17 @@
           draw();
         });
 
-        for (const element of [brushSize, manualOpacity, generatedOpacity, overlaySource, showGenerated, showLabels, showGrid]) {
+        for (const element of [brushSize, overlayOpacity, showOverlay, showGrid]) {
           element.addEventListener('input', draw);
           element.addEventListener('change', draw);
         }
 
-        document.getElementById('save').addEventListener('click', () => saveLabels());
+        document.getElementById('load-json').addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', loadSelectedJsonFile);
+        document.getElementById('save-as').addEventListener('click', saveAsJson);
+        document.getElementById('reset-defaults').addEventListener('click', resetToDefaults);
         trainButton.addEventListener('click', trainModel);
-        loadEpiJsonButton.addEventListener('click', loadEpiCityJson);
-        saveEpiJsonButton.addEventListener('click', saveEpiCityJson);
-        resetLabelsButton.addEventListener('click', resetEditorLabels);
+        predictButton.addEventListener('click', applyLatestPrediction);
         document.getElementById('fit').addEventListener('click', () => {
           fitMap();
           draw();
@@ -483,7 +437,13 @@
 
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
-            saveLabels();
+            saveAsJson();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'z') {
+            event.preventDefault();
+            redo();
             return;
           }
 
@@ -508,7 +468,8 @@
           }
 
           if (paintLayer.value !== 'type' && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
-            setSelectedPaintValue(BEHAVIOR_KEYS[key] === null ? 'erase' : String(BEHAVIOR_KEYS[key]));
+            const value = BEHAVIOR_KEYS[key];
+            setSelectedPaintValue(value === null ? '' : String(value));
             event.preventDefault();
           }
         });
@@ -518,6 +479,307 @@
             state.spaceDown = false;
           }
         });
+      }
+
+      function createLabelButtons() {
+        labelButtons.innerHTML = '';
+        const layer = paintLayer.value;
+        const buttons = layer === 'type'
+          ? [
+              { value: '', label: 'empty', color: null },
+              ...TYPE_LABELS.map((label) => ({ value: label, label, color: TYPE_COLORS[label] }))
+            ]
+          : [
+              { value: '', label: `${layer}: empty`, color: null },
+              { value: 'true', label: `${layer}: true`, color: BEHAVIOR_COLORS.true },
+              { value: 'false', label: `${layer}: false`, color: BEHAVIOR_COLORS.false }
+            ];
+
+        for (const buttonInfo of buttons) {
+          const button = document.createElement('button');
+          const swatch = document.createElement('span');
+          const text = document.createElement('span');
+
+          swatch.className = 'swatch';
+          if (buttonInfo.color) {
+            swatch.style.background = buttonInfo.color;
+          } else {
+            swatch.classList.add('empty');
+          }
+          text.textContent = buttonInfo.label;
+          button.type = 'button';
+          button.dataset.value = buttonInfo.value;
+          button.appendChild(swatch);
+          button.appendChild(text);
+          button.addEventListener('click', () => setSelectedPaintValue(buttonInfo.value));
+          labelButtons.appendChild(button);
+        }
+
+        refreshActiveButton();
+      }
+
+      function setSelectedPaintValue(value) {
+        if (paintLayer.value === 'type') {
+          state.selectedTypeLabel = value === '' ? EMPTY_LABEL_VALUE : value;
+        } else {
+          state.selectedBehaviorValue = value === '' ? EMPTY_LABEL_VALUE : value === 'true';
+        }
+
+        refreshActiveButton();
+      }
+
+      function selectedPaintValue() {
+        if (paintLayer.value === 'type') {
+          return state.selectedTypeLabel ?? '';
+        }
+
+        return state.selectedBehaviorValue === null ? '' : String(state.selectedBehaviorValue);
+      }
+
+      function refreshActiveButton() {
+        const selected = selectedPaintValue();
+
+        for (const button of labelButtons.querySelectorAll('button')) {
+          button.classList.toggle('active', button.dataset.value === selected);
+        }
+      }
+
+      async function loadSelectedJsonFile() {
+        const file = fileInput.files && fileInput.files[0];
+        fileInput.value = '';
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          setStatus(`Loading ${file.name}...`);
+          const payload = JSON.parse(await file.text());
+          replaceCurrentMap(editableMapFromJson(payload, file.name));
+          setStatus(`Loaded ${file.name}. The editable map state has been replaced.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      function editableMapFromJson(payload, fileName) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          throw new Error('Map JSON must be an object.');
+        }
+
+        validateEpiCityMap(payload);
+        const behaviorRows = Object.fromEntries(BEHAVIOR_LABELS.map((property) => [property, []]));
+        const rows = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = [];
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const entry = payload.legend[payload.rows[y][x]];
+            row.push(editorTypeForLegendEntry(entry));
+
+            for (const property of BEHAVIOR_LABELS) {
+              if (!behaviorRows[property][y]) {
+                behaviorRows[property][y] = [];
+              }
+
+              behaviorRows[property][y].push(entry[property]);
+            }
+          }
+
+          rows.push(row);
+        }
+
+        return {
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          tileSize: payload.tileSize,
+          textureSet: payload.textureSet || 'gta',
+          sourceName: fileName,
+          fileName,
+          rows,
+          behaviorRows,
+          textureRows: normalizeTextureRows(payload.textureRows),
+          originalMap: payload
+        };
+      }
+
+      function replaceCurrentMap(nextMap, options = {}) {
+        endPointerAction();
+        state.map = nextMap;
+        state.latestPrediction = options.latestPrediction || null;
+        state.trainingSummary = options.trainingSummary || null;
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        state.dirty = Boolean(options.dirty);
+        updateStats();
+        draw();
+      }
+
+      function resetToDefaults() {
+        replaceCurrentMap(createDefaultEditableMap(), { dirty: true });
+        setStatus('Reset the editor to an empty 256x256 sparse-label map.');
+      }
+
+      async function saveAsJson() {
+        endPointerAction();
+        const fileName = suggestedSaveName();
+
+        try {
+          const text = `${JSON.stringify(buildEpiCityJson(), null, 2)}\n`;
+
+          if ('showSaveFilePicker' in window) {
+            const handle = await window.showSaveFilePicker({
+              suggestedName: fileName,
+              types: [{
+                description: 'Epi City JSON',
+                accept: { 'application/json': ['.json'] }
+              }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(text);
+            await writable.close();
+          } else {
+            downloadText(fileName, text, 'application/json');
+          }
+
+          state.dirty = false;
+          updateStats();
+          setStatus(`Saved ${fileName} with browser Save As. public/liberty-city.json was not overwritten.`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            setStatus('Save As canceled.');
+            return;
+          }
+
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      function suggestedSaveName() {
+        const base = (state.map.fileName || 'epi-city-map.json').replace(/\.json$/i, '');
+        return `${base || 'epi-city-map'}-edited.json`;
+      }
+
+      function downloadText(fileName, text, mimeType) {
+        const blob = new Blob([text], { type: `${mimeType};charset=utf-8` });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+
+      async function trainModel() {
+        trainButton.disabled = true;
+
+        try {
+          setStatus('Training random forests from the current sparse labels...');
+          const payload = {
+            trees: 48,
+            gridSize: GRID_SIZE,
+            rows: cloneRows(state.map.rows),
+            behaviorRows: cloneBehaviorRows(state.map.behaviorRows)
+          };
+          const response = await fetch('/api/train', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const result = await readJsonResponse(response, 'Train model');
+
+          if (!response.ok) {
+            throw new Error(result.error || `Training failed with HTTP ${response.status}.`);
+          }
+
+          validateTypeRows(result.rows);
+          validateBehaviorRowsObject(result.behaviorRows);
+          state.latestPrediction = {
+            rows: cloneRows(result.rows),
+            behaviorRows: cloneBehaviorRows(result.behaviorRows),
+            summary: result.summary || null
+          };
+          state.trainingSummary = result.summary || null;
+          updateStats();
+          draw();
+          setStatus(formatTrainingStatus(result.summary));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        } finally {
+          trainButton.disabled = false;
+        }
+      }
+
+      function formatTrainingStatus(summary) {
+        if (!summary) {
+          return 'Training succeeded. Predict labels will apply the latest prediction to the editable map.';
+        }
+
+        const trained = [];
+        const skipped = [];
+        collectTrainingStatus('type', summary.type, trained, skipped);
+
+        for (const property of BEHAVIOR_LABELS) {
+          collectTrainingStatus(property, summary.behavior && summary.behavior[property], trained, skipped);
+        }
+
+        return `Training stored a prediction without changing the map. Trained: ${trained.length ? trained.join(', ') : 'none'}. Skipped: ${skipped.length ? skipped.join(', ') : 'none'}.`;
+      }
+
+      function collectTrainingStatus(name, summary, trained, skipped) {
+        if (summary && summary.trained) {
+          trained.push(`${name} (${summary.samples} samples)`);
+        } else {
+          skipped.push(`${name} (${summary ? summary.samples : 0} samples)`);
+        }
+      }
+
+      function applyLatestPrediction() {
+        endPointerAction();
+
+        if (!state.latestPrediction) {
+          setStatus('Train random forest first; there is no latest prediction to apply.', true);
+          return;
+        }
+
+        const operation = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const before = snapshotTile(x, y);
+            const after = {
+              type: state.latestPrediction.rows[y][x],
+              walkable: state.latestPrediction.behaviorRows.walkable[y][x],
+              parkable: state.latestPrediction.behaviorRows.parkable[y][x],
+              drivable: state.latestPrediction.behaviorRows.drivable[y][x]
+            };
+
+            if (!sameTileSnapshot(before, after)) {
+              restoreTileSnapshot(x, y, after);
+              operation.push({ x, y, before, after });
+            }
+          }
+        }
+
+        if (operation.length === 0) {
+          setStatus('Latest prediction already matches the editable map.');
+          return;
+        }
+
+        state.undoStack.push(operation);
+        state.redoStack.length = 0;
+        state.dirty = true;
+        state.map.sourceName = `${state.map.sourceName} + prediction`;
+        updateStats();
+        draw();
+        setStatus(`Applied latest prediction to ${operation.length} tiles. Undo reverts it as one operation.`);
       }
 
       function onWheel(event) {
@@ -554,6 +816,7 @@
         }
 
         state.isPainting = true;
+        state.currentStroke = new Map();
         paintAt(tile.x, tile.y);
       }
 
@@ -581,17 +844,22 @@
       }
 
       function onPointerUp(event) {
-        state.isPainting = false;
-        state.isPanning = false;
+        endPointerAction();
 
         if (canvas.hasPointerCapture(event.pointerId)) {
           canvas.releasePointerCapture(event.pointerId);
         }
       }
 
+      function endPointerAction() {
+        commitCurrentStroke();
+        state.isPainting = false;
+        state.isPanning = false;
+      }
+
       function paintAt(tileX, tileY) {
-        const operation = [];
         const radius = Math.floor(Number(brushSize.value) / 2);
+        let changed = false;
 
         for (let y = tileY - radius; y <= tileY + radius; y += 1) {
           for (let x = tileX - radius; x <= tileX + radius; x += 1) {
@@ -599,56 +867,87 @@
               continue;
             }
 
-            const key = tileKey(x, y);
-            const layer = paintLayer.value;
-            const before = getManualLabel(layer, key);
-            const after = getSelectedManualValue(layer);
-
-            if (before === after) {
-              continue;
-            }
-
-            applyLabelChange(layer, key, after);
-            operation.push({ layer, key, before, after });
+            changed = applyPaintToTile(x, y) || changed;
           }
         }
 
-        if (operation.length > 0) {
-          state.undoStack.push(operation);
-          state.redoStack.length = 0;
+        if (changed) {
           state.dirty = true;
+          state.latestPrediction = null;
+          state.trainingSummary = null;
           updateStats();
           draw();
         }
       }
 
-      function getSelectedManualValue(layer) {
+      function applyPaintToTile(x, y) {
+        const layer = paintLayer.value;
+        const before = snapshotTile(x, y);
+
         if (layer === 'type') {
-          return state.selectedTypeLabel === 'erase' ? null : state.selectedTypeLabel;
-        }
-
-        return state.selectedBehaviorValue;
-      }
-
-      function getManualLabel(layer, key) {
-        if (layer === 'type') {
-          return state.typeLabels.get(key) ?? null;
-        }
-
-        return state.behaviorLabels[layer].get(key) ?? null;
-      }
-
-      function applyLabelChange(layer, key, value) {
-        const target = layer === 'type' ? state.typeLabels : state.behaviorLabels[layer];
-
-        if (value === null) {
-          target.delete(key);
+          state.map.rows[y][x] = state.selectedTypeLabel;
         } else {
-          target.set(key, value);
+          state.map.behaviorRows[layer][y][x] = state.selectedBehaviorValue;
         }
+
+        const after = snapshotTile(x, y);
+
+        if (sameTileSnapshot(before, after)) {
+          return false;
+        }
+
+        recordStrokeChange(x, y, before, after);
+        return true;
+      }
+
+      function snapshotTile(x, y) {
+        return {
+          type: state.map.rows[y][x],
+          walkable: state.map.behaviorRows.walkable[y][x],
+          parkable: state.map.behaviorRows.parkable[y][x],
+          drivable: state.map.behaviorRows.drivable[y][x]
+        };
+      }
+
+      function sameTileSnapshot(a, b) {
+        return a.type === b.type && a.walkable === b.walkable && a.parkable === b.parkable && a.drivable === b.drivable;
+      }
+
+      function recordStrokeChange(x, y, before, after) {
+        if (!state.currentStroke) {
+          return;
+        }
+
+        const key = tileKey(x, y);
+        const existing = state.currentStroke.get(key);
+
+        if (existing) {
+          existing.after = after;
+          return;
+        }
+
+        state.currentStroke.set(key, { x, y, before, after });
+      }
+
+      function commitCurrentStroke() {
+        if (!state.currentStroke) {
+          return;
+        }
+
+        const operation = [...state.currentStroke.values()].filter((change) => !sameTileSnapshot(change.before, change.after));
+        state.currentStroke = null;
+
+        if (operation.length === 0) {
+          return;
+        }
+
+        state.undoStack.push(operation);
+        state.redoStack.length = 0;
+        updateStats();
       }
 
       function undo() {
+        endPointerAction();
         const operation = state.undoStack.pop();
 
         if (!operation) {
@@ -656,16 +955,18 @@
         }
 
         for (const change of operation) {
-          applyLabelChange(change.layer, change.key, change.before);
+          restoreTileSnapshot(change.x, change.y, change.before);
         }
 
         state.redoStack.push(operation);
         state.dirty = true;
+        state.trainingSummary = null;
         updateStats();
         draw();
       }
 
       function redo() {
+        endPointerAction();
         const operation = state.redoStack.pop();
 
         if (!operation) {
@@ -673,217 +974,22 @@
         }
 
         for (const change of operation) {
-          applyLabelChange(change.layer, change.key, change.after);
+          restoreTileSnapshot(change.x, change.y, change.after);
         }
 
         state.undoStack.push(operation);
         state.dirty = true;
+        state.trainingSummary = null;
         updateStats();
         draw();
       }
 
-      async function saveLabels(options = {}) {
-        const payload = {
-          sourceImage: state.config.sourceImagePath,
-          generatedMap: state.loadedMapPath || state.config.defaultMapPath,
-          gridSize: state.config.gridSize,
-          typeLabels: mapToSortedEntries(state.typeLabels, (x, y, label) => ({ x, y, label })),
-          behaviorLabels: Object.fromEntries(state.config.behaviorLabels.map((property) => [
-            property,
-            mapToSortedEntries(state.behaviorLabels[property], (x, y, value) => ({ x, y, value }))
-          ]))
-        };
+      function restoreTileSnapshot(x, y, snapshot) {
+        state.map.rows[y][x] = snapshot.type;
 
-        const response = await fetch('/api/labels', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error || `Save failed with HTTP ${response.status}.`);
+        for (const property of BEHAVIOR_LABELS) {
+          state.map.behaviorRows[property][y][x] = snapshot[property];
         }
-
-        state.dirty = false;
-        if (!options.silent) {
-          setStatus(`Saved ${result.saved.total} labels: ${result.saved.typeLabels} types, ${Object.entries(result.saved.behaviorLabels).map(([key, count]) => `${count} ${key}`).join(', ')}.`);
-        }
-
-        return result;
-      }
-
-      async function trainModel() {
-        trainButton.disabled = true;
-
-        try {
-          setStatus('Saving labels before training...');
-          await saveLabels({ silent: true });
-
-          setStatus('Training random forests and predicting all 65,536 tiles...');
-          const response = await fetch('/api/train', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ trees: 48, mapPath: state.loadedMapPath })
-          });
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || `Training failed with HTTP ${response.status}.`);
-          }
-
-          state.modelRows = result.rows;
-          state.modelBehaviorRows = result.behaviorRows;
-          state.trainingSummary = result.summary;
-          overlaySource.value = 'model';
-          updateStats();
-          draw();
-          setStatus(formatTrainingStatus(result.summary));
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        } finally {
-          trainButton.disabled = false;
-        }
-      }
-
-      async function loadEpiCityJson() {
-        loadEpiJsonButton.disabled = true;
-
-        try {
-          setStatus('Loading Epi City JSON classification...');
-          const result = await fetchJson(`/api/epi-city-map?path=${encodeURIComponent(state.loadedMapPath || state.config.defaultMapPath)}`);
-
-          state.generatedRows = result.rows;
-          state.generatedBehaviorRows = result.behaviorRows;
-          state.loadedMapPath = result.mapPath || result.sourceMap;
-          state.modelRows = null;
-          state.modelBehaviorRows = null;
-          state.trainingSummary = null;
-          overlaySource.value = 'generated';
-          updateStats();
-          draw();
-          setStatus(`Loaded Epi City JSON from ${result.sourceMap}. Manual brush labels are still active as overrides.`);
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        } finally {
-          loadEpiJsonButton.disabled = false;
-        }
-      }
-
-      async function saveEpiCityJson() {
-        saveEpiJsonButton.disabled = true;
-
-        try {
-          setStatus('Saving labels and writing Epi City JSON...');
-          await saveLabels({ silent: true });
-
-          const response = await fetch('/api/epi-city-map', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(buildResolvedClassification())
-          });
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || `Epi City JSON save failed with HTTP ${response.status}.`);
-          }
-
-          state.generatedRows = result.rows;
-          state.generatedBehaviorRows = result.behaviorRows;
-          state.loadedMapPath = result.mapPath || result.path;
-          state.modelRows = null;
-          state.modelBehaviorRows = null;
-          state.trainingSummary = null;
-          overlaySource.value = 'generated';
-          updateStats();
-          draw();
-          setStatus(`Saved Epi City JSON to ${result.path}.`);
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        } finally {
-          saveEpiJsonButton.disabled = false;
-        }
-      }
-
-      function resetEditorLabels() {
-        state.typeLabels.clear();
-
-        for (const property of state.config.behaviorLabels) {
-          state.behaviorLabels[property].clear();
-        }
-
-        state.undoStack.length = 0;
-        state.redoStack.length = 0;
-        state.dirty = true;
-        updateStats();
-        draw();
-        setStatus('Cleared all manual labels in the editor. Use Save labels if you want to persist the reset.');
-      }
-
-      function buildResolvedClassification() {
-        const source = activeOverlayPredictionSource();
-        const rows = source.rows.map((row) => [...row]);
-        const behaviorRows = Object.fromEntries(state.config.behaviorLabels.map((property) => [
-          property,
-          source.behaviorRows[property].map((row) => [...row])
-        ]));
-
-        for (const [key, label] of state.typeLabels.entries()) {
-          const [x, y] = key.split(',').map(Number);
-          rows[y][x] = label;
-        }
-
-        for (const property of state.config.behaviorLabels) {
-          for (const [key, value] of state.behaviorLabels[property].entries()) {
-            const [x, y] = key.split(',').map(Number);
-            behaviorRows[property][y][x] = value;
-          }
-        }
-
-        return {
-          gridSize: state.config.gridSize,
-          mapPath: state.loadedMapPath,
-          rows,
-          behaviorRows
-        };
-      }
-
-      function formatTrainingStatus(summary) {
-        const trained = [];
-        const skipped = [];
-
-        collectTrainingStatus('type', summary.type, trained, skipped);
-
-        for (const [property, propertySummary] of Object.entries(summary.behavior)) {
-          collectTrainingStatus(property, propertySummary, trained, skipped);
-        }
-
-        if (trained.length === 0) {
-          return `No layers trained yet. Add at least two classes/values on a layer. Skipped: ${skipped.join(', ')}.`;
-        }
-
-        return `Trained ${trained.join(', ')}. Skipped: ${skipped.length ? skipped.join(', ') : 'none'}.`;
-      }
-
-      function collectTrainingStatus(name, summary, trained, skipped) {
-        if (summary && summary.trained) {
-          trained.push(`${name} (${summary.samples} samples)`);
-        } else {
-          skipped.push(`${name} (${summary ? summary.samples : 0} samples)`);
-        }
-      }
-
-      function mapToSortedEntries(map, toEntry) {
-        return [...map.entries()]
-          .map(([key, value]) => {
-            const [x, y] = key.split(',').map(Number);
-            return toEntry(x, y, value);
-          })
-          .sort((a, b) => a.y - b.y || a.x - b.x);
       }
 
       function draw() {
@@ -901,12 +1007,8 @@
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(state.image, 0, 0);
 
-        if (showGenerated.checked) {
-          drawGeneratedOverlay(Number(generatedOpacity.value));
-        }
-
-        if (showLabels.checked) {
-          drawManualLabels(Number(manualOpacity.value));
+        if (showOverlay.checked) {
+          drawCurrentLayerOverlay(Number(overlayOpacity.value));
         }
 
         if (showGrid.checked) {
@@ -916,51 +1018,26 @@
         drawHoverTile();
       }
 
-      function drawGeneratedOverlay(alpha) {
+      function drawCurrentLayerOverlay(alpha) {
         const layer = paintLayer.value;
-        const source = activeOverlayPredictionSource();
-
         ctx.globalAlpha = alpha;
 
-        for (let y = 0; y < state.config.gridSize; y += 1) {
-          for (let x = 0; x < state.config.gridSize; x += 1) {
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
             if (layer === 'type') {
-              drawTileFill(x, y, TYPE_COLORS[source.rows[y][x]] || TYPE_COLORS.unknown);
+              const type = state.map.rows[y][x];
+
+              if (!isEmptyLabelValue(type)) {
+                drawTileFill(x, y, TYPE_COLORS[type] || TYPE_COLORS.unknown);
+              }
             } else {
-              drawTileFill(x, y, BEHAVIOR_COLORS[String(source.behaviorRows[layer][y][x])]);
+              const value = state.map.behaviorRows[layer][y][x];
+
+              if (!isEmptyLabelValue(value)) {
+                drawTileFill(x, y, BEHAVIOR_COLORS[String(value)]);
+              }
             }
           }
-        }
-
-        ctx.globalAlpha = 1;
-      }
-
-      function activeOverlayPredictionSource() {
-        const hasModel = state.modelRows && state.modelBehaviorRows;
-
-        if (overlaySource.value === 'model' && hasModel) {
-          return {
-            rows: state.modelRows,
-            behaviorRows: state.modelBehaviorRows
-          };
-        }
-
-        return {
-          rows: state.generatedRows,
-          behaviorRows: state.generatedBehaviorRows
-        };
-      }
-
-      function drawManualLabels(alpha) {
-        const layer = paintLayer.value;
-        const map = layer === 'type' ? state.typeLabels : state.behaviorLabels[layer];
-
-        ctx.globalAlpha = alpha;
-
-        for (const [key, value] of map.entries()) {
-          const [x, y] = key.split(',').map(Number);
-          const color = layer === 'type' ? TYPE_COLORS[value] : BEHAVIOR_COLORS[String(value)];
-          drawTileFill(x, y, color);
         }
 
         ctx.globalAlpha = 1;
@@ -977,14 +1054,13 @@
           return;
         }
 
-        const size = state.config.gridSize;
         ctx.strokeStyle = state.view.zoom > 5 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.11)';
         ctx.lineWidth = 1 / state.view.zoom;
         ctx.beginPath();
 
-        for (let i = 0; i <= size; i += 1) {
-          const x = Math.round(i * state.image.width / size);
-          const y = Math.round(i * state.image.height / size);
+        for (let i = 0; i <= GRID_SIZE; i += 1) {
+          const x = Math.round(i * state.image.width / GRID_SIZE);
+          const y = Math.round(i * state.image.height / GRID_SIZE);
           ctx.moveTo(x, 0);
           ctx.lineTo(x, state.image.height);
           ctx.moveTo(0, y);
@@ -1003,6 +1079,320 @@
         ctx.strokeStyle = '#f2cc47';
         ctx.lineWidth = 2 / state.view.zoom;
         ctx.strokeRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+      }
+
+      function buildEpiCityJson() {
+        assertRuntimeLabelsComplete();
+
+        const definitionToSymbol = new Map();
+        const legend = {};
+        const rows = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          let row = '';
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const definition = definitionForCell(x, y);
+            const key = JSON.stringify(definition);
+            let symbol = definitionToSymbol.get(key);
+
+            if (!symbol) {
+              symbol = SAFE_SYMBOLS[definitionToSymbol.size];
+
+              if (!symbol) {
+                throw new Error('Not enough legend symbols for generated Epi City map.');
+              }
+
+              definitionToSymbol.set(key, symbol);
+              legend[symbol] = definition;
+            }
+
+            row += symbol;
+          }
+
+          rows.push(row);
+        }
+
+        return {
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
+          textureSet: state.map.textureSet || 'gta',
+          legend,
+          rows,
+          textureRows: normalizeTextureRows(state.map.textureRows)
+        };
+      }
+
+      function definitionForCell(x, y) {
+        const type = state.map.rows[y][x];
+        const existingEntry = existingLegendEntryAt(x, y);
+        const shouldPreserveShape = existingEntry && editorTypeForLegendEntry(existingEntry) === type;
+        const category = shouldPreserveShape ? existingEntry.category : type === 'park' ? 'sidewalk' : type;
+        const subcategory = shouldPreserveShape ? existingEntry.subcategory : DEFAULT_SUBCATEGORY_BY_TYPE[type];
+
+        return {
+          category,
+          subcategory,
+          walkable: state.map.behaviorRows.walkable[y][x],
+          drivable: state.map.behaviorRows.drivable[y][x],
+          parkable: state.map.behaviorRows.parkable[y][x]
+        };
+      }
+
+      function assertRuntimeLabelsComplete() {
+        const missing = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (isEmptyLabelValue(state.map.rows[y][x])) {
+              missing.push(`tile type at ${x},${y}`);
+            }
+
+            for (const property of BEHAVIOR_LABELS) {
+              if (isEmptyLabelValue(state.map.behaviorRows[property][y][x])) {
+                missing.push(`${property} at ${x},${y}`);
+              }
+            }
+
+            if (missing.length >= 5) {
+              throw new Error(`Cannot save runtime JSON while labels are empty. Fill or predict missing values first. First missing labels: ${missing.join('; ')}.`);
+            }
+          }
+        }
+
+        if (missing.length > 0) {
+          throw new Error(`Cannot save runtime JSON while labels are empty. Fill or predict missing values first. First missing labels: ${missing.join('; ')}.`);
+        }
+      }
+
+      function existingLegendEntryAt(x, y) {
+        const originalMap = state.map.originalMap;
+
+        if (!originalMap || !originalMap.rows || !originalMap.legend) {
+          return null;
+        }
+
+        return originalMap.legend[originalMap.rows[y][x]] || null;
+      }
+
+      function updateStats() {
+        stats.innerHTML = '';
+        mapName.textContent = state.map.sourceName || 'untitled map';
+        addStat('active layer', paintLayer.value);
+        addStat('map source', state.map.sourceName || 'untitled map');
+        addStat('dirty', state.dirty ? 'yes' : 'no');
+        addStat('latest prediction', state.latestPrediction ? 'ready' : 'none');
+        addStat('undo strokes', state.undoStack.length);
+        addStat('redo strokes', state.redoStack.length);
+
+        const layer = paintLayer.value;
+
+        if (layer === 'type') {
+          const counts = Object.fromEntries(TYPE_LABELS.map((label) => [label, 0]));
+          let emptyCount = 0;
+
+          for (const row of state.map.rows) {
+            for (const label of row) {
+              if (isEmptyLabelValue(label)) {
+                emptyCount += 1;
+              } else {
+                counts[label] = (counts[label] || 0) + 1;
+              }
+            }
+          }
+
+          addStat('empty', emptyCount);
+
+          for (const label of TYPE_LABELS) {
+            addStat(label, counts[label]);
+          }
+        } else {
+          let emptyCount = 0;
+          let trueCount = 0;
+          let falseCount = 0;
+
+          for (const row of state.map.behaviorRows[layer]) {
+            for (const value of row) {
+              if (isEmptyLabelValue(value)) {
+                emptyCount += 1;
+              } else if (value) {
+                trueCount += 1;
+              } else {
+                falseCount += 1;
+              }
+            }
+          }
+
+          addStat(`${layer}: empty`, emptyCount);
+          addStat(`${layer}: true`, trueCount);
+          addStat(`${layer}: false`, falseCount);
+        }
+
+        const layerSummary = getTrainingSummaryForLayer(layer);
+
+        if (layerSummary) {
+          addStat('model status', layerSummary.trained ? layerSummary.model : 'not trained');
+          addStat('model samples', layerSummary.samples || 0);
+        }
+      }
+
+      function getTrainingSummaryForLayer(layer) {
+        if (!state.trainingSummary) {
+          return null;
+        }
+
+        return layer === 'type' ? state.trainingSummary.type : state.trainingSummary.behavior && state.trainingSummary.behavior[layer];
+      }
+
+      function addStat(label, value) {
+        const key = document.createElement('span');
+        const count = document.createElement('strong');
+
+        key.textContent = label;
+        count.textContent = String(value);
+        stats.appendChild(key);
+        stats.appendChild(count);
+      }
+
+      function validateEpiCityMap(map) {
+        if (!Number.isInteger(map.width) || map.width !== GRID_SIZE || !Number.isInteger(map.height) || map.height !== GRID_SIZE) {
+          throw new Error(`Epi City map must be ${GRID_SIZE}x${GRID_SIZE}.`);
+        }
+
+        if (!Number.isInteger(map.tileSize) || map.tileSize <= 0) {
+          throw new Error('Epi City map tileSize must be a positive integer.');
+        }
+
+        if (!map.legend || typeof map.legend !== 'object' || Array.isArray(map.legend)) {
+          throw new Error('Epi City map legend must be an object.');
+        }
+
+        if (!Array.isArray(map.rows) || map.rows.length !== GRID_SIZE) {
+          throw new Error(`Epi City map rows must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (const [symbol, entry] of Object.entries(map.legend)) {
+          if (typeof symbol !== 'string' || symbol.length !== 1) {
+            throw new Error('Epi City map legend symbols must be one character.');
+          }
+
+          validateLegendEntry(entry);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = map.rows[y];
+
+          if (typeof row !== 'string' || row.length !== GRID_SIZE) {
+            throw new Error(`Epi City map row ${y} must contain ${GRID_SIZE} symbols.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (!map.legend[row[x]]) {
+              throw new Error(`Epi City map row ${y} references a missing legend symbol at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function validateLegendEntry(entry) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          throw new Error('Each Epi City legend entry must be an object.');
+        }
+
+        if (!TYPE_LABELS.includes(editorTypeForLegendEntry(entry))) {
+          throw new Error(`Unsupported legend category: ${entry.category}.`);
+        }
+
+        if (typeof entry.subcategory !== 'string' || entry.subcategory.length === 0) {
+          throw new Error(`Legend entry ${entry.category} must include a subcategory string.`);
+        }
+
+        for (const property of BEHAVIOR_LABELS) {
+          if (typeof entry[property] !== 'boolean') {
+            throw new Error(`Legend entry ${entry.category} must include boolean ${property}.`);
+          }
+        }
+      }
+
+      function validateTypeRows(rows) {
+        if (!Array.isArray(rows) || rows.length !== GRID_SIZE) {
+          throw new Error(`Map rows must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = rows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Map row ${y} must contain ${GRID_SIZE} tile types.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (!isEmptyLabelValue(row[x]) && !TYPE_LABELS.includes(row[x])) {
+              throw new Error(`Invalid tile type "${row[x]}" at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function isEmptyLabelValue(value) {
+        return value === null || value === '';
+      }
+
+      function validateBehaviorRowsObject(behaviorRows) {
+        if (!behaviorRows || typeof behaviorRows !== 'object' || Array.isArray(behaviorRows)) {
+          throw new Error('Map behaviorRows must be an object.');
+        }
+
+        for (const property of BEHAVIOR_LABELS) {
+          validateBehaviorRows(property, behaviorRows[property]);
+        }
+      }
+
+      function validateBehaviorRows(property, rows) {
+        if (!Array.isArray(rows) || rows.length !== GRID_SIZE) {
+          throw new Error(`Map behaviorRows.${property} must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = rows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Map behaviorRows.${property}[${y}] must contain ${GRID_SIZE} booleans.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (!isEmptyLabelValue(row[x]) && typeof row[x] !== 'boolean') {
+              throw new Error(`Map behaviorRows.${property} has a non-boolean/non-empty value at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function normalizeTextureRows(textureRows) {
+        if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
+          return createDefaultTextureRows();
+        }
+
+        for (const row of textureRows) {
+          if (!Array.isArray(row) || row.length !== GRID_SIZE || row.some((value) => !Number.isInteger(value) || value < 0)) {
+            return createDefaultTextureRows();
+          }
+        }
+
+        return textureRows.map((row) => [...row]);
+      }
+
+      function cloneRows(rows) {
+        return rows.map((row) => [...row]);
+      }
+
+      function cloneBehaviorRows(behaviorRows) {
+        return Object.fromEntries(BEHAVIOR_LABELS.map((property) => [property, behaviorRows[property].map((row) => [...row])]));
+      }
+
+      function editorTypeForLegendEntry(entry) {
+        return entry.category === 'sidewalk' && entry.subcategory === 'park' ? 'park' : entry.category;
       }
 
       function fitMap() {
@@ -1035,18 +1425,17 @@
           return null;
         }
 
-        const x = Math.floor(imagePoint.x * state.config.gridSize / state.image.width);
-        const y = Math.floor(imagePoint.y * state.config.gridSize / state.image.height);
+        const x = Math.floor(imagePoint.x * GRID_SIZE / state.image.width);
+        const y = Math.floor(imagePoint.y * GRID_SIZE / state.image.height);
 
         return inGrid(x, y) ? { x, y } : null;
       }
 
       function tileBounds(x, y) {
-        const size = state.config.gridSize;
-        const x0 = Math.round(x * state.image.width / size);
-        const y0 = Math.round(y * state.image.height / size);
-        const x1 = Math.max(x0 + 1, Math.round((x + 1) * state.image.width / size));
-        const y1 = Math.max(y0 + 1, Math.round((y + 1) * state.image.height / size));
+        const x0 = Math.round(x * state.image.width / GRID_SIZE);
+        const y0 = Math.round(y * state.image.height / GRID_SIZE);
+        const x1 = Math.max(x0 + 1, Math.round((x + 1) * state.image.width / GRID_SIZE));
+        const y1 = Math.max(y0 + 1, Math.round((y + 1) * state.image.height / GRID_SIZE));
 
         return { x0, y0, x1, y1 };
       }
@@ -1060,78 +1449,13 @@
         };
       }
 
-      function updateStats() {
-        stats.innerHTML = '';
-        addStat('active layer', paintLayer.value);
-        addStat('overlay source', overlaySource.value === 'model' && state.modelRows ? 'model' : 'current map');
-        addStat('loaded map', state.loadedMapPath || 'none');
-        addStat('type labels', state.typeLabels.size);
-
-        for (const property of state.config.behaviorLabels) {
-          addStat(`${property} labels`, state.behaviorLabels[property].size);
-        }
-
-        const layer = paintLayer.value;
-
-        if (layer === 'type') {
-          const counts = Object.fromEntries(state.config.typeLabels.map((label) => [label, 0]));
-
-          for (const label of state.typeLabels.values()) {
-            counts[label] = (counts[label] || 0) + 1;
-          }
-
-          for (const label of state.config.typeLabels) {
-            addStat(label, counts[label]);
-          }
-        } else {
-          let trueCount = 0;
-          let falseCount = 0;
-
-          for (const value of state.behaviorLabels[layer].values()) {
-            if (value) {
-              trueCount += 1;
-            } else {
-              falseCount += 1;
-            }
-          }
-
-          addStat(`${layer}: true`, trueCount);
-          addStat(`${layer}: false`, falseCount);
-        }
-
-        const layerSummary = getTrainingSummaryForLayer(layer);
-
-        if (layerSummary) {
-          addStat('model status', layerSummary.trained ? layerSummary.model : 'not trained');
-          addStat('model samples', layerSummary.samples || 0);
-        }
-      }
-
-      function getTrainingSummaryForLayer(layer) {
-        if (!state.trainingSummary) {
-          return null;
-        }
-
-        return layer === 'type' ? state.trainingSummary.type : state.trainingSummary.behavior[layer];
-      }
-
-      function addStat(label, value) {
-        const key = document.createElement('span');
-        const count = document.createElement('strong');
-
-        key.textContent = label;
-        count.textContent = String(value);
-        stats.appendChild(key);
-        stats.appendChild(count);
-      }
-
       function setStatus(message, error = false) {
         status.textContent = message;
         status.style.color = error ? '#ff8a80' : 'var(--accent)';
       }
 
       function inGrid(x, y) {
-        return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < state.config.gridSize && y < state.config.gridSize;
+        return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < GRID_SIZE && y < GRID_SIZE;
       }
 
       function tileKey(x, y) {
@@ -1148,13 +1472,27 @@
 
       async function fetchJson(url) {
         const response = await fetch(url);
-        const payload = await response.json();
+        const payload = await readJsonResponse(response, url);
 
         if (!response.ok) {
           throw new Error(payload.error || `Request failed: ${url}`);
         }
 
         return payload;
+      }
+
+      async function readJsonResponse(response, context) {
+        const text = await response.text();
+
+        if (!text) {
+          return {};
+        }
+
+        try {
+          return JSON.parse(text);
+        } catch (error) {
+          throw new Error(`${context} returned invalid JSON (${response.status}).`);
+        }
       }
 
       function loadImage(url) {

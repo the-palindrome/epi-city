@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train sklearn random forests from map-editor labels and predict all map cells."""
+"""Train sklearn random forests from the map editor's current in-memory state."""
 
 from __future__ import annotations
 
@@ -26,20 +26,22 @@ BEHAVIOR_LABELS = ["walkable", "parkable", "drivable"]
 GRID_SIZE = 256
 PATCH_SIZE = 8
 RNG_SEED = 20260427
+EMPTY_LABEL_VALUES = (None, "")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--map", type=Path, required=True)
-    parser.add_argument("--labels", type=Path, required=True)
+    parser.add_argument("--map", type=Path, default=None)
+    parser.add_argument("--state", default=None, help="JSON file with rows/behaviorRows, or '-' to read stdin.")
     parser.add_argument("--grid-size", type=int, default=GRID_SIZE)
     parser.add_argument("--trees", type=int, default=48)
     return parser.parse_args()
 
 
 def load_baseline(map_path: Path, grid_size: int) -> tuple[list[list[str]], dict[str, list[list[bool]]]]:
-    data = json.loads(map_path.read_text(encoding="utf-8"))
+    data = read_json_object(map_path, "baseline map")
+    validate_baseline_map(data, grid_size)
     legend = data["legend"]
     type_rows: list[list[str]] = []
     behavior_rows = {property_name: [] for property_name in BEHAVIOR_LABELS}
@@ -51,7 +53,7 @@ def load_baseline(map_path: Path, grid_size: int) -> tuple[list[list[str]], dict
 
         for x in range(grid_size):
             entry = legend[row[x]]
-            label = "park" if entry["category"] == "sidewalk" and entry["subcategory"] == "park" else entry["category"]
+            label = "park" if entry["category"] == "sidewalk" and entry.get("subcategory") == "park" else entry["category"]
             type_row.append(label)
 
             for property_name in BEHAVIOR_LABELS:
@@ -71,8 +73,11 @@ def build_features(
     baseline_behavior_rows: dict[str, list[list[bool]]],
     grid_size: int,
 ) -> np.ndarray:
-    image = Image.open(source_path).convert("RGB")
-    resized = image.resize((grid_size * PATCH_SIZE, grid_size * PATCH_SIZE), Image.Resampling.BOX)
+    try:
+        with Image.open(source_path) as image:
+            resized = image.convert("RGB").resize((grid_size * PATCH_SIZE, grid_size * PATCH_SIZE), Image.Resampling.BOX)
+    except OSError as error:
+        raise ValueError(f"Could not read source image {source_path}: {error}") from error
     pixels = np.asarray(resized, dtype=np.float32) / 255.0
     patches = pixels.reshape(grid_size, PATCH_SIZE, grid_size, PATCH_SIZE, 3).transpose(0, 2, 1, 3, 4)
     flat_pixels = patches.reshape(grid_size * grid_size, PATCH_SIZE * PATCH_SIZE * 3)
@@ -118,7 +123,13 @@ def build_features(
                 type_one_hot[y, x, type_index[label]] = 1.0
 
     behavior = np.stack(
-        [np.asarray(baseline_behavior_rows[property_name], dtype=np.float32) for property_name in BEHAVIOR_LABELS],
+        [
+            np.asarray(
+                [[1.0 if value is True else 0.0 for value in row] for row in baseline_behavior_rows[property_name]],
+                dtype=np.float32,
+            )
+            for property_name in BEHAVIOR_LABELS
+        ],
         axis=2,
     )
 
@@ -154,28 +165,30 @@ def build_features(
 
 
 def train_layer(
-    labels: list[dict[str, Any]],
+    labeled_indices: list[int],
+    labeled_values: list[Any],
     all_features: np.ndarray,
-    baseline_flat: list[Any],
+    current_flat: list[Any],
     tree_count: int,
 ) -> tuple[list[Any], dict[str, Any]]:
-    if not labels:
-        return baseline_flat, {
+    if not labeled_values:
+        return current_flat, {
             "trained": False,
-            "reason": "No manual labels for this layer.",
+            "skipped": True,
+            "reason": "No non-empty labels for this layer.",
             "samples": 0,
         }
 
-    indices = np.asarray([entry["y"] * GRID_SIZE + entry["x"] for entry in labels], dtype=np.int32)
-    values = [entry.get("label", entry.get("value")) for entry in labels]
-    unique = sorted(set(values), key=lambda value: str(value))
+    indices = np.asarray(labeled_indices, dtype=np.int32)
+    unique = sorted(set(labeled_values), key=lambda value: str(value))
 
-    if len(values) < 2 or len(unique) < 2:
-        return baseline_flat, {
+    if len(labeled_values) < 2 or len(unique) < 2:
+        return current_flat, {
             "trained": False,
+            "skipped": True,
             "reason": "At least two classes/values are needed for random forest training.",
-            "samples": len(values),
-            "classes": stringify_counts(Counter(values)),
+            "samples": len(labeled_values),
+            "classes": stringify_counts(Counter(labeled_values)),
         }
 
     classifier = RandomForestClassifier(
@@ -187,14 +200,14 @@ def train_layer(
         bootstrap=True,
         min_samples_leaf=1,
     )
-    classifier.fit(all_features[indices], values)
+    classifier.fit(all_features[indices], labeled_values)
     predictions = [to_json_value(value) for value in classifier.predict(all_features)]
 
     return predictions, {
         "trained": True,
         "model": "sklearn.RandomForestClassifier",
-        "samples": len(values),
-        "classes": stringify_counts(Counter(values)),
+        "samples": len(labeled_values),
+        "classes": stringify_counts(Counter(labeled_values)),
         "trees": int(classifier.n_estimators),
         "maxFeatures": classifier.max_features,
     }
@@ -205,6 +218,8 @@ def stringify_counts(counter: Counter) -> dict[str, int]:
 
 
 def to_json_value(value: Any) -> Any:
+    if isinstance(value, np.str_):
+        return str(value)
     if isinstance(value, np.bool_):
         return bool(value)
     if isinstance(value, np.integer):
@@ -218,51 +233,186 @@ def reshape(values: list[Any], grid_size: int) -> list[list[Any]]:
     return [values[y * grid_size : (y + 1) * grid_size] for y in range(grid_size)]
 
 
-def count_type_rows(rows: list[list[str]]) -> dict[str, int]:
+def flatten_labeled_values(rows: list[list[Any]]) -> tuple[list[int], list[Any], list[Any]]:
+    current_flat = [value for row in rows for value in row]
+    labeled_indices = [index for index, value in enumerate(current_flat) if not is_empty_label(value)]
+    labeled_values = [current_flat[index] for index in labeled_indices]
+    return labeled_indices, labeled_values, current_flat
+
+
+def is_empty_label(value: Any) -> bool:
+    return value in EMPTY_LABEL_VALUES
+
+
+def count_type_rows(rows: list[list[Any]]) -> dict[str, int]:
     counter = Counter(value for row in rows for value in row)
-    return {label: int(counter.get(label, 0)) for label in TYPE_LABELS}
+    result = {label: int(counter.get(label, 0)) for label in TYPE_LABELS}
+    result["empty"] = int(sum(count for value, count in counter.items() if is_empty_label(value)))
+    return result
 
 
-def count_behavior_rows(rows: dict[str, list[list[bool]]]) -> dict[str, dict[str, int]]:
+def count_behavior_rows(rows: dict[str, list[list[Any]]]) -> dict[str, dict[str, int]]:
     result = {}
 
     for property_name, grid in rows.items():
-        values = [bool(value) for row in grid for value in row]
+        values = [value for row in grid for value in row]
         result[property_name] = {
-            "true": int(sum(values)),
-            "false": int(len(values) - sum(values)),
+            "true": int(sum(1 for value in values if value is True)),
+            "false": int(sum(1 for value in values if value is False)),
+            "empty": int(sum(1 for value in values if is_empty_label(value))),
         }
 
     return result
 
 
+def read_json_object(path: Path, description: str) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise ValueError(f"Missing {description}: {path}") from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid JSON in {description} {path}: {error}") from error
+
+    if not isinstance(data, dict):
+        raise ValueError(f"{description.capitalize()} must be a JSON object: {path}")
+
+    return data
+
+
+def validate_grid_size(grid_size: int) -> None:
+    if grid_size < 2:
+        raise ValueError("--grid-size must be at least 2.")
+
+
+def validate_baseline_map(data: dict[str, Any], grid_size: int) -> None:
+    if data.get("width") != grid_size or data.get("height") != grid_size:
+        raise ValueError(f"Baseline map must be {grid_size}x{grid_size}.")
+
+    legend = data.get("legend")
+    if not isinstance(legend, dict):
+        raise ValueError("Baseline map legend must be an object.")
+
+    rows = data.get("rows")
+    if not isinstance(rows, list) or len(rows) != grid_size:
+        raise ValueError(f"Baseline map rows must contain {grid_size} rows.")
+
+    for y, row in enumerate(rows):
+        if not isinstance(row, str) or len(row) != grid_size:
+            raise ValueError(f"Baseline map row {y} must contain {grid_size} symbols.")
+
+        for x, symbol in enumerate(row):
+            entry = legend.get(symbol)
+            if not isinstance(entry, dict):
+                raise ValueError(f"Baseline map row {y} references missing legend symbol {symbol!r} at {x},{y}.")
+
+            if entry.get("category") not in TYPE_LABELS:
+                raise ValueError(f"Baseline map legend symbol {symbol!r} has unsupported category: {entry.get('category')!r}.")
+
+            for property_name in BEHAVIOR_LABELS:
+                if not isinstance(entry.get(property_name), bool):
+                    raise ValueError(f"Baseline map legend symbol {symbol!r} must include boolean {property_name}.")
+
+
+def read_state_object(state: str | None) -> dict[str, Any] | None:
+    if state is None:
+        return None
+
+    if state == "-":
+        try:
+            data = json.load(sys.stdin)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"Invalid JSON in current-state payload: {error}") from error
+
+        if not isinstance(data, dict):
+            raise ValueError("Current-state payload must be a JSON object.")
+
+        return data
+
+    return read_json_object(Path(state), "current-state payload")
+
+
+def normalize_state_rows(data: dict[str, Any], grid_size: int) -> tuple[list[list[Any]], dict[str, list[list[Any]]]]:
+    rows = data.get("rows")
+    behavior_rows = data.get("behaviorRows")
+
+    validate_state_type_rows(rows, grid_size)
+
+    if not isinstance(behavior_rows, dict):
+        raise ValueError("Current-state payload behaviorRows must be an object.")
+
+    normalized_behavior = {}
+
+    for property_name in BEHAVIOR_LABELS:
+        property_rows = behavior_rows.get(property_name)
+        validate_state_behavior_rows(property_name, property_rows, grid_size)
+        normalized_behavior[property_name] = property_rows
+
+    return rows, normalized_behavior
+
+
+def validate_state_type_rows(rows: Any, grid_size: int) -> None:
+    if not isinstance(rows, list) or len(rows) != grid_size:
+        raise ValueError(f"Current-state rows must contain {grid_size} rows.")
+
+    for y, row in enumerate(rows):
+        if not isinstance(row, list) or len(row) != grid_size:
+            raise ValueError(f"Current-state row {y} must contain {grid_size} labels.")
+
+        for x, value in enumerate(row):
+            if not is_empty_label(value) and value not in TYPE_LABELS:
+                raise ValueError(f"Invalid current-state tile type at {x},{y}: {value!r}.")
+
+
+def validate_state_behavior_rows(property_name: str, rows: Any, grid_size: int) -> None:
+    if not isinstance(rows, list) or len(rows) != grid_size:
+        raise ValueError(f"Current-state behaviorRows.{property_name} must contain {grid_size} rows.")
+
+    for y, row in enumerate(rows):
+        if not isinstance(row, list) or len(row) != grid_size:
+            raise ValueError(f"Current-state behaviorRows.{property_name}[{y}] must contain {grid_size} booleans.")
+
+        for x, value in enumerate(row):
+            if not is_empty_label(value) and not isinstance(value, bool):
+                raise ValueError(f"Current-state behaviorRows.{property_name} has non-boolean/non-empty value at {x},{y}.")
+
+
 def main() -> None:
     args = parse_args()
-    labels = json.loads(args.labels.read_text(encoding="utf-8"))
-    type_rows, behavior_rows = load_baseline(args.map, args.grid_size)
+    validate_grid_size(args.grid_size)
+    state = read_state_object(args.state)
+
+    if state is not None:
+        type_rows, behavior_rows = normalize_state_rows(state, args.grid_size)
+    elif args.map is not None:
+        type_rows, behavior_rows = load_baseline(args.map, args.grid_size)
+    else:
+        raise ValueError("--state is required unless --map is provided.")
+
     features = build_features(args.source, type_rows, behavior_rows, args.grid_size)
 
-    type_flat = [value for row in type_rows for value in row]
+    type_indices, type_values, type_flat = flatten_labeled_values(type_rows)
     predicted_type_flat, type_summary = train_layer(
-        labels.get("typeLabels", labels.get("labels", [])),
+        type_indices,
+        type_values,
         features,
         type_flat,
         args.trees,
     )
     predicted_type_rows = reshape(predicted_type_flat, args.grid_size)
 
-    predicted_behavior_rows: dict[str, list[list[bool]]] = {}
+    predicted_behavior_rows: dict[str, list[list[Any]]] = {}
     behavior_summaries = {}
 
     for property_name in BEHAVIOR_LABELS:
-        baseline_flat = [bool(value) for row in behavior_rows[property_name] for value in row]
+        behavior_indices, behavior_values, behavior_flat = flatten_labeled_values(behavior_rows[property_name])
         predicted_flat, summary = train_layer(
-            labels.get("behaviorLabels", {}).get(property_name, []),
+            behavior_indices,
+            behavior_values,
             features,
-            baseline_flat,
+            behavior_flat,
             args.trees,
         )
-        predicted_behavior_rows[property_name] = reshape([bool(value) for value in predicted_flat], args.grid_size)
+        predicted_behavior_rows[property_name] = reshape([to_json_value(value) for value in predicted_flat], args.grid_size)
         behavior_summaries[property_name] = summary
 
     payload = {
@@ -287,5 +437,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        print(str(error), file=sys.stderr)
-        raise
+        print(f"Training failed: {error}", file=sys.stderr)
+        raise SystemExit(1) from error

@@ -12,14 +12,18 @@ const VENV_PYTHON = process.platform === 'win32'
   ? path.join(VENV_DIR, 'Scripts', 'python.exe')
   : path.join(VENV_DIR, 'bin', 'python');
 
-const bootstrapPython = findBootstrapPython();
-
-if (!bootstrapPython) {
-  fail('Could not find Python. Install Python 3, or set MAP_EDITOR_BOOTSTRAP_PYTHON=/path/to/python.');
-}
+let bootstrapPython = null;
 
 if (!existsSync(VENV_PYTHON)) {
+  bootstrapPython = requireBootstrapPython();
   recreateVenv('No usable map-editor virtualenv was found.');
+} else if (!isUsablePython(VENV_PYTHON)) {
+  bootstrapPython = requireBootstrapPython();
+  recreateVenv('The existing map-editor virtualenv is not usable with Python 3.10+.');
+}
+
+if (!existsSync(REQUIREMENTS_PATH)) {
+  fail(`Missing requirements file: ${displayPath(REQUIREMENTS_PATH)}`);
 }
 
 run(VENV_PYTHON, ['-m', 'pip', 'install', '--upgrade', 'pip']);
@@ -69,17 +73,31 @@ function findBootstrapPython() {
   ].filter(Boolean);
 
   for (const candidate of candidates) {
-    const result = spawnSync(candidate, ['-c', 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'], {
-      cwd: REPO_ROOT,
-      stdio: 'ignore'
-    });
-
-    if (result.status === 0) {
+    if (isUsablePython(candidate)) {
       return candidate;
     }
   }
 
   return null;
+}
+
+function requireBootstrapPython() {
+  const python = findBootstrapPython();
+
+  if (!python) {
+    fail('Could not find Python. Install Python 3, or set MAP_EDITOR_BOOTSTRAP_PYTHON=/path/to/python.');
+  }
+
+  return python;
+}
+
+function isUsablePython(command) {
+  const result = spawnSync(command, ['-c', 'import ensurepip, sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'], {
+    cwd: REPO_ROOT,
+    stdio: 'ignore'
+  });
+
+  return result.status === 0;
 }
 
 function run(command, args) {
@@ -89,7 +107,8 @@ function run(command, args) {
   });
 
   if (result.status !== 0) {
-    fail(`Command failed: ${[displayPath(command), ...args].join(' ')}`);
+    const reason = result.error ? ` (${result.error.message})` : '';
+    fail(`Command failed${reason}: ${[displayPath(command), ...args].join(' ')}`);
   }
 }
 
