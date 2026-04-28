@@ -29,6 +29,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.j
 - `public/assets/textures/gta/manifest.json` describes the source atlas frames used by the texture set.
 - `public/assets/textures/gta/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
 - `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
+- `map-editor/` contains the interactive map editor, random-forest training loop, and Epi City JSON load/save tools.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
 - `vite.config.ts` configures local development and preview server ports.
 
@@ -97,6 +98,17 @@ window.citySim.dashboard.toggle(true)
 window.citySim.dashboard.setOverlay('walkable', true)
 window.citySim.dashboard.setOverlay('drivable', true)
 ```
+
+## Map Editor
+
+Install the Python training dependencies and start the map editor:
+
+```bash
+npm run map-editor:deps
+npm run map-editor
+```
+
+The dependency command creates a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor can load the current Epi City map JSON, paint tile-type and behavior labels, train `sklearn` random-forest classifiers, reset the editor labels, and save the resolved classification back into the loaded map JSON.
 
 ## Texture Sets
 

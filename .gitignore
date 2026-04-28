@@ -36,3 +36,4 @@ Thumbs.db
 # Python cache
 __pycache__/
 *.py[cod]
+map-editor/.venv/

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "map-editor": "node map-editor/server.mjs",
+    "map-editor:deps": "python3 -m venv map-editor/.venv && map-editor/.venv/bin/python -m pip install --upgrade pip && map-editor/.venv/bin/python -m pip install -r map-editor/requirements.txt"
   },
   "devDependencies": {
     "vite": "^8.0.10"

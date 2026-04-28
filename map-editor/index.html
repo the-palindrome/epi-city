@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Epi City Map Editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --panel: rgba(17, 21, 18, 0.92);
+        --panel-soft: rgba(32, 39, 33, 0.92);
+        --line: rgba(220, 230, 210, 0.2);
+        --text: #edf4e9;
+        --muted: #aeb9ac;
+        --accent: #f2cc47;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #101410;
+        color: var(--text);
+        font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        cursor: crosshair;
+      }
+
+      .panel {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        width: 330px;
+        max-height: calc(100vh - 28px);
+        overflow: auto;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.36);
+        user-select: none;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .hint {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .section {
+        padding-top: 12px;
+        margin-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 8px 0;
+      }
+
+      .button-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+      }
+
+      button,
+      select,
+      input[type='range'] {
+        font: inherit;
+      }
+
+      button,
+      select {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-soft);
+        color: var(--text);
+      }
+
+      button {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        padding: 8px 9px;
+        cursor: pointer;
+      }
+
+      button:hover,
+      button.active {
+        border-color: rgba(242, 204, 71, 0.72);
+        box-shadow: inset 0 0 0 1px rgba(242, 204, 71, 0.24);
+      }
+
+      button.primary {
+        justify-content: center;
+        background: rgba(242, 204, 71, 0.18);
+        border-color: rgba(242, 204, 71, 0.62);
+      }
+
+      select {
+        padding: 6px 8px;
+      }
+
+      label {
+        color: var(--muted);
+      }
+
+      input[type='checkbox'] {
+        accent-color: var(--accent);
+      }
+
+      .swatch {
+        width: 14px;
+        height: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.42);
+        border-radius: 4px;
+        flex: 0 0 auto;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 3px 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .stats strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .status {
+        min-height: 18px;
+        color: var(--accent);
+        font-size: 12px;
+      }
+
+      .footer {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .badge {
+        padding: 1px 5px 2px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="map"></canvas>
+
+    <aside class="panel">
+      <h1>Map Editor</h1>
+      <p class="hint">Paint tile types or behavior booleans onto the 256x256 source grid. Wheel zooms, right/middle drag or hold Space pans, left drag paints.</p>
+
+      <div class="section">
+        <div class="row">
+          <label for="paint-layer">Paint layer</label>
+          <select id="paint-layer">
+            <option value="type">tile type</option>
+            <option value="walkable">walkable</option>
+            <option value="parkable">parkable</option>
+            <option value="drivable">drivable</option>
+          </select>
+        </div>
+        <div class="button-grid" id="label-buttons"></div>
+      </div>
+
+      <div class="section">
+        <div class="row">
+          <label for="brush-size">Brush</label>
+          <select id="brush-size">
+            <option value="1">1x1</option>
+            <option value="3">3x3</option>
+            <option value="5">5x5</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="manual-opacity">Manual opacity</label>
+          <input id="manual-opacity" type="range" min="0.15" max="1" step="0.05" value="0.82">
+        </div>
+        <div class="row">
+          <label for="generated-opacity">Generated opacity</label>
+          <input id="generated-opacity" type="range" min="0.05" max="0.85" step="0.05" value="0.28">
+        </div>
+        <div class="row">
+          <label for="overlay-source">Overlay source</label>
+          <select id="overlay-source">
+            <option value="generated">current map</option>
+            <option value="model">model prediction</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="row">
+          <label><input id="show-generated" type="checkbox" checked> generated current layer</label>
+        </div>
+        <div class="row">
+          <label><input id="show-labels" type="checkbox" checked> manual current layer</label>
+        </div>
+        <div class="row">
+          <label><input id="show-grid" type="checkbox" checked> grid</label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="button-grid">
+          <button id="save" class="primary" type="button">Save labels</button>
+          <button id="train" class="primary" type="button">Train random forest</button>
+          <button id="load-epi-json" type="button">Load Epi JSON</button>
+          <button id="save-epi-json" type="button">Save Epi JSON</button>
+          <button id="reset-labels" type="button">Reset labels</button>
+          <button id="fit" type="button">Fit map</button>
+          <button id="undo" type="button">Undo</button>
+          <button id="redo" type="button">Redo</button>
+        </div>
+      </div>
+
+      <div class="section stats" id="stats"></div>
+      <div class="section status" id="status">Loading...</div>
+      <div class="footer">
+        Current tile: <span class="badge" id="cursor-tile">outside</span><br>
+        Labels save to <span class="badge" id="labels-path">map-editor/labels/tile-labels.json</span>
+      </div>
+    </aside>
+
+    <script type="module">
+      const TYPE_COLORS = Object.freeze({
+        road: '#111611',
+        sidewalk: '#a6aca3',
+        park: '#4da23f',
+        water: '#0786c8',
+        bridge: '#80613a',
+        building: '#68716b',
+        erase: '#d94a48',
+        unknown: '#ffffff'
+      });
+
+      const BEHAVIOR_COLORS = Object.freeze({
+        true: '#2bd36f',
+        false: '#d94a48',
+        erase: '#f2cc47'
+      });
+
+      const TYPE_KEYS = Object.freeze({
+        '1': 'road',
+        '2': 'sidewalk',
+        '3': 'park',
+        '4': 'water',
+        '5': 'bridge',
+        '6': 'building',
+        e: 'erase'
+      });
+
+      const BEHAVIOR_KEYS = Object.freeze({
+        t: true,
+        f: false,
+        e: null
+      });
+
+      const canvas = document.getElementById('map');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      const paintLayer = document.getElementById('paint-layer');
+      const labelButtons = document.getElementById('label-buttons');
+      const brushSize = document.getElementById('brush-size');
+      const manualOpacity = document.getElementById('manual-opacity');
+      const generatedOpacity = document.getElementById('generated-opacity');
+      const overlaySource = document.getElementById('overlay-source');
+      const showGenerated = document.getElementById('show-generated');
+      const showLabels = document.getElementById('show-labels');
+      const showGrid = document.getElementById('show-grid');
+      const trainButton = document.getElementById('train');
+      const loadEpiJsonButton = document.getElementById('load-epi-json');
+      const saveEpiJsonButton = document.getElementById('save-epi-json');
+      const resetLabelsButton = document.getElementById('reset-labels');
+      const status = document.getElementById('status');
+      const stats = document.getElementById('stats');
+      const cursorTile = document.getElementById('cursor-tile');
+      const labelsPath = document.getElementById('labels-path');
+
+      const state = {
+        config: null,
+        image: null,
+        generatedRows: null,
+        generatedBehaviorRows: null,
+        modelRows: null,
+        modelBehaviorRows: null,
+        trainingSummary: null,
+        loadedMapPath: null,
+        selectedTypeLabel: 'road',
+        selectedBehaviorValue: true,
+        typeLabels: new Map(),
+        behaviorLabels: {},
+        undoStack: [],
+        redoStack: [],
+        dirty: false,
+        isPainting: false,
+        isPanning: false,
+        spaceDown: false,
+        lastPointer: { x: 0, y: 0 },
+        hoverTile: null,
+        view: { x: 0, y: 0, zoom: 1 }
+      };
+
+      init().catch((error) => {
+        console.error(error);
+        setStatus(error.message, true);
+      });
+
+      async function init() {
+        state.config = await fetchJson('/api/config');
+        labelsPath.textContent = state.config.labelsPath;
+        state.behaviorLabels = Object.fromEntries(state.config.behaviorLabels.map((property) => [property, new Map()]));
+
+        const [labelsFile, generated] = await Promise.all([
+          fetchJson('/api/labels'),
+          fetchJson('/api/current-classification')
+        ]);
+
+        state.generatedRows = generated.rows;
+        state.generatedBehaviorRows = generated.behaviorRows;
+        state.loadedMapPath = generated.mapPath || generated.sourceMap || state.config.defaultMapPath;
+        loadLabels(labelsFile);
+        state.image = await loadImage(state.config.sourceImageUrl);
+        createLabelButtons();
+        resizeCanvas();
+        fitMap();
+        installEvents();
+        updateStats();
+        setStatus('Ready. Pick a layer, paint labels, then Save labels.');
+        draw();
+      }
+
+      function createLabelButtons() {
+        labelButtons.innerHTML = '';
+        const layer = paintLayer.value;
+        const buttons = layer === 'type'
+          ? [...state.config.typeLabels.map((label) => ({ value: label, label, color: TYPE_COLORS[label] })), { value: 'erase', label: 'erase', color: TYPE_COLORS.erase }]
+          : [
+              { value: 'true', label: `${layer}: true`, color: BEHAVIOR_COLORS.true },
+              { value: 'false', label: `${layer}: false`, color: BEHAVIOR_COLORS.false },
+              { value: 'erase', label: 'erase', color: BEHAVIOR_COLORS.erase }
+            ];
+
+        for (const buttonInfo of buttons) {
+          const button = document.createElement('button');
+          const swatch = document.createElement('span');
+          const text = document.createElement('span');
+
+          swatch.className = 'swatch';
+          swatch.style.background = buttonInfo.color;
+          text.textContent = buttonInfo.label;
+          button.type = 'button';
+          button.dataset.value = buttonInfo.value;
+          button.appendChild(swatch);
+          button.appendChild(text);
+          button.addEventListener('click', () => setSelectedPaintValue(buttonInfo.value));
+          labelButtons.appendChild(button);
+        }
+
+        refreshActiveButton();
+      }
+
+      function setSelectedPaintValue(value) {
+        if (paintLayer.value === 'type') {
+          state.selectedTypeLabel = value;
+        } else if (value === 'erase') {
+          state.selectedBehaviorValue = null;
+        } else {
+          state.selectedBehaviorValue = value === 'true';
+        }
+
+        refreshActiveButton();
+      }
+
+      function selectedPaintValue() {
+        if (paintLayer.value === 'type') {
+          return state.selectedTypeLabel;
+        }
+
+        if (state.selectedBehaviorValue === null) {
+          return 'erase';
+        }
+
+        return String(state.selectedBehaviorValue);
+      }
+
+      function refreshActiveButton() {
+        const selected = selectedPaintValue();
+
+        for (const button of labelButtons.querySelectorAll('button')) {
+          button.classList.toggle('active', button.dataset.value === selected);
+        }
+      }
+
+      function loadLabels(file) {
+        state.typeLabels.clear();
+
+        for (const entry of file.typeLabels) {
+          state.typeLabels.set(tileKey(entry.x, entry.y), entry.label);
+        }
+
+        for (const property of state.config.behaviorLabels) {
+          state.behaviorLabels[property].clear();
+
+          for (const entry of file.behaviorLabels[property]) {
+            state.behaviorLabels[property].set(tileKey(entry.x, entry.y), entry.value);
+          }
+        }
+      }
+
+      function installEvents() {
+        window.addEventListener('resize', () => {
+          resizeCanvas();
+          draw();
+        });
+
+        canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        canvas.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+
+        paintLayer.addEventListener('change', () => {
+          createLabelButtons();
+          updateStats();
+          draw();
+        });
+
+        for (const element of [brushSize, manualOpacity, generatedOpacity, overlaySource, showGenerated, showLabels, showGrid]) {
+          element.addEventListener('input', draw);
+          element.addEventListener('change', draw);
+        }
+
+        document.getElementById('save').addEventListener('click', () => saveLabels());
+        trainButton.addEventListener('click', trainModel);
+        loadEpiJsonButton.addEventListener('click', loadEpiCityJson);
+        saveEpiJsonButton.addEventListener('click', saveEpiCityJson);
+        resetLabelsButton.addEventListener('click', resetEditorLabels);
+        document.getElementById('fit').addEventListener('click', () => {
+          fitMap();
+          draw();
+        });
+        document.getElementById('undo').addEventListener('click', undo);
+        document.getElementById('redo').addEventListener('click', redo);
+
+        window.addEventListener('keydown', (event) => {
+          if (isEditableTarget(event.target)) {
+            return;
+          }
+
+          if (event.code === 'Space') {
+            state.spaceDown = true;
+            event.preventDefault();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+            event.preventDefault();
+            saveLabels();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+            event.preventDefault();
+            undo();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+            event.preventDefault();
+            redo();
+            return;
+          }
+
+          const key = event.key.toLowerCase();
+
+          if (paintLayer.value === 'type' && Object.prototype.hasOwnProperty.call(TYPE_KEYS, key)) {
+            setSelectedPaintValue(TYPE_KEYS[key]);
+            event.preventDefault();
+            return;
+          }
+
+          if (paintLayer.value !== 'type' && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
+            setSelectedPaintValue(BEHAVIOR_KEYS[key] === null ? 'erase' : String(BEHAVIOR_KEYS[key]));
+            event.preventDefault();
+          }
+        });
+
+        window.addEventListener('keyup', (event) => {
+          if (event.code === 'Space') {
+            state.spaceDown = false;
+          }
+        });
+      }
+
+      function onWheel(event) {
+        event.preventDefault();
+        const point = canvasPoint(event);
+        const imagePoint = screenToImage(point.x, point.y);
+        const factor = Math.exp(-event.deltaY * 0.0012);
+        const nextZoom = clamp(state.view.zoom * factor, 0.1, 80);
+
+        state.view.zoom = nextZoom;
+        state.view.x = point.x - imagePoint.x * nextZoom;
+        state.view.y = point.y - imagePoint.y * nextZoom;
+        draw();
+      }
+
+      function onPointerDown(event) {
+        const point = canvasPoint(event);
+        state.lastPointer = point;
+        canvas.setPointerCapture(event.pointerId);
+
+        if (event.button === 1 || event.button === 2 || state.spaceDown) {
+          state.isPanning = true;
+          return;
+        }
+
+        if (event.button !== 0) {
+          return;
+        }
+
+        const tile = screenToTile(point.x, point.y);
+
+        if (!tile) {
+          return;
+        }
+
+        state.isPainting = true;
+        paintAt(tile.x, tile.y);
+      }
+
+      function onPointerMove(event) {
+        const point = canvasPoint(event);
+        const tile = screenToTile(point.x, point.y);
+
+        state.hoverTile = tile;
+        cursorTile.textContent = tile ? `${tile.x},${tile.y}` : 'outside';
+
+        if (state.isPanning) {
+          state.view.x += point.x - state.lastPointer.x;
+          state.view.y += point.y - state.lastPointer.y;
+          state.lastPointer = point;
+          draw();
+          return;
+        }
+
+        if (state.isPainting && tile) {
+          paintAt(tile.x, tile.y);
+          return;
+        }
+
+        draw();
+      }
+
+      function onPointerUp(event) {
+        state.isPainting = false;
+        state.isPanning = false;
+
+        if (canvas.hasPointerCapture(event.pointerId)) {
+          canvas.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      function paintAt(tileX, tileY) {
+        const operation = [];
+        const radius = Math.floor(Number(brushSize.value) / 2);
+
+        for (let y = tileY - radius; y <= tileY + radius; y += 1) {
+          for (let x = tileX - radius; x <= tileX + radius; x += 1) {
+            if (!inGrid(x, y)) {
+              continue;
+            }
+
+            const key = tileKey(x, y);
+            const layer = paintLayer.value;
+            const before = getManualLabel(layer, key);
+            const after = getSelectedManualValue(layer);
+
+            if (before === after) {
+              continue;
+            }
+
+            applyLabelChange(layer, key, after);
+            operation.push({ layer, key, before, after });
+          }
+        }
+
+        if (operation.length > 0) {
+          state.undoStack.push(operation);
+          state.redoStack.length = 0;
+          state.dirty = true;
+          updateStats();
+          draw();
+        }
+      }
+
+      function getSelectedManualValue(layer) {
+        if (layer === 'type') {
+          return state.selectedTypeLabel === 'erase' ? null : state.selectedTypeLabel;
+        }
+
+        return state.selectedBehaviorValue;
+      }
+
+      function getManualLabel(layer, key) {
+        if (layer === 'type') {
+          return state.typeLabels.get(key) ?? null;
+        }
+
+        return state.behaviorLabels[layer].get(key) ?? null;
+      }
+
+      function applyLabelChange(layer, key, value) {
+        const target = layer === 'type' ? state.typeLabels : state.behaviorLabels[layer];
+
+        if (value === null) {
+          target.delete(key);
+        } else {
+          target.set(key, value);
+        }
+      }
+
+      function undo() {
+        const operation = state.undoStack.pop();
+
+        if (!operation) {
+          return;
+        }
+
+        for (const change of operation) {
+          applyLabelChange(change.layer, change.key, change.before);
+        }
+
+        state.redoStack.push(operation);
+        state.dirty = true;
+        updateStats();
+        draw();
+      }
+
+      function redo() {
+        const operation = state.redoStack.pop();
+
+        if (!operation) {
+          return;
+        }
+
+        for (const change of operation) {
+          applyLabelChange(change.layer, change.key, change.after);
+        }
+
+        state.undoStack.push(operation);
+        state.dirty = true;
+        updateStats();
+        draw();
+      }
+
+      async function saveLabels(options = {}) {
+        const payload = {
+          sourceImage: state.config.sourceImagePath,
+          generatedMap: state.loadedMapPath || state.config.defaultMapPath,
+          gridSize: state.config.gridSize,
+          typeLabels: mapToSortedEntries(state.typeLabels, (x, y, label) => ({ x, y, label })),
+          behaviorLabels: Object.fromEntries(state.config.behaviorLabels.map((property) => [
+            property,
+            mapToSortedEntries(state.behaviorLabels[property], (x, y, value) => ({ x, y, value }))
+          ]))
+        };
+
+        const response = await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || `Save failed with HTTP ${response.status}.`);
+        }
+
+        state.dirty = false;
+        if (!options.silent) {
+          setStatus(`Saved ${result.saved.total} labels: ${result.saved.typeLabels} types, ${Object.entries(result.saved.behaviorLabels).map(([key, count]) => `${count} ${key}`).join(', ')}.`);
+        }
+
+        return result;
+      }
+
+      async function trainModel() {
+        trainButton.disabled = true;
+
+        try {
+          setStatus('Saving labels before training...');
+          await saveLabels({ silent: true });
+
+          setStatus('Training random forests and predicting all 65,536 tiles...');
+          const response = await fetch('/api/train', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ trees: 48, mapPath: state.loadedMapPath })
+          });
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || `Training failed with HTTP ${response.status}.`);
+          }
+
+          state.modelRows = result.rows;
+          state.modelBehaviorRows = result.behaviorRows;
+          state.trainingSummary = result.summary;
+          overlaySource.value = 'model';
+          updateStats();
+          draw();
+          setStatus(formatTrainingStatus(result.summary));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        } finally {
+          trainButton.disabled = false;
+        }
+      }
+
+      async function loadEpiCityJson() {
+        loadEpiJsonButton.disabled = true;
+
+        try {
+          setStatus('Loading Epi City JSON classification...');
+          const result = await fetchJson(`/api/epi-city-map?path=${encodeURIComponent(state.loadedMapPath || state.config.defaultMapPath)}`);
+
+          state.generatedRows = result.rows;
+          state.generatedBehaviorRows = result.behaviorRows;
+          state.loadedMapPath = result.mapPath || result.sourceMap;
+          state.modelRows = null;
+          state.modelBehaviorRows = null;
+          state.trainingSummary = null;
+          overlaySource.value = 'generated';
+          updateStats();
+          draw();
+          setStatus(`Loaded Epi City JSON from ${result.sourceMap}. Manual brush labels are still active as overrides.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        } finally {
+          loadEpiJsonButton.disabled = false;
+        }
+      }
+
+      async function saveEpiCityJson() {
+        saveEpiJsonButton.disabled = true;
+
+        try {
+          setStatus('Saving labels and writing Epi City JSON...');
+          await saveLabels({ silent: true });
+
+          const response = await fetch('/api/epi-city-map', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(buildResolvedClassification())
+          });
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || `Epi City JSON save failed with HTTP ${response.status}.`);
+          }
+
+          state.generatedRows = result.rows;
+          state.generatedBehaviorRows = result.behaviorRows;
+          state.loadedMapPath = result.mapPath || result.path;
+          state.modelRows = null;
+          state.modelBehaviorRows = null;
+          state.trainingSummary = null;
+          overlaySource.value = 'generated';
+          updateStats();
+          draw();
+          setStatus(`Saved Epi City JSON to ${result.path}.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        } finally {
+          saveEpiJsonButton.disabled = false;
+        }
+      }
+
+      function resetEditorLabels() {
+        state.typeLabels.clear();
+
+        for (const property of state.config.behaviorLabels) {
+          state.behaviorLabels[property].clear();
+        }
+
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        state.dirty = true;
+        updateStats();
+        draw();
+        setStatus('Cleared all manual labels in the editor. Use Save labels if you want to persist the reset.');
+      }
+
+      function buildResolvedClassification() {
+        const source = activeOverlayPredictionSource();
+        const rows = source.rows.map((row) => [...row]);
+        const behaviorRows = Object.fromEntries(state.config.behaviorLabels.map((property) => [
+          property,
+          source.behaviorRows[property].map((row) => [...row])
+        ]));
+
+        for (const [key, label] of state.typeLabels.entries()) {
+          const [x, y] = key.split(',').map(Number);
+          rows[y][x] = label;
+        }
+
+        for (const property of state.config.behaviorLabels) {
+          for (const [key, value] of state.behaviorLabels[property].entries()) {
+            const [x, y] = key.split(',').map(Number);
+            behaviorRows[property][y][x] = value;
+          }
+        }
+
+        return {
+          gridSize: state.config.gridSize,
+          mapPath: state.loadedMapPath,
+          rows,
+          behaviorRows
+        };
+      }
+
+      function formatTrainingStatus(summary) {
+        const trained = [];
+        const skipped = [];
+
+        collectTrainingStatus('type', summary.type, trained, skipped);
+
+        for (const [property, propertySummary] of Object.entries(summary.behavior)) {
+          collectTrainingStatus(property, propertySummary, trained, skipped);
+        }
+
+        if (trained.length === 0) {
+          return `No layers trained yet. Add at least two classes/values on a layer. Skipped: ${skipped.join(', ')}.`;
+        }
+
+        return `Trained ${trained.join(', ')}. Skipped: ${skipped.length ? skipped.join(', ') : 'none'}.`;
+      }
+
+      function collectTrainingStatus(name, summary, trained, skipped) {
+        if (summary && summary.trained) {
+          trained.push(`${name} (${summary.samples} samples)`);
+        } else {
+          skipped.push(`${name} (${summary ? summary.samples : 0} samples)`);
+        }
+      }
+
+      function mapToSortedEntries(map, toEntry) {
+        return [...map.entries()]
+          .map(([key, value]) => {
+            const [x, y] = key.split(',').map(Number);
+            return toEntry(x, y, value);
+          })
+          .sort((a, b) => a.y - b.y || a.x - b.x);
+      }
+
+      function draw() {
+        if (!state.image) {
+          return;
+        }
+
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#101410';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.setTransform(dpr * state.view.zoom, 0, 0, dpr * state.view.zoom, dpr * state.view.x, dpr * state.view.y);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(state.image, 0, 0);
+
+        if (showGenerated.checked) {
+          drawGeneratedOverlay(Number(generatedOpacity.value));
+        }
+
+        if (showLabels.checked) {
+          drawManualLabels(Number(manualOpacity.value));
+        }
+
+        if (showGrid.checked) {
+          drawGrid();
+        }
+
+        drawHoverTile();
+      }
+
+      function drawGeneratedOverlay(alpha) {
+        const layer = paintLayer.value;
+        const source = activeOverlayPredictionSource();
+
+        ctx.globalAlpha = alpha;
+
+        for (let y = 0; y < state.config.gridSize; y += 1) {
+          for (let x = 0; x < state.config.gridSize; x += 1) {
+            if (layer === 'type') {
+              drawTileFill(x, y, TYPE_COLORS[source.rows[y][x]] || TYPE_COLORS.unknown);
+            } else {
+              drawTileFill(x, y, BEHAVIOR_COLORS[String(source.behaviorRows[layer][y][x])]);
+            }
+          }
+        }
+
+        ctx.globalAlpha = 1;
+      }
+
+      function activeOverlayPredictionSource() {
+        const hasModel = state.modelRows && state.modelBehaviorRows;
+
+        if (overlaySource.value === 'model' && hasModel) {
+          return {
+            rows: state.modelRows,
+            behaviorRows: state.modelBehaviorRows
+          };
+        }
+
+        return {
+          rows: state.generatedRows,
+          behaviorRows: state.generatedBehaviorRows
+        };
+      }
+
+      function drawManualLabels(alpha) {
+        const layer = paintLayer.value;
+        const map = layer === 'type' ? state.typeLabels : state.behaviorLabels[layer];
+
+        ctx.globalAlpha = alpha;
+
+        for (const [key, value] of map.entries()) {
+          const [x, y] = key.split(',').map(Number);
+          const color = layer === 'type' ? TYPE_COLORS[value] : BEHAVIOR_COLORS[String(value)];
+          drawTileFill(x, y, color);
+        }
+
+        ctx.globalAlpha = 1;
+      }
+
+      function drawTileFill(x, y, color) {
+        const bounds = tileBounds(x, y);
+        ctx.fillStyle = color;
+        ctx.fillRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+      }
+
+      function drawGrid() {
+        if (state.view.zoom < 1.4) {
+          return;
+        }
+
+        const size = state.config.gridSize;
+        ctx.strokeStyle = state.view.zoom > 5 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.11)';
+        ctx.lineWidth = 1 / state.view.zoom;
+        ctx.beginPath();
+
+        for (let i = 0; i <= size; i += 1) {
+          const x = Math.round(i * state.image.width / size);
+          const y = Math.round(i * state.image.height / size);
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, state.image.height);
+          ctx.moveTo(0, y);
+          ctx.lineTo(state.image.width, y);
+        }
+
+        ctx.stroke();
+      }
+
+      function drawHoverTile() {
+        if (!state.hoverTile) {
+          return;
+        }
+
+        const bounds = tileBounds(state.hoverTile.x, state.hoverTile.y);
+        ctx.strokeStyle = '#f2cc47';
+        ctx.lineWidth = 2 / state.view.zoom;
+        ctx.strokeRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+      }
+
+      function fitMap() {
+        const padding = 28;
+        const scaleX = (canvas.clientWidth - padding * 2) / state.image.width;
+        const scaleY = (canvas.clientHeight - padding * 2) / state.image.height;
+
+        state.view.zoom = Math.max(0.1, Math.min(scaleX, scaleY));
+        state.view.x = (canvas.clientWidth - state.image.width * state.view.zoom) / 2;
+        state.view.y = (canvas.clientHeight - state.image.height * state.view.zoom) / 2;
+      }
+
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(window.innerWidth * dpr);
+        canvas.height = Math.round(window.innerHeight * dpr);
+      }
+
+      function screenToImage(screenX, screenY) {
+        return {
+          x: (screenX - state.view.x) / state.view.zoom,
+          y: (screenY - state.view.y) / state.view.zoom
+        };
+      }
+
+      function screenToTile(screenX, screenY) {
+        const imagePoint = screenToImage(screenX, screenY);
+
+        if (imagePoint.x < 0 || imagePoint.y < 0 || imagePoint.x >= state.image.width || imagePoint.y >= state.image.height) {
+          return null;
+        }
+
+        const x = Math.floor(imagePoint.x * state.config.gridSize / state.image.width);
+        const y = Math.floor(imagePoint.y * state.config.gridSize / state.image.height);
+
+        return inGrid(x, y) ? { x, y } : null;
+      }
+
+      function tileBounds(x, y) {
+        const size = state.config.gridSize;
+        const x0 = Math.round(x * state.image.width / size);
+        const y0 = Math.round(y * state.image.height / size);
+        const x1 = Math.max(x0 + 1, Math.round((x + 1) * state.image.width / size));
+        const y1 = Math.max(y0 + 1, Math.round((y + 1) * state.image.height / size));
+
+        return { x0, y0, x1, y1 };
+      }
+
+      function canvasPoint(event) {
+        const bounds = canvas.getBoundingClientRect();
+
+        return {
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top
+        };
+      }
+
+      function updateStats() {
+        stats.innerHTML = '';
+        addStat('active layer', paintLayer.value);
+        addStat('overlay source', overlaySource.value === 'model' && state.modelRows ? 'model' : 'current map');
+        addStat('loaded map', state.loadedMapPath || 'none');
+        addStat('type labels', state.typeLabels.size);
+
+        for (const property of state.config.behaviorLabels) {
+          addStat(`${property} labels`, state.behaviorLabels[property].size);
+        }
+
+        const layer = paintLayer.value;
+
+        if (layer === 'type') {
+          const counts = Object.fromEntries(state.config.typeLabels.map((label) => [label, 0]));
+
+          for (const label of state.typeLabels.values()) {
+            counts[label] = (counts[label] || 0) + 1;
+          }
+
+          for (const label of state.config.typeLabels) {
+            addStat(label, counts[label]);
+          }
+        } else {
+          let trueCount = 0;
+          let falseCount = 0;
+
+          for (const value of state.behaviorLabels[layer].values()) {
+            if (value) {
+              trueCount += 1;
+            } else {
+              falseCount += 1;
+            }
+          }
+
+          addStat(`${layer}: true`, trueCount);
+          addStat(`${layer}: false`, falseCount);
+        }
+
+        const layerSummary = getTrainingSummaryForLayer(layer);
+
+        if (layerSummary) {
+          addStat('model status', layerSummary.trained ? layerSummary.model : 'not trained');
+          addStat('model samples', layerSummary.samples || 0);
+        }
+      }
+
+      function getTrainingSummaryForLayer(layer) {
+        if (!state.trainingSummary) {
+          return null;
+        }
+
+        return layer === 'type' ? state.trainingSummary.type : state.trainingSummary.behavior[layer];
+      }
+
+      function addStat(label, value) {
+        const key = document.createElement('span');
+        const count = document.createElement('strong');
+
+        key.textContent = label;
+        count.textContent = String(value);
+        stats.appendChild(key);
+        stats.appendChild(count);
+      }
+
+      function setStatus(message, error = false) {
+        status.textContent = message;
+        status.style.color = error ? '#ff8a80' : 'var(--accent)';
+      }
+
+      function inGrid(x, y) {
+        return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < state.config.gridSize && y < state.config.gridSize;
+      }
+
+      function tileKey(x, y) {
+        return `${x},${y}`;
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function isEditableTarget(target) {
+        return target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+      }
+
+      async function fetchJson(url) {
+        const response = await fetch(url);
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || `Request failed: ${url}`);
+        }
+
+        return payload;
+      }
+
+      function loadImage(url) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error(`Could not load ${url}.`));
+          image.src = url;
+        });
+      }
+    </script>
+  </body>
+</html>
