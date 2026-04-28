@@ -14,9 +14,9 @@ Running the script updates these runtime files:
 - `public/liberty-city.json`
 - `public/assets/textures/gta/manifest.json`
 - `public/assets/textures/gta/liberty-city-atlas.webp`
-- `tmp/gta-256-textured-preview.png`
+- `process_gta_map/output/gta-256-textured-preview.png`
 
-The `tmp/` preview is local scratch output and is ignored by Git. The `public/` files are the app-facing generated artifacts.
+The `process_gta_map/output/` preview is local inspection output and is ignored by Git. The `public/` files are the app-facing generated artifacts.
 
 ## Requirements
 
@@ -45,7 +45,7 @@ The script performs these steps:
 5. Deduplicates exact duplicate source crops.
 6. Writes `textureRows` so every cell points to its exact source tile frame.
 7. Verifies each `textureRows` entry against the original source pixels.
-8. Writes a preview image to `tmp/gta-256-textured-preview.png`.
+8. Writes a preview image to `process_gta_map/output/gta-256-textured-preview.png`.
 
 Expected current stats:
 
@@ -66,7 +66,7 @@ npm run build
 For visual inspection, open the preview:
 
 ```bash
-xdg-open tmp/gta-256-textured-preview.png
+xdg-open process_gta_map/output/gta-256-textured-preview.png
 ```
 
 The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing `public/liberty-city.json`.

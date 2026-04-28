@@ -28,7 +28,7 @@ REPO_ROOT = PROCESS_DIR.parent
 SOURCE = PROCESS_DIR / "source/gta1-liberty-city-hd.webp"
 OUTPUT_MAP = REPO_ROOT / "public/liberty-city.json"
 OUTPUT_TEXTURES = REPO_ROOT / "public/assets/textures/gta"
-PREVIEW = REPO_ROOT / "tmp/gta-256-textured-preview.png"
+PREVIEW = PROCESS_DIR / "output/gta-256-textured-preview.png"
 GRID_SIZE = 256
 WORLD_TILE_SIZE = 32
 TEXTURE_SIZE = 32
@@ -712,6 +712,7 @@ def write_manifest(
 
 
 def write_preview(path: Path, map_data: dict, source: Image.Image, frames: list[list[int]], texture_size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     preview = Image.new("RGB", (map_data["width"] * texture_size, map_data["height"] * texture_size))
     for y, row in enumerate(map_data["textureRows"]):
         for x, texture_id in enumerate(row):

@@ -13,7 +13,7 @@ npm run map-editor
 
 Open `http://localhost:5174`.
 
-The dependency command creates `map-editor/.venv` and installs the Python training packages there. The server automatically uses that local Python environment when it exists. To use a different interpreter, start the server with `MAP_EDITOR_PYTHON=/path/to/python npm run map-editor`.
+The dependency command creates or repairs `map-editor/.venv` and installs the Python training packages there. The setup uses copied Python binaries instead of symlinks, which makes broken or partially-created virtualenvs easier to recover from. The server automatically uses that local Python environment when it exists. To use a different interpreter for setup, run `MAP_EDITOR_BOOTSTRAP_PYTHON=/path/to/python npm run map-editor:deps`. To use a different interpreter at runtime, start the server with `MAP_EDITOR_PYTHON=/path/to/python npm run map-editor`.
 
 Set a different port when needed:
 

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "map-editor": "node map-editor/server.mjs",
-    "map-editor:deps": "python3 -m venv map-editor/.venv && map-editor/.venv/bin/python -m pip install --upgrade pip && map-editor/.venv/bin/python -m pip install -r map-editor/requirements.txt"
+    "map-editor:deps": "node map-editor/setup-python-env.mjs"
   },
   "devDependencies": {
     "vite": "^8.0.10"

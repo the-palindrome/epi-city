@@ -108,7 +108,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor can load the current Epi City map JSON, paint tile-type and behavior labels, train `sklearn` random-forest classifiers, reset the editor labels, and save the resolved classification back into the loaded map JSON.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor can load the current Epi City map JSON, paint tile-type and behavior labels, train `sklearn` random-forest classifiers, reset the editor labels, and save the resolved classification back into the loaded map JSON.
 
 ## Texture Sets
 
