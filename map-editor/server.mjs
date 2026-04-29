@@ -13,6 +13,7 @@ const VENV_PYTHON_PATH = process.platform === 'win32'
   ? path.join(TOOL_DIR, '.venv', 'Scripts', 'python.exe')
   : path.join(TOOL_DIR, '.venv', 'bin', 'python');
 const SOURCE_IMAGE_PATH = path.join(REPO_ROOT, 'process_gta_map/source/gta1-liberty-city-hd.webp');
+const PUBLIC_MAPS_DIR = path.join(REPO_ROOT, 'public/maps');
 const PORT = Number(process.env.PORT || 5174);
 const GRID_SIZE = 256;
 const MAX_JSON_BODY_BYTES = 10 * 1024 * 1024;
@@ -61,6 +62,49 @@ async function sendFile(request, response, filePath, contentType) {
   } catch (error) {
     sendError(response, 404, `Could not read ${filePath}: ${error.message}`);
   }
+}
+
+async function sendPublicMapFile(request, response, urlPath) {
+  let relativePath;
+
+  try {
+    relativePath = decodeURIComponent(urlPath.slice('/maps/'.length));
+  } catch {
+    sendError(response, 400, 'Invalid map asset path.');
+    return;
+  }
+
+  const filePath = path.resolve(PUBLIC_MAPS_DIR, relativePath);
+  const mapsRoot = `${path.resolve(PUBLIC_MAPS_DIR)}${path.sep}`;
+
+  if (!filePath.startsWith(mapsRoot)) {
+    sendError(response, 403, 'Map asset path is outside public/maps.');
+    return;
+  }
+
+  await sendFile(request, response, filePath, contentTypeForPath(filePath));
+}
+
+function contentTypeForPath(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+
+  if (extension === '.json') {
+    return 'application/json; charset=utf-8';
+  }
+
+  if (extension === '.webp') {
+    return 'image/webp';
+  }
+
+  if (extension === '.png') {
+    return 'image/png';
+  }
+
+  if (extension === '.jpg' || extension === '.jpeg') {
+    return 'image/jpeg';
+  }
+
+  return 'application/octet-stream';
 }
 
 async function readRequestJson(request) {
@@ -166,11 +210,21 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname.startsWith('/maps/')) {
+      await sendPublicMapFile(request, response, url.pathname);
+      return;
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/config') {
       sendJson(response, 200, {
         gridSize: GRID_SIZE,
         sourceImageUrl: '/source-image',
         sourceImagePath: path.relative(REPO_ROOT, SOURCE_IMAGE_PATH),
+        defaultMapPackage: {
+          name: 'liberty-city',
+          tileLayoutUrl: '/maps/liberty-city/tile-layout.json',
+          manifestUrl: '/maps/liberty-city/manifest.json'
+        },
         typeLabels: TYPE_LABEL_OPTIONS,
         behaviorLabels: BEHAVIOR_LABEL_OPTIONS
       });

@@ -2,7 +2,7 @@
   "width": 256,
   "height": 256,
   "tileSize": 32,
-  "textureSet": "gta",
+  "textureSet": "liberty-city",
   "legend": {
     "0": {
       "category": "water",

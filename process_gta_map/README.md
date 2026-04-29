@@ -11,9 +11,9 @@ This folder contains the reproducible import pipeline for the Liberty City map u
 
 Running the script updates these runtime files:
 
-- `public/liberty-city.json`
-- `public/assets/textures/gta/manifest.json`
-- `public/assets/textures/gta/liberty-city-atlas.webp`
+- `public/maps/liberty-city/tile-layout.json`
+- `public/maps/liberty-city/manifest.json`
+- `public/maps/liberty-city/liberty-city-atlas.webp`
 - `process_gta_map/output/gta-256-textured-preview.png`
 
 The `process_gta_map/output/` preview is local inspection output and is ignored by Git. The `public/` files are the app-facing generated artifacts.
@@ -69,7 +69,7 @@ For visual inspection, open the preview:
 xdg-open process_gta_map/output/gta-256-textured-preview.png
 ```
 
-The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing `public/liberty-city.json`.
+The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing `public/maps/liberty-city/tile-layout.json`.
 
 ## Notes
 

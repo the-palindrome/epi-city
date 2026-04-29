@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.json` as `/liberty-city.json`, and the app loads it with `fetch('./liberty-city.json')`.
+Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-city/tile-layout.json` as `/maps/liberty-city/tile-layout.json`, and the app loads it with `fetch('./maps/liberty-city/tile-layout.json')`.
 
 ## Controls
 
@@ -25,9 +25,9 @@ Open `http://localhost:5173` in your browser. Vite serves `public/liberty-city.j
 ## Project Structure
 
 - `index.html` contains the Pixi app, camera controls, map validation, runtime city API, atlas texture renderer, and pathfinding.
-- `public/liberty-city.json` contains the static Liberty City tile map.
-- `public/assets/textures/gta/manifest.json` describes the source atlas frames used by the texture set.
-- `public/assets/textures/gta/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
+- `public/maps/liberty-city/tile-layout.json` contains the static Liberty City tile layout.
+- `public/maps/liberty-city/manifest.json` describes the Liberty City atlas frames used by the texture set.
+- `public/maps/liberty-city/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
 - `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
 - `map-editor/` contains the interactive map editor, random-forest training loop, and Epi City JSON load/save tools.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
@@ -42,7 +42,7 @@ The map stores semantics and visuals separately. `rows` contains one legend symb
   "width": 256,
   "height": 256,
   "tileSize": 32,
-  "textureSet": "gta",
+  "textureSet": "liberty-city",
   "legend": {
     "A": {
       "category": "road",
@@ -108,16 +108,16 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts with an in-browser empty sparse-label map, can load an Epi City JSON file from disk, paints tile type and behavior labels directly into the current map state, trains `sklearn` random-forest classifiers from non-empty labels, stores predictions separately, and applies predictions as one undoable operation. Save As preserves the visual texture layer from a loaded map, requires complete runtime labels, and never overwrites `public/liberty-city.json` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts with an in-browser empty sparse-label map, can load the bundled full map package from `public/maps/liberty-city`, can load another map folder with `tile-layout.json`, `manifest.json`, and the atlas image, paints tile type and behavior labels directly into the current map state, trains `sklearn` random-forest classifiers from non-empty labels, stores predictions separately, and applies predictions as one undoable operation. Save As preserves the visual texture layer from a loaded map, requires complete runtime labels, and never overwrites `public/maps/liberty-city/tile-layout.json` automatically.
 
 ## Texture Sets
 
-The current texture set is `gta`. The app loads `public/assets/textures/gta/manifest.json`, then loads the atlas image and creates Pixi subtextures from the manifest frame list. The generated manifest deduplicates exact source crops, so repeated map cells share one atlas frame while every cell still matches its original source tile.
+The current texture set is `liberty-city`. The app loads `public/maps/liberty-city/manifest.json`, then loads the atlas image and creates Pixi subtextures from the manifest frame list. The generated manifest deduplicates exact source crops, so repeated map cells share one atlas frame while every cell still matches its original source tile.
 
 In the console, switch texture sets with:
 
 ```js
-window.citySim.setTextureSet('gta')
+window.citySim.setTextureSet('liberty-city')
 ```
 
 ## Build

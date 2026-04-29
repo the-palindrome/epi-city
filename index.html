@@ -136,7 +136,7 @@
       });
 
       const TEXTURE_SET_PATHS = Object.freeze({
-        gta: './assets/textures/gta/manifest.json'
+        'liberty-city': './maps/liberty-city/manifest.json'
       });
 
       const PIXEL_ART_SCALE_MODE = 'nearest';
@@ -293,7 +293,7 @@
           installCameraControls(app, camera, applyCamera);
 
           // Keep map data pre-generated so the app has a stable, fast startup path.
-          const mapData = await loadCityMap('./liberty-city.json');
+          const mapData = await loadCityMap('./maps/liberty-city/tile-layout.json');
           const city = compileCityMap(mapData);
           let textureSet = await loadTextureSet(city.textureSetName);
 

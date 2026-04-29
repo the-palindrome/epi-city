@@ -26,12 +26,13 @@ PROCESS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROCESS_DIR.parent
 
 SOURCE = PROCESS_DIR / "source/gta1-liberty-city-hd.webp"
-OUTPUT_MAP = REPO_ROOT / "public/liberty-city.json"
-OUTPUT_TEXTURES = REPO_ROOT / "public/assets/textures/gta"
+OUTPUT_MAP = REPO_ROOT / "public/maps/liberty-city/tile-layout.json"
+OUTPUT_TEXTURES = REPO_ROOT / "public/maps/liberty-city"
 PREVIEW = PROCESS_DIR / "output/gta-256-textured-preview.png"
 GRID_SIZE = 256
 WORLD_TILE_SIZE = 32
 TEXTURE_SIZE = 32
+TEXTURE_SET_NAME = "liberty-city"
 RUNTIME_ATLAS_NAME = "liberty-city-atlas.webp"
 
 SAFE_SYMBOLS = list("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~")
@@ -698,7 +699,7 @@ def write_manifest(
     write_compact_json(
         path,
         {
-            "name": "gta",
+            "name": TEXTURE_SET_NAME,
             "tileSize": texture_size,
             "atlas": {
                 "file": atlas_file,
@@ -755,7 +756,7 @@ def main() -> None:
         "width": args.grid_size,
         "height": args.grid_size,
         "tileSize": args.tile_size,
-        "textureSet": "gta",
+        "textureSet": TEXTURE_SET_NAME,
         "legend": legend,
         "rows": rows,
         "textureRows": texture_rows,

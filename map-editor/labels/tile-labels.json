@@ -1,6 +1,6 @@
 {
   "sourceImage": "process_gta_map/source/gta1-liberty-city-hd.webp",
-  "generatedMap": "public/liberty-city.json",
+  "generatedMap": "public/maps/liberty-city/tile-layout.json",
   "gridSize": 256,
   "typeLabels": [
     {

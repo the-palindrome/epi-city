@@ -1,10 +1,10 @@
 # Internal Architecture
 
-Epi City currently keeps the implementation in one `index.html` file so early simulation ideas can move quickly. The public map data lives in `public/liberty-city.json`, while the browser compiles that file into a faster runtime representation after validation.
+Epi City currently keeps the implementation in one `index.html` file so early simulation ideas can move quickly. The public Liberty City map package lives in `public/maps/liberty-city`, while the browser compiles the tile layout into a faster runtime representation after validation.
 
 ## Map Data Flow
 
-The app loads `./liberty-city.json` at startup. Vite serves `public/liberty-city.json` from the site root, so the same relative fetch works in development and production builds.
+The app loads `./maps/liberty-city/tile-layout.json` at startup. Vite serves `public/maps/liberty-city/tile-layout.json` from the site root, so the same relative fetch works in development and production builds.
 
 Startup follows this sequence:
 
@@ -19,14 +19,14 @@ Startup follows this sequence:
 
 ## Map Schema
 
-`public/liberty-city.json` uses this shape:
+`public/maps/liberty-city/tile-layout.json` uses this shape:
 
 ```json
 {
   "width": 256,
   "height": 256,
   "tileSize": 32,
-  "textureSet": "gta",
+  "textureSet": "liberty-city",
   "legend": {
     "A": {
       "category": "road",
@@ -43,7 +43,7 @@ Startup follows this sequence:
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category`, a `subcategory`, and boolean `walkable`, `drivable`, and `parkable` properties.
 
-Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture IDs refer to atlas frames in `public/assets/textures/gta/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
+Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
 The base categories are `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories carry semantic detail such as `horizontal`, `vertical`, `intersection`, `corner-ne`, `waterfront-roadside`, or `large-roof`. Movement uses the generated behavior booleans instead of hard-coded category masks.
 
@@ -91,11 +91,11 @@ Each walkable tile currently has two side-by-side NPC slots. Collision uses two 
 
 ## Texture Sets
 
-A texture set lives under `public/assets/textures/<name>`. The current `gta` manifest stores one source atlas and a list of deduplicated source frames:
+A texture set lives inside its map package under `public/maps/<map-name>`. The current `liberty-city` manifest stores one source atlas and a list of deduplicated source frames:
 
 ```json
 {
-  "name": "gta",
+  "name": "liberty-city",
   "tileSize": 32,
   "atlas": {
     "file": "liberty-city-atlas.webp",
@@ -121,7 +121,7 @@ The `world` container has separate `map`, `overlays`, and `actors` layers. Map s
 
 `renderCity()` groups sprites into 16x16 tile containers. Grouping keeps the display tree structured by map region while preserving per-cell source textures. If a texture frame is missing, the renderer draws a simple flat-color fallback for the affected cell.
 
-The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in runtime assets live in `public/assets/textures/gta` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
+The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in runtime assets live in `public/maps/liberty-city` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
 
 ## Debug Dashboard
 
@@ -135,7 +135,7 @@ The tile-type overlay paints semantic categories with fixed debug colors: sidewa
 
 The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
 
-The browser owns the editable map state. Startup creates a default 256x256 sparse-label map where tile type, `walkable`, `parkable`, and `drivable` are all `null`. `Load JSON` reads a local Epi City map file through the browser file picker and replaces that state with concrete labels from the file. `Reset to defaults` discards the current browser state and rebuilds the empty sparse map. `Save As JSON` writes the current state through the browser, so the editor does not automatically overwrite `public/liberty-city.json`.
+The browser owns the editable map state. Startup creates a default 256x256 sparse-label map where tile type, `walkable`, `parkable`, and `drivable` are all `null`. `Load Full Map` reads the bundled `public/maps/liberty-city` package through the editor server, loads the tile layout plus texture manifest and atlas, and reconstructs the visual map from `textureRows`. `Load Map Folder` does the same for a user-selected package folder when browser support is available. `Load JSON` reads only a local Epi City tile-layout JSON file through the browser file picker and uses the source image as the visual reference. `Reset to defaults` discards the current browser state and rebuilds the empty sparse map. `Save As JSON` writes the current state through the browser, so the editor does not automatically overwrite `public/maps/liberty-city/tile-layout.json`.
 
 The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected layer.
 
@@ -143,7 +143,7 @@ The editor displays the current map state for every layer. There is no separate 
 
 Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. Runtime JSON saving requires complete tile type and behavior labels and reports missing values instead of producing invalid app maps.
 
-The map editor server only serves `/`, `/source-image`, `/api/config`, and `/api/train`. Older sparse label and server-side map load/write endpoints return `410 Gone`, which keeps loading and saving explicit in the browser.
+The map editor server serves `/`, `/source-image`, read-only `/maps/...` assets from `public/maps/`, `/api/config`, and `/api/train`. Older sparse label and server-side map load/write endpoints return `410 Gone`, which keeps loading and saving explicit in the browser.
 
 Run the map editor with:
 

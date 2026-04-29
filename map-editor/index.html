@@ -186,6 +186,7 @@
   <body>
     <canvas id="map"></canvas>
     <input id="json-file" type="file" accept="application/json,.json" hidden>
+    <input id="map-package-files" type="file" accept="application/json,.json,image/webp,image/png,image/jpeg" multiple hidden>
 
     <aside class="panel">
       <h1>Map Editor</h1>
@@ -230,6 +231,8 @@
 
       <div class="section">
         <div class="button-grid">
+          <button id="load-full-map" type="button">Load Full Map</button>
+          <button id="load-map-folder" type="button">Load Map Folder</button>
           <button id="load-json" type="button">Load JSON</button>
           <button id="save-as" class="primary" type="button">Save As JSON</button>
           <button id="reset-defaults" type="button">Reset to defaults</button>
@@ -302,6 +305,7 @@
       const canvas = document.getElementById('map');
       const ctx = canvas.getContext('2d', { alpha: false });
       const fileInput = document.getElementById('json-file');
+      const mapPackageInput = document.getElementById('map-package-files');
       const paintLayer = document.getElementById('paint-layer');
       const labelButtons = document.getElementById('label-buttons');
       const brushSize = document.getElementById('brush-size');
@@ -317,6 +321,7 @@
 
       const state = {
         config: null,
+        sourceImage: null,
         image: null,
         map: createDefaultEditableMap(),
         latestPrediction: null,
@@ -343,13 +348,14 @@
       async function init() {
         state.config = await fetchJson('/api/config').catch(() => ({ sourceImageUrl: '/source-image' }));
         state.map = createDefaultEditableMap();
-        state.image = await loadImage(state.config.sourceImageUrl || '/source-image');
+        state.sourceImage = await loadImage(state.config.sourceImageUrl || '/source-image');
+        state.image = state.sourceImage;
         createLabelButtons();
         resizeCanvas();
         fitMap();
         installEvents();
         updateStats();
-        setStatus('Ready. Editing an empty 256x256 sparse-label map; Load JSON can replace it, Save As downloads a complete map copy.');
+        setStatus('Ready. Load Full Map opens the bundled map package with its tile layout, manifest, and atlas.');
         draw();
       }
 
@@ -357,7 +363,7 @@
         return createFilledEditableMap(EMPTY_LABEL_VALUE, 'untitled-default-map.json', {
           sourceName: 'untitled default map',
           tileSize: DEFAULT_TILE_SIZE,
-          textureSet: 'gta'
+          textureSet: 'liberty-city'
         });
       }
 
@@ -372,8 +378,10 @@
           width: GRID_SIZE,
           height: GRID_SIZE,
           tileSize: metadata.tileSize || DEFAULT_TILE_SIZE,
-          textureSet: metadata.textureSet || 'gta',
+          textureSet: metadata.textureSet || 'liberty-city',
           sourceName: metadata.sourceName || fileName,
+          visualSource: metadata.visualSource || 'source image',
+          textureManifestName: metadata.textureManifestName || null,
           fileName,
           rows,
           behaviorRows,
@@ -411,8 +419,11 @@
           element.addEventListener('change', draw);
         }
 
+        document.getElementById('load-full-map').addEventListener('click', loadBundledFullMap);
+        document.getElementById('load-map-folder').addEventListener('click', loadMapFolder);
         document.getElementById('load-json').addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', loadSelectedJsonFile);
+        mapPackageInput.addEventListener('change', loadSelectedMapPackageFiles);
         document.getElementById('save-as').addEventListener('click', saveAsJson);
         document.getElementById('reset-defaults').addEventListener('click', resetToDefaults);
         trainButton.addEventListener('click', trainModel);
@@ -544,6 +555,81 @@
         }
       }
 
+      async function loadBundledFullMap() {
+        const mapPackage = state.config && state.config.defaultMapPackage;
+
+        if (!mapPackage || !mapPackage.tileLayoutUrl || !mapPackage.manifestUrl) {
+          setStatus('No bundled map package is configured for this editor server.', true);
+          return;
+        }
+
+        try {
+          setStatus(`Loading ${mapPackage.name || 'bundled map'} package...`);
+          const packageMap = await loadMapPackageFromUrls(mapPackage);
+          replaceCurrentMap(packageMap.map, {
+            image: packageMap.image,
+            fit: true
+          });
+          setStatus(`Loaded ${packageMap.map.sourceName} with ${packageMap.map.textureManifestName}.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function loadMapFolder() {
+        try {
+          if ('showDirectoryPicker' in window) {
+            const directory = await window.showDirectoryPicker({ mode: 'read' });
+            setStatus(`Loading map folder ${directory.name}...`);
+            const files = await collectDirectoryFiles(directory);
+            const packageMap = await loadMapPackageFromFiles(files, directory.name);
+            replaceCurrentMap(packageMap.map, {
+              image: packageMap.image,
+              fit: true
+            });
+            setStatus(`Loaded ${packageMap.map.sourceName} with ${packageMap.map.textureManifestName}.`);
+            return;
+          }
+
+          mapPackageInput.click();
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            setStatus('Map folder load canceled.');
+            return;
+          }
+
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function loadSelectedMapPackageFiles() {
+        const files = [...(mapPackageInput.files || [])].map((file) => ({
+          name: file.name,
+          path: file.webkitRelativePath || file.name,
+          file
+        }));
+        mapPackageInput.value = '';
+
+        if (files.length === 0) {
+          return;
+        }
+
+        try {
+          setStatus('Loading selected map package files...');
+          const packageMap = await loadMapPackageFromFiles(files, 'selected map package');
+          replaceCurrentMap(packageMap.map, {
+            image: packageMap.image,
+            fit: true
+          });
+          setStatus(`Loaded ${packageMap.map.sourceName} with ${packageMap.map.textureManifestName}.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
       async function loadSelectedJsonFile() {
         const file = fileInput.files && fileInput.files[0];
         fileInput.value = '';
@@ -555,7 +641,12 @@
         try {
           setStatus(`Loading ${file.name}...`);
           const payload = JSON.parse(await file.text());
-          replaceCurrentMap(editableMapFromJson(payload, file.name));
+          replaceCurrentMap(editableMapFromJson(payload, file.name, {
+            visualSource: 'source image'
+          }), {
+            image: state.sourceImage,
+            fit: true
+          });
           setStatus(`Loaded ${file.name}. The editable map state has been replaced.`);
         } catch (error) {
           console.error(error);
@@ -563,7 +654,71 @@
         }
       }
 
-      function editableMapFromJson(payload, fileName) {
+      async function loadMapPackageFromUrls(mapPackage) {
+        const layout = await fetchJson(mapPackage.tileLayoutUrl);
+        const manifest = await fetchJson(mapPackage.manifestUrl);
+        validateTextureManifest(manifest);
+        const manifestUrl = new URL(mapPackage.manifestUrl, window.location.href);
+        const atlasUrl = new URL(manifest.atlas.file, manifestUrl).href;
+        const atlasImage = await loadImage(atlasUrl);
+        const image = renderTextureMapImage(layout, manifest, atlasImage);
+        const map = editableMapFromJson(layout, fileNameFromUrl(mapPackage.tileLayoutUrl), {
+          visualSource: mapPackage.name || mapPackage.tileLayoutUrl,
+          textureManifestName: fileNameFromUrl(mapPackage.manifestUrl)
+        });
+
+        return { map, image };
+      }
+
+      async function loadMapPackageFromFiles(files, sourceName) {
+        const packageFiles = normalizePackageFiles(files);
+        const jsonFiles = packageFiles.filter((entry) => entry.name.toLowerCase().endsWith('.json'));
+        const parsedJson = [];
+
+        for (const entry of jsonFiles) {
+          parsedJson.push({
+            ...entry,
+            payload: JSON.parse(await entry.file.text())
+          });
+        }
+
+        const layoutEntry = parsedJson.find((entry) => entry.name === 'tile-layout.json')
+          || parsedJson.find((entry) => isEpiCityMapCandidate(entry.payload));
+        const manifestEntry = parsedJson.find((entry) => entry.name === 'manifest.json')
+          || parsedJson.find((entry) => isTextureManifestCandidate(entry.payload));
+
+        if (!layoutEntry) {
+          throw new Error('Map package must include tile-layout.json or another valid Epi City tile layout JSON.');
+        }
+
+        if (!manifestEntry) {
+          throw new Error('Map package must include manifest.json.');
+        }
+
+        validateTextureManifest(manifestEntry.payload);
+        const atlasEntry = findAtlasFile(packageFiles, manifestEntry, manifestEntry.payload.atlas.file);
+
+        if (!atlasEntry) {
+          throw new Error(`Map package manifest references missing atlas file "${manifestEntry.payload.atlas.file}".`);
+        }
+
+        const atlasUrl = URL.createObjectURL(atlasEntry.file);
+
+        try {
+          const atlasImage = await loadImage(atlasUrl);
+          const image = renderTextureMapImage(layoutEntry.payload, manifestEntry.payload, atlasImage);
+          const map = editableMapFromJson(layoutEntry.payload, layoutEntry.name, {
+            visualSource: sourceName,
+            textureManifestName: manifestEntry.name
+          });
+
+          return { map, image };
+        } finally {
+          URL.revokeObjectURL(atlasUrl);
+        }
+      }
+
+      function editableMapFromJson(payload, fileName, metadata = {}) {
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
           throw new Error('Map JSON must be an object.');
         }
@@ -595,8 +750,10 @@
           width: GRID_SIZE,
           height: GRID_SIZE,
           tileSize: payload.tileSize,
-          textureSet: payload.textureSet || 'gta',
+          textureSet: payload.textureSet || 'liberty-city',
           sourceName: fileName,
+          visualSource: metadata.visualSource || 'source image',
+          textureManifestName: metadata.textureManifestName || null,
           fileName,
           rows,
           behaviorRows,
@@ -605,20 +762,132 @@
         };
       }
 
+      async function collectDirectoryFiles(directory, prefix = '') {
+        const files = [];
+
+        for await (const [name, handle] of directory.entries()) {
+          const entryPath = prefix ? `${prefix}/${name}` : name;
+
+          if (handle.kind === 'file') {
+            files.push({
+              name,
+              path: entryPath,
+              file: await handle.getFile()
+            });
+          } else if (handle.kind === 'directory') {
+            files.push(...await collectDirectoryFiles(handle, entryPath));
+          }
+        }
+
+        return files;
+      }
+
+      function normalizePackageFiles(files) {
+        return files.map((entry) => ({
+          name: entry.name,
+          path: normalizePackagePath(entry.path || entry.name),
+          file: entry.file
+        }));
+      }
+
+      function normalizePackagePath(filePath) {
+        return filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+      }
+
+      function isEpiCityMapCandidate(payload) {
+        return Boolean(payload && typeof payload === 'object' && !Array.isArray(payload)
+          && Number.isInteger(payload.width)
+          && Number.isInteger(payload.height)
+          && payload.legend
+          && Array.isArray(payload.rows));
+      }
+
+      function isTextureManifestCandidate(payload) {
+        return Boolean(payload && typeof payload === 'object' && !Array.isArray(payload)
+          && payload.atlas
+          && typeof payload.atlas.file === 'string'
+          && Array.isArray(payload.frames));
+      }
+
+      function findAtlasFile(files, manifestEntry, atlasFileName) {
+        const manifestDir = directoryName(manifestEntry.path);
+        const expectedPath = manifestDir ? `${manifestDir}/${atlasFileName}` : atlasFileName;
+        return files.find((entry) => entry.path === expectedPath)
+          || files.find((entry) => entry.name === atlasFileName);
+      }
+
+      function directoryName(filePath) {
+        const index = filePath.lastIndexOf('/');
+        return index === -1 ? '' : filePath.slice(0, index);
+      }
+
+      function fileNameFromUrl(url) {
+        const parsed = new URL(url, window.location.href);
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        return parts[parts.length - 1] || parsed.pathname;
+      }
+
+      function renderTextureMapImage(map, manifest, atlasImage) {
+        validateEpiCityMap(map);
+        validateTextureManifest(manifest);
+        validateTextureRowsForManifest(map.textureRows, manifest);
+
+        const imageWidth = manifest.atlas.width || atlasImage.naturalWidth || atlasImage.width;
+        const imageHeight = manifest.atlas.height || atlasImage.naturalHeight || atlasImage.height;
+        const output = document.createElement('canvas');
+        const renderContext = output.getContext('2d', { alpha: false });
+
+        output.width = imageWidth;
+        output.height = imageHeight;
+        renderContext.imageSmoothingEnabled = false;
+        renderContext.fillStyle = '#101410';
+        renderContext.fillRect(0, 0, imageWidth, imageHeight);
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const frame = manifest.frames[map.textureRows[y][x]];
+            const bounds = tileBoundsForSize(x, y, imageWidth, imageHeight);
+            renderContext.drawImage(
+              atlasImage,
+              frame[0],
+              frame[1],
+              frame[2],
+              frame[3],
+              bounds.x0,
+              bounds.y0,
+              bounds.x1 - bounds.x0,
+              bounds.y1 - bounds.y0
+            );
+          }
+        }
+
+        return output;
+      }
+
       function replaceCurrentMap(nextMap, options = {}) {
         endPointerAction();
         state.map = nextMap;
+        if (options.image) {
+          state.image = options.image;
+        }
         state.latestPrediction = options.latestPrediction || null;
         state.trainingSummary = options.trainingSummary || null;
         state.undoStack.length = 0;
         state.redoStack.length = 0;
         state.dirty = Boolean(options.dirty);
+        if (options.fit && state.image) {
+          fitMap();
+        }
         updateStats();
         draw();
       }
 
       function resetToDefaults() {
-        replaceCurrentMap(createDefaultEditableMap(), { dirty: true });
+        replaceCurrentMap(createDefaultEditableMap(), {
+          dirty: true,
+          image: state.sourceImage,
+          fit: true
+        });
         setStatus('Reset the editor to an empty 256x256 sparse-label map.');
       }
 
@@ -646,7 +915,7 @@
 
           state.dirty = false;
           updateStats();
-          setStatus(`Saved ${fileName} with browser Save As. public/liberty-city.json was not overwritten.`);
+          setStatus(`Saved ${fileName} with browser Save As. public/maps/liberty-city/tile-layout.json was not overwritten.`);
         } catch (error) {
           if (error.name === 'AbortError') {
             setStatus('Save As canceled.');
@@ -1117,7 +1386,7 @@
           width: GRID_SIZE,
           height: GRID_SIZE,
           tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
-          textureSet: state.map.textureSet || 'gta',
+          textureSet: state.map.textureSet || 'liberty-city',
           legend,
           rows,
           textureRows: normalizeTextureRows(state.map.textureRows)
@@ -1181,6 +1450,9 @@
         mapName.textContent = state.map.sourceName || 'untitled map';
         addStat('active layer', paintLayer.value);
         addStat('map source', state.map.sourceName || 'untitled map');
+        addStat('visual source', state.map.visualSource || 'source image');
+        addStat('texture set', state.map.textureSet || 'none');
+        addStat('manifest', state.map.textureManifestName || 'not loaded');
         addStat('dirty', state.dirty ? 'yes' : 'no');
         addStat('latest prediction', state.latestPrediction ? 'ready' : 'none');
         addStat('undo strokes', state.undoStack.length);
@@ -1290,6 +1562,62 @@
           for (let x = 0; x < GRID_SIZE; x += 1) {
             if (!map.legend[row[x]]) {
               throw new Error(`Epi City map row ${y} references a missing legend symbol at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function validateTextureManifest(manifest) {
+        if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+          throw new Error('Texture manifest must be an object.');
+        }
+
+        if (!manifest.atlas || typeof manifest.atlas.file !== 'string' || manifest.atlas.file.length === 0) {
+          throw new Error('Texture manifest must include atlas.file.');
+        }
+
+        if (manifest.atlas.width !== undefined && (!Number.isInteger(manifest.atlas.width) || manifest.atlas.width <= 0)) {
+          throw new Error('Texture manifest atlas.width must be a positive integer when present.');
+        }
+
+        if (manifest.atlas.height !== undefined && (!Number.isInteger(manifest.atlas.height) || manifest.atlas.height <= 0)) {
+          throw new Error('Texture manifest atlas.height must be a positive integer when present.');
+        }
+
+        if (!Array.isArray(manifest.frames) || manifest.frames.length === 0) {
+          throw new Error('Texture manifest must include a non-empty frames array.');
+        }
+
+        for (let index = 0; index < manifest.frames.length; index += 1) {
+          const frame = manifest.frames[index];
+
+          if (!Array.isArray(frame) || frame.length !== 4 || frame.some((value) => !Number.isInteger(value))) {
+            throw new Error(`Texture manifest frame ${index} must be [x, y, width, height].`);
+          }
+
+          if (frame[0] < 0 || frame[1] < 0 || frame[2] <= 0 || frame[3] <= 0) {
+            throw new Error(`Texture manifest frame ${index} has invalid bounds.`);
+          }
+        }
+      }
+
+      function validateTextureRowsForManifest(textureRows, manifest) {
+        if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
+          throw new Error(`Epi City map textureRows must contain ${GRID_SIZE} rows when loading a full map.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = textureRows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Epi City map textureRows[${y}] must contain ${GRID_SIZE} texture ids.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const textureId = row[x];
+
+            if (!Number.isInteger(textureId) || textureId < 0 || textureId >= manifest.frames.length) {
+              throw new Error(`Texture id ${textureId} at ${x},${y} is outside the manifest frame list.`);
             }
           }
         }
@@ -1432,10 +1760,14 @@
       }
 
       function tileBounds(x, y) {
-        const x0 = Math.round(x * state.image.width / GRID_SIZE);
-        const y0 = Math.round(y * state.image.height / GRID_SIZE);
-        const x1 = Math.max(x0 + 1, Math.round((x + 1) * state.image.width / GRID_SIZE));
-        const y1 = Math.max(y0 + 1, Math.round((y + 1) * state.image.height / GRID_SIZE));
+        return tileBoundsForSize(x, y, state.image.width, state.image.height);
+      }
+
+      function tileBoundsForSize(x, y, width, height) {
+        const x0 = Math.round(x * width / GRID_SIZE);
+        const y0 = Math.round(y * height / GRID_SIZE);
+        const x1 = Math.max(x0 + 1, Math.round((x + 1) * width / GRID_SIZE));
+        const y1 = Math.max(y0 + 1, Math.round((y + 1) * height / GRID_SIZE));
 
         return { x0, y0, x1, y1 };
       }

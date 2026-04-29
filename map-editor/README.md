@@ -1,6 +1,6 @@
 # Epi City Map Editor
 
-The map editor is a local maintenance tool for correcting semantic tile types and behavior attributes while keeping the source texture atlas unchanged. It displays the source map image, keeps one editable 256x256 map state in the browser, trains from sparse labels, and saves complete Epi City JSON through a browser Save As flow.
+The map editor is a local maintenance tool for correcting semantic tile types and behavior attributes while keeping the source texture atlas unchanged. It can display the source map image or reconstruct a full map package from `tile-layout.json`, `manifest.json`, and the atlas image, keeps one editable 256x256 map state in the browser, trains from sparse labels, and saves complete Epi City JSON through a browser Save As flow.
 
 ## Run
 
@@ -52,13 +52,17 @@ On startup, the editor creates a sparse editable map in memory. Every tile start
 }
 ```
 
-The default state uses `width: 256`, `height: 256`, `tileSize: 32`, and `textureSet: "gta"`. It exists only in the browser until you save it.
+The default state uses `width: 256`, `height: 256`, `tileSize: 32`, and `textureSet: "liberty-city"`. It exists only in the browser until you save it.
 
 ## Loading Maps
 
-Click `Load JSON` to choose a local Epi City map JSON file from disk. The browser reads the file and replaces the current editable state with that map.
+Click `Load Full Map` to load the bundled `public/maps/liberty-city` package through the editor server. The editor fetches `tile-layout.json`, `manifest.json`, and the atlas image, then renders the visual map from `textureRows` and manifest frames.
 
-The editor does not automatically load or overwrite `public/liberty-city.json`. If you want to edit the app map, choose that file explicitly with `Load JSON`, then use `Save As JSON` when you are done.
+Click `Load Map Folder` to choose another map package folder in browsers that support directory picking. The folder must contain a valid tile layout JSON, `manifest.json`, and the atlas file named by `manifest.atlas.file`. In browsers without directory picking, choose those package files together from the file picker.
+
+Click `Load JSON` to choose only a local Epi City tile-layout JSON file from disk. The browser reads the file and replaces the current editable state with that map while using the source image as the visual reference.
+
+The editor does not automatically overwrite `public/maps/liberty-city/tile-layout.json`. If you want to edit the app map with its current visual atlas, use `Load Full Map`, then use `Save As JSON` when you are done.
 
 ## Editing State
 
@@ -96,7 +100,7 @@ Click `Reset to defaults` to discard the current browser state and return to the
 
 Click `Save As JSON` to save the current state as an Epi City map JSON file. Browsers with the File System Access API show a native Save As dialog. Other browsers download the file.
 
-Saving never overwrites `public/liberty-city.json` automatically. Replace the app map manually only after you review the saved output.
+Saving never overwrites `public/maps/liberty-city/tile-layout.json` automatically. Replace the app map manually only after you review the saved output.
 
 Runtime Epi City JSON cannot contain empty labels. Save As reports the first missing tile type or behavior values if the map is incomplete. Fill them manually or run `Predict labels` before saving.
 
@@ -121,6 +125,7 @@ The browser UI talks to the local Node server through a small API:
 
 - `GET /api/config` returns editor options and source paths.
 - `GET /source-image` serves the source map image.
+- `GET /maps/...` serves read-only map package files from `public/maps/`.
 - `POST /api/train` trains from posted sparse `rows` and `behaviorRows` and returns predicted grids.
 
 The old sparse label and server-side map write endpoints return `410 Gone`. Loading happens through the browser file picker, and saving happens through browser Save As.
@@ -134,7 +139,7 @@ The editor saves complete maps in the runtime Epi City JSON format:
   "width": 256,
   "height": 256,
   "tileSize": 32,
-  "textureSet": "gta",
+  "textureSet": "liberty-city",
   "legend": {
     "A": {
       "category": "sidewalk",
