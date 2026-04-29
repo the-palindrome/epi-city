@@ -341,6 +341,7 @@
         undoStack: [],
         redoStack: [],
         dirty: false,
+        semanticRowsDirty: false,
         textureRowsDirty: false,
         isPainting: false,
         isPanning: false,
@@ -777,6 +778,7 @@
         state.undoStack.length = 0;
         state.redoStack.length = 0;
         state.dirty = Boolean(options.dirty);
+        state.semanticRowsDirty = Boolean(options.semanticRowsDirty);
         state.textureRowsDirty = Boolean(options.textureRowsDirty);
 
         if (options.useSourceImage) {
@@ -796,6 +798,7 @@
       function resetToDefaults() {
         replaceCurrentMap(createDefaultEditableMap(), {
           dirty: true,
+          semanticRowsDirty: true,
           useSourceImage: true,
           fit: true
         });
@@ -810,6 +813,7 @@
           const text = `${JSON.stringify(buildEpiCityJson(), null, 2)}\n`;
           await saveTextFile(fileName, text, 'Epi City Tile Configuration JSON');
           state.dirty = false;
+          state.semanticRowsDirty = false;
           state.textureRowsDirty = false;
           updateStats();
           setStatus(`Saved tile configuration ${fileName}. The main app reads textureRows from this file.`);
@@ -996,6 +1000,7 @@
         state.undoStack.push(operation);
         state.redoStack.length = 0;
         state.dirty = true;
+        state.semanticRowsDirty = true;
         state.map.sourceName = `${state.map.sourceName} + prediction`;
         updateStats();
         draw();
@@ -1110,6 +1115,7 @@
             refreshVisualFromAssets();
             setStatus(`Painted texture ${state.selectedTextureId}. Save Tile Configuration to update the app map.`);
           } else {
+            state.semanticRowsDirty = true;
             state.latestPrediction = null;
             state.trainingSummary = null;
             updateStats();
@@ -1245,6 +1251,10 @@
         state.dirty = true;
         state.trainingSummary = null;
 
+        if (operationChangesSemantics(operation)) {
+          state.semanticRowsDirty = true;
+        }
+
         if (operationChangesTexture(operation)) {
           state.textureRowsDirty = true;
           refreshVisualFromAssets();
@@ -1270,6 +1280,10 @@
         state.dirty = true;
         state.trainingSummary = null;
 
+        if (operationChangesSemantics(operation)) {
+          state.semanticRowsDirty = true;
+        }
+
         if (operationChangesTexture(operation)) {
           state.textureRowsDirty = true;
           refreshVisualFromAssets();
@@ -1290,6 +1304,15 @@
 
       function operationChangesTexture(operation) {
         return operation.some((change) => change.before.textureId !== change.after.textureId);
+      }
+
+      function operationChangesSemantics(operation) {
+        return operation.some((change) =>
+          change.before.type !== change.after.type ||
+          change.before.walkable !== change.after.walkable ||
+          change.before.parkable !== change.after.parkable ||
+          change.before.drivable !== change.after.drivable
+        );
       }
 
       function draw() {
@@ -1387,6 +1410,17 @@
 
       function buildEpiCityJson() {
         assertRuntimeLabelsComplete();
+
+        if (state.map.originalMap && !state.semanticRowsDirty) {
+          return {
+            ...state.map.originalMap,
+            width: GRID_SIZE,
+            height: GRID_SIZE,
+            tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
+            textureSet: state.map.textureSet || 'liberty-city',
+            textureRows: normalizeTextureRows(state.map.textureRows)
+          };
+        }
 
         const definitionToSymbol = new Map();
         const legend = {};
@@ -1490,6 +1524,7 @@
         addStat('atlas', state.atlasFileName || 'not loaded');
         addStat('manifest', state.textureManifestFileName || 'not loaded');
         addStat('tile config dirty', state.dirty ? 'yes' : 'no');
+        addStat('tile properties dirty', state.semanticRowsDirty ? 'yes' : 'no');
         addStat('texture rows dirty', state.textureRowsDirty ? 'yes' : 'no');
         addStat('latest prediction', state.latestPrediction ? 'ready' : 'none');
         addStat('undo strokes', state.undoStack.length);

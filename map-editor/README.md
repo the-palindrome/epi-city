@@ -80,6 +80,8 @@ Painting a tile type does not auto-fill behavior attributes. This keeps labels s
 
 In the texture layer, the `pick texture` tool samples the texture ID from the clicked tile. The editor then switches to painting that texture ID onto other tiles. Texture edits update `textureRows`, so `Save Tile Configuration` writes the changed manifest-frame references without changing atlas pixels or manifest frame geometry. `Save Texture Manifest` does not update the app map after texture painting.
 
+When only texture assignments changed, `Save Tile Configuration` preserves the loaded `legend` and `rows` exactly and updates `textureRows`. This keeps texture retouching from creating tile-property diffs.
+
 ## Training And Prediction
 
 Click `Train random forest` to train from the current sparse labels. The browser posts the full `rows` and `behaviorRows` grids to the local server, but the Python trainer uses only non-empty cells as training samples for each layer.

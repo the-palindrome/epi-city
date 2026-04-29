@@ -141,6 +141,8 @@ The editor displays the current map state for every layer. There is no separate 
 
 The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from the tile configuration, the editor blocks manifest saves while tile edits are dirty and directs users to `Save Tile Configuration`.
 
+The editor tracks semantic tile-property edits separately from texture-row edits. If a save contains only texture changes, it preserves the loaded `legend` and `rows` and replaces only `textureRows`; semantic edits still rebuild `legend` and `rows` from the editable property grids.
+
 `POST /api/train` runs `map-editor/train_random_forest.py` through the local `map-editor/.venv` interpreter when it exists. The browser posts the full current `rows` and `behaviorRows` grids, and the trainer validates that state before fitting `sklearn.ensemble.RandomForestClassifier` models. Each layer trains only from non-empty labels. Layers without at least two distinct non-empty values are skipped and return their current sparse values unchanged.
 
 Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. Runtime JSON saving requires complete tile type and behavior labels and reports missing values instead of producing invalid app maps.
