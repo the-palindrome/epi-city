@@ -187,6 +187,7 @@
     <canvas id="map"></canvas>
     <input id="atlas-file" type="file" accept="image/webp,image/png,image/jpeg" hidden>
     <input id="tile-config-file" type="file" accept="application/json,.json" hidden>
+    <input id="texture-rows-file" type="file" accept="application/json,.json" hidden>
     <input id="texture-manifest-file" type="file" accept="application/json,.json" hidden>
 
     <aside class="panel">
@@ -235,9 +236,11 @@
         <div class="button-grid">
           <button id="load-atlas" type="button">Load Atlas</button>
           <button id="load-tile-config" type="button">Load Tile Configuration</button>
+          <button id="load-texture-rows" type="button">Load Texture Rows</button>
           <button id="load-texture-manifest" type="button">Load Texture Manifest</button>
-          <button id="save-tile-config" class="primary" type="button" title="Writes rows, behavior rows, and textureRows for the app map.">Save Tile Configuration</button>
-          <button id="save-texture-manifest" type="button" title="Writes atlas frame metadata only. Texture painting is saved with the tile configuration.">Save Texture Manifest</button>
+          <button id="save-tile-config" class="primary" type="button" title="Writes semantic rows and behavior flags for the app map.">Save Tile Configuration</button>
+          <button id="save-texture-rows" type="button" title="Writes textureRows for the app map.">Save Texture Rows</button>
+          <button id="save-texture-manifest" type="button" title="Writes atlas frame metadata only. Texture painting is saved separately with texture rows.">Save Texture Manifest</button>
           <button id="reset-defaults" type="button">Reset to defaults</button>
           <button id="fit" type="button">Fit map</button>
           <button id="undo" type="button">Undo</button>
@@ -301,6 +304,7 @@
       const ctx = canvas.getContext('2d', { alpha: false });
       const atlasFileInput = document.getElementById('atlas-file');
       const tileConfigFileInput = document.getElementById('tile-config-file');
+      const textureRowsFileInput = document.getElementById('texture-rows-file');
       const textureManifestFileInput = document.getElementById('texture-manifest-file');
       const paintLayer = document.getElementById('paint-layer');
       const labelButtons = document.getElementById('label-buttons');
@@ -319,11 +323,12 @@
         config: null,
         sourceImage: null,
         atlasImage: null,
+        atlasDataUrl: null,
         atlasFileName: null,
         textureManifest: null,
         textureManifestFileName: null,
         image: null,
-        map: createDefaultEditableMap(),
+        map: null,
         latestPrediction: null,
         trainingSummary: null,
         selectedTypeLabel: EMPTY_LABEL_VALUE,
@@ -354,16 +359,38 @@
         state.map = createDefaultEditableMap();
         state.sourceImage = await loadImage(state.config.sourceImageUrl || '/source-image');
         state.image = state.sourceImage;
+        const defaultTextureAssetError = await loadDefaultTextureAssets().catch((error) => {
+          console.warn(error);
+          return error;
+        });
         createLabelButtons();
         resizeCanvas();
         fitMap();
         installEvents();
         updateStats();
-        setStatus('Ready. Load an atlas, tile configuration, and texture manifest separately.');
+        setStatus(defaultTextureAssetError
+          ? `Ready. Default texture preview could not load: ${defaultTextureAssetError.message}`
+          : state.config.defaultTileConfiguration
+          ? 'Ready. Default empty tile configuration, current texture rows, and Liberty City texture preview are loaded.'
+          : 'Ready. Load an atlas, tile configuration, texture rows, and texture manifest separately.');
         draw();
       }
 
       function createDefaultEditableMap() {
+        if (state.config && state.config.defaultTileConfiguration) {
+          return editableMapFromJson(
+            state.config.defaultTileConfiguration,
+            state.config.defaultTileConfigurationPath || 'empty-tile-layout.json',
+            {
+              sourceName: state.config.defaultTileConfigurationName || 'default empty tile configuration',
+              visualSource: 'source image',
+              textureRows: state.config.defaultTextureLayout && state.config.defaultTextureLayout.textureRows,
+              textureRowsFileName: state.config.defaultTextureLayoutPath || 'texture-layout.json',
+              originalTextureLayout: state.config.defaultTextureLayout || null
+            }
+          );
+        }
+
         return createFilledEditableMap(EMPTY_LABEL_VALUE, 'untitled-default-map.json', {
           sourceName: 'untitled default map',
           tileSize: DEFAULT_TILE_SIZE,
@@ -388,13 +415,41 @@
           fileName,
           rows,
           behaviorRows,
-          textureRows: createDefaultTextureRows(),
+          textureRows: metadata.textureRows ? cloneTextureRows(metadata.textureRows) : createDefaultTextureRows(),
+          textureRowsFileName: metadata.textureRowsFileName || 'texture-layout.json',
+          originalTextureLayout: metadata.originalTextureLayout || null,
           originalMap: null
         };
       }
 
       function createDefaultTextureRows() {
+        if (state.config && state.config.defaultTextureLayout) {
+          return normalizeTextureRows(state.config.defaultTextureLayout.textureRows, { fallbackToZero: true });
+        }
+
+        return createZeroTextureRows();
+      }
+
+      function createZeroTextureRows() {
         return Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => 0));
+      }
+
+      async function loadDefaultTextureAssets() {
+        if (!state.config.defaultAtlasUrl || !state.config.defaultTextureManifestUrl) {
+          return;
+        }
+
+        const manifest = await fetchJson(state.config.defaultTextureManifestUrl);
+        validateTextureManifest(manifest);
+        const atlasDataUrl = await fetchDataUrl(state.config.defaultAtlasUrl, 'default texture atlas');
+        state.atlasImage = await loadImage(atlasDataUrl);
+        state.atlasDataUrl = atlasDataUrl;
+        state.atlasFileName = state.config.defaultAtlasPath || manifest.atlas.file || 'default texture atlas';
+        state.textureManifest = manifest;
+        state.textureManifestFileName = state.config.defaultTextureManifestPath || 'manifest.json';
+        state.map.textureSet = manifest.name || state.map.textureSet || 'liberty-city';
+        state.image = renderTextureMapImage(state.map.textureRows, state.textureManifest, state.atlasImage);
+        state.map.visualSource = state.atlasFileName;
       }
 
       function installEvents() {
@@ -424,11 +479,14 @@
 
         document.getElementById('load-atlas').addEventListener('click', () => atlasFileInput.click());
         document.getElementById('load-tile-config').addEventListener('click', () => tileConfigFileInput.click());
+        document.getElementById('load-texture-rows').addEventListener('click', () => textureRowsFileInput.click());
         document.getElementById('load-texture-manifest').addEventListener('click', () => textureManifestFileInput.click());
         atlasFileInput.addEventListener('change', loadSelectedAtlas);
         tileConfigFileInput.addEventListener('change', loadSelectedTileConfiguration);
+        textureRowsFileInput.addEventListener('change', loadSelectedTextureRows);
         textureManifestFileInput.addEventListener('change', loadSelectedTextureManifest);
         document.getElementById('save-tile-config').addEventListener('click', saveTileConfiguration);
+        document.getElementById('save-texture-rows').addEventListener('click', saveTextureRows);
         document.getElementById('save-texture-manifest').addEventListener('click', saveTextureManifest);
         document.getElementById('reset-defaults').addEventListener('click', resetToDefaults);
         trainButton.addEventListener('click', trainModel);
@@ -596,13 +654,9 @@
 
         try {
           setStatus(`Loading atlas ${file.name}...`);
-          const atlasUrl = URL.createObjectURL(file);
-
-          try {
-            state.atlasImage = await loadImage(atlasUrl);
-          } finally {
-            URL.revokeObjectURL(atlasUrl);
-          }
+          const atlasDataUrl = await readFileAsDataUrl(file);
+          state.atlasImage = await loadImage(atlasDataUrl);
+          state.atlasDataUrl = atlasDataUrl;
 
           state.atlasFileName = file.name;
           refreshVisualFromAssets({ fit: true });
@@ -628,6 +682,26 @@
             fit: true
           });
           setStatus(formatTexturePreviewStatus(`Loaded tile configuration ${file.name}.`));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function loadSelectedTextureRows() {
+        const file = selectedFile(textureRowsFileInput);
+        textureRowsFileInput.value = '';
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          setStatus(`Loading texture rows ${file.name}...`);
+          const payload = JSON.parse(await file.text());
+          validateTextureRowsJson(payload);
+          replaceTextureRows(payload, file.name, { fit: true });
+          setStatus(formatTexturePreviewStatus(`Loaded texture rows ${file.name}.`));
         } catch (error) {
           console.error(error);
           setStatus(error.message, true);
@@ -702,6 +776,7 @@
         }
 
         validateEpiCityMap(payload);
+        const textureRows = resolveTextureRowsForMap(payload, metadata);
         const behaviorRows = Object.fromEntries(BEHAVIOR_LABELS.map((property) => [property, []]));
         const rows = [];
 
@@ -729,22 +804,43 @@
           height: GRID_SIZE,
           tileSize: payload.tileSize,
           textureSet: payload.textureSet || 'liberty-city',
-          sourceName: fileName,
+          sourceName: metadata.sourceName || fileName,
           visualSource: metadata.visualSource || 'source image',
           fileName,
           rows,
           behaviorRows,
-          textureRows: cloneTextureRows(payload.textureRows),
+          textureRows,
+          textureRowsFileName: metadata.textureRowsFileName || state.map?.textureRowsFileName || (payload.textureRows ? fileName : 'texture-layout.json'),
+          originalTextureLayout: metadata.originalTextureLayout || state.map?.originalTextureLayout || null,
           originalMap: payload
         };
+      }
+
+      function resolveTextureRowsForMap(payload, metadata) {
+        if (metadata.textureRows) {
+          validateTextureRows(metadata.textureRows);
+          return cloneTextureRows(metadata.textureRows);
+        }
+
+        if (payload.textureRows) {
+          validateTextureRows(payload.textureRows);
+          return cloneTextureRows(payload.textureRows);
+        }
+
+        if (state.map && state.map.textureRows) {
+          return cloneTextureRows(state.map.textureRows);
+        }
+
+        return createDefaultTextureRows();
       }
 
       function renderTextureMapImage(textureRows, manifest, atlasImage) {
         validateTextureManifest(manifest);
         validateTextureRowsForManifest(textureRows, manifest);
 
-        const imageWidth = manifest.atlas.width || atlasImage.naturalWidth || atlasImage.width;
-        const imageHeight = manifest.atlas.height || atlasImage.naturalHeight || atlasImage.height;
+        const tileSize = state.map.tileSize || manifest.tileSize || DEFAULT_TILE_SIZE;
+        const imageWidth = GRID_SIZE * tileSize;
+        const imageHeight = GRID_SIZE * tileSize;
         const output = document.createElement('canvas');
         const renderContext = output.getContext('2d', { alpha: false });
 
@@ -800,14 +896,38 @@
         refreshVisualFromAssets({ fit: Boolean(options.fit) });
       }
 
+      function replaceTextureRows(textureRowsPayload, fileName, options = {}) {
+        endPointerAction();
+        state.map.textureRows = cloneTextureRows(textureRowsPayload.textureRows);
+        state.map.textureRowsFileName = fileName;
+        state.map.originalTextureLayout = textureRowsPayload;
+        state.map.textureSet = textureRowsPayload.textureSet || state.map.textureSet || 'liberty-city';
+        state.latestPrediction = null;
+        state.trainingSummary = null;
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        state.textureRowsDirty = Boolean(options.dirty);
+        state.dirty = state.semanticRowsDirty || state.textureRowsDirty;
+
+        if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
+          state.selectedTextureId = null;
+          state.texturePickMode = true;
+          createLabelButtons();
+        }
+
+        refreshVisualFromAssets({ fit: Boolean(options.fit) });
+      }
+
       function resetToDefaults() {
         replaceCurrentMap(createDefaultEditableMap(), {
-          dirty: true,
-          semanticRowsDirty: true,
-          useSourceImage: true,
+          dirty: false,
+          semanticRowsDirty: false,
+          textureRowsDirty: false,
           fit: true
         });
-        setStatus('Reset the editor to an empty 256x256 sparse-label map.');
+        setStatus(state.config && state.config.defaultTileConfiguration
+          ? 'Reset the editor to the default empty tile configuration and current texture rows.'
+          : 'Reset the editor to an empty 256x256 sparse-label map.');
       }
 
       async function saveTileConfiguration() {
@@ -817,14 +937,35 @@
         try {
           const text = `${JSON.stringify(buildEpiCityJson(), null, 2)}\n`;
           await saveTextFile(fileName, text, 'Epi City Tile Configuration JSON');
-          state.dirty = false;
           state.semanticRowsDirty = false;
-          state.textureRowsDirty = false;
+          state.dirty = state.textureRowsDirty;
           updateStats();
-          setStatus(`Saved tile configuration ${fileName}. The main app reads textureRows from this file.`);
+          setStatus(`Saved tile configuration ${fileName}. Save Texture Rows separately for texture painting changes.`);
         } catch (error) {
           if (error.name === 'AbortError') {
             setStatus('Save tile configuration canceled.');
+            return;
+          }
+
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function saveTextureRows() {
+        endPointerAction();
+        const fileName = suggestedTextureRowsSaveName();
+
+        try {
+          const text = `${JSON.stringify(buildTextureRowsJson(), null, 2)}\n`;
+          await saveTextFile(fileName, text, 'Epi City Texture Rows JSON');
+          state.textureRowsDirty = false;
+          state.dirty = state.semanticRowsDirty;
+          updateStats();
+          setStatus(`Saved texture rows ${fileName}. The main app reads textureRows from this file.`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            setStatus('Save texture rows canceled.');
             return;
           }
 
@@ -840,10 +981,14 @@
         }
 
         if (state.dirty) {
-          const detail = state.textureRowsDirty
-            ? 'Texture paint edits live in textureRows inside the tile configuration.'
-            : 'Unsaved tile edits live in the tile configuration.';
-          setStatus(`${detail} Use Save Tile Configuration to update the app map; Save Texture Manifest only writes atlas frame metadata.`, true);
+          const dirtyFiles = [];
+          if (state.semanticRowsDirty) {
+            dirtyFiles.push('tile configuration');
+          }
+          if (state.textureRowsDirty) {
+            dirtyFiles.push('texture rows');
+          }
+          setStatus(`Unsaved ${dirtyFiles.join(' and ')} changes are pending. Save Texture Manifest only writes atlas frame metadata.`, true);
           return;
         }
 
@@ -886,6 +1031,11 @@
         return `${base || 'tile-layout'}-edited.json`;
       }
 
+      function suggestedTextureRowsSaveName() {
+        const base = (state.map.textureRowsFileName || 'texture-layout.json').replace(/\.json$/i, '');
+        return `${base || 'texture-layout'}-edited.json`;
+      }
+
       function suggestedTextureManifestSaveName() {
         const base = (state.textureManifestFileName || 'manifest.json').replace(/\.json$/i, '');
         return `${base || 'manifest'}-edited.json`;
@@ -909,12 +1059,19 @@
 
         try {
           setStatus('Training random forests from the current sparse labels...');
+          const textureFeatureSource = buildTextureFeatureSourceForTraining();
           const payload = {
             trees: 48,
             gridSize: GRID_SIZE,
             rows: cloneRows(state.map.rows),
             behaviorRows: cloneBehaviorRows(state.map.behaviorRows)
           };
+
+          if (textureFeatureSource) {
+            payload.textureFeatureSource = textureFeatureSource;
+            setStatus('Training random forests from current labels and rendered textureRows...');
+          }
+
           const response = await fetch('/api/train', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -958,7 +1115,25 @@
           collectTrainingStatus(property, summary.behavior && summary.behavior[property], trained, skipped);
         }
 
-        return `Training stored a prediction without changing the map. Trained: ${trained.length ? trained.join(', ') : 'none'}. Skipped: ${skipped.length ? skipped.join(', ') : 'none'}.`;
+        const featureSource = summary.featureSource ? ` Features: ${summary.featureSource}.` : '';
+        return `Training stored a prediction without changing the map. Trained: ${trained.length ? trained.join(', ') : 'none'}. Skipped: ${skipped.length ? skipped.join(', ') : 'none'}.${featureSource}`;
+      }
+
+      function buildTextureFeatureSourceForTraining() {
+        if (state.atlasDataUrl && state.textureManifest && state.map.visualSource !== 'source image') {
+          validateTextureRowsForManifest(state.map.textureRows, state.textureManifest);
+          return {
+            atlasImage: state.atlasDataUrl,
+            manifest: state.textureManifest,
+            textureRows: cloneTextureRows(state.map.textureRows)
+          };
+        }
+
+        if (state.textureRowsDirty) {
+          throw new Error('Load both an atlas and texture manifest before training with unsaved texture edits.');
+        }
+
+        return null;
       }
 
       function collectTrainingStatus(name, summary, trained, skipped) {
@@ -1118,7 +1293,7 @@
           if (layer === 'texture') {
             state.textureRowsDirty = true;
             refreshVisualFromAssets();
-            setStatus(`Painted texture ${state.selectedTextureId}. Save Tile Configuration to update the app map.`);
+            setStatus(`Painted texture ${state.selectedTextureId}. Save Texture Rows to update the app map.`);
           } else {
             state.semanticRowsDirty = true;
             state.latestPrediction = null;
@@ -1417,15 +1592,15 @@
         assertRuntimeLabelsComplete();
 
         if (state.map.originalMap && !state.semanticRowsDirty) {
+          const { textureRows, ...originalMap } = state.map.originalMap;
           return {
-            ...state.map.originalMap,
+            ...originalMap,
             width: GRID_SIZE,
             height: GRID_SIZE,
             tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
             textureSet: state.map.textureSet || 'liberty-city',
             legend: legendForSave(state.map.originalMap.legend),
-            rows: [...state.map.originalMap.rows],
-            textureRows: normalizeTextureRows(state.map.textureRows)
+            rows: [...state.map.originalMap.rows]
           };
         }
 
@@ -1464,7 +1639,16 @@
           tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
           textureSet: state.map.textureSet || 'liberty-city',
           legend,
-          rows,
+          rows
+        };
+      }
+
+      function buildTextureRowsJson() {
+        return {
+          ...(state.map.originalTextureLayout || {}),
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          textureSet: state.map.textureSet || 'liberty-city',
           textureRows: normalizeTextureRows(state.map.textureRows)
         };
       }
@@ -1529,9 +1713,10 @@
         addStat('visual source', state.map.visualSource || 'source image');
         addStat('texture set', state.map.textureSet || 'none');
         addStat('unique textures', countUniqueTextures());
+        addStat('texture rows', state.map.textureRowsFileName || 'not loaded');
         addStat('atlas', state.atlasFileName || 'not loaded');
         addStat('manifest', state.textureManifestFileName || 'not loaded');
-        addStat('tile config dirty', state.dirty ? 'yes' : 'no');
+        addStat('any dirty', state.dirty ? 'yes' : 'no');
         addStat('tile properties dirty', state.semanticRowsDirty ? 'yes' : 'no');
         addStat('texture rows dirty', state.textureRowsDirty ? 'yes' : 'no');
         addStat('latest prediction', state.latestPrediction ? 'ready' : 'none');
@@ -1677,7 +1862,25 @@
           }
         }
 
-        validateTextureRows(map.textureRows);
+        if (map.textureRows !== undefined) {
+          validateTextureRows(map.textureRows);
+        }
+      }
+
+      function validateTextureRowsJson(payload) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          throw new Error('Texture rows JSON must be an object.');
+        }
+
+        if (!Number.isInteger(payload.width) || payload.width !== GRID_SIZE || !Number.isInteger(payload.height) || payload.height !== GRID_SIZE) {
+          throw new Error(`Texture rows JSON must be ${GRID_SIZE}x${GRID_SIZE}.`);
+        }
+
+        if (payload.textureSet !== undefined && (typeof payload.textureSet !== 'string' || payload.textureSet.length === 0)) {
+          throw new Error('Texture rows JSON textureSet must be a non-empty string when present.');
+        }
+
+        validateTextureRows(payload.textureRows);
       }
 
       function validateTextureRows(textureRows) {
@@ -1763,13 +1966,13 @@
           throw new Error('Each Epi City legend entry must be an object.');
         }
 
-        if (!TYPE_LABELS.includes(editorTypeForLegendEntry(entry))) {
+        if (!isEmptyLabelValue(editorTypeForLegendEntry(entry)) && !TYPE_LABELS.includes(editorTypeForLegendEntry(entry))) {
           throw new Error(`Unsupported legend category: ${entry.category}.`);
         }
 
         for (const property of BEHAVIOR_LABELS) {
-          if (typeof entry[property] !== 'boolean') {
-            throw new Error(`Legend entry ${entry.category} must include boolean ${property}.`);
+          if (!isEmptyLabelValue(entry[property]) && typeof entry[property] !== 'boolean') {
+            throw new Error(`Legend entry ${entry.category} must include boolean or empty ${property}.`);
           }
         }
       }
@@ -1828,14 +2031,16 @@
         }
       }
 
-      function normalizeTextureRows(textureRows) {
+      function normalizeTextureRows(textureRows, options = {}) {
+        const fallback = options.fallbackToZero ? createZeroTextureRows : createDefaultTextureRows;
+
         if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
-          return createDefaultTextureRows();
+          return fallback();
         }
 
         for (const row of textureRows) {
           if (!Array.isArray(row) || row.length !== GRID_SIZE || row.some((value) => !Number.isInteger(value) || value < 0)) {
-            return createDefaultTextureRows();
+            return fallback();
           }
         }
 
@@ -1968,6 +2173,29 @@
           image.onload = () => resolve(image);
           image.onerror = () => reject(new Error(`Could not load ${url}.`));
           image.src = url;
+        });
+      }
+
+      function readFileAsDataUrl(file) {
+        return readBlobAsDataUrl(file, file.name);
+      }
+
+      async function fetchDataUrl(url, description) {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`Could not load ${description}: ${response.status} ${response.statusText}`);
+        }
+
+        return readBlobAsDataUrl(await response.blob(), description);
+      }
+
+      function readBlobAsDataUrl(blob, description) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error(`Could not read ${description}.`));
+          reader.readAsDataURL(blob);
         });
       }
     </script>

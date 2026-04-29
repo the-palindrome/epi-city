@@ -141,6 +141,12 @@
       const TEXTURE_SET_PATHS = Object.freeze({
         'liberty-city': './maps/liberty-city/manifest.json'
       });
+      const CITY_MAP_PATHS = Object.freeze({
+        'liberty-city': {
+          tileLayout: './maps/liberty-city/tile-layout.json',
+          textureLayout: './maps/liberty-city/texture-layout.json'
+        }
+      });
 
       const PIXEL_ART_SCALE_MODE = 'nearest';
 
@@ -296,7 +302,7 @@
           installCameraControls(app, camera, applyCamera);
 
           // Keep map data pre-generated so the app has a stable, fast startup path.
-          const mapData = await loadCityMap('./maps/liberty-city/tile-layout.json');
+          const mapData = await loadCityMap(CITY_MAP_PATHS['liberty-city'].tileLayout, CITY_MAP_PATHS['liberty-city'].textureLayout);
           const city = compileCityMap(mapData);
           let textureSet = await loadTextureSet(city.textureSetName);
 
@@ -640,7 +646,7 @@
       /**
        * Loads the authoring-format map and validates it before any runtime state is created.
        */
-      async function loadCityMap(url) {
+      async function loadCityMap(url, textureRowsUrl = deriveTextureRowsUrl(url)) {
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -649,7 +655,39 @@
 
         const data = await response.json();
         validateCityMap(data);
+        const textureRowsData = await loadTextureRows(textureRowsUrl, data);
+        return {
+          ...data,
+          textureSet: textureRowsData.textureSet || data.textureSet,
+          textureRows: textureRowsData.textureRows
+        };
+      }
+
+      async function loadTextureRows(url, mapData) {
+        if (!url && mapData.textureRows) {
+          validateTextureRowsLayout(mapData, mapData);
+          return mapData;
+        }
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`Could not load ${url}: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        validateTextureRowsLayout(data, mapData);
         return data;
+      }
+
+      function deriveTextureRowsUrl(mapUrl) {
+        if (typeof mapUrl !== 'string' || mapUrl.length === 0) {
+          return null;
+        }
+
+        const slash = mapUrl.lastIndexOf('/');
+        const base = slash >= 0 ? mapUrl.slice(0, slash + 1) : '';
+        return `${base}texture-layout.json`;
       }
 
       async function loadTextureSet(name) {
@@ -796,20 +834,38 @@
           }
         }
 
-        if (!Array.isArray(data.textureRows) || data.textureRows.length !== data.height) {
-          throw new Error(`Map JSON textureRows must contain exactly ${data.height} rows.`);
+        if (data.textureRows !== undefined) {
+          validateTextureRowsLayout(data, data);
+        }
+      }
+
+      function validateTextureRowsLayout(data, mapData) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+          throw new Error('Texture rows JSON must contain a JSON object.');
         }
 
-        for (let y = 0; y < data.height; y += 1) {
+        if (data.width !== mapData.width || data.height !== mapData.height) {
+          throw new Error(`Texture rows JSON must be ${mapData.width}x${mapData.height}.`);
+        }
+
+        if (data.textureSet !== undefined && (typeof data.textureSet !== 'string' || data.textureSet.length === 0)) {
+          throw new Error('Texture rows JSON textureSet must be a non-empty string when present.');
+        }
+
+        if (!Array.isArray(data.textureRows) || data.textureRows.length !== mapData.height) {
+          throw new Error(`Texture rows JSON textureRows must contain exactly ${mapData.height} rows.`);
+        }
+
+        for (let y = 0; y < mapData.height; y += 1) {
           const row = data.textureRows[y];
 
-          if (!Array.isArray(row) || row.length !== data.width) {
-            throw new Error(`Map JSON texture row ${y} must contain exactly ${data.width} texture IDs.`);
+          if (!Array.isArray(row) || row.length !== mapData.width) {
+            throw new Error(`Texture rows JSON row ${y} must contain exactly ${mapData.width} texture IDs.`);
           }
 
-          for (let x = 0; x < data.width; x += 1) {
+          for (let x = 0; x < mapData.width; x += 1) {
             if (!Number.isInteger(row[x]) || row[x] < 0) {
-              throw new Error(`Map JSON textureRows has invalid texture ID at ${x},${y}.`);
+              throw new Error(`Texture rows JSON has invalid texture ID at ${x},${y}.`);
             }
           }
         }

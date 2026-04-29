@@ -3,7 +3,7 @@
 
 The generated JSON and texture assets are the committed/runtime artifacts. The
 script decomposes the source map into 65,536 source tiles, deduplicates exact
-duplicate crops, and verifies that every `textureRows` entry points back to
+duplicate crops, and verifies that every texture layout entry points back to
 matching source pixels.
 """
 
@@ -27,6 +27,7 @@ REPO_ROOT = PROCESS_DIR.parent
 
 SOURCE = PROCESS_DIR / "source/gta1-liberty-city-hd.webp"
 OUTPUT_MAP = REPO_ROOT / "public/maps/liberty-city/tile-layout.json"
+OUTPUT_TEXTURE_LAYOUT = REPO_ROOT / "public/maps/liberty-city/texture-layout.json"
 OUTPUT_TEXTURES = REPO_ROOT / "public/maps/liberty-city"
 PREVIEW = PROCESS_DIR / "output/gta-256-textured-preview.png"
 GRID_SIZE = 256
@@ -66,6 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=SOURCE)
     parser.add_argument("--output-map", type=Path, default=OUTPUT_MAP)
+    parser.add_argument("--output-texture-layout", type=Path, default=OUTPUT_TEXTURE_LAYOUT)
     parser.add_argument("--output-textures", type=Path, default=OUTPUT_TEXTURES)
     parser.add_argument("--preview", type=Path, default=PREVIEW)
     parser.add_argument("--grid-size", type=int, default=GRID_SIZE)
@@ -676,8 +678,20 @@ def write_map_json(path: Path, data: dict) -> None:
         comma = "," if index + 1 < len(data["rows"]) else ""
         lines.append(f"    {json.dumps(row)}{comma}")
 
-    lines.append("  ],")
-    lines.append('  "textureRows": [')
+    lines.append("  ]")
+    lines.append("}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_texture_layout_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "{",
+        f'  "width": {data["width"]},',
+        f'  "height": {data["height"]},',
+        f'  "textureSet": {json.dumps(data["textureSet"])},',
+        '  "textureRows": [',
+    ]
 
     for index, row in enumerate(data["textureRows"]):
         comma = "," if index + 1 < len(data["textureRows"]) else ""
@@ -720,10 +734,10 @@ def write_manifest(
     )
 
 
-def write_preview(path: Path, map_data: dict, source: Image.Image, frames: list[list[int]], texture_size: int) -> None:
+def write_preview(path: Path, texture_layout: dict, source: Image.Image, frames: list[list[int]], texture_size: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    preview = Image.new("RGB", (map_data["width"] * texture_size, map_data["height"] * texture_size))
-    for y, row in enumerate(map_data["textureRows"]):
+    preview = Image.new("RGB", (texture_layout["width"] * texture_size, texture_layout["height"] * texture_size))
+    for y, row in enumerate(texture_layout["textureRows"]):
         for x, texture_id in enumerate(row):
             frame = frames[texture_id]
             crop = source.crop((frame[0], frame[1], frame[0] + frame[2], frame[1] + frame[3]))
@@ -767,13 +781,20 @@ def main() -> None:
         "textureSet": TEXTURE_SET_NAME,
         "legend": legend,
         "rows": rows,
+    }
+    texture_layout = {
+        "width": args.grid_size,
+        "height": args.grid_size,
+        "textureSet": TEXTURE_SET_NAME,
         "textureRows": texture_rows,
     }
     write_map_json(args.output_map, map_data)
-    write_preview(args.preview, map_data, source_image, frames, args.texture_size)
+    write_texture_layout_json(args.output_texture_layout, texture_layout)
+    write_preview(args.preview, texture_layout, source_image, frames, args.texture_size)
 
     cell_counts = Counter(f"{cell.category}/{cell.variant}" for cell in cells)
     print(f"wrote {args.output_map}")
+    print(f"wrote {args.output_texture_layout}")
     print(f"wrote {manifest}")
     print(f"wrote {args.preview}")
     print(f"source atlas: {atlas_path}")

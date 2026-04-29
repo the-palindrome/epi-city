@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+from io import BytesIO
 import json
 import sys
 from collections import Counter
@@ -71,12 +74,38 @@ def build_features(
     baseline_type_rows: list[list[str]],
     baseline_behavior_rows: dict[str, list[list[bool]]],
     grid_size: int,
-) -> np.ndarray:
-    try:
-        with Image.open(source_path) as image:
-            resized = image.convert("RGB").resize((grid_size * PATCH_SIZE, grid_size * PATCH_SIZE), Image.Resampling.BOX)
-    except OSError as error:
-        raise ValueError(f"Could not read source image {source_path}: {error}") from error
+) -> tuple[np.ndarray, str]:
+    return build_features_from_image(
+        load_source_image(source_path, grid_size),
+        baseline_type_rows,
+        baseline_behavior_rows,
+        grid_size,
+        "source image",
+    )
+
+
+def build_features_from_texture_source(
+    texture_feature_source: dict[str, Any],
+    baseline_type_rows: list[list[str]],
+    baseline_behavior_rows: dict[str, list[list[bool]]],
+    grid_size: int,
+) -> tuple[np.ndarray, str]:
+    return build_features_from_image(
+        render_texture_feature_image(texture_feature_source, grid_size),
+        baseline_type_rows,
+        baseline_behavior_rows,
+        grid_size,
+        "textureRows",
+    )
+
+
+def build_features_from_image(
+    resized: Image.Image,
+    baseline_type_rows: list[list[str]],
+    baseline_behavior_rows: dict[str, list[list[bool]]],
+    grid_size: int,
+    feature_source: str,
+) -> tuple[np.ndarray, str]:
     pixels = np.asarray(resized, dtype=np.float32) / 255.0
     patches = pixels.reshape(grid_size, PATCH_SIZE, grid_size, PATCH_SIZE, 3).transpose(0, 2, 1, 3, 4)
     flat_pixels = patches.reshape(grid_size * grid_size, PATCH_SIZE * PATCH_SIZE * 3)
@@ -160,7 +189,111 @@ def build_features(
             neighborhoods.append(padded[dy : dy + grid_size, dx : dx + grid_size])
 
     context = np.concatenate(neighborhoods, axis=2).reshape(grid_size * grid_size, -1).astype(np.float32)
-    return np.concatenate([base, context], axis=1)
+    return np.concatenate([base, context], axis=1), feature_source
+
+
+def load_source_image(source_path: Path, grid_size: int) -> Image.Image:
+    try:
+        with Image.open(source_path) as image:
+            return image.convert("RGB").resize((grid_size * PATCH_SIZE, grid_size * PATCH_SIZE), Image.Resampling.BOX)
+    except OSError as error:
+        raise ValueError(f"Could not read source image {source_path}: {error}") from error
+
+
+def render_texture_feature_image(texture_feature_source: dict[str, Any], grid_size: int) -> Image.Image:
+    if not isinstance(texture_feature_source, dict):
+        raise ValueError("Current-state textureFeatureSource must be an object.")
+
+    manifest = texture_feature_source.get("manifest")
+    frames = validate_texture_feature_manifest(manifest)
+    texture_rows = texture_feature_source.get("textureRows")
+    validate_texture_rows_for_manifest(texture_rows, len(frames), grid_size)
+    atlas_bytes = decode_image_data_url(texture_feature_source.get("atlasImage"), "texture atlas")
+
+    try:
+        with Image.open(BytesIO(atlas_bytes)) as atlas_image:
+            atlas = atlas_image.convert("RGB")
+    except OSError as error:
+        raise ValueError(f"Could not read texture atlas image data: {error}") from error
+
+    output = Image.new("RGB", (grid_size * PATCH_SIZE, grid_size * PATCH_SIZE), (16, 20, 16))
+    patch_cache: dict[int, Image.Image] = {}
+
+    for y in range(grid_size):
+        for x in range(grid_size):
+            texture_id = texture_rows[y][x]
+            patch = patch_cache.get(texture_id)
+
+            if patch is None:
+                left, top, width, height = frames[texture_id]
+
+                if left + width > atlas.width or top + height > atlas.height:
+                    raise ValueError(f"Texture manifest frame {texture_id} exceeds atlas bounds.")
+
+                patch = atlas.crop((left, top, left + width, top + height)).resize((PATCH_SIZE, PATCH_SIZE), Image.Resampling.BOX)
+                patch_cache[texture_id] = patch
+
+            output.paste(patch, (x * PATCH_SIZE, y * PATCH_SIZE))
+
+    return output
+
+
+def decode_image_data_url(value: Any, description: str) -> bytes:
+    if not isinstance(value, str) or not value.startswith("data:image/"):
+        raise ValueError(f"Current-state {description} must be an image data URL.")
+
+    try:
+        header, encoded = value.split(",", 1)
+    except ValueError as error:
+        raise ValueError(f"Current-state {description} data URL is missing a base64 payload.") from error
+
+    if ";base64" not in header:
+        raise ValueError(f"Current-state {description} data URL must be base64 encoded.")
+
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except binascii.Error as error:
+        raise ValueError(f"Current-state {description} data URL has invalid base64 data.") from error
+
+
+def validate_texture_feature_manifest(manifest: Any) -> list[list[int]]:
+    if not isinstance(manifest, dict):
+        raise ValueError("Current-state textureFeatureSource.manifest must be an object.")
+
+    frames = manifest.get("frames")
+
+    if not isinstance(frames, list) or not frames:
+        raise ValueError("Current-state textureFeatureSource.manifest.frames must be a non-empty array.")
+
+    normalized_frames = []
+
+    for index, frame in enumerate(frames):
+        if (
+            not isinstance(frame, list)
+            or len(frame) != 4
+            or not all(type(value) is int for value in frame)
+        ):
+            raise ValueError(f"Texture manifest frame {index} must be [x, y, width, height].")
+
+        if frame[0] < 0 or frame[1] < 0 or frame[2] <= 0 or frame[3] <= 0:
+            raise ValueError(f"Texture manifest frame {index} has invalid bounds.")
+
+        normalized_frames.append(frame)
+
+    return normalized_frames
+
+
+def validate_texture_rows_for_manifest(texture_rows: Any, frame_count: int, grid_size: int) -> None:
+    if not isinstance(texture_rows, list) or len(texture_rows) != grid_size:
+        raise ValueError(f"Current-state textureFeatureSource.textureRows must contain {grid_size} rows.")
+
+    for y, row in enumerate(texture_rows):
+        if not isinstance(row, list) or len(row) != grid_size:
+            raise ValueError(f"Current-state textureFeatureSource.textureRows[{y}] must contain {grid_size} texture IDs.")
+
+        for x, texture_id in enumerate(row):
+            if type(texture_id) is not int or texture_id < 0 or texture_id >= frame_count:
+                raise ValueError(f"Texture id {texture_id!r} at {x},{y} is outside the manifest frame list.")
 
 
 def train_layer(
@@ -387,7 +520,17 @@ def main() -> None:
     else:
         raise ValueError("--state is required unless --map is provided.")
 
-    features = build_features(args.source, type_rows, behavior_rows, args.grid_size)
+    texture_feature_source = state.get("textureFeatureSource") if state is not None else None
+
+    if texture_feature_source is not None:
+        features, feature_source = build_features_from_texture_source(
+            texture_feature_source,
+            type_rows,
+            behavior_rows,
+            args.grid_size,
+        )
+    else:
+        features, feature_source = build_features(args.source, type_rows, behavior_rows, args.grid_size)
 
     type_indices, type_values, type_flat = flatten_labeled_values(type_rows)
     predicted_type_flat, type_summary = train_layer(
@@ -425,6 +568,7 @@ def main() -> None:
             "type": type_summary,
             "behavior": behavior_summaries,
             "featureCount": int(features.shape[1]),
+            "featureSource": feature_source,
             "seed": RNG_SEED,
             "sklearn": True,
         },

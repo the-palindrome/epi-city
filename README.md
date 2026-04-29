@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-city/tile-layout.json` as `/maps/liberty-city/tile-layout.json`, and the app loads it with `fetch('./maps/liberty-city/tile-layout.json')`.
+Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-city/` as `/maps/liberty-city/`, and the app loads both `tile-layout.json` and `texture-layout.json`.
 
 ## Controls
 
@@ -25,7 +25,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-c
 ## Project Structure
 
 - `index.html` contains the Pixi app, camera controls, map validation, runtime city API, atlas texture renderer, and pathfinding.
-- `public/maps/liberty-city/tile-layout.json` contains the static Liberty City tile layout.
+- `public/maps/liberty-city/tile-layout.json` contains the static Liberty City semantic tile layout.
+- `public/maps/liberty-city/texture-layout.json` contains one atlas-frame texture ID per map cell.
 - `public/maps/liberty-city/manifest.json` describes the Liberty City atlas frames used by the texture set.
 - `public/maps/liberty-city/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
 - `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
@@ -35,7 +36,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-c
 
 ## Map Format
 
-The map stores semantics and visuals separately. `rows` contains one legend symbol per cell for gameplay classification. `textureRows` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments live in the tile configuration, not the texture manifest, so texture painting in the editor must be saved with `Save Tile Configuration`.
+The map stores semantics and visuals in separate JSON files. `tile-layout.json` contains one legend symbol per cell for gameplay classification. `texture-layout.json` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments do not live in the texture manifest, so texture painting in the editor must be saved with `Save Texture Rows`.
 
 ```json
 {
@@ -51,7 +52,15 @@ The map stores semantics and visuals separately. `rows` contains one legend symb
       "parkable": false
     }
   },
-  "rows": ["..."],
+  "rows": ["..."]
+}
+```
+
+```json
+{
+  "width": 256,
+  "height": 256,
+  "textureSet": "liberty-city",
   "textureRows": [[0, 1, 2]]
 }
 ```
@@ -107,7 +116,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts with an in-browser empty sparse-label map, can load atlas, tile configuration, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels, stores predictions separately, and applies predictions as one undoable operation. Save Tile Configuration preserves the visual texture layer from a loaded map, requires complete runtime labels, and never overwrites `public/maps/liberty-city/tile-layout.json` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts from an empty semantic tile configuration plus the current `public/maps/liberty-city/texture-layout.json`, atlas, and texture manifest, can load atlas, tile configuration, texture rows, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels; when atlas and manifest assets are loaded, the classifier's pixel features come from the current `textureRows`. It stores predictions separately and applies predictions as one undoable operation. Save Tile Configuration writes semantic rows, Save Texture Rows writes the visual texture layer, and neither save action overwrites files under `public/maps/liberty-city` automatically.
 
 ## Texture Sets
 

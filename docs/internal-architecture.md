@@ -4,14 +4,14 @@ Epi City currently keeps the implementation in one `index.html` file so early si
 
 ## Map Data Flow
 
-The app loads `./maps/liberty-city/tile-layout.json` at startup. Vite serves `public/maps/liberty-city/tile-layout.json` from the site root, so the same relative fetch works in development and production builds.
+The app loads `./maps/liberty-city/tile-layout.json` and `./maps/liberty-city/texture-layout.json` at startup. Vite serves `public/maps/liberty-city/` from the site root, so the same relative fetches work in development and production builds.
 
 Startup follows this sequence:
 
 1. Pixi creates a full-window canvas and a `world` container.
 2. The app installs left-drag pan and wheel zoom camera controls.
-3. `loadCityMap()` fetches the JSON map and calls `validateCityMap()`.
-4. `compileCityMap()` converts semantic rows and texture rows into typed arrays.
+3. `loadCityMap()` fetches the semantic tile layout, then fetches the texture rows layout and validates both files.
+4. `compileCityMap()` converts the merged semantic rows and texture rows into typed arrays.
 5. `loadTextureSet()` loads the selected texture manifest and atlas image.
 6. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
 7. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
@@ -35,14 +35,24 @@ Startup follows this sequence:
       "parkable": false
     }
   },
-  "rows": ["..."],
+  "rows": ["..."]
+}
+```
+
+`public/maps/liberty-city/texture-layout.json` stores the visual assignment layer separately:
+
+```json
+{
+  "width": 256,
+  "height": 256,
+  "textureSet": "liberty-city",
   "textureRows": [[0, 1, 2]]
 }
 ```
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
-Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
+Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
 The base categories are `road`, `sidewalk`, `park`, `water`, `bridge`, and `building`. Movement uses the generated behavior booleans instead of hard-coded category masks.
 
@@ -134,17 +144,17 @@ The tile-type overlay paints semantic categories with fixed debug colors: sidewa
 
 The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
 
-The browser owns the editable map state. Startup creates a default 256x256 sparse-label map where tile type, `walkable`, `parkable`, and `drivable` are all `null`. `Load Atlas`, `Load Tile Configuration`, and `Load Texture Manifest` fill separate browser-side asset slots. When both an atlas and manifest are loaded, the editor reconstructs the visual map from the tile configuration's `textureRows`. `Reset to defaults` discards the current browser state and rebuilds the empty sparse map. `Save Tile Configuration` writes the current editable tile configuration through the browser, and `Save Texture Manifest` writes only the currently loaded atlas-frame manifest, so the editor does not automatically overwrite files under `public/maps/liberty-city`.
+The browser owns the editable map state. Startup asks `/api/config` for an empty semantic tile configuration and the current Liberty City texture rows, then uses both as the default editable map and loads the default atlas plus texture manifest for immediate preview. `Load Atlas`, `Load Tile Configuration`, `Load Texture Rows`, and `Load Texture Manifest` fill separate browser-side asset slots and can replace those defaults. When both an atlas and manifest are loaded, the editor reconstructs the visual map from the loaded `textureRows`. `Reset to defaults` discards the current browser state and rebuilds from the empty semantic tile configuration and current Liberty City texture rows. `Save Tile Configuration` writes semantic rows through the browser, `Save Texture Rows` writes the visual assignment layer, and `Save Texture Manifest` writes only the currently loaded atlas-frame manifest, so the editor does not automatically overwrite files under `public/maps/liberty-city`.
 
-Tile configuration loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded atlas/manifest assets or is waiting for one of those assets.
+Texture rows loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded atlas/manifest assets or is waiting for one of those assets.
 
 The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer.
 
-The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from the tile configuration, the editor blocks manifest saves while tile edits are dirty and directs users to `Save Tile Configuration`.
+The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from `texture-layout.json`, the editor directs users to `Save Texture Rows` after texture painting.
 
-The editor tracks semantic tile-property edits separately from texture-row edits. If a save contains only texture changes, it preserves the loaded `legend` and `rows` and replaces only `textureRows`; semantic edits still rebuild `legend` and `rows` from the editable property grids.
+The editor tracks semantic tile-property edits separately from texture-row edits. Tile configuration saves never include `textureRows`; texture row saves never rebuild `legend` or semantic `rows`.
 
-`POST /api/train` runs `map-editor/train_random_forest.py` through the local `map-editor/.venv` interpreter when it exists. The browser posts the full current `rows` and `behaviorRows` grids, and the trainer validates that state before fitting `sklearn.ensemble.RandomForestClassifier` models. Each layer trains only from non-empty labels. Layers without at least two distinct non-empty values are skipped and return their current sparse values unchanged.
+`POST /api/train` runs `map-editor/train_random_forest.py` through the local `map-editor/.venv` interpreter when it exists. The browser posts the full current `rows` and `behaviorRows` grids, and when atlas/manifest assets are loaded it also posts the current texture feature source: the atlas image data, texture manifest, and `textureRows`. The trainer reconstructs its pixel feature image from those texture assignments, so texture painting affects later classifier runs. If texture assets are not loaded, training falls back to the canonical source image. Each layer trains only from non-empty labels. Layers without at least two distinct non-empty values are skipped and return their current sparse values unchanged.
 
 Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. Runtime JSON saving requires complete tile type and behavior labels and reports missing values instead of producing invalid app maps.
 
