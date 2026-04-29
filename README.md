@@ -46,7 +46,6 @@ The map stores semantics and visuals separately. `rows` contains one legend symb
   "legend": {
     "A": {
       "category": "road",
-      "subcategory": "horizontal",
       "walkable": false,
       "drivable": true,
       "parkable": false
@@ -57,7 +56,7 @@ The map stores semantics and visuals separately. `rows` contains one legend symb
 }
 ```
 
-The runtime supports five base categories: `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories preserve semantic detail such as road orientation, waterfront sidewalks, water edge masks, and building roof styles. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules.
+The runtime supports six base categories: `road`, `sidewalk`, `park`, `water`, `bridge`, and `building`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules.
 
 ## Movement Rules
 

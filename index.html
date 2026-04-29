@@ -113,15 +113,17 @@
       const TILE_TYPES = Object.freeze({
         road: 0,
         sidewalk: 1,
-        water: 2,
-        bridge: 3,
-        building: 4
+        park: 2,
+        water: 3,
+        bridge: 4,
+        building: 5
       });
 
       // Names mirror TILE_TYPES order and are returned by the public getTile() helper.
       const TILE_NAMES = Object.freeze([
         'road',
         'sidewalk',
+        'park',
         'water',
         'bridge',
         'building'
@@ -130,6 +132,7 @@
       const CATEGORY_TO_TILE = Object.freeze({
         road: TILE_TYPES.road,
         sidewalk: TILE_TYPES.sidewalk,
+        park: TILE_TYPES.park,
         water: TILE_TYPES.water,
         bridge: TILE_TYPES.bridge,
         building: TILE_TYPES.building
@@ -600,11 +603,6 @@
 
       function getTileTypeOverlayColor(city, x, y) {
         const variant = city.getTileVariant(x, y);
-
-        if (variant.category === 'sidewalk' && variant.subcategory === 'park') {
-          return TILE_TYPE_OVERLAY_COLORS.park;
-        }
-
         return TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.building;
       }
 
@@ -835,10 +833,6 @@
             throw new Error(`Map JSON legend entry "${symbol}" has unknown category "${category}".`);
           }
 
-          if (typeof value.subcategory !== 'string' || value.subcategory.length === 0) {
-            throw new Error(`Map JSON legend entry "${symbol}" must include a subcategory.`);
-          }
-
           for (const property of ['walkable', 'drivable', 'parkable']) {
             if (typeof value[property] !== 'boolean') {
               throw new Error(`Map JSON legend entry "${symbol}" must include boolean ${property}.`);
@@ -847,7 +841,6 @@
 
           entries[symbol] = {
             category,
-            subcategory: value.subcategory,
             walkable: value.walkable,
             drivable: value.drivable,
             parkable: value.parkable
@@ -1518,6 +1511,8 @@
           drawFallbackRoad(graphics, city, x, y, false);
         } else if (tileId === TILE_TYPES.sidewalk) {
           drawFallbackSidewalk(graphics, city, x, y);
+        } else if (tileId === TILE_TYPES.park) {
+          drawFallbackPark(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.water) {
           drawFallbackWater(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.bridge) {
@@ -1563,6 +1558,15 @@
 
         fillRect(graphics, px, py, t, t, SPRITE_COLORS.sidewalk);
         drawFallbackBoundary(graphics, city, x, y, isSidewalkLikeId, SPRITE_COLORS.sidewalkEdge, 1);
+      }
+
+      function drawFallbackPark(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.park);
+        drawFallbackBoundary(graphics, city, x, y, isParkLikeId, SPRITE_COLORS.parkEdge, 1);
       }
 
       function drawFallbackWater(graphics, city, x, y) {
@@ -1618,6 +1622,10 @@
 
       function isSidewalkLikeId(tileId) {
         return tileId === TILE_TYPES.sidewalk;
+      }
+
+      function isParkLikeId(tileId) {
+        return tileId === TILE_TYPES.park;
       }
 
       function isBuildingLikeId(tileId) {

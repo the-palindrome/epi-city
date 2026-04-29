@@ -53,8 +53,7 @@ def load_baseline(map_path: Path, grid_size: int) -> tuple[list[list[str]], dict
 
         for x in range(grid_size):
             entry = legend[row[x]]
-            label = "park" if entry["category"] == "sidewalk" and entry.get("subcategory") == "park" else entry["category"]
-            type_row.append(label)
+            type_row.append(entry["category"])
 
             for property_name in BEHAVIOR_LABELS:
                 behavior_row_map[property_name].append(bool(entry[property_name]))

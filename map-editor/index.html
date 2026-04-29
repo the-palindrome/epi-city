@@ -296,14 +296,6 @@
         e: null
       });
       const SAFE_SYMBOLS = Object.freeze([...('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~')]);
-      const DEFAULT_SUBCATEGORY_BY_TYPE = Object.freeze({
-        road: 'classified',
-        sidewalk: 'classified',
-        park: 'park',
-        water: 'classified',
-        bridge: 'classified',
-        building: 'classified'
-      });
 
       const canvas = document.getElementById('map');
       const ctx = canvas.getContext('2d', { alpha: false });
@@ -1431,6 +1423,8 @@
             height: GRID_SIZE,
             tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
             textureSet: state.map.textureSet || 'liberty-city',
+            legend: legendForSave(state.map.originalMap.legend),
+            rows: [...state.map.originalMap.rows],
             textureRows: normalizeTextureRows(state.map.textureRows)
           };
         }
@@ -1475,16 +1469,26 @@
         };
       }
 
+      function legendForSave(legend) {
+        const nextLegend = {};
+
+        for (const [symbol, entry] of Object.entries(legend)) {
+          nextLegend[symbol] = {
+            category: entry.category,
+            walkable: entry.walkable,
+            drivable: entry.drivable,
+            parkable: entry.parkable
+          };
+        }
+
+        return nextLegend;
+      }
+
       function definitionForCell(x, y) {
         const type = state.map.rows[y][x];
-        const existingEntry = existingLegendEntryAt(x, y);
-        const shouldPreserveShape = existingEntry && editorTypeForLegendEntry(existingEntry) === type;
-        const category = shouldPreserveShape ? existingEntry.category : type === 'park' ? 'sidewalk' : type;
-        const subcategory = shouldPreserveShape ? existingEntry.subcategory : DEFAULT_SUBCATEGORY_BY_TYPE[type];
 
         return {
-          category,
-          subcategory,
+          category: type,
           walkable: state.map.behaviorRows.walkable[y][x],
           drivable: state.map.behaviorRows.drivable[y][x],
           parkable: state.map.behaviorRows.parkable[y][x]
@@ -1515,16 +1519,6 @@
         if (missing.length > 0) {
           throw new Error(`Cannot save runtime JSON while labels are empty. Fill or predict missing values first. First missing labels: ${missing.join('; ')}.`);
         }
-      }
-
-      function existingLegendEntryAt(x, y) {
-        const originalMap = state.map.originalMap;
-
-        if (!originalMap || !originalMap.rows || !originalMap.legend) {
-          return null;
-        }
-
-        return originalMap.legend[originalMap.rows[y][x]] || null;
       }
 
       function updateStats() {
@@ -1773,10 +1767,6 @@
           throw new Error(`Unsupported legend category: ${entry.category}.`);
         }
 
-        if (typeof entry.subcategory !== 'string' || entry.subcategory.length === 0) {
-          throw new Error(`Legend entry ${entry.category} must include a subcategory string.`);
-        }
-
         for (const property of BEHAVIOR_LABELS) {
           if (typeof entry[property] !== 'boolean') {
             throw new Error(`Legend entry ${entry.category} must include boolean ${property}.`);
@@ -1865,7 +1855,7 @@
       }
 
       function editorTypeForLegendEntry(entry) {
-        return entry.category === 'sidewalk' && entry.subcategory === 'park' ? 'park' : entry.category;
+        return entry.category;
       }
 
       function fitMap() {

@@ -113,7 +113,7 @@ Saving never overwrites `public/maps/liberty-city/tile-layout.json` automaticall
 
 Runtime Epi City JSON cannot contain empty labels. Save As reports the first missing tile type or behavior values if the map is incomplete. Fill them manually or run `Predict labels` before saving.
 
-The saved JSON preserves `textureRows`, `textureSet`, `width`, `height`, and `tileSize` from a loaded map. It also preserves a loaded tile's semantic subcategory when the edited tile type stays the same. New or changed tile types receive default subcategories.
+The saved JSON preserves `textureRows`, `textureSet`, `width`, `height`, and `tileSize` from a loaded map. Legend entries contain only category and behavior properties.
 
 ## Controls
 
@@ -152,7 +152,6 @@ The editor saves complete maps in the runtime Epi City JSON format:
   "legend": {
     "A": {
       "category": "sidewalk",
-      "subcategory": "classified",
       "walkable": true,
       "parkable": false,
       "drivable": false

@@ -30,7 +30,6 @@ Startup follows this sequence:
   "legend": {
     "A": {
       "category": "road",
-      "subcategory": "horizontal",
       "walkable": false,
       "drivable": true,
       "parkable": false
@@ -41,11 +40,11 @@ Startup follows this sequence:
 }
 ```
 
-Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category`, a `subcategory`, and boolean `walkable`, `drivable`, and `parkable` properties.
+Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
-The base categories are `road`, `sidewalk`, `water`, `bridge`, and `building`. Subcategories carry semantic detail such as `horizontal`, `vertical`, `intersection`, `corner-ne`, `waterfront-roadside`, or `large-roof`. Movement uses the generated behavior booleans instead of hard-coded category masks.
+The base categories are `road`, `sidewalk`, `park`, `water`, `bridge`, and `building`. Movement uses the generated behavior booleans instead of hard-coded category masks.
 
 ## Runtime City Object
 
@@ -61,7 +60,7 @@ The base categories are `road`, `sidewalk`, `water`, `bridge`, and `building`. S
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, subcategory, walkable, drivable, parkable, textureId }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getTextureKey(x, y)` | Returns a stable debug string such as `tile-123`. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
@@ -127,7 +126,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
 
-The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, bridge brown, and building slate. Parks are detected through the `sidewalk` category with the `park` subcategory.
+The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, bridge brown, and building slate.
 
 `renderDebugOverlays()` redraws only the overlay layer. It uses the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 

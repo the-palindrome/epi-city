@@ -36,13 +36,13 @@ TEXTURE_SET_NAME = "liberty-city"
 RUNTIME_ATLAS_NAME = "liberty-city-atlas.webp"
 
 SAFE_SYMBOLS = list("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~")
-CATEGORY_PRIORITY = {"water": 0, "bridge": 1, "road": 2, "building": 3, "sidewalk": 4}
+CATEGORY_PRIORITY = {"water": 0, "bridge": 1, "road": 2, "building": 3, "sidewalk": 4, "park": 5}
 
 
 @dataclass(frozen=True)
 class TileDefinition:
     category: str
-    subcategory: str
+    variant: str
     walkable: bool
     drivable: bool
     parkable: bool
@@ -53,7 +53,7 @@ class Cell:
     x: int
     y: int
     category: str
-    subcategory: str
+    variant: str
     walkable: bool
     drivable: bool
     parkable: bool
@@ -201,7 +201,7 @@ def initial_categories(features: dict[str, np.ndarray]) -> np.ndarray:
 
     category[water] = "water"
     category[road] = "road"
-    category[park] = "sidewalk"
+    category[park] = "park"
     category[building] = "building"
 
     return category
@@ -347,7 +347,7 @@ def mark_bridges(category: np.ndarray, features: dict[str, np.ndarray]) -> None:
     category[bridge & (connected_horizontal | connected_vertical)] = "bridge"
 
 
-def road_subcategory(mask: int) -> str:
+def road_variant(mask: int) -> str:
     return {
         0: "isolated",
         1: "deadend-n",
@@ -368,7 +368,7 @@ def road_subcategory(mask: int) -> str:
     }[mask]
 
 
-def edge_subcategory(category: np.ndarray, x: int, y: int, target: str) -> str:
+def edge_variant(category: np.ndarray, x: int, y: int, target: str) -> str:
     size = category.shape[0]
     mask = 0
     if y > 0 and category[y - 1, x] == target:
@@ -392,24 +392,33 @@ def has_cardinal_neighbor(category: np.ndarray, x: int, y: int, target: str) -> 
     )
 
 
-def tile_definition(category: str, subcategory: str) -> TileDefinition:
+def tile_definition(category: str, variant: str) -> TileDefinition:
     """Return generated gameplay metadata for a semantic tile variant."""
 
     if category == "sidewalk":
         return TileDefinition(
             category=category,
-            subcategory=subcategory,
+            variant=variant,
             walkable=True,
             drivable=False,
-            parkable="roadside" in subcategory and subcategory != "park",
+            parkable="roadside" in variant,
+        )
+
+    if category == "park":
+        return TileDefinition(
+            category=category,
+            variant=variant,
+            walkable=True,
+            drivable=False,
+            parkable=False,
         )
 
     if category == "road":
         return TileDefinition(
             category=category,
-            subcategory=subcategory,
+            variant=variant,
             # Mixed road/curb tiles act as pedestrian crossing edges without opening full traffic lanes.
-            walkable=subcategory.endswith(WALKABLE_ROAD_SUFFIX),
+            walkable=variant.endswith(WALKABLE_ROAD_SUFFIX),
             drivable=True,
             parkable=False,
         )
@@ -417,7 +426,7 @@ def tile_definition(category: str, subcategory: str) -> TileDefinition:
     if category == "bridge":
         return TileDefinition(
             category=category,
-            subcategory=subcategory,
+            variant=variant,
             walkable=True,
             drivable=True,
             parkable=False,
@@ -425,7 +434,7 @@ def tile_definition(category: str, subcategory: str) -> TileDefinition:
 
     return TileDefinition(
         category=category,
-        subcategory=subcategory,
+        variant=variant,
         walkable=False,
         drivable=False,
         parkable=False,
@@ -441,7 +450,7 @@ def is_walkable_road(features: dict[str, np.ndarray], x: int, y: int) -> bool:
     )
 
 
-def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]) -> list[Cell]:
+def classify_variants(category: np.ndarray, features: dict[str, np.ndarray]) -> list[Cell]:
     size = category.shape[0]
     roadlike = (category == "road") | (category == "bridge")
     water_near = dilate(category == "water", 1)
@@ -460,17 +469,17 @@ def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]
                     mask |= 4
                 if x > 0 and roadlike[y, x - 1]:
                     mask |= 8
-                sub = road_subcategory(mask)
+                sub = road_variant(mask)
                 if cat == "road" and is_walkable_road(features, x, y):
                     sub = f"{sub}{WALKABLE_ROAD_SUFFIX}"
             elif cat == "water":
-                sub = edge_subcategory(category, x, y, "water")
+                sub = edge_variant(category, x, y, "water")
+            elif cat == "park":
+                sub = "park"
             elif cat == "sidewalk":
                 road_near = has_cardinal_neighbor(category, x, y, "road")
 
-                if features["park"][y, x] > 0.22:
-                    sub = "park"
-                elif water_near[y, x] and road_near:
+                if water_near[y, x] and road_near:
                     sub = "waterfront-roadside"
                 elif water_near[y, x]:
                     sub = "waterfront"
@@ -493,7 +502,7 @@ def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]
                     x=x,
                     y=y,
                     category=definition.category,
-                    subcategory=definition.subcategory,
+                    variant=definition.variant,
                     walkable=definition.walkable,
                     drivable=definition.drivable,
                     parkable=definition.parkable,
@@ -542,7 +551,7 @@ def kmeans(features: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
     return labels, centers
 
 
-def variant_count(category: str, subcategory: str, count: int) -> int:
+def variant_count(category: str, variant: str, count: int) -> int:
     if count < 24:
         return 1
     if category in {"road", "sidewalk", "building", "water"} and count >= 900:
@@ -557,20 +566,19 @@ def symbol_stream() -> Iterable[str]:
 
 
 def assign_symbols(cells: list[Cell], grid_size: int) -> tuple[dict[str, dict[str, object]], list[str]]:
-    groups: dict[tuple[str, str, bool, bool, bool], str] = {}
+    groups: dict[tuple[str, bool, bool, bool], str] = {}
     legend: dict[str, dict[str, object]] = {}
     symbols = symbol_stream()
     symbol_by_cell: dict[tuple[int, int], str] = {}
 
-    for cell in sorted(cells, key=lambda item: (CATEGORY_PRIORITY[item.category], item.category, item.subcategory, item.y, item.x)):
-        key = (cell.category, cell.subcategory, cell.walkable, cell.drivable, cell.parkable)
+    for cell in sorted(cells, key=lambda item: (CATEGORY_PRIORITY[item.category], item.category, item.y, item.x)):
+        key = (cell.category, cell.walkable, cell.drivable, cell.parkable)
 
         if key not in groups:
             symbol = next(symbols)
             groups[key] = symbol
             legend[symbol] = {
                 "category": cell.category,
-                "subcategory": cell.subcategory,
                 "walkable": cell.walkable,
                 "drivable": cell.drivable,
                 "parkable": cell.parkable,
@@ -731,7 +739,7 @@ def main() -> None:
     category = initial_categories(features)
     refine_categories(category, features)
     mark_bridges(category, features)
-    cells = classify_subcategories(category, features)
+    cells = classify_variants(category, features)
 
     legend, rows = assign_symbols(cells, args.grid_size)
     texture_rows, frames, stats = decompose_source_tiles(source_image, args.grid_size)
@@ -764,11 +772,7 @@ def main() -> None:
     write_map_json(args.output_map, map_data)
     write_preview(args.preview, map_data, source_image, frames, args.texture_size)
 
-    cell_counts = Counter()
-    for row in rows:
-        for symbol in row:
-            entry = legend[symbol]
-            cell_counts[f'{entry["category"]}/{entry["subcategory"]}'] += 1
+    cell_counts = Counter(f"{cell.category}/{cell.variant}" for cell in cells)
     print(f"wrote {args.output_map}")
     print(f"wrote {manifest}")
     print(f"wrote {args.preview}")
