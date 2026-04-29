@@ -135,7 +135,7 @@ The tile-type overlay paints semantic categories with fixed debug colors: sidewa
 
 The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
 
-The browser owns the editable map state. Startup creates a default 256x256 sparse-label map where tile type, `walkable`, `parkable`, and `drivable` are all `null`. `Load Full Map` reads the bundled `public/maps/liberty-city` package through the editor server, loads the tile layout plus texture manifest and atlas, and reconstructs the visual map from `textureRows`. `Load Map Folder` does the same for a user-selected package folder when browser support is available. `Load JSON` reads only a local Epi City tile-layout JSON file through the browser file picker and uses the source image as the visual reference. `Reset to defaults` discards the current browser state and rebuilds the empty sparse map. `Save As JSON` writes the current state through the browser, so the editor does not automatically overwrite `public/maps/liberty-city/tile-layout.json`.
+The browser owns the editable map state. Startup creates a default 256x256 sparse-label map where tile type, `walkable`, `parkable`, and `drivable` are all `null`. `Load Atlas`, `Load Tile Configuration`, and `Load Texture Manifest` fill separate browser-side asset slots. When both an atlas and manifest are loaded, the editor reconstructs the visual map from the tile configuration's `textureRows`. `Reset to defaults` discards the current browser state and rebuilds the empty sparse map. `Save Tile Configuration` writes the current editable tile configuration through the browser, and `Save Texture Manifest` writes the currently loaded manifest, so the editor does not automatically overwrite files under `public/maps/liberty-city`.
 
 The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected layer.
 
@@ -143,7 +143,7 @@ The editor displays the current map state for every layer. There is no separate 
 
 Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. Runtime JSON saving requires complete tile type and behavior labels and reports missing values instead of producing invalid app maps.
 
-The map editor server serves `/`, `/source-image`, read-only `/maps/...` assets from `public/maps/`, `/api/config`, and `/api/train`. Older sparse label and server-side map load/write endpoints return `410 Gone`, which keeps loading and saving explicit in the browser.
+The map editor server serves `/`, `/source-image`, `/api/config`, and `/api/train`. Older sparse label and server-side map load/write endpoints return `410 Gone`, which keeps loading and saving explicit in the browser.
 
 Run the map editor with:
 

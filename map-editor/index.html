@@ -185,8 +185,9 @@
   </head>
   <body>
     <canvas id="map"></canvas>
-    <input id="json-file" type="file" accept="application/json,.json" hidden>
-    <input id="map-package-files" type="file" accept="application/json,.json,image/webp,image/png,image/jpeg" multiple hidden>
+    <input id="atlas-file" type="file" accept="image/webp,image/png,image/jpeg" hidden>
+    <input id="tile-config-file" type="file" accept="application/json,.json" hidden>
+    <input id="texture-manifest-file" type="file" accept="application/json,.json" hidden>
 
     <aside class="panel">
       <h1>Map Editor</h1>
@@ -231,10 +232,11 @@
 
       <div class="section">
         <div class="button-grid">
-          <button id="load-full-map" type="button">Load Full Map</button>
-          <button id="load-map-folder" type="button">Load Map Folder</button>
-          <button id="load-json" type="button">Load JSON</button>
-          <button id="save-as" class="primary" type="button">Save As JSON</button>
+          <button id="load-atlas" type="button">Load Atlas</button>
+          <button id="load-tile-config" type="button">Load Tile Configuration</button>
+          <button id="load-texture-manifest" type="button">Load Texture Manifest</button>
+          <button id="save-tile-config" class="primary" type="button">Save Tile Configuration</button>
+          <button id="save-texture-manifest" type="button">Save Texture Manifest</button>
           <button id="reset-defaults" type="button">Reset to defaults</button>
           <button id="fit" type="button">Fit map</button>
           <button id="undo" type="button">Undo</button>
@@ -304,8 +306,9 @@
 
       const canvas = document.getElementById('map');
       const ctx = canvas.getContext('2d', { alpha: false });
-      const fileInput = document.getElementById('json-file');
-      const mapPackageInput = document.getElementById('map-package-files');
+      const atlasFileInput = document.getElementById('atlas-file');
+      const tileConfigFileInput = document.getElementById('tile-config-file');
+      const textureManifestFileInput = document.getElementById('texture-manifest-file');
       const paintLayer = document.getElementById('paint-layer');
       const labelButtons = document.getElementById('label-buttons');
       const brushSize = document.getElementById('brush-size');
@@ -322,6 +325,10 @@
       const state = {
         config: null,
         sourceImage: null,
+        atlasImage: null,
+        atlasFileName: null,
+        textureManifest: null,
+        textureManifestFileName: null,
         image: null,
         map: createDefaultEditableMap(),
         latestPrediction: null,
@@ -355,7 +362,7 @@
         fitMap();
         installEvents();
         updateStats();
-        setStatus('Ready. Load Full Map opens the bundled map package with its tile layout, manifest, and atlas.');
+        setStatus('Ready. Load an atlas, tile configuration, and texture manifest separately.');
         draw();
       }
 
@@ -381,7 +388,6 @@
           textureSet: metadata.textureSet || 'liberty-city',
           sourceName: metadata.sourceName || fileName,
           visualSource: metadata.visualSource || 'source image',
-          textureManifestName: metadata.textureManifestName || null,
           fileName,
           rows,
           behaviorRows,
@@ -419,12 +425,14 @@
           element.addEventListener('change', draw);
         }
 
-        document.getElementById('load-full-map').addEventListener('click', loadBundledFullMap);
-        document.getElementById('load-map-folder').addEventListener('click', loadMapFolder);
-        document.getElementById('load-json').addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', loadSelectedJsonFile);
-        mapPackageInput.addEventListener('change', loadSelectedMapPackageFiles);
-        document.getElementById('save-as').addEventListener('click', saveAsJson);
+        document.getElementById('load-atlas').addEventListener('click', () => atlasFileInput.click());
+        document.getElementById('load-tile-config').addEventListener('click', () => tileConfigFileInput.click());
+        document.getElementById('load-texture-manifest').addEventListener('click', () => textureManifestFileInput.click());
+        atlasFileInput.addEventListener('change', loadSelectedAtlas);
+        tileConfigFileInput.addEventListener('change', loadSelectedTileConfiguration);
+        textureManifestFileInput.addEventListener('change', loadSelectedTextureManifest);
+        document.getElementById('save-tile-config').addEventListener('click', saveTileConfiguration);
+        document.getElementById('save-texture-manifest').addEventListener('click', saveTextureManifest);
         document.getElementById('reset-defaults').addEventListener('click', resetToDefaults);
         trainButton.addEventListener('click', trainModel);
         predictButton.addEventListener('click', applyLatestPrediction);
@@ -448,7 +456,7 @@
 
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
-            saveAsJson();
+            saveTileConfiguration();
             return;
           }
 
@@ -555,167 +563,96 @@
         }
       }
 
-      async function loadBundledFullMap() {
-        const mapPackage = state.config && state.config.defaultMapPackage;
-
-        if (!mapPackage || !mapPackage.tileLayoutUrl || !mapPackage.manifestUrl) {
-          setStatus('No bundled map package is configured for this editor server.', true);
-          return;
-        }
-
-        try {
-          setStatus(`Loading ${mapPackage.name || 'bundled map'} package...`);
-          const packageMap = await loadMapPackageFromUrls(mapPackage);
-          replaceCurrentMap(packageMap.map, {
-            image: packageMap.image,
-            fit: true
-          });
-          setStatus(`Loaded ${packageMap.map.sourceName} with ${packageMap.map.textureManifestName}.`);
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
-      async function loadMapFolder() {
-        try {
-          if ('showDirectoryPicker' in window) {
-            const directory = await window.showDirectoryPicker({ mode: 'read' });
-            setStatus(`Loading map folder ${directory.name}...`);
-            const files = await collectDirectoryFiles(directory);
-            const packageMap = await loadMapPackageFromFiles(files, directory.name);
-            replaceCurrentMap(packageMap.map, {
-              image: packageMap.image,
-              fit: true
-            });
-            setStatus(`Loaded ${packageMap.map.sourceName} with ${packageMap.map.textureManifestName}.`);
-            return;
-          }
-
-          mapPackageInput.click();
-        } catch (error) {
-          if (error.name === 'AbortError') {
-            setStatus('Map folder load canceled.');
-            return;
-          }
-
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
-      async function loadSelectedMapPackageFiles() {
-        const files = [...(mapPackageInput.files || [])].map((file) => ({
-          name: file.name,
-          path: file.webkitRelativePath || file.name,
-          file
-        }));
-        mapPackageInput.value = '';
-
-        if (files.length === 0) {
-          return;
-        }
-
-        try {
-          setStatus('Loading selected map package files...');
-          const packageMap = await loadMapPackageFromFiles(files, 'selected map package');
-          replaceCurrentMap(packageMap.map, {
-            image: packageMap.image,
-            fit: true
-          });
-          setStatus(`Loaded ${packageMap.map.sourceName} with ${packageMap.map.textureManifestName}.`);
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
-      async function loadSelectedJsonFile() {
-        const file = fileInput.files && fileInput.files[0];
-        fileInput.value = '';
+      async function loadSelectedAtlas() {
+        const file = selectedFile(atlasFileInput);
+        atlasFileInput.value = '';
 
         if (!file) {
           return;
         }
 
         try {
-          setStatus(`Loading ${file.name}...`);
-          const payload = JSON.parse(await file.text());
-          replaceCurrentMap(editableMapFromJson(payload, file.name, {
-            visualSource: 'source image'
-          }), {
-            image: state.sourceImage,
-            fit: true
-          });
-          setStatus(`Loaded ${file.name}. The editable map state has been replaced.`);
+          setStatus(`Loading atlas ${file.name}...`);
+          const atlasUrl = URL.createObjectURL(file);
+
+          try {
+            state.atlasImage = await loadImage(atlasUrl);
+          } finally {
+            URL.revokeObjectURL(atlasUrl);
+          }
+
+          state.atlasFileName = file.name;
+          refreshVisualFromAssets({ fit: true });
+          setStatus(`Loaded atlas ${file.name}.`);
         } catch (error) {
           console.error(error);
           setStatus(error.message, true);
         }
       }
 
-      async function loadMapPackageFromUrls(mapPackage) {
-        const layout = await fetchJson(mapPackage.tileLayoutUrl);
-        const manifest = await fetchJson(mapPackage.manifestUrl);
-        validateTextureManifest(manifest);
-        const manifestUrl = new URL(mapPackage.manifestUrl, window.location.href);
-        const atlasUrl = new URL(manifest.atlas.file, manifestUrl).href;
-        const atlasImage = await loadImage(atlasUrl);
-        const image = renderTextureMapImage(layout, manifest, atlasImage);
-        const map = editableMapFromJson(layout, fileNameFromUrl(mapPackage.tileLayoutUrl), {
-          visualSource: mapPackage.name || mapPackage.tileLayoutUrl,
-          textureManifestName: fileNameFromUrl(mapPackage.manifestUrl)
-        });
+      async function loadSelectedTileConfiguration() {
+        const file = selectedFile(tileConfigFileInput);
+        tileConfigFileInput.value = '';
 
-        return { map, image };
-      }
-
-      async function loadMapPackageFromFiles(files, sourceName) {
-        const packageFiles = normalizePackageFiles(files);
-        const jsonFiles = packageFiles.filter((entry) => entry.name.toLowerCase().endsWith('.json'));
-        const parsedJson = [];
-
-        for (const entry of jsonFiles) {
-          parsedJson.push({
-            ...entry,
-            payload: JSON.parse(await entry.file.text())
-          });
+        if (!file) {
+          return;
         }
-
-        const layoutEntry = parsedJson.find((entry) => entry.name === 'tile-layout.json')
-          || parsedJson.find((entry) => isEpiCityMapCandidate(entry.payload));
-        const manifestEntry = parsedJson.find((entry) => entry.name === 'manifest.json')
-          || parsedJson.find((entry) => isTextureManifestCandidate(entry.payload));
-
-        if (!layoutEntry) {
-          throw new Error('Map package must include tile-layout.json or another valid Epi City tile layout JSON.');
-        }
-
-        if (!manifestEntry) {
-          throw new Error('Map package must include manifest.json.');
-        }
-
-        validateTextureManifest(manifestEntry.payload);
-        const atlasEntry = findAtlasFile(packageFiles, manifestEntry, manifestEntry.payload.atlas.file);
-
-        if (!atlasEntry) {
-          throw new Error(`Map package manifest references missing atlas file "${manifestEntry.payload.atlas.file}".`);
-        }
-
-        const atlasUrl = URL.createObjectURL(atlasEntry.file);
 
         try {
-          const atlasImage = await loadImage(atlasUrl);
-          const image = renderTextureMapImage(layoutEntry.payload, manifestEntry.payload, atlasImage);
-          const map = editableMapFromJson(layoutEntry.payload, layoutEntry.name, {
-            visualSource: sourceName,
-            textureManifestName: manifestEntry.name
+          setStatus(`Loading tile configuration ${file.name}...`);
+          const payload = JSON.parse(await file.text());
+          replaceCurrentMap(editableMapFromJson(payload, file.name), {
+            fit: true
           });
-
-          return { map, image };
-        } finally {
-          URL.revokeObjectURL(atlasUrl);
+          setStatus(`Loaded tile configuration ${file.name}.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
         }
+      }
+
+      async function loadSelectedTextureManifest() {
+        const file = selectedFile(textureManifestFileInput);
+        textureManifestFileInput.value = '';
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          setStatus(`Loading texture manifest ${file.name}...`);
+          const manifest = JSON.parse(await file.text());
+          validateTextureManifest(manifest);
+          state.textureManifest = manifest;
+          state.textureManifestFileName = file.name;
+          state.map.textureSet = manifest.name || state.map.textureSet || 'liberty-city';
+          refreshVisualFromAssets({ fit: true });
+          setStatus(`Loaded texture manifest ${file.name}.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      function selectedFile(input) {
+        return input.files && input.files[0] ? input.files[0] : null;
+      }
+
+      function refreshVisualFromAssets(options = {}) {
+        if (state.atlasImage && state.textureManifest) {
+          state.image = renderTextureMapImage(state.map.textureRows, state.textureManifest, state.atlasImage);
+          state.map.visualSource = state.atlasFileName || 'loaded atlas';
+        } else {
+          state.image = state.sourceImage;
+          state.map.visualSource = 'source image';
+        }
+
+        if (options.fit && state.image) {
+          fitMap();
+        }
+
+        updateStats();
+        draw();
       }
 
       function editableMapFromJson(payload, fileName, metadata = {}) {
@@ -753,7 +690,6 @@
           textureSet: payload.textureSet || 'liberty-city',
           sourceName: fileName,
           visualSource: metadata.visualSource || 'source image',
-          textureManifestName: metadata.textureManifestName || null,
           fileName,
           rows,
           behaviorRows,
@@ -762,75 +698,9 @@
         };
       }
 
-      async function collectDirectoryFiles(directory, prefix = '') {
-        const files = [];
-
-        for await (const [name, handle] of directory.entries()) {
-          const entryPath = prefix ? `${prefix}/${name}` : name;
-
-          if (handle.kind === 'file') {
-            files.push({
-              name,
-              path: entryPath,
-              file: await handle.getFile()
-            });
-          } else if (handle.kind === 'directory') {
-            files.push(...await collectDirectoryFiles(handle, entryPath));
-          }
-        }
-
-        return files;
-      }
-
-      function normalizePackageFiles(files) {
-        return files.map((entry) => ({
-          name: entry.name,
-          path: normalizePackagePath(entry.path || entry.name),
-          file: entry.file
-        }));
-      }
-
-      function normalizePackagePath(filePath) {
-        return filePath.replace(/\\/g, '/').replace(/^\/+/, '');
-      }
-
-      function isEpiCityMapCandidate(payload) {
-        return Boolean(payload && typeof payload === 'object' && !Array.isArray(payload)
-          && Number.isInteger(payload.width)
-          && Number.isInteger(payload.height)
-          && payload.legend
-          && Array.isArray(payload.rows));
-      }
-
-      function isTextureManifestCandidate(payload) {
-        return Boolean(payload && typeof payload === 'object' && !Array.isArray(payload)
-          && payload.atlas
-          && typeof payload.atlas.file === 'string'
-          && Array.isArray(payload.frames));
-      }
-
-      function findAtlasFile(files, manifestEntry, atlasFileName) {
-        const manifestDir = directoryName(manifestEntry.path);
-        const expectedPath = manifestDir ? `${manifestDir}/${atlasFileName}` : atlasFileName;
-        return files.find((entry) => entry.path === expectedPath)
-          || files.find((entry) => entry.name === atlasFileName);
-      }
-
-      function directoryName(filePath) {
-        const index = filePath.lastIndexOf('/');
-        return index === -1 ? '' : filePath.slice(0, index);
-      }
-
-      function fileNameFromUrl(url) {
-        const parsed = new URL(url, window.location.href);
-        const parts = parsed.pathname.split('/').filter(Boolean);
-        return parts[parts.length - 1] || parsed.pathname;
-      }
-
-      function renderTextureMapImage(map, manifest, atlasImage) {
-        validateEpiCityMap(map);
+      function renderTextureMapImage(textureRows, manifest, atlasImage) {
         validateTextureManifest(manifest);
-        validateTextureRowsForManifest(map.textureRows, manifest);
+        validateTextureRowsForManifest(textureRows, manifest);
 
         const imageWidth = manifest.atlas.width || atlasImage.naturalWidth || atlasImage.width;
         const imageHeight = manifest.atlas.height || atlasImage.naturalHeight || atlasImage.height;
@@ -845,7 +715,7 @@
 
         for (let y = 0; y < GRID_SIZE; y += 1) {
           for (let x = 0; x < GRID_SIZE; x += 1) {
-            const frame = manifest.frames[map.textureRows[y][x]];
+            const frame = manifest.frames[textureRows[y][x]];
             const bounds = tileBoundsForSize(x, y, imageWidth, imageHeight);
             renderContext.drawImage(
               atlasImage,
@@ -867,58 +737,48 @@
       function replaceCurrentMap(nextMap, options = {}) {
         endPointerAction();
         state.map = nextMap;
-        if (options.image) {
-          state.image = options.image;
-        }
         state.latestPrediction = options.latestPrediction || null;
         state.trainingSummary = options.trainingSummary || null;
         state.undoStack.length = 0;
         state.redoStack.length = 0;
         state.dirty = Boolean(options.dirty);
-        if (options.fit && state.image) {
-          fitMap();
+
+        if (options.useSourceImage) {
+          state.image = state.sourceImage;
+          state.map.visualSource = 'source image';
+          if (options.fit && state.image) {
+            fitMap();
+          }
+          updateStats();
+          draw();
+          return;
         }
-        updateStats();
-        draw();
+
+        refreshVisualFromAssets({ fit: Boolean(options.fit) });
       }
 
       function resetToDefaults() {
         replaceCurrentMap(createDefaultEditableMap(), {
           dirty: true,
-          image: state.sourceImage,
+          useSourceImage: true,
           fit: true
         });
         setStatus('Reset the editor to an empty 256x256 sparse-label map.');
       }
 
-      async function saveAsJson() {
+      async function saveTileConfiguration() {
         endPointerAction();
-        const fileName = suggestedSaveName();
+        const fileName = suggestedTileConfigurationSaveName();
 
         try {
           const text = `${JSON.stringify(buildEpiCityJson(), null, 2)}\n`;
-
-          if ('showSaveFilePicker' in window) {
-            const handle = await window.showSaveFilePicker({
-              suggestedName: fileName,
-              types: [{
-                description: 'Epi City JSON',
-                accept: { 'application/json': ['.json'] }
-              }]
-            });
-            const writable = await handle.createWritable();
-            await writable.write(text);
-            await writable.close();
-          } else {
-            downloadText(fileName, text, 'application/json');
-          }
-
+          await saveTextFile(fileName, text, 'Epi City Tile Configuration JSON');
           state.dirty = false;
           updateStats();
-          setStatus(`Saved ${fileName} with browser Save As. public/maps/liberty-city/tile-layout.json was not overwritten.`);
+          setStatus(`Saved tile configuration ${fileName}.`);
         } catch (error) {
           if (error.name === 'AbortError') {
-            setStatus('Save As canceled.');
+            setStatus('Save tile configuration canceled.');
             return;
           }
 
@@ -927,9 +787,54 @@
         }
       }
 
-      function suggestedSaveName() {
+      async function saveTextureManifest() {
+        if (!state.textureManifest) {
+          setStatus('Load a texture manifest before saving one.', true);
+          return;
+        }
+
+        const fileName = suggestedTextureManifestSaveName();
+
+        try {
+          const text = `${JSON.stringify(state.textureManifest, null, 2)}\n`;
+          await saveTextFile(fileName, text, 'Texture Manifest JSON');
+          setStatus(`Saved texture manifest ${fileName}.`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            setStatus('Save texture manifest canceled.');
+            return;
+          }
+
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function saveTextFile(fileName, text, description) {
+        if ('showSaveFilePicker' in window) {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+              description,
+              accept: { 'application/json': ['.json'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(text);
+          await writable.close();
+        } else {
+          downloadText(fileName, text, 'application/json');
+        }
+      }
+
+      function suggestedTileConfigurationSaveName() {
         const base = (state.map.fileName || 'epi-city-map.json').replace(/\.json$/i, '');
-        return `${base || 'epi-city-map'}-edited.json`;
+        return `${base || 'tile-layout'}-edited.json`;
+      }
+
+      function suggestedTextureManifestSaveName() {
+        const base = (state.textureManifestFileName || 'manifest.json').replace(/\.json$/i, '');
+        return `${base || 'manifest'}-edited.json`;
       }
 
       function downloadText(fileName, text, mimeType) {
@@ -1452,7 +1357,8 @@
         addStat('map source', state.map.sourceName || 'untitled map');
         addStat('visual source', state.map.visualSource || 'source image');
         addStat('texture set', state.map.textureSet || 'none');
-        addStat('manifest', state.map.textureManifestName || 'not loaded');
+        addStat('atlas', state.atlasFileName || 'not loaded');
+        addStat('manifest', state.textureManifestFileName || 'not loaded');
         addStat('dirty', state.dirty ? 'yes' : 'no');
         addStat('latest prediction', state.latestPrediction ? 'ready' : 'none');
         addStat('undo strokes', state.undoStack.length);
@@ -1603,7 +1509,7 @@
 
       function validateTextureRowsForManifest(textureRows, manifest) {
         if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
-          throw new Error(`Epi City map textureRows must contain ${GRID_SIZE} rows when loading a full map.`);
+          throw new Error(`Epi City map textureRows must contain ${GRID_SIZE} rows when rendering with a texture manifest.`);
         }
 
         for (let y = 0; y < GRID_SIZE; y += 1) {

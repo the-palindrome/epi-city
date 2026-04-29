@@ -108,7 +108,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts with an in-browser empty sparse-label map, can load the bundled full map package from `public/maps/liberty-city`, can load another map folder with `tile-layout.json`, `manifest.json`, and the atlas image, paints tile type and behavior labels directly into the current map state, trains `sklearn` random-forest classifiers from non-empty labels, stores predictions separately, and applies predictions as one undoable operation. Save As preserves the visual texture layer from a loaded map, requires complete runtime labels, and never overwrites `public/maps/liberty-city/tile-layout.json` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts with an in-browser empty sparse-label map, can load atlas, tile configuration, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, trains `sklearn` random-forest classifiers from non-empty labels, stores predictions separately, and applies predictions as one undoable operation. Save Tile Configuration preserves the visual texture layer from a loaded map, requires complete runtime labels, and never overwrites `public/maps/liberty-city/tile-layout.json` automatically.
 
 ## Texture Sets
 
