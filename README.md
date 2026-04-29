@@ -35,7 +35,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-c
 
 ## Map Format
 
-The map stores semantics and visuals separately. `rows` contains one legend symbol per cell for gameplay classification. `textureRows` contains one deduplicated source texture ID per cell for exact rendering.
+The map stores semantics and visuals separately. `rows` contains one legend symbol per cell for gameplay classification. `textureRows` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments live in the tile configuration, not the texture manifest, so texture painting in the editor must be saved with `Save Tile Configuration`.
 
 ```json
 {

@@ -78,7 +78,7 @@ Use the `Paint layer` selector to choose what the brush updates:
 
 Painting a tile type does not auto-fill behavior attributes. This keeps labels sparse and lets the trainer learn each layer independently.
 
-In the texture layer, the `pick texture` tool samples the texture ID from the clicked tile. The editor then switches to painting that texture ID onto other tiles. Texture edits update `textureRows`, so Save Tile Configuration writes the changed manifest-frame references without changing atlas pixels or manifest frame geometry.
+In the texture layer, the `pick texture` tool samples the texture ID from the clicked tile. The editor then switches to painting that texture ID onto other tiles. Texture edits update `textureRows`, so `Save Tile Configuration` writes the changed manifest-frame references without changing atlas pixels or manifest frame geometry. `Save Texture Manifest` does not update the app map after texture painting.
 
 ## Training And Prediction
 
@@ -103,7 +103,7 @@ Click `Reset to defaults` to discard the current browser state and return to the
 
 Click `Save Tile Configuration` to save the current state as an Epi City tile configuration JSON file. Browsers with the File System Access API show a native Save As dialog. Other browsers download the file.
 
-Click `Save Texture Manifest` to save the currently loaded texture manifest JSON file. The editor does not edit manifest frames yet, but this keeps manifest handling explicit alongside the tile configuration.
+Click `Save Texture Manifest` to save the currently loaded texture manifest JSON file. The editor does not edit manifest frames yet, and the manifest does not contain tile-to-texture assignments. Texture painting changes belong to `textureRows` in the tile configuration, so save the tile configuration to update the main app.
 
 Saving never overwrites `public/maps/liberty-city/tile-layout.json` automatically. Replace the app map manually only after you review the saved output.
 

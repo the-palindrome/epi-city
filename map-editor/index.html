@@ -236,8 +236,8 @@
           <button id="load-atlas" type="button">Load Atlas</button>
           <button id="load-tile-config" type="button">Load Tile Configuration</button>
           <button id="load-texture-manifest" type="button">Load Texture Manifest</button>
-          <button id="save-tile-config" class="primary" type="button">Save Tile Configuration</button>
-          <button id="save-texture-manifest" type="button">Save Texture Manifest</button>
+          <button id="save-tile-config" class="primary" type="button" title="Writes rows, behavior rows, and textureRows for the app map.">Save Tile Configuration</button>
+          <button id="save-texture-manifest" type="button" title="Writes atlas frame metadata only. Texture painting is saved with the tile configuration.">Save Texture Manifest</button>
           <button id="reset-defaults" type="button">Reset to defaults</button>
           <button id="fit" type="button">Fit map</button>
           <button id="undo" type="button">Undo</button>
@@ -341,6 +341,7 @@
         undoStack: [],
         redoStack: [],
         dirty: false,
+        textureRowsDirty: false,
         isPainting: false,
         isPanning: false,
         spaceDown: false,
@@ -776,6 +777,7 @@
         state.undoStack.length = 0;
         state.redoStack.length = 0;
         state.dirty = Boolean(options.dirty);
+        state.textureRowsDirty = Boolean(options.textureRowsDirty);
 
         if (options.useSourceImage) {
           state.image = state.sourceImage;
@@ -808,8 +810,9 @@
           const text = `${JSON.stringify(buildEpiCityJson(), null, 2)}\n`;
           await saveTextFile(fileName, text, 'Epi City Tile Configuration JSON');
           state.dirty = false;
+          state.textureRowsDirty = false;
           updateStats();
-          setStatus(`Saved tile configuration ${fileName}.`);
+          setStatus(`Saved tile configuration ${fileName}. The main app reads textureRows from this file.`);
         } catch (error) {
           if (error.name === 'AbortError') {
             setStatus('Save tile configuration canceled.');
@@ -827,12 +830,20 @@
           return;
         }
 
+        if (state.dirty) {
+          const detail = state.textureRowsDirty
+            ? 'Texture paint edits live in textureRows inside the tile configuration.'
+            : 'Unsaved tile edits live in the tile configuration.';
+          setStatus(`${detail} Use Save Tile Configuration to update the app map; Save Texture Manifest only writes atlas frame metadata.`, true);
+          return;
+        }
+
         const fileName = suggestedTextureManifestSaveName();
 
         try {
-          const text = `${JSON.stringify(state.textureManifest, null, 2)}\n`;
+          const text = `${JSON.stringify(state.textureManifest)}\n`;
           await saveTextFile(fileName, text, 'Texture Manifest JSON');
-          setStatus(`Saved texture manifest ${fileName}.`);
+          setStatus(`Saved texture manifest ${fileName}. This only writes atlas frame metadata.`);
         } catch (error) {
           if (error.name === 'AbortError') {
             setStatus('Save texture manifest canceled.');
@@ -1095,7 +1106,9 @@
           state.dirty = true;
 
           if (layer === 'texture') {
+            state.textureRowsDirty = true;
             refreshVisualFromAssets();
+            setStatus(`Painted texture ${state.selectedTextureId}. Save Tile Configuration to update the app map.`);
           } else {
             state.latestPrediction = null;
             state.trainingSummary = null;
@@ -1233,6 +1246,7 @@
         state.trainingSummary = null;
 
         if (operationChangesTexture(operation)) {
+          state.textureRowsDirty = true;
           refreshVisualFromAssets();
         } else {
           updateStats();
@@ -1257,6 +1271,7 @@
         state.trainingSummary = null;
 
         if (operationChangesTexture(operation)) {
+          state.textureRowsDirty = true;
           refreshVisualFromAssets();
         } else {
           updateStats();
@@ -1474,7 +1489,8 @@
         addStat('texture set', state.map.textureSet || 'none');
         addStat('atlas', state.atlasFileName || 'not loaded');
         addStat('manifest', state.textureManifestFileName || 'not loaded');
-        addStat('dirty', state.dirty ? 'yes' : 'no');
+        addStat('tile config dirty', state.dirty ? 'yes' : 'no');
+        addStat('texture rows dirty', state.textureRowsDirty ? 'yes' : 'no');
         addStat('latest prediction', state.latestPrediction ? 'ready' : 'none');
         addStat('undo strokes', state.undoStack.length);
         addStat('redo strokes', state.redoStack.length);
