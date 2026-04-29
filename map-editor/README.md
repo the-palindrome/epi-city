@@ -64,6 +64,8 @@ Click `Load Texture Manifest` to choose a texture manifest JSON such as `public/
 
 The editor does not automatically load or overwrite `public/maps/liberty-city/tile-layout.json`. If you want to edit the app map with its current visual atlas, load the atlas, tile configuration, and texture manifest separately, then use `Save Tile Configuration` when you are done.
 
+Tile configuration loading requires a valid 256x256 `textureRows` grid. The editor reports the number of unique texture IDs it loaded and only previews those IDs after both the atlas and texture manifest are present.
+
 ## Editing State
 
 The editor always displays the current editable map state. There is no separate manual-label overlay or hidden generated-label layer. Painting with the brush directly changes the current map state.

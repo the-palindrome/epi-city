@@ -614,7 +614,7 @@
 
           state.atlasFileName = file.name;
           refreshVisualFromAssets({ fit: true });
-          setStatus(`Loaded atlas ${file.name}.`);
+          setStatus(formatTexturePreviewStatus(`Loaded atlas ${file.name}.`));
         } catch (error) {
           console.error(error);
           setStatus(error.message, true);
@@ -635,7 +635,7 @@
           replaceCurrentMap(editableMapFromJson(payload, file.name), {
             fit: true
           });
-          setStatus(`Loaded tile configuration ${file.name}.`);
+          setStatus(formatTexturePreviewStatus(`Loaded tile configuration ${file.name}.`));
         } catch (error) {
           console.error(error);
           setStatus(error.message, true);
@@ -663,7 +663,7 @@
           }
           createLabelButtons();
           refreshVisualFromAssets({ fit: true });
-          setStatus(`Loaded texture manifest ${file.name}.`);
+          setStatus(formatTexturePreviewStatus(`Loaded texture manifest ${file.name}.`));
         } catch (error) {
           console.error(error);
           setStatus(error.message, true);
@@ -672,6 +672,19 @@
 
       function selectedFile(input) {
         return input.files && input.files[0] ? input.files[0] : null;
+      }
+
+      function formatTexturePreviewStatus(prefix) {
+        const uniqueTextures = countUniqueTextures();
+
+        if (state.atlasImage && state.textureManifest) {
+          const overlayHint = showOverlay.checked && paintLayer.value !== 'texture'
+            ? ' The current layer overlay may tint subtle texture differences.'
+            : '';
+          return `${prefix} Rendering ${uniqueTextures} texture IDs from textureRows.${overlayHint}`;
+        }
+
+        return `${prefix} Load both an atlas and texture manifest to preview ${uniqueTextures} texture IDs from textureRows.`;
       }
 
       function refreshVisualFromAssets(options = {}) {
@@ -729,7 +742,7 @@
           fileName,
           rows,
           behaviorRows,
-          textureRows: normalizeTextureRows(payload.textureRows),
+          textureRows: cloneTextureRows(payload.textureRows),
           originalMap: payload
         };
       }
@@ -1521,6 +1534,7 @@
         addStat('map source', state.map.sourceName || 'untitled map');
         addStat('visual source', state.map.visualSource || 'source image');
         addStat('texture set', state.map.textureSet || 'none');
+        addStat('unique textures', countUniqueTextures());
         addStat('atlas', state.atlasFileName || 'not loaded');
         addStat('manifest', state.textureManifestFileName || 'not loaded');
         addStat('tile config dirty', state.dirty ? 'yes' : 'no');
@@ -1668,6 +1682,30 @@
             }
           }
         }
+
+        validateTextureRows(map.textureRows);
+      }
+
+      function validateTextureRows(textureRows) {
+        if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
+          throw new Error(`Epi City map textureRows must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = textureRows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Epi City map textureRows[${y}] must contain ${GRID_SIZE} texture ids.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const textureId = row[x];
+
+            if (!Number.isInteger(textureId) || textureId < 0) {
+              throw new Error(`Epi City map textureRows has invalid texture ID at ${x},${y}.`);
+            }
+          }
+        }
       }
 
       function validateTextureManifest(manifest) {
@@ -1811,6 +1849,10 @@
           }
         }
 
+        return textureRows.map((row) => [...row]);
+      }
+
+      function cloneTextureRows(textureRows) {
         return textureRows.map((row) => [...row]);
       }
 
