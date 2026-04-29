@@ -198,6 +198,7 @@
           <label for="paint-layer">Paint layer</label>
           <select id="paint-layer">
             <option value="type">tile type</option>
+            <option value="texture">texture</option>
             <option value="walkable">walkable</option>
             <option value="parkable">parkable</option>
             <option value="drivable">drivable</option>
@@ -335,6 +336,8 @@
         trainingSummary: null,
         selectedTypeLabel: EMPTY_LABEL_VALUE,
         selectedBehaviorValue: EMPTY_LABEL_VALUE,
+        selectedTextureId: null,
+        texturePickMode: true,
         undoStack: [],
         redoStack: [],
         dirty: false,
@@ -486,7 +489,13 @@
             return;
           }
 
-          if (paintLayer.value !== 'type' && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
+          if (paintLayer.value === 'texture' && key === 'i') {
+            setSelectedPaintValue('pick');
+            event.preventDefault();
+            return;
+          }
+
+          if (!['type', 'texture'].includes(paintLayer.value) && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
             const value = BEHAVIOR_KEYS[key];
             setSelectedPaintValue(value === null ? '' : String(value));
             event.preventDefault();
@@ -508,6 +517,11 @@
               { value: '', label: 'empty', color: null },
               ...TYPE_LABELS.map((label) => ({ value: label, label, color: TYPE_COLORS[label] }))
             ]
+          : layer === 'texture'
+            ? [
+                { value: 'pick', label: 'pick texture', color: null },
+                { value: 'paint', label: texturePaintLabel(), color: null }
+              ]
           : [
               { value: '', label: `${layer}: empty`, color: null },
               { value: 'true', label: `${layer}: true`, color: BEHAVIOR_COLORS.true },
@@ -540,6 +554,13 @@
       function setSelectedPaintValue(value) {
         if (paintLayer.value === 'type') {
           state.selectedTypeLabel = value === '' ? EMPTY_LABEL_VALUE : value;
+        } else if (paintLayer.value === 'texture') {
+          if (value === 'paint' && !hasSelectedTexture()) {
+            setStatus('Pick a texture from the map before painting texture IDs.', true);
+            return;
+          }
+
+          state.texturePickMode = value !== 'paint';
         } else {
           state.selectedBehaviorValue = value === '' ? EMPTY_LABEL_VALUE : value === 'true';
         }
@@ -552,7 +573,15 @@
           return state.selectedTypeLabel ?? '';
         }
 
+        if (paintLayer.value === 'texture') {
+          return state.texturePickMode ? 'pick' : 'paint';
+        }
+
         return state.selectedBehaviorValue === null ? '' : String(state.selectedBehaviorValue);
+      }
+
+      function texturePaintLabel() {
+        return hasSelectedTexture() ? `texture ${state.selectedTextureId}` : 'texture none';
       }
 
       function refreshActiveButton() {
@@ -626,6 +655,11 @@
           state.textureManifest = manifest;
           state.textureManifestFileName = file.name;
           state.map.textureSet = manifest.name || state.map.textureSet || 'liberty-city';
+          if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
+            state.selectedTextureId = null;
+            state.texturePickMode = true;
+          }
+          createLabelButtons();
           refreshVisualFromAssets({ fit: true });
           setStatus(`Loaded texture manifest ${file.name}.`);
         } catch (error) {
@@ -930,6 +964,7 @@
             const before = snapshotTile(x, y);
             const after = {
               type: state.latestPrediction.rows[y][x],
+              textureId: before.textureId,
               walkable: state.latestPrediction.behaviorRows.walkable[y][x],
               parkable: state.latestPrediction.behaviorRows.parkable[y][x],
               drivable: state.latestPrediction.behaviorRows.drivable[y][x]
@@ -989,6 +1024,11 @@
           return;
         }
 
+        if (paintLayer.value === 'texture' && state.texturePickMode) {
+          pickTextureAt(tile.x, tile.y);
+          return;
+        }
+
         state.isPainting = true;
         state.currentStroke = new Map();
         paintAt(tile.x, tile.y);
@@ -1032,6 +1072,12 @@
       }
 
       function paintAt(tileX, tileY) {
+        const layer = paintLayer.value;
+
+        if (layer === 'texture' && !canPaintSelectedTexture()) {
+          return;
+        }
+
         const radius = Math.floor(Number(brushSize.value) / 2);
         let changed = false;
 
@@ -1047,11 +1093,58 @@
 
         if (changed) {
           state.dirty = true;
-          state.latestPrediction = null;
-          state.trainingSummary = null;
-          updateStats();
-          draw();
+
+          if (layer === 'texture') {
+            refreshVisualFromAssets();
+          } else {
+            state.latestPrediction = null;
+            state.trainingSummary = null;
+            updateStats();
+            draw();
+          }
         }
+      }
+
+      function pickTextureAt(x, y) {
+        const textureId = state.map.textureRows[y][x];
+
+        if (!isValidTextureId(textureId)) {
+          setStatus(`Texture ${textureId} at ${x},${y} is not in the loaded texture manifest.`, true);
+          return;
+        }
+
+        state.selectedTextureId = textureId;
+        state.texturePickMode = false;
+        createLabelButtons();
+        updateStats();
+        draw();
+        setStatus(`Picked texture ${textureId} from ${x},${y}.`);
+      }
+
+      function canPaintSelectedTexture() {
+        if (!hasSelectedTexture()) {
+          setStatus('Pick a texture from the map before painting texture IDs.', true);
+          return false;
+        }
+
+        if (!isValidTextureId(state.selectedTextureId)) {
+          setStatus(`Texture ${state.selectedTextureId} is not in the loaded texture manifest.`, true);
+          return false;
+        }
+
+        return true;
+      }
+
+      function hasSelectedTexture() {
+        return Number.isInteger(state.selectedTextureId) && state.selectedTextureId >= 0;
+      }
+
+      function isValidTextureId(textureId) {
+        if (!Number.isInteger(textureId) || textureId < 0) {
+          return false;
+        }
+
+        return !state.textureManifest || textureId < state.textureManifest.frames.length;
       }
 
       function applyPaintToTile(x, y) {
@@ -1060,6 +1153,8 @@
 
         if (layer === 'type') {
           state.map.rows[y][x] = state.selectedTypeLabel;
+        } else if (layer === 'texture') {
+          state.map.textureRows[y][x] = state.selectedTextureId;
         } else {
           state.map.behaviorRows[layer][y][x] = state.selectedBehaviorValue;
         }
@@ -1077,6 +1172,7 @@
       function snapshotTile(x, y) {
         return {
           type: state.map.rows[y][x],
+          textureId: state.map.textureRows[y][x],
           walkable: state.map.behaviorRows.walkable[y][x],
           parkable: state.map.behaviorRows.parkable[y][x],
           drivable: state.map.behaviorRows.drivable[y][x]
@@ -1084,7 +1180,7 @@
       }
 
       function sameTileSnapshot(a, b) {
-        return a.type === b.type && a.walkable === b.walkable && a.parkable === b.parkable && a.drivable === b.drivable;
+        return a.type === b.type && a.textureId === b.textureId && a.walkable === b.walkable && a.parkable === b.parkable && a.drivable === b.drivable;
       }
 
       function recordStrokeChange(x, y, before, after) {
@@ -1135,8 +1231,13 @@
         state.redoStack.push(operation);
         state.dirty = true;
         state.trainingSummary = null;
-        updateStats();
-        draw();
+
+        if (operationChangesTexture(operation)) {
+          refreshVisualFromAssets();
+        } else {
+          updateStats();
+          draw();
+        }
       }
 
       function redo() {
@@ -1154,16 +1255,26 @@
         state.undoStack.push(operation);
         state.dirty = true;
         state.trainingSummary = null;
-        updateStats();
-        draw();
+
+        if (operationChangesTexture(operation)) {
+          refreshVisualFromAssets();
+        } else {
+          updateStats();
+          draw();
+        }
       }
 
       function restoreTileSnapshot(x, y, snapshot) {
         state.map.rows[y][x] = snapshot.type;
+        state.map.textureRows[y][x] = snapshot.textureId;
 
         for (const property of BEHAVIOR_LABELS) {
           state.map.behaviorRows[property][y][x] = snapshot[property];
         }
+      }
+
+      function operationChangesTexture(operation) {
+        return operation.some((change) => change.before.textureId !== change.after.textureId);
       }
 
       function draw() {
@@ -1203,6 +1314,10 @@
 
               if (!isEmptyLabelValue(type)) {
                 drawTileFill(x, y, TYPE_COLORS[type] || TYPE_COLORS.unknown);
+              }
+            } else if (layer === 'texture') {
+              if (hasSelectedTexture() && state.map.textureRows[y][x] === state.selectedTextureId) {
+                drawTileFill(x, y, '#f2cc47');
               }
             } else {
               const value = state.map.behaviorRows[layer][y][x];
@@ -1385,6 +1500,11 @@
           for (const label of TYPE_LABELS) {
             addStat(label, counts[label]);
           }
+        } else if (layer === 'texture') {
+          addStat('selected texture', hasSelectedTexture() ? state.selectedTextureId : 'none');
+          addStat('texture tool', state.texturePickMode ? 'pick' : 'paint');
+          addStat('selected usage', hasSelectedTexture() ? countTextureUsage(state.selectedTextureId) : 0);
+          addStat('unique textures', countUniqueTextures());
         } else {
           let emptyCount = 0;
           let trueCount = 0;
@@ -1431,6 +1551,32 @@
         count.textContent = String(value);
         stats.appendChild(key);
         stats.appendChild(count);
+      }
+
+      function countTextureUsage(textureId) {
+        let count = 0;
+
+        for (const row of state.map.textureRows) {
+          for (const value of row) {
+            if (value === textureId) {
+              count += 1;
+            }
+          }
+        }
+
+        return count;
+      }
+
+      function countUniqueTextures() {
+        const ids = new Set();
+
+        for (const row of state.map.textureRows) {
+          for (const value of row) {
+            ids.add(value);
+          }
+        }
+
+        return ids.size;
       }
 
       function validateEpiCityMap(map) {

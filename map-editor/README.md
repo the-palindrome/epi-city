@@ -71,11 +71,14 @@ The editor always displays the current editable map state. There is no separate 
 Use the `Paint layer` selector to choose what the brush updates:
 
 - `tile type` sets the tile to empty, `road`, `sidewalk`, `park`, `water`, `bridge`, or `building`.
+- `texture` picks and paints manifest frame IDs in `textureRows`.
 - `walkable` sets the current tile's walkable value to empty, `true`, or `false`.
 - `parkable` sets the current tile's parkable value to empty, `true`, or `false`.
 - `drivable` sets the current tile's drivable value to empty, `true`, or `false`.
 
 Painting a tile type does not auto-fill behavior attributes. This keeps labels sparse and lets the trainer learn each layer independently.
+
+In the texture layer, the `pick texture` tool samples the texture ID from the clicked tile. The editor then switches to painting that texture ID onto other tiles. Texture edits update `textureRows`, so Save Tile Configuration writes the changed manifest-frame references without changing atlas pixels or manifest frame geometry.
 
 ## Training And Prediction
 
@@ -115,8 +118,9 @@ The saved JSON preserves `textureRows`, `textureSet`, `width`, `height`, and `ti
 - Right drag, middle drag, or hold `Space` to pan.
 - Mouse wheel zooms around the cursor.
 - For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` bridge, `6` building, `e` empty.
+- For texture: `i` switches back to the texture picker.
 - For behavior layers: `t` true, `f` false, and `e` empty.
-- `Ctrl+S` opens Save As.
+- `Ctrl+S` opens Save Tile Configuration.
 - `Ctrl+Z` undoes.
 - `Ctrl+Shift+Z` redoes.
 - `Ctrl+Y` redoes.
