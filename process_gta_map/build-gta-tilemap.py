@@ -37,7 +37,7 @@ TEXTURE_SET_NAME = "liberty-city"
 RUNTIME_ATLAS_NAME = "liberty-city-atlas.webp"
 
 SAFE_SYMBOLS = list("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~")
-CATEGORY_PRIORITY = {"water": 0, "bridge": 1, "road": 2, "building": 3, "sidewalk": 4, "park": 5}
+CATEGORY_PRIORITY = {"water": 0, "road": 1, "building": 2, "obstacle": 3, "sidewalk": 4, "park": 5}
 
 
 @dataclass(frozen=True)
@@ -336,17 +336,17 @@ def refine_categories(category: np.ndarray, features: dict[str, np.ndarray]) -> 
     block_rooflike_walkable_islands(category, features)
 
 
-def mark_bridges(category: np.ndarray, features: dict[str, np.ndarray]) -> None:
+def water_crossing_roads(category: np.ndarray, features: dict[str, np.ndarray]) -> np.ndarray:
     water = category == "water"
     road = category == "road"
     water_near = dilate(water, 1)
-    bridge = road & water_near & ((features["asphalt"] > 0.20) | (features["lane"] > 0.004))
+    crossing = road & water_near & ((features["asphalt"] > 0.20) | (features["lane"] > 0.004))
 
     # Exclude narrow pedestrian/rail structures by requiring road continuity.
-    road_or_bridge = road | bridge
-    connected_horizontal = shift(road_or_bridge, 1, 0) | shift(road_or_bridge, -1, 0)
-    connected_vertical = shift(road_or_bridge, 0, 1) | shift(road_or_bridge, 0, -1)
-    category[bridge & (connected_horizontal | connected_vertical)] = "bridge"
+    road_or_crossing = road | crossing
+    connected_horizontal = shift(road_or_crossing, 1, 0) | shift(road_or_crossing, -1, 0)
+    connected_vertical = shift(road_or_crossing, 0, 1) | shift(road_or_crossing, 0, -1)
+    return crossing & (connected_horizontal | connected_vertical)
 
 
 def road_variant(mask: int) -> str:
@@ -425,15 +425,6 @@ def tile_definition(category: str, variant: str) -> TileDefinition:
             parkable=False,
         )
 
-    if category == "bridge":
-        return TileDefinition(
-            category=category,
-            variant=variant,
-            walkable=True,
-            drivable=True,
-            parkable=False,
-        )
-
     return TileDefinition(
         category=category,
         variant=variant,
@@ -454,14 +445,15 @@ def is_walkable_road(features: dict[str, np.ndarray], x: int, y: int) -> bool:
 
 def classify_variants(category: np.ndarray, features: dict[str, np.ndarray]) -> list[Cell]:
     size = category.shape[0]
-    roadlike = (category == "road") | (category == "bridge")
+    roadlike = category == "road"
+    road_crossing = water_crossing_roads(category, features)
     water_near = dilate(category == "water", 1)
 
     cells: list[Cell] = []
     for y in range(size):
         for x in range(size):
             cat = str(category[y, x])
-            if cat in ("road", "bridge"):
+            if cat == "road":
                 mask = 0
                 if y > 0 and roadlike[y - 1, x]:
                     mask |= 1
@@ -472,7 +464,7 @@ def classify_variants(category: np.ndarray, features: dict[str, np.ndarray]) -> 
                 if x > 0 and roadlike[y, x - 1]:
                     mask |= 8
                 sub = road_variant(mask)
-                if cat == "road" and is_walkable_road(features, x, y):
+                if is_walkable_road(features, x, y) or road_crossing[y, x]:
                     sub = f"{sub}{WALKABLE_ROAD_SUFFIX}"
             elif cat == "water":
                 sub = edge_variant(category, x, y, "water")
@@ -752,7 +744,6 @@ def main() -> None:
     features = source_features(rgb, args.grid_size)
     category = initial_categories(features)
     refine_categories(category, features)
-    mark_bridges(category, features)
     cells = classify_variants(category, features)
 
     legend, rows = assign_symbols(cells, args.grid_size)

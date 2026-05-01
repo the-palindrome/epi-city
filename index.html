@@ -115,8 +115,8 @@
         sidewalk: 1,
         park: 2,
         water: 3,
-        bridge: 4,
-        building: 5
+        building: 4,
+        obstacle: 5
       });
 
       // Names mirror TILE_TYPES order and are returned by the public getTile() helper.
@@ -125,8 +125,8 @@
         'sidewalk',
         'park',
         'water',
-        'bridge',
-        'building'
+        'building',
+        'obstacle'
       ]);
 
       const CATEGORY_TO_TILE = Object.freeze({
@@ -134,8 +134,8 @@
         sidewalk: TILE_TYPES.sidewalk,
         park: TILE_TYPES.park,
         water: TILE_TYPES.water,
-        bridge: TILE_TYPES.bridge,
-        building: TILE_TYPES.building
+        building: TILE_TYPES.building,
+        obstacle: TILE_TYPES.obstacle
       });
 
       const TEXTURE_SET_PATHS = Object.freeze({
@@ -184,8 +184,8 @@
         road: 0x151a16,
         park: 0x4fa43d,
         water: 0x0786c8,
-        bridge: 0x80663f,
         building: 0x5f6762,
+        obstacle: 0xd94a48,
         alpha: 0.86
       });
 
@@ -213,9 +213,9 @@
         water: 0x0786c8,
         waterEdge: 0x006da8,
         bank: 0x5f7734,
-        bridge: 0x4a473a,
-        bridgeRail: 0x80663f,
         building: 0x747d78,
+        obstacle: 0xb83232,
+        obstacleEdge: 0x6f1f1f,
         park: 0x83a944,
         parkEdge: 0x4f6d2d
       });
@@ -1564,31 +1564,28 @@
         const tileId = city.tiles[city.index(x, y)];
 
         if (tileId === TILE_TYPES.road) {
-          drawFallbackRoad(graphics, city, x, y, false);
+          drawFallbackRoad(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.sidewalk) {
           drawFallbackSidewalk(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.park) {
           drawFallbackPark(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.water) {
           drawFallbackWater(graphics, city, x, y);
-        } else if (tileId === TILE_TYPES.bridge) {
-          drawFallbackRoad(graphics, city, x, y, true);
         } else if (tileId === TILE_TYPES.building) {
           drawFallbackBuilding(graphics, city, x, y);
+        } else if (tileId === TILE_TYPES.obstacle) {
+          drawFallbackObstacle(graphics, city, x, y);
         }
       }
 
-      function drawFallbackRoad(graphics, city, x, y, isBridge) {
+      function drawFallbackRoad(graphics, city, x, y) {
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
 
-        fillRect(graphics, px, py, t, t, isBridge ? SPRITE_COLORS.bridge : SPRITE_COLORS.asphalt);
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.asphalt);
         drawFallbackBoundary(graphics, city, x, y, isRoadLikeId, SPRITE_COLORS.asphaltEdge, 2);
-
-        if (!isBridge) {
-          drawFallbackRoadLane(graphics, city, x, y);
-        }
+        drawFallbackRoadLane(graphics, city, x, y);
       }
 
       function drawFallbackRoadLane(graphics, city, x, y) {
@@ -1642,6 +1639,15 @@
         drawFallbackBoundary(graphics, city, x, y, isBuildingLikeId, SPRITE_COLORS.buildingEdge, 2);
       }
 
+      function drawFallbackObstacle(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.obstacle);
+        drawFallbackBoundary(graphics, city, x, y, isObstacleLikeId, SPRITE_COLORS.obstacleEdge, 2);
+      }
+
       function drawFallbackBoundary(graphics, city, x, y, sameGroup, color, thickness) {
         const t = city.tileSize;
         const px = x * t;
@@ -1673,7 +1679,7 @@
       }
 
       function isRoadLikeId(tileId) {
-        return tileId === TILE_TYPES.road || tileId === TILE_TYPES.bridge;
+        return tileId === TILE_TYPES.road;
       }
 
       function isSidewalkLikeId(tileId) {
@@ -1688,6 +1694,10 @@
         return tileId === TILE_TYPES.building;
       }
 
+      function isObstacleLikeId(tileId) {
+        return tileId === TILE_TYPES.obstacle;
+      }
+
       function fillRect(graphics, x, y, width, height, color, alpha = 1) {
         graphics.rect(x, y, width, height).fill({ color, alpha });
       }
@@ -1698,19 +1708,7 @@
         }
 
         const tileId = city.tiles[city.index(x, y)];
-        return tileId === TILE_TYPES.road || tileId === TILE_TYPES.bridge;
-      }
-
-      function touchesTile(city, x, y, targetTileId, radius) {
-        for (let yy = y - radius; yy <= y + radius; yy += 1) {
-          for (let xx = x - radius; xx <= x + radius; xx += 1) {
-            if (city.inBounds(xx, yy) && city.tiles[city.index(xx, yy)] === targetTileId) {
-              return true;
-            }
-          }
-        }
-
-        return false;
+        return tileId === TILE_TYPES.road;
       }
 
       function isWaterLike(city, x, y) {
@@ -1719,7 +1717,7 @@
         }
 
         const tileId = city.tiles[city.index(x, y)];
-        return tileId === TILE_TYPES.water || (tileId === TILE_TYPES.bridge && touchesTile(city, x, y, TILE_TYPES.water, 2));
+        return tileId === TILE_TYPES.water;
       }
 
 

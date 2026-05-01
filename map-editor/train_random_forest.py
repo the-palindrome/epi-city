@@ -24,7 +24,7 @@ except ModuleNotFoundError as error:  # pragma: no cover - exercised by local en
         "Install it with: npm run map-editor:deps"
     ) from error
 
-TYPE_LABELS = ["road", "sidewalk", "park", "water", "bridge", "building"]
+TYPE_LABELS = ["road", "sidewalk", "park", "water", "building", "obstacle"]
 BEHAVIOR_LABELS = ["walkable", "parkable", "drivable"]
 GRID_SIZE = 256
 PATCH_SIZE = 8

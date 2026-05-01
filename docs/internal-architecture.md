@@ -54,7 +54,7 @@ Each `rows` entry must be a string with exactly `width` symbols. The file must c
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
-The base categories are `road`, `sidewalk`, `park`, `water`, `bridge`, and `building`. Movement uses the generated behavior booleans instead of hard-coded category masks.
+The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Movement uses the generated behavior booleans instead of hard-coded category masks.
 
 ## Runtime City Object
 
@@ -84,9 +84,9 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Water and buildings are not walkable, drivable, or parkable.
+Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Water, buildings, and obstacles are not walkable, drivable, or parkable by default.
 
-The importer derives behavior from tile abstractions rather than hand-filled legend entries. Sidewalks are walkable, roadside sidewalks are also parkable, parks are walkable only, roads are drivable, mixed road/curb crossing tiles are also walkable, bridges are walkable and drivable, and water or buildings are blocked.
+The importer derives behavior from tile abstractions rather than hand-filled legend entries. Sidewalks are walkable, roadside sidewalks are also parkable, parks are walkable only, roads are drivable, mixed road/curb and water-crossing road tiles are also walkable, and water, buildings, or obstacles are blocked.
 
 A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Pedestrian movement exposes every adjacent `walkable` tile, including diagonal neighbors. Vehicle movement keeps stricter diagonal corner checks by requiring both adjacent cardinal cells to be drivable.
 
@@ -136,7 +136,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
 
-The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, bridge brown, and building slate.
+The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, building slate, and obstacle red.
 
 `renderDebugOverlays()` redraws only the overlay layer. It uses the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 
@@ -152,11 +152,11 @@ The editor displays the current map state for every layer. There is no separate 
 
 The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from `texture-layout.json`, the editor directs users to `Save Texture Rows` after texture painting.
 
-The editor tracks semantic tile-property edits separately from texture-row edits. Tile configuration saves never include `textureRows`; texture row saves never rebuild `legend` or semantic `rows`.
+The editor tracks semantic tile-property edits separately from texture-row edits. Tile configuration saves never include `textureRows`; texture row saves never rebuild `legend` or semantic `rows`. Incomplete semantic labels are saved as `null`, which keeps sparse labeling sessions serializable even before the map is ready for runtime use.
 
 `POST /api/train` runs `map-editor/train_random_forest.py` through the local `map-editor/.venv` interpreter when it exists. The browser posts the full current `rows` and `behaviorRows` grids, and when atlas/manifest assets are loaded it also posts the current texture feature source: the atlas image data, texture manifest, and `textureRows`. The trainer reconstructs its pixel feature image from those texture assignments, so texture painting affects later classifier runs. If texture assets are not loaded, training falls back to the canonical source image. Each layer trains only from non-empty labels. Layers without at least two distinct non-empty values are skipped and return their current sparse values unchanged.
 
-Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. Runtime JSON saving requires complete tile type and behavior labels and reports missing values instead of producing invalid app maps.
+Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. The main app still requires complete tile type and behavior labels before a saved editor configuration replaces the runtime map.
 
 The map editor server serves `/`, `/source-image`, `/api/config`, and `/api/train`. Older sparse label and server-side map load/write endpoints return `410 Gone`, which keeps loading and saving explicit in the browser.
 

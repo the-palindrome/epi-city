@@ -74,7 +74,7 @@ The editor always displays the current editable map state. There is no separate 
 
 Use the `Paint layer` selector to choose what the brush updates:
 
-- `tile type` sets the tile to empty, `road`, `sidewalk`, `park`, `water`, `bridge`, or `building`.
+- `tile type` sets the tile to empty, `road`, `sidewalk`, `park`, `water`, `building`, or `obstacle`.
 - `texture` picks and paints manifest frame IDs in `textureRows`.
 - `walkable` sets the current tile's walkable value to empty, `true`, or `false`.
 - `parkable` sets the current tile's parkable value to empty, `true`, or `false`.
@@ -109,7 +109,7 @@ Click `Reset to defaults` to discard the current browser state and return to the
 
 ## Saving
 
-Click `Save Tile Configuration` to save the current state as an Epi City tile configuration JSON file. Browsers with the File System Access API show a native Save As dialog. Other browsers download the file.
+Click `Save Tile Configuration` to save the current state as an Epi City tile configuration JSON file. Incomplete tile type and behavior labels are saved as `null`. Browsers with the File System Access API show a native Save As dialog. Other browsers download the file.
 
 Click `Save Texture Rows` to save the current `textureRows` as an Epi City texture rows JSON file.
 
@@ -117,7 +117,7 @@ Click `Save Texture Manifest` to save the currently loaded texture manifest JSON
 
 Saving never overwrites `public/maps/liberty-city/tile-layout.json` or `texture-layout.json` automatically. Replace the app map files manually only after you review the saved output.
 
-Runtime Epi City JSON cannot contain empty labels. Save As reports the first missing tile type or behavior values if the map is incomplete. Fill them manually or run `Predict labels` before saving.
+The main app still expects complete runtime tile configuration files. Fill or predict empty labels before replacing `public/maps/liberty-city/tile-layout.json`.
 
 The saved tile configuration preserves `textureSet`, `width`, `height`, and `tileSize` from a loaded map. Legend entries contain only category and behavior properties. The saved texture rows file preserves `width`, `height`, `textureSet`, and `textureRows`.
 
@@ -127,8 +127,8 @@ The saved tile configuration preserves `textureSet`, `width`, `height`, and `til
 - One paint drag creates one undoable stroke.
 - Right drag, middle drag, or hold `Space` to pan.
 - Mouse wheel zooms around the cursor.
-- For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` bridge, `6` building, `e` empty.
-- For texture: `i` switches back to the texture picker.
+- For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` building, `6` obstacle, `e` empty.
+- For texture: `p` switches back to the texture picker. `i` also works for compatibility.
 - For behavior layers: `t` true, `f` false, and `e` empty.
 - `Ctrl+S` opens Save Tile Configuration.
 - `Ctrl+Z` undoes.

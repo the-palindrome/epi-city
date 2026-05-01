@@ -268,7 +268,7 @@
     <script type="module">
       const GRID_SIZE = 256;
       const DEFAULT_TILE_SIZE = 32;
-      const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'bridge', 'building']);
+      const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
       const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
       const EMPTY_LABEL_VALUE = null;
       const TYPE_COLORS = Object.freeze({
@@ -276,8 +276,8 @@
         sidewalk: '#a6aca3',
         park: '#4da23f',
         water: '#0786c8',
-        bridge: '#80613a',
         building: '#68716b',
+        obstacle: '#d94a48',
         unknown: '#ffffff'
       });
       const BEHAVIOR_COLORS = Object.freeze({
@@ -289,8 +289,8 @@
         '2': 'sidewalk',
         '3': 'park',
         '4': 'water',
-        '5': 'bridge',
-        '6': 'building',
+        '5': 'building',
+        '6': 'obstacle',
         e: ''
       });
       const BEHAVIOR_KEYS = Object.freeze({
@@ -541,7 +541,7 @@
             return;
           }
 
-          if (paintLayer.value === 'texture' && key === 'i') {
+          if (paintLayer.value === 'texture' && ['i', 'p'].includes(key)) {
             setSelectedPaintValue('pick');
             event.preventDefault();
             return;
@@ -940,7 +940,7 @@
           state.semanticRowsDirty = false;
           state.dirty = state.textureRowsDirty;
           updateStats();
-          setStatus(`Saved tile configuration ${fileName}. Save Texture Rows separately for texture painting changes.`);
+          setStatus(`Saved tile configuration ${fileName}. Empty labels remain null; save texture rows separately for texture painting changes.`);
         } catch (error) {
           if (error.name === 'AbortError') {
             setStatus('Save tile configuration canceled.');
@@ -1589,8 +1589,6 @@
       }
 
       function buildEpiCityJson() {
-        assertRuntimeLabelsComplete();
-
         if (state.map.originalMap && !state.semanticRowsDirty) {
           const { textureRows, ...originalMap } = state.map.originalMap;
           return {
@@ -1677,32 +1675,6 @@
           drivable: state.map.behaviorRows.drivable[y][x],
           parkable: state.map.behaviorRows.parkable[y][x]
         };
-      }
-
-      function assertRuntimeLabelsComplete() {
-        const missing = [];
-
-        for (let y = 0; y < GRID_SIZE; y += 1) {
-          for (let x = 0; x < GRID_SIZE; x += 1) {
-            if (isEmptyLabelValue(state.map.rows[y][x])) {
-              missing.push(`tile type at ${x},${y}`);
-            }
-
-            for (const property of BEHAVIOR_LABELS) {
-              if (isEmptyLabelValue(state.map.behaviorRows[property][y][x])) {
-                missing.push(`${property} at ${x},${y}`);
-              }
-            }
-
-            if (missing.length >= 5) {
-              throw new Error(`Cannot save runtime JSON while labels are empty. Fill or predict missing values first. First missing labels: ${missing.join('; ')}.`);
-            }
-          }
-        }
-
-        if (missing.length > 0) {
-          throw new Error(`Cannot save runtime JSON while labels are empty. Fill or predict missing values first. First missing labels: ${missing.join('; ')}.`);
-        }
       }
 
       function updateStats() {

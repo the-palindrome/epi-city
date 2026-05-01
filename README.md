@@ -19,7 +19,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-c
 - Use the mouse wheel to zoom around the cursor.
 - Press `d` to toggle the debug dashboard in the top-right corner.
 - Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
-- Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, park green, water blue, bridge brown, and building slate.
+- Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, park green, water blue, building slate, and obstacle red.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
@@ -65,11 +65,11 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports six base categories: `road`, `sidewalk`, `park`, `water`, `bridge`, and `building`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules.
+The runtime supports six base categories: `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules.
 
 ## Movement Rules
 
-Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Sidewalks are walkable, roadside sidewalks are parkable, parks are walkable only, roads are drivable, mixed curb/road crossing tiles can also be walkable, and water or buildings are blocked.
+Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Sidewalks are walkable, roadside sidewalks are parkable, parks are walkable only, roads are drivable, mixed curb/road crossing tiles can also be walkable, and water, buildings, or obstacles are blocked by default.
 
 ## NPC Prototype
 
@@ -116,7 +116,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts from an empty semantic tile configuration plus the current `public/maps/liberty-city/texture-layout.json`, atlas, and texture manifest, can load atlas, tile configuration, texture rows, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels; when atlas and manifest assets are loaded, the classifier's pixel features come from the current `textureRows`. It stores predictions separately and applies predictions as one undoable operation. Save Tile Configuration writes semantic rows, Save Texture Rows writes the visual texture layer, and neither save action overwrites files under `public/maps/liberty-city` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts from an empty semantic tile configuration plus the current `public/maps/liberty-city/texture-layout.json`, atlas, and texture manifest, can load atlas, tile configuration, texture rows, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels; when atlas and manifest assets are loaded, the classifier's pixel features come from the current `textureRows`. It stores predictions separately and applies predictions as one undoable operation. Save Tile Configuration writes semantic rows and can preserve incomplete labels as `null`, Save Texture Rows writes the visual texture layer, and neither save action overwrites files under `public/maps/liberty-city` automatically.
 
 ## Texture Sets
 

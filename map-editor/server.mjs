@@ -23,7 +23,7 @@ const TEXTURE_SET_NAME = 'liberty-city';
 const MAX_JSON_BODY_BYTES = 64 * 1024 * 1024;
 const MAX_TRAINER_OUTPUT_BYTES = 5 * 1024 * 1024;
 
-const TYPE_LABEL_OPTIONS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'bridge', 'building']);
+const TYPE_LABEL_OPTIONS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
 const BEHAVIOR_LABEL_OPTIONS = Object.freeze(['walkable', 'parkable', 'drivable']);
 
 class HttpError extends Error {
