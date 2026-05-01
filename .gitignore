@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 .vite/
+process_gta_map/output/
 
 # Local scratch/output
 tmp/
@@ -36,3 +37,4 @@ Thumbs.db
 # Python cache
 __pycache__/
 *.py[cod]
+map-editor/.venv/

@@ -46,47 +46,153 @@
         border-color: #d77a7a;
         color: #8f2020;
       }
+
+      #debug-dashboard {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        width: 220px;
+        padding: 12px;
+        border: 1px solid rgba(40, 48, 36, 0.28);
+        border-radius: 10px;
+        background: rgba(248, 250, 244, 0.94);
+        box-shadow: 0 12px 36px rgba(20, 24, 18, 0.16);
+        color: #20261d;
+        font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        user-select: none;
+        z-index: 2;
+      }
+
+      #debug-dashboard.hidden {
+        display: none;
+      }
+
+      .dashboard-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .dashboard-shortcut {
+        padding: 1px 6px 2px;
+        border: 1px solid rgba(40, 48, 36, 0.22);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.62);
+        color: #526044;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: none;
+      }
+
+      .dashboard-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 0;
+        cursor: pointer;
+      }
+
+      .dashboard-toggle input {
+        width: 14px;
+        height: 14px;
+        accent-color: #2c9a54;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
     <div id="status">Loading city...</div>
+    <div id="debug-dashboard" class="hidden" aria-label="Debug dashboard"></div>
     <script src="https://pixijs.download/release/pixi.min.js"></script>
     <script>
       // Stable numeric tile IDs keep the renderer and pathfinder on compact typed arrays.
       const TILE_TYPES = Object.freeze({
         road: 0,
         sidewalk: 1,
-        water: 2,
-        bridge: 3,
-        building: 4
+        park: 2,
+        water: 3,
+        building: 4,
+        obstacle: 5
       });
 
       // Names mirror TILE_TYPES order and are returned by the public getTile() helper.
       const TILE_NAMES = Object.freeze([
         'road',
         'sidewalk',
+        'park',
         'water',
-        'bridge',
-        'building'
+        'building',
+        'obstacle'
       ]);
 
       const CATEGORY_TO_TILE = Object.freeze({
         road: TILE_TYPES.road,
         sidewalk: TILE_TYPES.sidewalk,
+        park: TILE_TYPES.park,
         water: TILE_TYPES.water,
-        bridge: TILE_TYPES.bridge,
-        building: TILE_TYPES.building
+        building: TILE_TYPES.building,
+        obstacle: TILE_TYPES.obstacle
       });
 
       const TEXTURE_SET_PATHS = Object.freeze({
-        gta: './assets/textures/gta/manifest.json'
+        'liberty-city': './maps/liberty-city/manifest.json',
+        'liberty-city-clean': './maps/liberty-city-clean/manifest.json'
       });
+      const CITY_MAP_PATHS = Object.freeze({
+        'liberty-city': {
+          tileLayout: './maps/liberty-city/tile-layout.json',
+          textureLayout: './maps/liberty-city/texture-layout.json'
+        },
+        'liberty-city-clean': {
+          tileLayout: './maps/liberty-city-clean/tile-layout.json',
+          textureLayout: './maps/liberty-city-clean/texture-layout.json'
+        }
+      });
+      const DEFAULT_CITY_MAP = 'liberty-city-clean';
 
       const PIXEL_ART_SCALE_MODE = 'nearest';
 
       const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
         pedestrian: 'walkable',
         vehicle: 'drivable'
+      });
+
+      const NPC_CONFIG = Object.freeze({
+        count: 1000,
+        tileCapacity: 2,
+        slotSpacing: 11,
+        color: 0xe5c748,
+        size: 9,
+        minSpeed: 34,
+        maxSpeed: 58
+      });
+
+      const DASHBOARD_OVERLAYS = Object.freeze([
+        { id: 'tileType', label: 'overlay tile type', kind: 'tileType' },
+        { id: 'walkable', label: 'overlay walkable', layer: 'tileWalkable' },
+        { id: 'parkable', label: 'overlay parkable', layer: 'tileParkable' },
+        { id: 'drivable', label: 'overlay drivable', layer: 'tileDrivable' }
+      ]);
+
+      const DEBUG_OVERLAY_COLORS = Object.freeze({
+        enabled: 0x35d46f,
+        disabled: 0xe3504f,
+        enabledAlpha: 0.42,
+        disabledAlpha: 0.34
+      });
+
+      const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
+        sidewalk: 0x9aa09a,
+        road: 0x151a16,
+        park: 0x4fa43d,
+        water: 0x0786c8,
+        building: 0x5f6762,
+        obstacle: 0xd94a48,
+        alpha: 0.86
       });
 
       // A* uses integer movement costs: 10 for cardinal movement, 14 for diagonals.
@@ -113,9 +219,9 @@
         water: 0x0786c8,
         waterEdge: 0x006da8,
         bank: 0x5f7734,
-        bridge: 0x4a473a,
-        bridgeRail: 0x80663f,
         building: 0x747d78,
+        obstacle: 0xb83232,
+        obstacleEdge: 0x6f1f1f,
         park: 0x83a944,
         parkEdge: 0x4f6d2d
       });
@@ -147,9 +253,11 @@
 
           const world = new PIXI.Container();
           const mapLayer = new PIXI.Container();
+          const overlayLayer = new PIXI.Container();
           const actorLayer = new PIXI.Container();
 
           world.addChild(mapLayer);
+          world.addChild(overlayLayer);
           world.addChild(actorLayer);
           app.stage.addChild(world);
 
@@ -188,6 +296,7 @@
             world,
             layers: {
               map: mapLayer,
+              overlays: overlayLayer,
               actors: actorLayer
             },
             tileTypes: TILE_TYPES,
@@ -199,12 +308,15 @@
           installCameraControls(app, camera, applyCamera);
 
           // Keep map data pre-generated so the app has a stable, fast startup path.
-          const mapData = await loadCityMap('./liberty-city.json');
+          const defaultMapPaths = CITY_MAP_PATHS[DEFAULT_CITY_MAP];
+          const mapData = await loadCityMap(defaultMapPaths.tileLayout, defaultMapPaths.textureLayout);
           const city = compileCityMap(mapData);
           let textureSet = await loadTextureSet(city.textureSetName);
 
           renderCity(city, mapLayer, textureSet);
           centerCameraOnCity(city);
+          const dashboard = installDebugDashboard(city, overlayLayer);
+          const npcSimulation = createNpcSimulation(city, actorLayer, app, NPC_CONFIG);
 
           async function setTextureSet(name) {
             textureSet = await loadTextureSet(name);
@@ -217,6 +329,9 @@
             city,
             mapData,
             textureSet,
+            dashboard,
+            npcSimulation,
+            npcs: npcSimulation.npcs,
             loadCityMap,
             loadTextureSet,
             setTextureSet,
@@ -347,10 +462,198 @@
         };
       }
 
+      function installDebugDashboard(city, overlayLayer) {
+        const dashboard = document.getElementById('debug-dashboard');
+        const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]));
+        const controls = new Map();
+
+        dashboard.innerHTML = '';
+        dashboard.appendChild(createDashboardTitle());
+
+        for (const overlay of DASHBOARD_OVERLAYS) {
+          const control = createOverlayToggle(overlay);
+
+          controls.set(overlay.id, control.input);
+          dashboard.appendChild(control.label);
+
+          control.input.addEventListener('change', () => {
+            setOverlay(overlay.id, control.input.checked);
+          });
+        }
+
+        function render() {
+          renderDebugOverlays(city, overlayLayer, overlayState);
+        }
+
+        function setOverlay(id, enabled) {
+          if (!Object.prototype.hasOwnProperty.call(overlayState, id)) {
+            throw new Error(`Unknown debug overlay "${id}".`);
+          }
+
+          overlayState[id] = Boolean(enabled);
+          controls.get(id).checked = overlayState[id];
+          render();
+        }
+
+        function toggleDashboard(force) {
+          const shouldHide = typeof force === 'boolean' ? !force : !dashboard.classList.contains('hidden');
+          dashboard.classList.toggle('hidden', shouldHide);
+        }
+
+        function onKeyDown(event) {
+          if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+          }
+
+          if (event.key.toLowerCase() !== 'd' || isEditableTarget(event.target)) {
+            return;
+          }
+
+          event.preventDefault();
+          toggleDashboard();
+        }
+
+        document.addEventListener('keydown', onKeyDown);
+
+        return {
+          element: dashboard,
+          overlays: overlayState,
+          setOverlay,
+          toggle: toggleDashboard,
+          render,
+          destroy() {
+            document.removeEventListener('keydown', onKeyDown);
+            clearPixiContainer(overlayLayer);
+            dashboard.innerHTML = '';
+          }
+        };
+      }
+
+      function createDashboardTitle() {
+        const title = document.createElement('div');
+        const shortcut = document.createElement('span');
+
+        title.className = 'dashboard-title';
+        title.textContent = 'Dashboard';
+        shortcut.className = 'dashboard-shortcut';
+        shortcut.textContent = 'D';
+        title.appendChild(shortcut);
+
+        return title;
+      }
+
+      function createOverlayToggle(overlay) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        const text = document.createElement('span');
+
+        label.className = 'dashboard-toggle';
+        input.type = 'checkbox';
+        input.dataset.overlayToggle = overlay.id;
+        text.textContent = overlay.label;
+
+        label.appendChild(input);
+        label.appendChild(text);
+
+        return { label, input };
+      }
+
+      function isEditableTarget(target) {
+        if (!target || !target.tagName) {
+          return false;
+        }
+
+        if (target.tagName === 'INPUT' && target.type === 'checkbox') {
+          return false;
+        }
+
+        return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+      }
+
+      function renderDebugOverlays(city, overlayLayer, overlayState) {
+        clearPixiContainer(overlayLayer);
+
+        for (const overlay of DASHBOARD_OVERLAYS) {
+          if (!overlayState[overlay.id]) {
+            continue;
+          }
+
+          const layer = new PIXI.Container();
+
+          layer.eventMode = 'none';
+
+          if (overlay.kind === 'tileType') {
+            drawTileTypeOverlay(city, layer);
+          } else {
+            drawBehaviorOverlay(city, layer, city[overlay.layer]);
+          }
+
+          overlayLayer.addChild(layer);
+        }
+      }
+
+      function drawTileTypeOverlay(city, layer) {
+        const chunkSize = 16;
+
+        for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
+          for (let chunkX = 0; chunkX < city.width; chunkX += chunkSize) {
+            const graphics = new PIXI.Graphics();
+
+            graphics.eventMode = 'none';
+
+            for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
+              for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
+                const color = getTileTypeOverlayColor(city, x, y);
+
+                fillRect(graphics, x * city.tileSize, y * city.tileSize, city.tileSize, city.tileSize, color, TILE_TYPE_OVERLAY_COLORS.alpha);
+              }
+            }
+
+            layer.addChild(graphics);
+          }
+        }
+      }
+
+      function getTileTypeOverlayColor(city, x, y) {
+        const variant = city.getTileVariant(x, y);
+        return TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.building;
+      }
+
+      function drawBehaviorOverlay(city, layer, propertyLayer) {
+        const chunkSize = 16;
+
+        for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
+          for (let chunkX = 0; chunkX < city.width; chunkX += chunkSize) {
+            const graphics = new PIXI.Graphics();
+
+            graphics.eventMode = 'none';
+
+            for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
+              for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
+                const index = city.index(x, y);
+                const enabled = propertyLayer[index] === 1;
+                const color = enabled ? DEBUG_OVERLAY_COLORS.enabled : DEBUG_OVERLAY_COLORS.disabled;
+                const alpha = enabled ? DEBUG_OVERLAY_COLORS.enabledAlpha : DEBUG_OVERLAY_COLORS.disabledAlpha;
+
+                fillRect(graphics, x * city.tileSize, y * city.tileSize, city.tileSize, city.tileSize, color, alpha);
+              }
+            }
+
+            layer.addChild(graphics);
+          }
+        }
+      }
+
+      function clearPixiContainer(container) {
+        for (const child of container.removeChildren()) {
+          child.destroy({ children: true });
+        }
+      }
+
       /**
        * Loads the authoring-format map and validates it before any runtime state is created.
        */
-      async function loadCityMap(url) {
+      async function loadCityMap(url, textureRowsUrl = deriveTextureRowsUrl(url)) {
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -359,7 +662,39 @@
 
         const data = await response.json();
         validateCityMap(data);
+        const textureRowsData = await loadTextureRows(textureRowsUrl, data);
+        return {
+          ...data,
+          textureSet: textureRowsData.textureSet || data.textureSet,
+          textureRows: textureRowsData.textureRows
+        };
+      }
+
+      async function loadTextureRows(url, mapData) {
+        if (!url && mapData.textureRows) {
+          validateTextureRowsLayout(mapData, mapData);
+          return mapData;
+        }
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`Could not load ${url}: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        validateTextureRowsLayout(data, mapData);
         return data;
+      }
+
+      function deriveTextureRowsUrl(mapUrl) {
+        if (typeof mapUrl !== 'string' || mapUrl.length === 0) {
+          return null;
+        }
+
+        const slash = mapUrl.lastIndexOf('/');
+        const base = slash >= 0 ? mapUrl.slice(0, slash + 1) : '';
+        return `${base}texture-layout.json`;
       }
 
       async function loadTextureSet(name) {
@@ -506,20 +841,38 @@
           }
         }
 
-        if (!Array.isArray(data.textureRows) || data.textureRows.length !== data.height) {
-          throw new Error(`Map JSON textureRows must contain exactly ${data.height} rows.`);
+        if (data.textureRows !== undefined) {
+          validateTextureRowsLayout(data, data);
+        }
+      }
+
+      function validateTextureRowsLayout(data, mapData) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+          throw new Error('Texture rows JSON must contain a JSON object.');
         }
 
-        for (let y = 0; y < data.height; y += 1) {
+        if (data.width !== mapData.width || data.height !== mapData.height) {
+          throw new Error(`Texture rows JSON must be ${mapData.width}x${mapData.height}.`);
+        }
+
+        if (data.textureSet !== undefined && (typeof data.textureSet !== 'string' || data.textureSet.length === 0)) {
+          throw new Error('Texture rows JSON textureSet must be a non-empty string when present.');
+        }
+
+        if (!Array.isArray(data.textureRows) || data.textureRows.length !== mapData.height) {
+          throw new Error(`Texture rows JSON textureRows must contain exactly ${mapData.height} rows.`);
+        }
+
+        for (let y = 0; y < mapData.height; y += 1) {
           const row = data.textureRows[y];
 
-          if (!Array.isArray(row) || row.length !== data.width) {
-            throw new Error(`Map JSON texture row ${y} must contain exactly ${data.width} texture IDs.`);
+          if (!Array.isArray(row) || row.length !== mapData.width) {
+            throw new Error(`Texture rows JSON row ${y} must contain exactly ${mapData.width} texture IDs.`);
           }
 
-          for (let x = 0; x < data.width; x += 1) {
+          for (let x = 0; x < mapData.width; x += 1) {
             if (!Number.isInteger(row[x]) || row[x] < 0) {
-              throw new Error(`Map JSON textureRows has invalid texture ID at ${x},${y}.`);
+              throw new Error(`Texture rows JSON has invalid texture ID at ${x},${y}.`);
             }
           }
         }
@@ -543,10 +896,6 @@
             throw new Error(`Map JSON legend entry "${symbol}" has unknown category "${category}".`);
           }
 
-          if (typeof value.subcategory !== 'string' || value.subcategory.length === 0) {
-            throw new Error(`Map JSON legend entry "${symbol}" must include a subcategory.`);
-          }
-
           for (const property of ['walkable', 'drivable', 'parkable']) {
             if (typeof value[property] !== 'boolean') {
               throw new Error(`Map JSON legend entry "${symbol}" must include boolean ${property}.`);
@@ -555,7 +904,6 @@
 
           entries[symbol] = {
             category,
-            subcategory: value.subcategory,
             walkable: value.walkable,
             drivable: value.drivable,
             parkable: value.parkable
@@ -687,8 +1035,8 @@
           const dx = toX - fromX;
           const dy = toY - fromY;
 
-          if (Math.abs(dx) === 1 && Math.abs(dy) === 1) {
-            // Diagonals cannot squeeze through two blocked cardinal neighbors.
+          if (property !== 'walkable' && Math.abs(dx) === 1 && Math.abs(dy) === 1) {
+            // Vehicles keep stricter corner constraints; pedestrians can use every adjacent walkable tile.
             return hasTileProperty(fromX + dx, fromY, property) && hasTileProperty(fromX, fromY + dy, property);
           }
 
@@ -875,6 +1223,228 @@
         return path;
       }
 
+      function createNpcSimulation(city, actorLayer, app, config) {
+        const graphics = new PIXI.Graphics();
+        const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity);
+        const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity);
+        const spawnSlots = collectNpcSpawnSlots(city, config.tileCapacity);
+        const npcs = [];
+
+        occupiedSlots.fill(-1);
+        reservedSlots.fill(-1);
+        graphics.eventMode = 'none';
+        actorLayer.eventMode = 'none';
+        actorLayer.addChild(graphics);
+
+        for (let id = 0; id < config.count && spawnSlots.length > 0; id += 1) {
+          const spawnSlotIndex = takeRandomArrayItem(spawnSlots);
+          const spawnSlot = npcSlotFromIndex(spawnSlotIndex, config.tileCapacity);
+          const tileIndex = spawnSlot.tileIndex;
+          const tileX = tileIndex % city.width;
+          const tileY = Math.floor(tileIndex / city.width);
+          const position = tileSlotPosition(city, tileX, tileY, spawnSlot.slot, config);
+
+          occupiedSlots[spawnSlotIndex] = id;
+          npcs.push({
+            id,
+            x: position.x,
+            y: position.y,
+            tileX,
+            tileY,
+            tileIndex,
+            slot: spawnSlot.slot,
+            slotIndex: spawnSlotIndex,
+            targetX: position.x,
+            targetY: position.y,
+            targetTileX: tileX,
+            targetTileY: tileY,
+            targetTileIndex: tileIndex,
+            targetSlot: spawnSlot.slot,
+            targetIndex: -1,
+            speed: randomBetween(config.minSpeed, config.maxSpeed)
+          });
+        }
+
+        function update(deltaSeconds) {
+          const safeDelta = Math.min(deltaSeconds, 0.1);
+
+          for (const npc of npcs) {
+            updateNpc(npc, safeDelta, city, occupiedSlots, reservedSlots, config);
+          }
+
+          drawNpcs(graphics, npcs, config);
+        }
+
+        const tickerUpdate = (ticker) => {
+          update(ticker.deltaMS / 1000);
+        };
+
+        app.ticker.add(tickerUpdate);
+        drawNpcs(graphics, npcs, config);
+
+        return {
+          npcs,
+          occupiedSlots,
+          reservedSlots,
+          tileCapacity: config.tileCapacity,
+          graphics,
+          update,
+          destroy() {
+            app.ticker.remove(tickerUpdate);
+            graphics.destroy();
+          }
+        };
+      }
+
+      function collectNpcSpawnSlots(city, tileCapacity) {
+        const slots = [];
+
+        for (let index = 0; index < city.tileWalkable.length; index += 1) {
+          if (city.tileWalkable[index]) {
+            for (let slot = 0; slot < tileCapacity; slot += 1) {
+              slots.push(npcSlotIndex(index, slot, tileCapacity));
+            }
+          }
+        }
+
+        return slots;
+      }
+
+      function updateNpc(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config) {
+        if (npc.targetIndex !== -1) {
+          moveNpcTowardTarget(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config);
+          return;
+        }
+
+        chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config);
+      }
+
+      function moveNpcTowardTarget(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config) {
+        const dx = npc.targetX - npc.x;
+        const dy = npc.targetY - npc.y;
+        const distance = Math.hypot(dx, dy);
+        const maxStep = npc.speed * deltaSeconds;
+
+        if (distance <= maxStep || distance === 0) {
+          occupiedSlots[npc.slotIndex] = -1;
+          reservedSlots[npc.targetIndex] = -1;
+          occupiedSlots[npc.targetIndex] = npc.id;
+          npc.x = npc.targetX;
+          npc.y = npc.targetY;
+          npc.tileX = npc.targetTileX;
+          npc.tileY = npc.targetTileY;
+          npc.tileIndex = npc.targetTileIndex;
+          npc.slot = npc.targetSlot;
+          npc.slotIndex = npc.targetIndex;
+          npc.targetIndex = -1;
+          chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config);
+          return;
+        }
+
+        const ratio = maxStep / distance;
+        npc.x += dx * ratio;
+        npc.y += dy * ratio;
+      }
+
+      function chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config) {
+        const neighbors = city.neighbors(npc.tileX, npc.tileY, 'pedestrian');
+
+        if (neighbors.length === 0) {
+          return;
+        }
+
+        const start = Math.floor(Math.random() * neighbors.length);
+
+        for (let offset = 0; offset < neighbors.length; offset += 1) {
+          const candidate = neighbors[(start + offset) % neighbors.length];
+          const targetIndex = city.index(candidate.x, candidate.y);
+          const targetSlot = findAvailableNpcSlot(targetIndex, occupiedSlots, reservedSlots, config.tileCapacity);
+
+          if (!targetSlot) {
+            continue;
+          }
+
+          const target = tileSlotPosition(city, candidate.x, candidate.y, targetSlot.slot, config);
+
+          reservedSlots[targetSlot.slotIndex] = npc.id;
+          npc.targetTileX = candidate.x;
+          npc.targetTileY = candidate.y;
+          npc.targetTileIndex = targetIndex;
+          npc.targetSlot = targetSlot.slot;
+          npc.targetIndex = targetSlot.slotIndex;
+          npc.targetX = target.x;
+          npc.targetY = target.y;
+          return;
+        }
+      }
+
+      function findAvailableNpcSlot(tileIndex, occupiedSlots, reservedSlots, tileCapacity) {
+        const startSlot = Math.floor(Math.random() * tileCapacity);
+
+        for (let offset = 0; offset < tileCapacity; offset += 1) {
+          const slot = (startSlot + offset) % tileCapacity;
+          const slotIndex = npcSlotIndex(tileIndex, slot, tileCapacity);
+
+          if (occupiedSlots[slotIndex] === -1 && reservedSlots[slotIndex] === -1) {
+            return { slot, slotIndex };
+          }
+        }
+
+        return null;
+      }
+
+      function npcSlotIndex(tileIndex, slot, tileCapacity) {
+        return tileIndex * tileCapacity + slot;
+      }
+
+      function npcSlotFromIndex(slotIndex, tileCapacity) {
+        return {
+          tileIndex: Math.floor(slotIndex / tileCapacity),
+          slot: slotIndex % tileCapacity
+        };
+      }
+
+      function tileSlotPosition(city, tileX, tileY, slot, config) {
+        const centerX = (tileX + 0.5) * city.tileSize;
+        const centerY = (tileY + 0.5) * city.tileSize;
+        const offsetIndex = slot - (config.tileCapacity - 1) / 2;
+
+        return {
+          x: centerX + offsetIndex * config.slotSpacing,
+          y: centerY
+        };
+      }
+
+      function drawNpcs(graphics, npcs, config) {
+        graphics.clear();
+
+        for (const npc of npcs) {
+          drawNpcBlob(graphics, npc.x, npc.y, config.size, config.color);
+        }
+      }
+
+      function drawNpcBlob(graphics, x, y, size, color) {
+        const px = Math.round(x - size / 2);
+        const py = Math.round(y - size / 2);
+
+        fillRect(graphics, px + 1, py, size - 2, size, color);
+        fillRect(graphics, px, py + 2, size, size - 4, color);
+      }
+
+      function takeRandomArrayItem(items) {
+        const index = Math.floor(Math.random() * items.length);
+        const item = items[index];
+
+        items[index] = items[items.length - 1];
+        items.pop();
+
+        return item;
+      }
+
+      function randomBetween(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
       /**
        * Tiny binary heap used as A*'s priority queue.
        */
@@ -949,9 +1519,7 @@
       }
 
       function renderCity(city, mapLayer, textureSet) {
-        for (const child of mapLayer.removeChildren()) {
-          child.destroy({ children: true });
-        }
+        clearPixiContainer(mapLayer);
 
         // Chunks keep the display tree inspectable while grouping nearby sprites.
         const chunkSize = 16;
@@ -1003,29 +1571,28 @@
         const tileId = city.tiles[city.index(x, y)];
 
         if (tileId === TILE_TYPES.road) {
-          drawFallbackRoad(graphics, city, x, y, false);
+          drawFallbackRoad(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.sidewalk) {
           drawFallbackSidewalk(graphics, city, x, y);
+        } else if (tileId === TILE_TYPES.park) {
+          drawFallbackPark(graphics, city, x, y);
         } else if (tileId === TILE_TYPES.water) {
           drawFallbackWater(graphics, city, x, y);
-        } else if (tileId === TILE_TYPES.bridge) {
-          drawFallbackRoad(graphics, city, x, y, true);
         } else if (tileId === TILE_TYPES.building) {
           drawFallbackBuilding(graphics, city, x, y);
+        } else if (tileId === TILE_TYPES.obstacle) {
+          drawFallbackObstacle(graphics, city, x, y);
         }
       }
 
-      function drawFallbackRoad(graphics, city, x, y, isBridge) {
+      function drawFallbackRoad(graphics, city, x, y) {
         const t = city.tileSize;
         const px = x * t;
         const py = y * t;
 
-        fillRect(graphics, px, py, t, t, isBridge ? SPRITE_COLORS.bridge : SPRITE_COLORS.asphalt);
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.asphalt);
         drawFallbackBoundary(graphics, city, x, y, isRoadLikeId, SPRITE_COLORS.asphaltEdge, 2);
-
-        if (!isBridge) {
-          drawFallbackRoadLane(graphics, city, x, y);
-        }
+        drawFallbackRoadLane(graphics, city, x, y);
       }
 
       function drawFallbackRoadLane(graphics, city, x, y) {
@@ -1053,6 +1620,15 @@
         drawFallbackBoundary(graphics, city, x, y, isSidewalkLikeId, SPRITE_COLORS.sidewalkEdge, 1);
       }
 
+      function drawFallbackPark(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.park);
+        drawFallbackBoundary(graphics, city, x, y, isParkLikeId, SPRITE_COLORS.parkEdge, 1);
+      }
+
       function drawFallbackWater(graphics, city, x, y) {
         const t = city.tileSize;
         const px = x * t;
@@ -1068,6 +1644,15 @@
 
         fillRect(graphics, px, py, t, t, SPRITE_COLORS.building);
         drawFallbackBoundary(graphics, city, x, y, isBuildingLikeId, SPRITE_COLORS.buildingEdge, 2);
+      }
+
+      function drawFallbackObstacle(graphics, city, x, y) {
+        const t = city.tileSize;
+        const px = x * t;
+        const py = y * t;
+
+        fillRect(graphics, px, py, t, t, SPRITE_COLORS.obstacle);
+        drawFallbackBoundary(graphics, city, x, y, isObstacleLikeId, SPRITE_COLORS.obstacleEdge, 2);
       }
 
       function drawFallbackBoundary(graphics, city, x, y, sameGroup, color, thickness) {
@@ -1101,15 +1686,23 @@
       }
 
       function isRoadLikeId(tileId) {
-        return tileId === TILE_TYPES.road || tileId === TILE_TYPES.bridge;
+        return tileId === TILE_TYPES.road;
       }
 
       function isSidewalkLikeId(tileId) {
         return tileId === TILE_TYPES.sidewalk;
       }
 
+      function isParkLikeId(tileId) {
+        return tileId === TILE_TYPES.park;
+      }
+
       function isBuildingLikeId(tileId) {
         return tileId === TILE_TYPES.building;
+      }
+
+      function isObstacleLikeId(tileId) {
+        return tileId === TILE_TYPES.obstacle;
       }
 
       function fillRect(graphics, x, y, width, height, color, alpha = 1) {
@@ -1122,19 +1715,7 @@
         }
 
         const tileId = city.tiles[city.index(x, y)];
-        return tileId === TILE_TYPES.road || tileId === TILE_TYPES.bridge;
-      }
-
-      function touchesTile(city, x, y, targetTileId, radius) {
-        for (let yy = y - radius; yy <= y + radius; yy += 1) {
-          for (let xx = x - radius; xx <= x + radius; xx += 1) {
-            if (city.inBounds(xx, yy) && city.tiles[city.index(xx, yy)] === targetTileId) {
-              return true;
-            }
-          }
-        }
-
-        return false;
+        return tileId === TILE_TYPES.road;
       }
 
       function isWaterLike(city, x, y) {
@@ -1143,7 +1724,7 @@
         }
 
         const tileId = city.tiles[city.index(x, y)];
-        return tileId === TILE_TYPES.water || (tileId === TILE_TYPES.bridge && touchesTile(city, x, y, TILE_TYPES.water, 2));
+        return tileId === TILE_TYPES.water;
       }
 
 

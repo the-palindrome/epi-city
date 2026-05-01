@@ -11,12 +11,13 @@ This folder contains the reproducible import pipeline for the Liberty City map u
 
 Running the script updates these runtime files:
 
-- `public/liberty-city.json`
-- `public/assets/textures/gta/manifest.json`
-- `public/assets/textures/gta/liberty-city-atlas.webp`
-- `tmp/gta-256-textured-preview.png`
+- `public/maps/liberty-city/tile-layout.json`
+- `public/maps/liberty-city/texture-layout.json`
+- `public/maps/liberty-city/manifest.json`
+- `public/maps/liberty-city/liberty-city-atlas.webp`
+- `process_gta_map/output/gta-256-textured-preview.png`
 
-The `tmp/` preview is local scratch output and is ignored by Git. The `public/` files are the app-facing generated artifacts.
+The `process_gta_map/output/` preview is local inspection output and is ignored by Git. The `public/` files are the app-facing generated artifacts.
 
 ## Requirements
 
@@ -43,9 +44,9 @@ The script performs these steps:
 3. Applies tile behavior abstractions to generate `walkable`, `drivable`, and `parkable` legend properties.
 4. Decomposes the source image into 65,536 source tiles.
 5. Deduplicates exact duplicate source crops.
-6. Writes `textureRows` so every cell points to its exact source tile frame.
+6. Writes `texture-layout.json` so every cell points to its exact source tile frame.
 7. Verifies each `textureRows` entry against the original source pixels.
-8. Writes a preview image to `tmp/gta-256-textured-preview.png`.
+8. Writes a preview image to `process_gta_map/output/gta-256-textured-preview.png`.
 
 Expected current stats:
 
@@ -66,15 +67,15 @@ npm run build
 For visual inspection, open the preview:
 
 ```bash
-xdg-open tmp/gta-256-textured-preview.png
+xdg-open process_gta_map/output/gta-256-textured-preview.png
 ```
 
-The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing `public/liberty-city.json`.
+The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing the generated files under `public/maps/liberty-city`.
 
 ## Notes
 
 - The map format is intentionally unversioned while the app is pre-release.
-- `rows` stores gameplay semantics through legend symbols.
+- `rows` stores gameplay semantics through legend symbols in `tile-layout.json`.
 - The legend stores generated `walkable`, `drivable`, and `parkable` booleans for each symbol.
-- `textureRows` stores exact atlas frame IDs for rendering.
+- `textureRows` stores exact atlas frame IDs for rendering in `texture-layout.json`.
 - Do not keep legacy import formats in this folder.

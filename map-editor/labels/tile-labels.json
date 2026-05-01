@@ -1,0 +1,5677 @@
+{
+  "sourceImage": "process_gta_map/source/gta1-liberty-city-hd.webp",
+  "generatedMap": "public/maps/liberty-city/tile-layout.json",
+  "gridSize": 256,
+  "typeLabels": [
+    {
+      "x": 3,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 44,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 45,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 46,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 47,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 48,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 48,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 48,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 48,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 49,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 49,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 49,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 49,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 50,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 50,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 50,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 50,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 51,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 51,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 51,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 51,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 52,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 52,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 52,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 52,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 53,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 53,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 53,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 53,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 54,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 54,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 54,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 54,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 55,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 55,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 55,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 55,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 56,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 56,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 56,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 56,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 57,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 57,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 57,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 57,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 58,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 59,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 60,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 60,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 60,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 60,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 61,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 61,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 61,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 61,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 62,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 62,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 62,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 62,
+      "label": "road"
+    },
+    {
+      "x": 59,
+      "y": 62,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 63,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 63,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 63,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 63,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 64,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 64,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 64,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 64,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 65,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 65,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 65,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 65,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 66,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 66,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 66,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 66,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 67,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 67,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 67,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 67,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 68,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 68,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 68,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 68,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 69,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 69,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 69,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 69,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 70,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 71,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 17,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 18,
+      "y": 72,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 72,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 73,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 73,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 73,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 73,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 74,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 74,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 74,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 74,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 75,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 75,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 75,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 75,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 75,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 75,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 75,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 75,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 75,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 75,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 75,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 75,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 75,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 76,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 76,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 76,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 76,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 76,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 76,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 76,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 76,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 76,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 76,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 76,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 76,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 76,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 77,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 77,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 77,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 77,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 77,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 77,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 78,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 78,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 78,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 78,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 78,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 78,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 78,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 78,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 78,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 78,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 78,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 79,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 79,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 79,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 79,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 79,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 79,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 79,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 79,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 79,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 79,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 79,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 17,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 18,
+      "y": 80,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 80,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 81,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 82,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 83,
+      "label": "road"
+    },
+    {
+      "x": 3,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 25,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 26,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 27,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 28,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 29,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 30,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 31,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 32,
+      "y": 84,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 17,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 18,
+      "y": 85,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 85,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 85,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 85,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 85,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 85,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 85,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 86,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 86,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 86,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 86,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 86,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 86,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 86,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 86,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 86,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 87,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 87,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 87,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 87,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 87,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 87,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 87,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 87,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 87,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 88,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 88,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 88,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 88,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 88,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 88,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 88,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 88,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 88,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 89,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 89,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 89,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 89,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 89,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 89,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 89,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 89,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 89,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 90,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 90,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 90,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 90,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 90,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 90,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 90,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 90,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 90,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 17,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 18,
+      "y": 91,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 91,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 91,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 91,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 91,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 91,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 91,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 92,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 92,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 92,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 92,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 92,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 92,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 92,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 92,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 92,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 92,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 93,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 93,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 93,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 93,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 93,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 93,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 93,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 93,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 93,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 94,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 13,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 94,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 94,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 94,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 94,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 94,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 94,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 94,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 94,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 95,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 95,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 14,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 15,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 16,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 95,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 95,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 95,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 95,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 95,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 95,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 95,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 95,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 14,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 15,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 96,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 96,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 96,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 96,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 96,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 96,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 96,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 96,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 96,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 97,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 97,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 97,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 97,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 97,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 8,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 9,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 10,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 11,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 12,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 98,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 98,
+      "label": "sidewalk"
+    },
+    {
+      "x": 17,
+      "y": 98,
+      "label": "sidewalk"
+    },
+    {
+      "x": 18,
+      "y": 98,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 98,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 99,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 99,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 99,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 99,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 100,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 100,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 100,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 100,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 100,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 100,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 100,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 100,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 100,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 100,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 100,
+      "label": "road"
+    },
+    {
+      "x": 1,
+      "y": 101,
+      "label": "sidewalk"
+    },
+    {
+      "x": 2,
+      "y": 101,
+      "label": "sidewalk"
+    },
+    {
+      "x": 6,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 101,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 101,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 101,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 101,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 101,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 101,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 101,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 101,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 101,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 101,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 101,
+      "label": "road"
+    },
+    {
+      "x": 1,
+      "y": 102,
+      "label": "sidewalk"
+    },
+    {
+      "x": 2,
+      "y": 102,
+      "label": "sidewalk"
+    },
+    {
+      "x": 6,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 102,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 102,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 102,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 102,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 102,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 102,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 102,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 102,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 102,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 102,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 102,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 6,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 103,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 103,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 103,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 103,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 5,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 104,
+      "label": "building"
+    },
+    {
+      "x": 17,
+      "y": 104,
+      "label": "building"
+    },
+    {
+      "x": 18,
+      "y": 104,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 104,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 105,
+      "label": "sidewalk"
+    },
+    {
+      "x": 5,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 105,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 105,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 105,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 105,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 105,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 105,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 105,
+      "label": "sidewalk"
+    },
+    {
+      "x": 16,
+      "y": 105,
+      "label": "sidewalk"
+    },
+    {
+      "x": 17,
+      "y": 105,
+      "label": "sidewalk"
+    },
+    {
+      "x": 18,
+      "y": 105,
+      "label": "sidewalk"
+    },
+    {
+      "x": 19,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 105,
+      "label": "road"
+    },
+    {
+      "x": 1,
+      "y": 106,
+      "label": "building"
+    },
+    {
+      "x": 2,
+      "y": 106,
+      "label": "sidewalk"
+    },
+    {
+      "x": 3,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 4,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 5,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 6,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 7,
+      "y": 106,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 106,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 106,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 106,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 106,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 106,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 106,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 107,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 107,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 107,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 107,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 107,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 107,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 107,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 15,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 16,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 17,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 18,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 19,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 20,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 21,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 22,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 23,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 24,
+      "y": 107,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 108,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 108,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 108,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 108,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 108,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 108,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 108,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 108,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 108,
+      "label": "road"
+    },
+    {
+      "x": 1,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 2,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 109,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 109,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 109,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 110,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 110,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 110,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 110,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 110,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 110,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 110,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 110,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 110,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 111,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 111,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 111,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 111,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 111,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 111,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 111,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 111,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 111,
+      "label": "road"
+    },
+    {
+      "x": 1,
+      "y": 112,
+      "label": "sidewalk"
+    },
+    {
+      "x": 2,
+      "y": 112,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 112,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 112,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 112,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 112,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 112,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 112,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 112,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 112,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 113,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 113,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 113,
+      "label": "building"
+    },
+    {
+      "x": 9,
+      "y": 113,
+      "label": "building"
+    },
+    {
+      "x": 10,
+      "y": 113,
+      "label": "building"
+    },
+    {
+      "x": 11,
+      "y": 113,
+      "label": "building"
+    },
+    {
+      "x": 12,
+      "y": 113,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 113,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 113,
+      "label": "road"
+    },
+    {
+      "x": 2,
+      "y": 114,
+      "label": "sidewalk"
+    },
+    {
+      "x": 7,
+      "y": 114,
+      "label": "sidewalk"
+    },
+    {
+      "x": 8,
+      "y": 114,
+      "label": "sidewalk"
+    },
+    {
+      "x": 9,
+      "y": 114,
+      "label": "sidewalk"
+    },
+    {
+      "x": 10,
+      "y": 114,
+      "label": "sidewalk"
+    },
+    {
+      "x": 11,
+      "y": 114,
+      "label": "sidewalk"
+    },
+    {
+      "x": 12,
+      "y": 114,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 114,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 114,
+      "label": "road"
+    },
+    {
+      "x": 1,
+      "y": 115,
+      "label": "sidewalk"
+    },
+    {
+      "x": 2,
+      "y": 115,
+      "label": "sidewalk"
+    },
+    {
+      "x": 13,
+      "y": 115,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 115,
+      "label": "road"
+    },
+    {
+      "x": 13,
+      "y": 116,
+      "label": "road"
+    },
+    {
+      "x": 14,
+      "y": 116,
+      "label": "road"
+    }
+  ],
+  "behaviorLabels": {
+    "walkable": [],
+    "parkable": [],
+    "drivable": []
+  }
+}

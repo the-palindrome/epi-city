@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "map-editor": "node map-editor/server.mjs",
+    "map-editor:deps": "node map-editor/setup-python-env.mjs"
   },
   "devDependencies": {
     "vite": "^8.0.10"

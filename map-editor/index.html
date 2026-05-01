@@ -1,0 +1,2176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Epi City Map Editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --panel: rgba(17, 21, 18, 0.92);
+        --panel-soft: rgba(32, 39, 33, 0.92);
+        --line: rgba(220, 230, 210, 0.2);
+        --text: #edf4e9;
+        --muted: #aeb9ac;
+        --accent: #f2cc47;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #101410;
+        color: var(--text);
+        font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        cursor: crosshair;
+      }
+
+      .panel {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        width: 330px;
+        max-height: calc(100vh - 28px);
+        overflow: auto;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.36);
+        user-select: none;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .hint {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .section {
+        padding-top: 12px;
+        margin-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+
+      .divider {
+        height: 1px;
+        margin: 12px 0;
+        background: var(--line);
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 8px 0;
+      }
+
+      .button-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+      }
+
+      button,
+      select,
+      input[type='range'] {
+        font: inherit;
+      }
+
+      button,
+      select {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-soft);
+        color: var(--text);
+      }
+
+      button {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        padding: 8px 9px;
+        cursor: pointer;
+      }
+
+      button:hover,
+      button.active {
+        border-color: rgba(242, 204, 71, 0.72);
+        box-shadow: inset 0 0 0 1px rgba(242, 204, 71, 0.24);
+      }
+
+      button.primary {
+        justify-content: center;
+        background: rgba(242, 204, 71, 0.18);
+        border-color: rgba(242, 204, 71, 0.62);
+      }
+
+      select {
+        padding: 6px 8px;
+      }
+
+      label {
+        color: var(--muted);
+      }
+
+      input[type='checkbox'] {
+        accent-color: var(--accent);
+      }
+
+      .swatch {
+        width: 14px;
+        height: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.42);
+        border-radius: 4px;
+        flex: 0 0 auto;
+      }
+
+      .swatch.empty {
+        background:
+          linear-gradient(135deg, transparent 44%, rgba(242, 204, 71, 0.92) 45%, rgba(242, 204, 71, 0.92) 55%, transparent 56%),
+          rgba(255, 255, 255, 0.05);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 3px 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .stats strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .status {
+        min-height: 18px;
+        color: var(--accent);
+        font-size: 12px;
+      }
+
+      .footer {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .badge {
+        padding: 1px 5px 2px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="map"></canvas>
+    <input id="atlas-file" type="file" accept="image/webp,image/png,image/jpeg" hidden>
+    <input id="tile-config-file" type="file" accept="application/json,.json" hidden>
+    <input id="texture-rows-file" type="file" accept="application/json,.json" hidden>
+    <input id="texture-manifest-file" type="file" accept="application/json,.json" hidden>
+
+    <aside class="panel">
+      <h1>Map Editor</h1>
+      <p class="hint">Paint the current editable 256x256 map state directly. Wheel zooms, right/middle drag or hold Space pans, left drag paints.</p>
+
+      <div class="section">
+        <div class="row">
+          <label for="paint-layer">Paint layer</label>
+          <select id="paint-layer">
+            <option value="type">tile type</option>
+            <option value="texture">texture</option>
+            <option value="walkable">walkable</option>
+            <option value="parkable">parkable</option>
+            <option value="drivable">drivable</option>
+          </select>
+        </div>
+        <div class="button-grid" id="label-buttons"></div>
+      </div>
+
+      <div class="section">
+        <div class="row">
+          <label for="brush-size">Brush</label>
+          <select id="brush-size">
+            <option value="1">1x1</option>
+            <option value="3">3x3</option>
+            <option value="5">5x5</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="overlay-opacity">Layer opacity</label>
+          <input id="overlay-opacity" type="range" min="0.15" max="1" step="0.05" value="0.72">
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="row">
+          <label><input id="show-overlay" type="checkbox" checked> current layer</label>
+        </div>
+        <div class="row">
+          <label><input id="show-grid" type="checkbox" checked> grid</label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="button-grid">
+          <button id="load-atlas" type="button">Load Atlas</button>
+          <button id="load-tile-config" type="button">Load Tile Configuration</button>
+          <button id="load-texture-rows" type="button">Load Texture Rows</button>
+          <button id="load-texture-manifest" type="button">Load Texture Manifest</button>
+          <button id="save-tile-config" class="primary" type="button" title="Writes semantic rows and behavior flags for the app map.">Save Tile Configuration</button>
+          <button id="save-texture-rows" type="button" title="Writes textureRows for the app map.">Save Texture Rows</button>
+          <button id="save-texture-manifest" type="button" title="Writes atlas frame metadata only. Texture painting is saved separately with texture rows.">Save Texture Manifest</button>
+          <button id="reset-defaults" type="button">Reset to defaults</button>
+          <button id="fit" type="button">Fit map</button>
+          <button id="undo" type="button">Undo</button>
+          <button id="redo" type="button">Redo</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="divider"></div>
+        <div class="button-grid">
+          <button id="train" class="primary" type="button">Train random forest</button>
+          <button id="predict" type="button">Predict labels</button>
+        </div>
+        <div class="divider"></div>
+      </div>
+
+      <div class="section stats" id="stats"></div>
+      <div class="section status" id="status">Loading...</div>
+      <div class="footer">
+        Current tile: <span class="badge" id="cursor-tile">outside</span><br>
+        Editing: <span class="badge" id="map-name">untitled default map</span>
+      </div>
+    </aside>
+
+    <script type="module">
+      const GRID_SIZE = 256;
+      const DEFAULT_TILE_SIZE = 32;
+      const DEFAULT_TEXTURE_SET = 'liberty-city-clean';
+      const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
+      const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
+      const EMPTY_LABEL_VALUE = null;
+      const TYPE_COLORS = Object.freeze({
+        road: '#111611',
+        sidewalk: '#a6aca3',
+        park: '#4da23f',
+        water: '#0786c8',
+        building: '#68716b',
+        obstacle: '#d94a48',
+        unknown: '#ffffff'
+      });
+      const BEHAVIOR_COLORS = Object.freeze({
+        true: '#2bd36f',
+        false: '#d94a48'
+      });
+      const TYPE_KEYS = Object.freeze({
+        '1': 'road',
+        '2': 'sidewalk',
+        '3': 'park',
+        '4': 'water',
+        '5': 'building',
+        '6': 'obstacle',
+        e: ''
+      });
+      const BEHAVIOR_KEYS = Object.freeze({
+        t: true,
+        f: false,
+        e: null
+      });
+      const SAFE_SYMBOLS = Object.freeze([...('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~')]);
+
+      const canvas = document.getElementById('map');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      const atlasFileInput = document.getElementById('atlas-file');
+      const tileConfigFileInput = document.getElementById('tile-config-file');
+      const textureRowsFileInput = document.getElementById('texture-rows-file');
+      const textureManifestFileInput = document.getElementById('texture-manifest-file');
+      const paintLayer = document.getElementById('paint-layer');
+      const labelButtons = document.getElementById('label-buttons');
+      const brushSize = document.getElementById('brush-size');
+      const overlayOpacity = document.getElementById('overlay-opacity');
+      const showOverlay = document.getElementById('show-overlay');
+      const showGrid = document.getElementById('show-grid');
+      const trainButton = document.getElementById('train');
+      const predictButton = document.getElementById('predict');
+      const status = document.getElementById('status');
+      const stats = document.getElementById('stats');
+      const cursorTile = document.getElementById('cursor-tile');
+      const mapName = document.getElementById('map-name');
+
+      const state = {
+        config: null,
+        sourceImage: null,
+        atlasImage: null,
+        atlasDataUrl: null,
+        atlasFileName: null,
+        textureManifest: null,
+        textureManifestFileName: null,
+        image: null,
+        map: null,
+        latestPrediction: null,
+        trainingSummary: null,
+        selectedTypeLabel: EMPTY_LABEL_VALUE,
+        selectedBehaviorValue: EMPTY_LABEL_VALUE,
+        selectedTextureId: null,
+        texturePickMode: true,
+        undoStack: [],
+        redoStack: [],
+        dirty: false,
+        semanticRowsDirty: false,
+        textureRowsDirty: false,
+        isPainting: false,
+        isPanning: false,
+        spaceDown: false,
+        currentStroke: null,
+        lastPointer: { x: 0, y: 0 },
+        hoverTile: null,
+        view: { x: 0, y: 0, zoom: 1 }
+      };
+
+      init().catch((error) => {
+        console.error(error);
+        setStatus(error.message, true);
+      });
+
+      async function init() {
+        state.config = await fetchJson('/api/config').catch(() => ({ sourceImageUrl: '/source-image' }));
+        state.map = createDefaultEditableMap();
+        state.sourceImage = await loadImage(state.config.sourceImageUrl || '/source-image');
+        state.image = state.sourceImage;
+        const defaultTextureAssetError = await loadDefaultTextureAssets().catch((error) => {
+          console.warn(error);
+          return error;
+        });
+        createLabelButtons();
+        resizeCanvas();
+        fitMap();
+        installEvents();
+        updateStats();
+        setStatus(defaultTextureAssetError
+          ? `Ready. Default texture preview could not load: ${defaultTextureAssetError.message}`
+          : state.config.defaultTileConfiguration
+          ? 'Ready. Default empty tile configuration, current texture rows, and clean Liberty City texture preview are loaded.'
+          : 'Ready. Load an atlas, tile configuration, texture rows, and texture manifest separately.');
+        draw();
+      }
+
+      function createDefaultEditableMap() {
+        if (state.config && state.config.defaultTileConfiguration) {
+          return editableMapFromJson(
+            state.config.defaultTileConfiguration,
+            state.config.defaultTileConfigurationPath || 'empty-tile-layout.json',
+            {
+              sourceName: state.config.defaultTileConfigurationName || 'default empty tile configuration',
+              visualSource: 'source image',
+              textureRows: state.config.defaultTextureLayout && state.config.defaultTextureLayout.textureRows,
+              textureRowsFileName: state.config.defaultTextureLayoutPath || 'texture-layout.json',
+              originalTextureLayout: state.config.defaultTextureLayout || null
+            }
+          );
+        }
+
+        return createFilledEditableMap(EMPTY_LABEL_VALUE, 'untitled-default-map.json', {
+          sourceName: 'untitled default map',
+          tileSize: DEFAULT_TILE_SIZE,
+          textureSet: DEFAULT_TEXTURE_SET
+        });
+      }
+
+      function createFilledEditableMap(type, fileName, metadata = {}) {
+        const rows = Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => type));
+        const behaviorRows = Object.fromEntries(BEHAVIOR_LABELS.map((property) => [
+          property,
+          Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => EMPTY_LABEL_VALUE))
+        ]));
+
+        return {
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          tileSize: metadata.tileSize || DEFAULT_TILE_SIZE,
+          textureSet: metadata.textureSet || DEFAULT_TEXTURE_SET,
+          sourceName: metadata.sourceName || fileName,
+          visualSource: metadata.visualSource || 'source image',
+          fileName,
+          rows,
+          behaviorRows,
+          textureRows: metadata.textureRows ? cloneTextureRows(metadata.textureRows) : createDefaultTextureRows(),
+          textureRowsFileName: metadata.textureRowsFileName || 'texture-layout.json',
+          originalTextureLayout: metadata.originalTextureLayout || null,
+          originalMap: null
+        };
+      }
+
+      function createDefaultTextureRows() {
+        if (state.config && state.config.defaultTextureLayout) {
+          return normalizeTextureRows(state.config.defaultTextureLayout.textureRows, { fallbackToZero: true });
+        }
+
+        return createZeroTextureRows();
+      }
+
+      function createZeroTextureRows() {
+        return Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => 0));
+      }
+
+      async function loadDefaultTextureAssets() {
+        if (!state.config.defaultAtlasUrl || !state.config.defaultTextureManifestUrl) {
+          return;
+        }
+
+        const manifest = await fetchJson(state.config.defaultTextureManifestUrl);
+        validateTextureManifest(manifest);
+        const atlasDataUrl = await fetchDataUrl(state.config.defaultAtlasUrl, 'default texture atlas');
+        state.atlasImage = await loadImage(atlasDataUrl);
+        state.atlasDataUrl = atlasDataUrl;
+        state.atlasFileName = state.config.defaultAtlasPath || manifest.atlas.file || 'default texture atlas';
+        state.textureManifest = manifest;
+        state.textureManifestFileName = state.config.defaultTextureManifestPath || 'manifest.json';
+        state.map.textureSet = manifest.name || state.map.textureSet || DEFAULT_TEXTURE_SET;
+        state.image = renderTextureMapImage(state.map.textureRows, state.textureManifest, state.atlasImage);
+        state.map.visualSource = state.atlasFileName;
+      }
+
+      function installEvents() {
+        window.addEventListener('resize', () => {
+          resizeCanvas();
+          draw();
+        });
+
+        canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        canvas.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', endPointerAction);
+        window.addEventListener('blur', endPointerAction);
+
+        paintLayer.addEventListener('change', () => {
+          createLabelButtons();
+          updateStats();
+          draw();
+        });
+
+        for (const element of [brushSize, overlayOpacity, showOverlay, showGrid]) {
+          element.addEventListener('input', draw);
+          element.addEventListener('change', draw);
+        }
+
+        document.getElementById('load-atlas').addEventListener('click', () => atlasFileInput.click());
+        document.getElementById('load-tile-config').addEventListener('click', () => tileConfigFileInput.click());
+        document.getElementById('load-texture-rows').addEventListener('click', () => textureRowsFileInput.click());
+        document.getElementById('load-texture-manifest').addEventListener('click', () => textureManifestFileInput.click());
+        atlasFileInput.addEventListener('change', loadSelectedAtlas);
+        tileConfigFileInput.addEventListener('change', loadSelectedTileConfiguration);
+        textureRowsFileInput.addEventListener('change', loadSelectedTextureRows);
+        textureManifestFileInput.addEventListener('change', loadSelectedTextureManifest);
+        document.getElementById('save-tile-config').addEventListener('click', saveTileConfiguration);
+        document.getElementById('save-texture-rows').addEventListener('click', saveTextureRows);
+        document.getElementById('save-texture-manifest').addEventListener('click', saveTextureManifest);
+        document.getElementById('reset-defaults').addEventListener('click', resetToDefaults);
+        trainButton.addEventListener('click', trainModel);
+        predictButton.addEventListener('click', applyLatestPrediction);
+        document.getElementById('fit').addEventListener('click', () => {
+          fitMap();
+          draw();
+        });
+        document.getElementById('undo').addEventListener('click', undo);
+        document.getElementById('redo').addEventListener('click', redo);
+
+        window.addEventListener('keydown', (event) => {
+          if (isEditableTarget(event.target)) {
+            return;
+          }
+
+          if (event.code === 'Space') {
+            state.spaceDown = true;
+            event.preventDefault();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+            event.preventDefault();
+            saveTileConfiguration();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'z') {
+            event.preventDefault();
+            redo();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+            event.preventDefault();
+            undo();
+            return;
+          }
+
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+            event.preventDefault();
+            redo();
+            return;
+          }
+
+          const key = event.key.toLowerCase();
+
+          if (paintLayer.value === 'type' && Object.prototype.hasOwnProperty.call(TYPE_KEYS, key)) {
+            setSelectedPaintValue(TYPE_KEYS[key]);
+            event.preventDefault();
+            return;
+          }
+
+          if (paintLayer.value === 'texture' && ['i', 'p'].includes(key)) {
+            setSelectedPaintValue('pick');
+            event.preventDefault();
+            return;
+          }
+
+          if (!['type', 'texture'].includes(paintLayer.value) && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
+            const value = BEHAVIOR_KEYS[key];
+            setSelectedPaintValue(value === null ? '' : String(value));
+            event.preventDefault();
+          }
+        });
+
+        window.addEventListener('keyup', (event) => {
+          if (event.code === 'Space') {
+            state.spaceDown = false;
+          }
+        });
+      }
+
+      function createLabelButtons() {
+        labelButtons.innerHTML = '';
+        const layer = paintLayer.value;
+        const buttons = layer === 'type'
+          ? [
+              { value: '', label: 'empty', color: null },
+              ...TYPE_LABELS.map((label) => ({ value: label, label, color: TYPE_COLORS[label] }))
+            ]
+          : layer === 'texture'
+            ? [
+                { value: 'pick', label: 'pick texture', color: null },
+                { value: 'paint', label: texturePaintLabel(), color: null }
+              ]
+          : [
+              { value: '', label: `${layer}: empty`, color: null },
+              { value: 'true', label: `${layer}: true`, color: BEHAVIOR_COLORS.true },
+              { value: 'false', label: `${layer}: false`, color: BEHAVIOR_COLORS.false }
+            ];
+
+        for (const buttonInfo of buttons) {
+          const button = document.createElement('button');
+          const swatch = document.createElement('span');
+          const text = document.createElement('span');
+
+          swatch.className = 'swatch';
+          if (buttonInfo.color) {
+            swatch.style.background = buttonInfo.color;
+          } else {
+            swatch.classList.add('empty');
+          }
+          text.textContent = buttonInfo.label;
+          button.type = 'button';
+          button.dataset.value = buttonInfo.value;
+          button.appendChild(swatch);
+          button.appendChild(text);
+          button.addEventListener('click', () => setSelectedPaintValue(buttonInfo.value));
+          labelButtons.appendChild(button);
+        }
+
+        refreshActiveButton();
+      }
+
+      function setSelectedPaintValue(value) {
+        if (paintLayer.value === 'type') {
+          state.selectedTypeLabel = value === '' ? EMPTY_LABEL_VALUE : value;
+        } else if (paintLayer.value === 'texture') {
+          if (value === 'paint' && !hasSelectedTexture()) {
+            setStatus('Pick a texture from the map before painting texture IDs.', true);
+            return;
+          }
+
+          state.texturePickMode = value !== 'paint';
+        } else {
+          state.selectedBehaviorValue = value === '' ? EMPTY_LABEL_VALUE : value === 'true';
+        }
+
+        refreshActiveButton();
+      }
+
+      function selectedPaintValue() {
+        if (paintLayer.value === 'type') {
+          return state.selectedTypeLabel ?? '';
+        }
+
+        if (paintLayer.value === 'texture') {
+          return state.texturePickMode ? 'pick' : 'paint';
+        }
+
+        return state.selectedBehaviorValue === null ? '' : String(state.selectedBehaviorValue);
+      }
+
+      function texturePaintLabel() {
+        return hasSelectedTexture() ? `texture ${state.selectedTextureId}` : 'texture none';
+      }
+
+      function refreshActiveButton() {
+        const selected = selectedPaintValue();
+
+        for (const button of labelButtons.querySelectorAll('button')) {
+          button.classList.toggle('active', button.dataset.value === selected);
+        }
+      }
+
+      async function loadSelectedAtlas() {
+        const file = selectedFile(atlasFileInput);
+        atlasFileInput.value = '';
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          setStatus(`Loading atlas ${file.name}...`);
+          const atlasDataUrl = await readFileAsDataUrl(file);
+          state.atlasImage = await loadImage(atlasDataUrl);
+          state.atlasDataUrl = atlasDataUrl;
+
+          state.atlasFileName = file.name;
+          refreshVisualFromAssets({ fit: true });
+          setStatus(formatTexturePreviewStatus(`Loaded atlas ${file.name}.`));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function loadSelectedTileConfiguration() {
+        const file = selectedFile(tileConfigFileInput);
+        tileConfigFileInput.value = '';
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          setStatus(`Loading tile configuration ${file.name}...`);
+          const payload = JSON.parse(await file.text());
+          replaceCurrentMap(editableMapFromJson(payload, file.name), {
+            fit: true
+          });
+          setStatus(formatTexturePreviewStatus(`Loaded tile configuration ${file.name}.`));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function loadSelectedTextureRows() {
+        const file = selectedFile(textureRowsFileInput);
+        textureRowsFileInput.value = '';
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          setStatus(`Loading texture rows ${file.name}...`);
+          const payload = JSON.parse(await file.text());
+          validateTextureRowsJson(payload);
+          replaceTextureRows(payload, file.name, { fit: true });
+          setStatus(formatTexturePreviewStatus(`Loaded texture rows ${file.name}.`));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function loadSelectedTextureManifest() {
+        const file = selectedFile(textureManifestFileInput);
+        textureManifestFileInput.value = '';
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          setStatus(`Loading texture manifest ${file.name}...`);
+          const manifest = JSON.parse(await file.text());
+          validateTextureManifest(manifest);
+          state.textureManifest = manifest;
+          state.textureManifestFileName = file.name;
+          state.map.textureSet = manifest.name || state.map.textureSet || DEFAULT_TEXTURE_SET;
+          if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
+            state.selectedTextureId = null;
+            state.texturePickMode = true;
+          }
+          createLabelButtons();
+          refreshVisualFromAssets({ fit: true });
+          setStatus(formatTexturePreviewStatus(`Loaded texture manifest ${file.name}.`));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      function selectedFile(input) {
+        return input.files && input.files[0] ? input.files[0] : null;
+      }
+
+      function formatTexturePreviewStatus(prefix) {
+        const uniqueTextures = countUniqueTextures();
+
+        if (state.atlasImage && state.textureManifest) {
+          const overlayHint = showOverlay.checked && paintLayer.value !== 'texture'
+            ? ' The current layer overlay may tint subtle texture differences.'
+            : '';
+          return `${prefix} Rendering ${uniqueTextures} texture IDs from textureRows.${overlayHint}`;
+        }
+
+        return `${prefix} Load both an atlas and texture manifest to preview ${uniqueTextures} texture IDs from textureRows.`;
+      }
+
+      function refreshVisualFromAssets(options = {}) {
+        if (state.atlasImage && state.textureManifest) {
+          state.image = renderTextureMapImage(state.map.textureRows, state.textureManifest, state.atlasImage);
+          state.map.visualSource = state.atlasFileName || 'loaded atlas';
+        } else {
+          state.image = state.sourceImage;
+          state.map.visualSource = 'source image';
+        }
+
+        if (options.fit && state.image) {
+          fitMap();
+        }
+
+        updateStats();
+        draw();
+      }
+
+      function editableMapFromJson(payload, fileName, metadata = {}) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          throw new Error('Map JSON must be an object.');
+        }
+
+        validateEpiCityMap(payload);
+        const textureRows = resolveTextureRowsForMap(payload, metadata);
+        const behaviorRows = Object.fromEntries(BEHAVIOR_LABELS.map((property) => [property, []]));
+        const rows = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = [];
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const entry = payload.legend[payload.rows[y][x]];
+            row.push(editorTypeForLegendEntry(entry));
+
+            for (const property of BEHAVIOR_LABELS) {
+              if (!behaviorRows[property][y]) {
+                behaviorRows[property][y] = [];
+              }
+
+              behaviorRows[property][y].push(entry[property]);
+            }
+          }
+
+          rows.push(row);
+        }
+
+        return {
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          tileSize: payload.tileSize,
+          textureSet: payload.textureSet || DEFAULT_TEXTURE_SET,
+          sourceName: metadata.sourceName || fileName,
+          visualSource: metadata.visualSource || 'source image',
+          fileName,
+          rows,
+          behaviorRows,
+          textureRows,
+          textureRowsFileName: metadata.textureRowsFileName || state.map?.textureRowsFileName || (payload.textureRows ? fileName : 'texture-layout.json'),
+          originalTextureLayout: metadata.originalTextureLayout || state.map?.originalTextureLayout || null,
+          originalMap: payload
+        };
+      }
+
+      function resolveTextureRowsForMap(payload, metadata) {
+        if (metadata.textureRows) {
+          validateTextureRows(metadata.textureRows);
+          return cloneTextureRows(metadata.textureRows);
+        }
+
+        if (payload.textureRows) {
+          validateTextureRows(payload.textureRows);
+          return cloneTextureRows(payload.textureRows);
+        }
+
+        if (state.map && state.map.textureRows) {
+          return cloneTextureRows(state.map.textureRows);
+        }
+
+        return createDefaultTextureRows();
+      }
+
+      function renderTextureMapImage(textureRows, manifest, atlasImage) {
+        validateTextureManifest(manifest);
+        validateTextureRowsForManifest(textureRows, manifest);
+
+        const tileSize = state.map.tileSize || manifest.tileSize || DEFAULT_TILE_SIZE;
+        const imageWidth = GRID_SIZE * tileSize;
+        const imageHeight = GRID_SIZE * tileSize;
+        const output = document.createElement('canvas');
+        const renderContext = output.getContext('2d', { alpha: false });
+
+        output.width = imageWidth;
+        output.height = imageHeight;
+        renderContext.imageSmoothingEnabled = false;
+        renderContext.fillStyle = '#101410';
+        renderContext.fillRect(0, 0, imageWidth, imageHeight);
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const frame = manifest.frames[textureRows[y][x]];
+            const bounds = tileBoundsForSize(x, y, imageWidth, imageHeight);
+            renderContext.drawImage(
+              atlasImage,
+              frame[0],
+              frame[1],
+              frame[2],
+              frame[3],
+              bounds.x0,
+              bounds.y0,
+              bounds.x1 - bounds.x0,
+              bounds.y1 - bounds.y0
+            );
+          }
+        }
+
+        return output;
+      }
+
+      function replaceCurrentMap(nextMap, options = {}) {
+        endPointerAction();
+        state.map = nextMap;
+        state.latestPrediction = options.latestPrediction || null;
+        state.trainingSummary = options.trainingSummary || null;
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        state.dirty = Boolean(options.dirty);
+        state.semanticRowsDirty = Boolean(options.semanticRowsDirty);
+        state.textureRowsDirty = Boolean(options.textureRowsDirty);
+
+        if (options.useSourceImage) {
+          state.image = state.sourceImage;
+          state.map.visualSource = 'source image';
+          if (options.fit && state.image) {
+            fitMap();
+          }
+          updateStats();
+          draw();
+          return;
+        }
+
+        refreshVisualFromAssets({ fit: Boolean(options.fit) });
+      }
+
+      function replaceTextureRows(textureRowsPayload, fileName, options = {}) {
+        endPointerAction();
+        state.map.textureRows = cloneTextureRows(textureRowsPayload.textureRows);
+        state.map.textureRowsFileName = fileName;
+        state.map.originalTextureLayout = textureRowsPayload;
+        state.map.textureSet = textureRowsPayload.textureSet || state.map.textureSet || DEFAULT_TEXTURE_SET;
+        state.latestPrediction = null;
+        state.trainingSummary = null;
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        state.textureRowsDirty = Boolean(options.dirty);
+        state.dirty = state.semanticRowsDirty || state.textureRowsDirty;
+
+        if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
+          state.selectedTextureId = null;
+          state.texturePickMode = true;
+          createLabelButtons();
+        }
+
+        refreshVisualFromAssets({ fit: Boolean(options.fit) });
+      }
+
+      function resetToDefaults() {
+        replaceCurrentMap(createDefaultEditableMap(), {
+          dirty: false,
+          semanticRowsDirty: false,
+          textureRowsDirty: false,
+          fit: true
+        });
+        setStatus(state.config && state.config.defaultTileConfiguration
+          ? 'Reset the editor to the default empty tile configuration and current texture rows.'
+          : 'Reset the editor to an empty 256x256 sparse-label map.');
+      }
+
+      async function saveTileConfiguration() {
+        endPointerAction();
+        const fileName = suggestedTileConfigurationSaveName();
+
+        try {
+          const text = `${JSON.stringify(buildEpiCityJson(), null, 2)}\n`;
+          await saveTextFile(fileName, text, 'Epi City Tile Configuration JSON');
+          state.semanticRowsDirty = false;
+          state.dirty = state.textureRowsDirty;
+          updateStats();
+          setStatus(`Saved tile configuration ${fileName}. Empty labels remain null; save texture rows separately for texture painting changes.`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            setStatus('Save tile configuration canceled.');
+            return;
+          }
+
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function saveTextureRows() {
+        endPointerAction();
+        const fileName = suggestedTextureRowsSaveName();
+
+        try {
+          const text = `${JSON.stringify(buildTextureRowsJson(), null, 2)}\n`;
+          await saveTextFile(fileName, text, 'Epi City Texture Rows JSON');
+          state.textureRowsDirty = false;
+          state.dirty = state.semanticRowsDirty;
+          updateStats();
+          setStatus(`Saved texture rows ${fileName}. The main app reads textureRows from this file.`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            setStatus('Save texture rows canceled.');
+            return;
+          }
+
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function saveTextureManifest() {
+        if (!state.textureManifest) {
+          setStatus('Load a texture manifest before saving one.', true);
+          return;
+        }
+
+        if (state.dirty) {
+          const dirtyFiles = [];
+          if (state.semanticRowsDirty) {
+            dirtyFiles.push('tile configuration');
+          }
+          if (state.textureRowsDirty) {
+            dirtyFiles.push('texture rows');
+          }
+          setStatus(`Unsaved ${dirtyFiles.join(' and ')} changes are pending. Save Texture Manifest only writes atlas frame metadata.`, true);
+          return;
+        }
+
+        const fileName = suggestedTextureManifestSaveName();
+
+        try {
+          const text = `${JSON.stringify(state.textureManifest)}\n`;
+          await saveTextFile(fileName, text, 'Texture Manifest JSON');
+          setStatus(`Saved texture manifest ${fileName}. This only writes atlas frame metadata.`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            setStatus('Save texture manifest canceled.');
+            return;
+          }
+
+          console.error(error);
+          setStatus(error.message, true);
+        }
+      }
+
+      async function saveTextFile(fileName, text, description) {
+        if ('showSaveFilePicker' in window) {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+              description,
+              accept: { 'application/json': ['.json'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(text);
+          await writable.close();
+        } else {
+          downloadText(fileName, text, 'application/json');
+        }
+      }
+
+      function suggestedTileConfigurationSaveName() {
+        const base = (state.map.fileName || 'epi-city-map.json').replace(/\.json$/i, '');
+        return `${base || 'tile-layout'}-edited.json`;
+      }
+
+      function suggestedTextureRowsSaveName() {
+        const base = (state.map.textureRowsFileName || 'texture-layout.json').replace(/\.json$/i, '');
+        return `${base || 'texture-layout'}-edited.json`;
+      }
+
+      function suggestedTextureManifestSaveName() {
+        const base = (state.textureManifestFileName || 'manifest.json').replace(/\.json$/i, '');
+        return `${base || 'manifest'}-edited.json`;
+      }
+
+      function downloadText(fileName, text, mimeType) {
+        const blob = new Blob([text], { type: `${mimeType};charset=utf-8` });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+
+      async function trainModel() {
+        trainButton.disabled = true;
+
+        try {
+          setStatus('Training random forests from the current sparse labels...');
+          const textureFeatureSource = buildTextureFeatureSourceForTraining();
+          const payload = {
+            trees: 48,
+            gridSize: GRID_SIZE,
+            rows: cloneRows(state.map.rows),
+            behaviorRows: cloneBehaviorRows(state.map.behaviorRows)
+          };
+
+          if (textureFeatureSource) {
+            payload.textureFeatureSource = textureFeatureSource;
+            setStatus('Training random forests from current labels and rendered textureRows...');
+          }
+
+          const response = await fetch('/api/train', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const result = await readJsonResponse(response, 'Train model');
+
+          if (!response.ok) {
+            throw new Error(result.error || `Training failed with HTTP ${response.status}.`);
+          }
+
+          validateTypeRows(result.rows);
+          validateBehaviorRowsObject(result.behaviorRows);
+          state.latestPrediction = {
+            rows: cloneRows(result.rows),
+            behaviorRows: cloneBehaviorRows(result.behaviorRows),
+            summary: result.summary || null
+          };
+          state.trainingSummary = result.summary || null;
+          updateStats();
+          draw();
+          setStatus(formatTrainingStatus(result.summary));
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message, true);
+        } finally {
+          trainButton.disabled = false;
+        }
+      }
+
+      function formatTrainingStatus(summary) {
+        if (!summary) {
+          return 'Training succeeded. Predict labels will apply the latest prediction to the editable map.';
+        }
+
+        const trained = [];
+        const skipped = [];
+        collectTrainingStatus('type', summary.type, trained, skipped);
+
+        for (const property of BEHAVIOR_LABELS) {
+          collectTrainingStatus(property, summary.behavior && summary.behavior[property], trained, skipped);
+        }
+
+        const featureSource = summary.featureSource ? ` Features: ${summary.featureSource}.` : '';
+        return `Training stored a prediction without changing the map. Trained: ${trained.length ? trained.join(', ') : 'none'}. Skipped: ${skipped.length ? skipped.join(', ') : 'none'}.${featureSource}`;
+      }
+
+      function buildTextureFeatureSourceForTraining() {
+        if (state.atlasDataUrl && state.textureManifest && state.map.visualSource !== 'source image') {
+          validateTextureRowsForManifest(state.map.textureRows, state.textureManifest);
+          return {
+            atlasImage: state.atlasDataUrl,
+            manifest: state.textureManifest,
+            textureRows: cloneTextureRows(state.map.textureRows)
+          };
+        }
+
+        if (state.textureRowsDirty) {
+          throw new Error('Load both an atlas and texture manifest before training with unsaved texture edits.');
+        }
+
+        return null;
+      }
+
+      function collectTrainingStatus(name, summary, trained, skipped) {
+        if (summary && summary.trained) {
+          trained.push(`${name} (${summary.samples} samples)`);
+        } else {
+          skipped.push(`${name} (${summary ? summary.samples : 0} samples)`);
+        }
+      }
+
+      function applyLatestPrediction() {
+        endPointerAction();
+
+        if (!state.latestPrediction) {
+          setStatus('Train random forest first; there is no latest prediction to apply.', true);
+          return;
+        }
+
+        const operation = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const before = snapshotTile(x, y);
+            const after = {
+              type: state.latestPrediction.rows[y][x],
+              textureId: before.textureId,
+              walkable: state.latestPrediction.behaviorRows.walkable[y][x],
+              parkable: state.latestPrediction.behaviorRows.parkable[y][x],
+              drivable: state.latestPrediction.behaviorRows.drivable[y][x]
+            };
+
+            if (!sameTileSnapshot(before, after)) {
+              restoreTileSnapshot(x, y, after);
+              operation.push({ x, y, before, after });
+            }
+          }
+        }
+
+        if (operation.length === 0) {
+          setStatus('Latest prediction already matches the editable map.');
+          return;
+        }
+
+        state.undoStack.push(operation);
+        state.redoStack.length = 0;
+        state.dirty = true;
+        state.semanticRowsDirty = true;
+        state.map.sourceName = `${state.map.sourceName} + prediction`;
+        updateStats();
+        draw();
+        setStatus(`Applied latest prediction to ${operation.length} tiles. Undo reverts it as one operation.`);
+      }
+
+      function onWheel(event) {
+        event.preventDefault();
+        const point = canvasPoint(event);
+        const imagePoint = screenToImage(point.x, point.y);
+        const factor = Math.exp(-event.deltaY * 0.0012);
+        const nextZoom = clamp(state.view.zoom * factor, 0.1, 80);
+
+        state.view.zoom = nextZoom;
+        state.view.x = point.x - imagePoint.x * nextZoom;
+        state.view.y = point.y - imagePoint.y * nextZoom;
+        draw();
+      }
+
+      function onPointerDown(event) {
+        const point = canvasPoint(event);
+        state.lastPointer = point;
+        canvas.setPointerCapture(event.pointerId);
+
+        if (event.button === 1 || event.button === 2 || state.spaceDown) {
+          state.isPanning = true;
+          return;
+        }
+
+        if (event.button !== 0) {
+          return;
+        }
+
+        const tile = screenToTile(point.x, point.y);
+
+        if (!tile) {
+          return;
+        }
+
+        if (paintLayer.value === 'texture' && state.texturePickMode) {
+          pickTextureAt(tile.x, tile.y);
+          return;
+        }
+
+        state.isPainting = true;
+        state.currentStroke = new Map();
+        paintAt(tile.x, tile.y);
+      }
+
+      function onPointerMove(event) {
+        const point = canvasPoint(event);
+        const tile = screenToTile(point.x, point.y);
+
+        state.hoverTile = tile;
+        cursorTile.textContent = tile ? `${tile.x},${tile.y}` : 'outside';
+
+        if (state.isPanning) {
+          state.view.x += point.x - state.lastPointer.x;
+          state.view.y += point.y - state.lastPointer.y;
+          state.lastPointer = point;
+          draw();
+          return;
+        }
+
+        if (state.isPainting && tile) {
+          paintAt(tile.x, tile.y);
+          return;
+        }
+
+        draw();
+      }
+
+      function onPointerUp(event) {
+        endPointerAction();
+
+        if (canvas.hasPointerCapture(event.pointerId)) {
+          canvas.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      function endPointerAction() {
+        commitCurrentStroke();
+        state.isPainting = false;
+        state.isPanning = false;
+      }
+
+      function paintAt(tileX, tileY) {
+        const layer = paintLayer.value;
+
+        if (layer === 'texture' && !canPaintSelectedTexture()) {
+          return;
+        }
+
+        const radius = Math.floor(Number(brushSize.value) / 2);
+        let changed = false;
+
+        for (let y = tileY - radius; y <= tileY + radius; y += 1) {
+          for (let x = tileX - radius; x <= tileX + radius; x += 1) {
+            if (!inGrid(x, y)) {
+              continue;
+            }
+
+            changed = applyPaintToTile(x, y) || changed;
+          }
+        }
+
+        if (changed) {
+          state.dirty = true;
+
+          if (layer === 'texture') {
+            state.textureRowsDirty = true;
+            refreshVisualFromAssets();
+            setStatus(`Painted texture ${state.selectedTextureId}. Save Texture Rows to update the app map.`);
+          } else {
+            state.semanticRowsDirty = true;
+            state.latestPrediction = null;
+            state.trainingSummary = null;
+            updateStats();
+            draw();
+          }
+        }
+      }
+
+      function pickTextureAt(x, y) {
+        const textureId = state.map.textureRows[y][x];
+
+        if (!isValidTextureId(textureId)) {
+          setStatus(`Texture ${textureId} at ${x},${y} is not in the loaded texture manifest.`, true);
+          return;
+        }
+
+        state.selectedTextureId = textureId;
+        state.texturePickMode = false;
+        createLabelButtons();
+        updateStats();
+        draw();
+        setStatus(`Picked texture ${textureId} from ${x},${y}.`);
+      }
+
+      function canPaintSelectedTexture() {
+        if (!hasSelectedTexture()) {
+          setStatus('Pick a texture from the map before painting texture IDs.', true);
+          return false;
+        }
+
+        if (!isValidTextureId(state.selectedTextureId)) {
+          setStatus(`Texture ${state.selectedTextureId} is not in the loaded texture manifest.`, true);
+          return false;
+        }
+
+        return true;
+      }
+
+      function hasSelectedTexture() {
+        return Number.isInteger(state.selectedTextureId) && state.selectedTextureId >= 0;
+      }
+
+      function isValidTextureId(textureId) {
+        if (!Number.isInteger(textureId) || textureId < 0) {
+          return false;
+        }
+
+        return !state.textureManifest || textureId < state.textureManifest.frames.length;
+      }
+
+      function applyPaintToTile(x, y) {
+        const layer = paintLayer.value;
+        const before = snapshotTile(x, y);
+
+        if (layer === 'type') {
+          state.map.rows[y][x] = state.selectedTypeLabel;
+        } else if (layer === 'texture') {
+          state.map.textureRows[y][x] = state.selectedTextureId;
+        } else {
+          state.map.behaviorRows[layer][y][x] = state.selectedBehaviorValue;
+        }
+
+        const after = snapshotTile(x, y);
+
+        if (sameTileSnapshot(before, after)) {
+          return false;
+        }
+
+        recordStrokeChange(x, y, before, after);
+        return true;
+      }
+
+      function snapshotTile(x, y) {
+        return {
+          type: state.map.rows[y][x],
+          textureId: state.map.textureRows[y][x],
+          walkable: state.map.behaviorRows.walkable[y][x],
+          parkable: state.map.behaviorRows.parkable[y][x],
+          drivable: state.map.behaviorRows.drivable[y][x]
+        };
+      }
+
+      function sameTileSnapshot(a, b) {
+        return a.type === b.type && a.textureId === b.textureId && a.walkable === b.walkable && a.parkable === b.parkable && a.drivable === b.drivable;
+      }
+
+      function recordStrokeChange(x, y, before, after) {
+        if (!state.currentStroke) {
+          return;
+        }
+
+        const key = tileKey(x, y);
+        const existing = state.currentStroke.get(key);
+
+        if (existing) {
+          existing.after = after;
+          return;
+        }
+
+        state.currentStroke.set(key, { x, y, before, after });
+      }
+
+      function commitCurrentStroke() {
+        if (!state.currentStroke) {
+          return;
+        }
+
+        const operation = [...state.currentStroke.values()].filter((change) => !sameTileSnapshot(change.before, change.after));
+        state.currentStroke = null;
+
+        if (operation.length === 0) {
+          return;
+        }
+
+        state.undoStack.push(operation);
+        state.redoStack.length = 0;
+        updateStats();
+      }
+
+      function undo() {
+        endPointerAction();
+        const operation = state.undoStack.pop();
+
+        if (!operation) {
+          return;
+        }
+
+        for (const change of operation) {
+          restoreTileSnapshot(change.x, change.y, change.before);
+        }
+
+        state.redoStack.push(operation);
+        state.dirty = true;
+        state.trainingSummary = null;
+
+        if (operationChangesSemantics(operation)) {
+          state.semanticRowsDirty = true;
+        }
+
+        if (operationChangesTexture(operation)) {
+          state.textureRowsDirty = true;
+          refreshVisualFromAssets();
+        } else {
+          updateStats();
+          draw();
+        }
+      }
+
+      function redo() {
+        endPointerAction();
+        const operation = state.redoStack.pop();
+
+        if (!operation) {
+          return;
+        }
+
+        for (const change of operation) {
+          restoreTileSnapshot(change.x, change.y, change.after);
+        }
+
+        state.undoStack.push(operation);
+        state.dirty = true;
+        state.trainingSummary = null;
+
+        if (operationChangesSemantics(operation)) {
+          state.semanticRowsDirty = true;
+        }
+
+        if (operationChangesTexture(operation)) {
+          state.textureRowsDirty = true;
+          refreshVisualFromAssets();
+        } else {
+          updateStats();
+          draw();
+        }
+      }
+
+      function restoreTileSnapshot(x, y, snapshot) {
+        state.map.rows[y][x] = snapshot.type;
+        state.map.textureRows[y][x] = snapshot.textureId;
+
+        for (const property of BEHAVIOR_LABELS) {
+          state.map.behaviorRows[property][y][x] = snapshot[property];
+        }
+      }
+
+      function operationChangesTexture(operation) {
+        return operation.some((change) => change.before.textureId !== change.after.textureId);
+      }
+
+      function operationChangesSemantics(operation) {
+        return operation.some((change) =>
+          change.before.type !== change.after.type ||
+          change.before.walkable !== change.after.walkable ||
+          change.before.parkable !== change.after.parkable ||
+          change.before.drivable !== change.after.drivable
+        );
+      }
+
+      function draw() {
+        if (!state.image) {
+          return;
+        }
+
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#101410';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.setTransform(dpr * state.view.zoom, 0, 0, dpr * state.view.zoom, dpr * state.view.x, dpr * state.view.y);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(state.image, 0, 0);
+
+        if (showOverlay.checked) {
+          drawCurrentLayerOverlay(Number(overlayOpacity.value));
+        }
+
+        if (showGrid.checked) {
+          drawGrid();
+        }
+
+        drawHoverTile();
+      }
+
+      function drawCurrentLayerOverlay(alpha) {
+        const layer = paintLayer.value;
+        ctx.globalAlpha = alpha;
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (layer === 'type') {
+              const type = state.map.rows[y][x];
+
+              if (!isEmptyLabelValue(type)) {
+                drawTileFill(x, y, TYPE_COLORS[type] || TYPE_COLORS.unknown);
+              }
+            } else if (layer === 'texture') {
+              if (hasSelectedTexture() && state.map.textureRows[y][x] === state.selectedTextureId) {
+                drawTileFill(x, y, '#f2cc47');
+              }
+            } else {
+              const value = state.map.behaviorRows[layer][y][x];
+
+              if (!isEmptyLabelValue(value)) {
+                drawTileFill(x, y, BEHAVIOR_COLORS[String(value)]);
+              }
+            }
+          }
+        }
+
+        ctx.globalAlpha = 1;
+      }
+
+      function drawTileFill(x, y, color) {
+        const bounds = tileBounds(x, y);
+        ctx.fillStyle = color;
+        ctx.fillRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+      }
+
+      function drawGrid() {
+        if (state.view.zoom < 1.4) {
+          return;
+        }
+
+        ctx.strokeStyle = state.view.zoom > 5 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.11)';
+        ctx.lineWidth = 1 / state.view.zoom;
+        ctx.beginPath();
+
+        for (let i = 0; i <= GRID_SIZE; i += 1) {
+          const x = Math.round(i * state.image.width / GRID_SIZE);
+          const y = Math.round(i * state.image.height / GRID_SIZE);
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, state.image.height);
+          ctx.moveTo(0, y);
+          ctx.lineTo(state.image.width, y);
+        }
+
+        ctx.stroke();
+      }
+
+      function drawHoverTile() {
+        if (!state.hoverTile) {
+          return;
+        }
+
+        const bounds = tileBounds(state.hoverTile.x, state.hoverTile.y);
+        ctx.strokeStyle = '#f2cc47';
+        ctx.lineWidth = 2 / state.view.zoom;
+        ctx.strokeRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+      }
+
+      function buildEpiCityJson() {
+        if (state.map.originalMap && !state.semanticRowsDirty) {
+          const { textureRows, ...originalMap } = state.map.originalMap;
+          return {
+            ...originalMap,
+            width: GRID_SIZE,
+            height: GRID_SIZE,
+            tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
+            textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
+            legend: legendForSave(state.map.originalMap.legend),
+            rows: [...state.map.originalMap.rows]
+          };
+        }
+
+        const definitionToSymbol = new Map();
+        const legend = {};
+        const rows = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          let row = '';
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const definition = definitionForCell(x, y);
+            const key = JSON.stringify(definition);
+            let symbol = definitionToSymbol.get(key);
+
+            if (!symbol) {
+              symbol = SAFE_SYMBOLS[definitionToSymbol.size];
+
+              if (!symbol) {
+                throw new Error('Not enough legend symbols for generated Epi City map.');
+              }
+
+              definitionToSymbol.set(key, symbol);
+              legend[symbol] = definition;
+            }
+
+            row += symbol;
+          }
+
+          rows.push(row);
+        }
+
+        return {
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
+          textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
+          legend,
+          rows
+        };
+      }
+
+      function buildTextureRowsJson() {
+        return {
+          ...(state.map.originalTextureLayout || {}),
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
+          textureRows: normalizeTextureRows(state.map.textureRows)
+        };
+      }
+
+      function legendForSave(legend) {
+        const nextLegend = {};
+
+        for (const [symbol, entry] of Object.entries(legend)) {
+          nextLegend[symbol] = {
+            category: entry.category,
+            walkable: entry.walkable,
+            drivable: entry.drivable,
+            parkable: entry.parkable
+          };
+        }
+
+        return nextLegend;
+      }
+
+      function definitionForCell(x, y) {
+        const type = state.map.rows[y][x];
+
+        return {
+          category: type,
+          walkable: state.map.behaviorRows.walkable[y][x],
+          drivable: state.map.behaviorRows.drivable[y][x],
+          parkable: state.map.behaviorRows.parkable[y][x]
+        };
+      }
+
+      function updateStats() {
+        stats.innerHTML = '';
+        mapName.textContent = state.map.sourceName || 'untitled map';
+        addStat('active layer', paintLayer.value);
+        addStat('map source', state.map.sourceName || 'untitled map');
+        addStat('visual source', state.map.visualSource || 'source image');
+        addStat('texture set', state.map.textureSet || 'none');
+        addStat('unique textures', countUniqueTextures());
+        addStat('texture rows', state.map.textureRowsFileName || 'not loaded');
+        addStat('atlas', state.atlasFileName || 'not loaded');
+        addStat('manifest', state.textureManifestFileName || 'not loaded');
+        addStat('any dirty', state.dirty ? 'yes' : 'no');
+        addStat('tile properties dirty', state.semanticRowsDirty ? 'yes' : 'no');
+        addStat('texture rows dirty', state.textureRowsDirty ? 'yes' : 'no');
+        addStat('latest prediction', state.latestPrediction ? 'ready' : 'none');
+        addStat('undo strokes', state.undoStack.length);
+        addStat('redo strokes', state.redoStack.length);
+
+        const layer = paintLayer.value;
+
+        if (layer === 'type') {
+          const counts = Object.fromEntries(TYPE_LABELS.map((label) => [label, 0]));
+          let emptyCount = 0;
+
+          for (const row of state.map.rows) {
+            for (const label of row) {
+              if (isEmptyLabelValue(label)) {
+                emptyCount += 1;
+              } else {
+                counts[label] = (counts[label] || 0) + 1;
+              }
+            }
+          }
+
+          addStat('empty', emptyCount);
+
+          for (const label of TYPE_LABELS) {
+            addStat(label, counts[label]);
+          }
+        } else if (layer === 'texture') {
+          addStat('selected texture', hasSelectedTexture() ? state.selectedTextureId : 'none');
+          addStat('texture tool', state.texturePickMode ? 'pick' : 'paint');
+          addStat('selected usage', hasSelectedTexture() ? countTextureUsage(state.selectedTextureId) : 0);
+          addStat('unique textures', countUniqueTextures());
+        } else {
+          let emptyCount = 0;
+          let trueCount = 0;
+          let falseCount = 0;
+
+          for (const row of state.map.behaviorRows[layer]) {
+            for (const value of row) {
+              if (isEmptyLabelValue(value)) {
+                emptyCount += 1;
+              } else if (value) {
+                trueCount += 1;
+              } else {
+                falseCount += 1;
+              }
+            }
+          }
+
+          addStat(`${layer}: empty`, emptyCount);
+          addStat(`${layer}: true`, trueCount);
+          addStat(`${layer}: false`, falseCount);
+        }
+
+        const layerSummary = getTrainingSummaryForLayer(layer);
+
+        if (layerSummary) {
+          addStat('model status', layerSummary.trained ? layerSummary.model : 'not trained');
+          addStat('model samples', layerSummary.samples || 0);
+        }
+      }
+
+      function getTrainingSummaryForLayer(layer) {
+        if (!state.trainingSummary) {
+          return null;
+        }
+
+        return layer === 'type' ? state.trainingSummary.type : state.trainingSummary.behavior && state.trainingSummary.behavior[layer];
+      }
+
+      function addStat(label, value) {
+        const key = document.createElement('span');
+        const count = document.createElement('strong');
+
+        key.textContent = label;
+        count.textContent = String(value);
+        stats.appendChild(key);
+        stats.appendChild(count);
+      }
+
+      function countTextureUsage(textureId) {
+        let count = 0;
+
+        for (const row of state.map.textureRows) {
+          for (const value of row) {
+            if (value === textureId) {
+              count += 1;
+            }
+          }
+        }
+
+        return count;
+      }
+
+      function countUniqueTextures() {
+        const ids = new Set();
+
+        for (const row of state.map.textureRows) {
+          for (const value of row) {
+            ids.add(value);
+          }
+        }
+
+        return ids.size;
+      }
+
+      function validateEpiCityMap(map) {
+        if (!Number.isInteger(map.width) || map.width !== GRID_SIZE || !Number.isInteger(map.height) || map.height !== GRID_SIZE) {
+          throw new Error(`Epi City map must be ${GRID_SIZE}x${GRID_SIZE}.`);
+        }
+
+        if (!Number.isInteger(map.tileSize) || map.tileSize <= 0) {
+          throw new Error('Epi City map tileSize must be a positive integer.');
+        }
+
+        if (!map.legend || typeof map.legend !== 'object' || Array.isArray(map.legend)) {
+          throw new Error('Epi City map legend must be an object.');
+        }
+
+        if (!Array.isArray(map.rows) || map.rows.length !== GRID_SIZE) {
+          throw new Error(`Epi City map rows must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (const [symbol, entry] of Object.entries(map.legend)) {
+          if (typeof symbol !== 'string' || symbol.length !== 1) {
+            throw new Error('Epi City map legend symbols must be one character.');
+          }
+
+          validateLegendEntry(entry);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = map.rows[y];
+
+          if (typeof row !== 'string' || row.length !== GRID_SIZE) {
+            throw new Error(`Epi City map row ${y} must contain ${GRID_SIZE} symbols.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (!map.legend[row[x]]) {
+              throw new Error(`Epi City map row ${y} references a missing legend symbol at ${x},${y}.`);
+            }
+          }
+        }
+
+        if (map.textureRows !== undefined) {
+          validateTextureRows(map.textureRows);
+        }
+      }
+
+      function validateTextureRowsJson(payload) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          throw new Error('Texture rows JSON must be an object.');
+        }
+
+        if (!Number.isInteger(payload.width) || payload.width !== GRID_SIZE || !Number.isInteger(payload.height) || payload.height !== GRID_SIZE) {
+          throw new Error(`Texture rows JSON must be ${GRID_SIZE}x${GRID_SIZE}.`);
+        }
+
+        if (payload.textureSet !== undefined && (typeof payload.textureSet !== 'string' || payload.textureSet.length === 0)) {
+          throw new Error('Texture rows JSON textureSet must be a non-empty string when present.');
+        }
+
+        validateTextureRows(payload.textureRows);
+      }
+
+      function validateTextureRows(textureRows) {
+        if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
+          throw new Error(`Epi City map textureRows must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = textureRows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Epi City map textureRows[${y}] must contain ${GRID_SIZE} texture ids.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const textureId = row[x];
+
+            if (!Number.isInteger(textureId) || textureId < 0) {
+              throw new Error(`Epi City map textureRows has invalid texture ID at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function validateTextureManifest(manifest) {
+        if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+          throw new Error('Texture manifest must be an object.');
+        }
+
+        if (!manifest.atlas || typeof manifest.atlas.file !== 'string' || manifest.atlas.file.length === 0) {
+          throw new Error('Texture manifest must include atlas.file.');
+        }
+
+        if (manifest.atlas.width !== undefined && (!Number.isInteger(manifest.atlas.width) || manifest.atlas.width <= 0)) {
+          throw new Error('Texture manifest atlas.width must be a positive integer when present.');
+        }
+
+        if (manifest.atlas.height !== undefined && (!Number.isInteger(manifest.atlas.height) || manifest.atlas.height <= 0)) {
+          throw new Error('Texture manifest atlas.height must be a positive integer when present.');
+        }
+
+        if (!Array.isArray(manifest.frames) || manifest.frames.length === 0) {
+          throw new Error('Texture manifest must include a non-empty frames array.');
+        }
+
+        for (let index = 0; index < manifest.frames.length; index += 1) {
+          const frame = manifest.frames[index];
+
+          if (!Array.isArray(frame) || frame.length !== 4 || frame.some((value) => !Number.isInteger(value))) {
+            throw new Error(`Texture manifest frame ${index} must be [x, y, width, height].`);
+          }
+
+          if (frame[0] < 0 || frame[1] < 0 || frame[2] <= 0 || frame[3] <= 0) {
+            throw new Error(`Texture manifest frame ${index} has invalid bounds.`);
+          }
+        }
+      }
+
+      function validateTextureRowsForManifest(textureRows, manifest) {
+        if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
+          throw new Error(`Epi City map textureRows must contain ${GRID_SIZE} rows when rendering with a texture manifest.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = textureRows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Epi City map textureRows[${y}] must contain ${GRID_SIZE} texture ids.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const textureId = row[x];
+
+            if (!Number.isInteger(textureId) || textureId < 0 || textureId >= manifest.frames.length) {
+              throw new Error(`Texture id ${textureId} at ${x},${y} is outside the manifest frame list.`);
+            }
+          }
+        }
+      }
+
+      function validateLegendEntry(entry) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          throw new Error('Each Epi City legend entry must be an object.');
+        }
+
+        if (!isEmptyLabelValue(editorTypeForLegendEntry(entry)) && !TYPE_LABELS.includes(editorTypeForLegendEntry(entry))) {
+          throw new Error(`Unsupported legend category: ${entry.category}.`);
+        }
+
+        for (const property of BEHAVIOR_LABELS) {
+          if (!isEmptyLabelValue(entry[property]) && typeof entry[property] !== 'boolean') {
+            throw new Error(`Legend entry ${entry.category} must include boolean or empty ${property}.`);
+          }
+        }
+      }
+
+      function validateTypeRows(rows) {
+        if (!Array.isArray(rows) || rows.length !== GRID_SIZE) {
+          throw new Error(`Map rows must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = rows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Map row ${y} must contain ${GRID_SIZE} tile types.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (!isEmptyLabelValue(row[x]) && !TYPE_LABELS.includes(row[x])) {
+              throw new Error(`Invalid tile type "${row[x]}" at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function isEmptyLabelValue(value) {
+        return value === null || value === '';
+      }
+
+      function validateBehaviorRowsObject(behaviorRows) {
+        if (!behaviorRows || typeof behaviorRows !== 'object' || Array.isArray(behaviorRows)) {
+          throw new Error('Map behaviorRows must be an object.');
+        }
+
+        for (const property of BEHAVIOR_LABELS) {
+          validateBehaviorRows(property, behaviorRows[property]);
+        }
+      }
+
+      function validateBehaviorRows(property, rows) {
+        if (!Array.isArray(rows) || rows.length !== GRID_SIZE) {
+          throw new Error(`Map behaviorRows.${property} must contain ${GRID_SIZE} rows.`);
+        }
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          const row = rows[y];
+
+          if (!Array.isArray(row) || row.length !== GRID_SIZE) {
+            throw new Error(`Map behaviorRows.${property}[${y}] must contain ${GRID_SIZE} booleans.`);
+          }
+
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            if (!isEmptyLabelValue(row[x]) && typeof row[x] !== 'boolean') {
+              throw new Error(`Map behaviorRows.${property} has a non-boolean/non-empty value at ${x},${y}.`);
+            }
+          }
+        }
+      }
+
+      function normalizeTextureRows(textureRows, options = {}) {
+        const fallback = options.fallbackToZero ? createZeroTextureRows : createDefaultTextureRows;
+
+        if (!Array.isArray(textureRows) || textureRows.length !== GRID_SIZE) {
+          return fallback();
+        }
+
+        for (const row of textureRows) {
+          if (!Array.isArray(row) || row.length !== GRID_SIZE || row.some((value) => !Number.isInteger(value) || value < 0)) {
+            return fallback();
+          }
+        }
+
+        return textureRows.map((row) => [...row]);
+      }
+
+      function cloneTextureRows(textureRows) {
+        return textureRows.map((row) => [...row]);
+      }
+
+      function cloneRows(rows) {
+        return rows.map((row) => [...row]);
+      }
+
+      function cloneBehaviorRows(behaviorRows) {
+        return Object.fromEntries(BEHAVIOR_LABELS.map((property) => [property, behaviorRows[property].map((row) => [...row])]));
+      }
+
+      function editorTypeForLegendEntry(entry) {
+        return entry.category;
+      }
+
+      function fitMap() {
+        const padding = 28;
+        const scaleX = (canvas.clientWidth - padding * 2) / state.image.width;
+        const scaleY = (canvas.clientHeight - padding * 2) / state.image.height;
+
+        state.view.zoom = Math.max(0.1, Math.min(scaleX, scaleY));
+        state.view.x = (canvas.clientWidth - state.image.width * state.view.zoom) / 2;
+        state.view.y = (canvas.clientHeight - state.image.height * state.view.zoom) / 2;
+      }
+
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(window.innerWidth * dpr);
+        canvas.height = Math.round(window.innerHeight * dpr);
+      }
+
+      function screenToImage(screenX, screenY) {
+        return {
+          x: (screenX - state.view.x) / state.view.zoom,
+          y: (screenY - state.view.y) / state.view.zoom
+        };
+      }
+
+      function screenToTile(screenX, screenY) {
+        const imagePoint = screenToImage(screenX, screenY);
+
+        if (imagePoint.x < 0 || imagePoint.y < 0 || imagePoint.x >= state.image.width || imagePoint.y >= state.image.height) {
+          return null;
+        }
+
+        const x = Math.floor(imagePoint.x * GRID_SIZE / state.image.width);
+        const y = Math.floor(imagePoint.y * GRID_SIZE / state.image.height);
+
+        return inGrid(x, y) ? { x, y } : null;
+      }
+
+      function tileBounds(x, y) {
+        return tileBoundsForSize(x, y, state.image.width, state.image.height);
+      }
+
+      function tileBoundsForSize(x, y, width, height) {
+        const x0 = Math.round(x * width / GRID_SIZE);
+        const y0 = Math.round(y * height / GRID_SIZE);
+        const x1 = Math.max(x0 + 1, Math.round((x + 1) * width / GRID_SIZE));
+        const y1 = Math.max(y0 + 1, Math.round((y + 1) * height / GRID_SIZE));
+
+        return { x0, y0, x1, y1 };
+      }
+
+      function canvasPoint(event) {
+        const bounds = canvas.getBoundingClientRect();
+
+        return {
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top
+        };
+      }
+
+      function setStatus(message, error = false) {
+        status.textContent = message;
+        status.style.color = error ? '#ff8a80' : 'var(--accent)';
+      }
+
+      function inGrid(x, y) {
+        return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < GRID_SIZE && y < GRID_SIZE;
+      }
+
+      function tileKey(x, y) {
+        return `${x},${y}`;
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function isEditableTarget(target) {
+        return target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+      }
+
+      async function fetchJson(url) {
+        const response = await fetch(url);
+        const payload = await readJsonResponse(response, url);
+
+        if (!response.ok) {
+          throw new Error(payload.error || `Request failed: ${url}`);
+        }
+
+        return payload;
+      }
+
+      async function readJsonResponse(response, context) {
+        const text = await response.text();
+
+        if (!text) {
+          return {};
+        }
+
+        try {
+          return JSON.parse(text);
+        } catch (error) {
+          throw new Error(`${context} returned invalid JSON (${response.status}).`);
+        }
+      }
+
+      function loadImage(url) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error(`Could not load ${url}.`));
+          image.src = url;
+        });
+      }
+
+      function readFileAsDataUrl(file) {
+        return readBlobAsDataUrl(file, file.name);
+      }
+
+      async function fetchDataUrl(url, description) {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`Could not load ${description}: ${response.status} ${response.statusText}`);
+        }
+
+        return readBlobAsDataUrl(await response.blob(), description);
+      }
+
+      function readBlobAsDataUrl(blob, description) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error(`Could not read ${description}.`));
+          reader.readAsDataURL(blob);
+        });
+      }
+    </script>
+  </body>
+</html>

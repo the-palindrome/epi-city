@@ -3,7 +3,7 @@
 
 The generated JSON and texture assets are the committed/runtime artifacts. The
 script decomposes the source map into 65,536 source tiles, deduplicates exact
-duplicate crops, and verifies that every `textureRows` entry points back to
+duplicate crops, and verifies that every texture layout entry points back to
 matching source pixels.
 """
 
@@ -26,22 +26,24 @@ PROCESS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROCESS_DIR.parent
 
 SOURCE = PROCESS_DIR / "source/gta1-liberty-city-hd.webp"
-OUTPUT_MAP = REPO_ROOT / "public/liberty-city.json"
-OUTPUT_TEXTURES = REPO_ROOT / "public/assets/textures/gta"
-PREVIEW = REPO_ROOT / "tmp/gta-256-textured-preview.png"
+OUTPUT_MAP = REPO_ROOT / "public/maps/liberty-city/tile-layout.json"
+OUTPUT_TEXTURE_LAYOUT = REPO_ROOT / "public/maps/liberty-city/texture-layout.json"
+OUTPUT_TEXTURES = REPO_ROOT / "public/maps/liberty-city"
+PREVIEW = PROCESS_DIR / "output/gta-256-textured-preview.png"
 GRID_SIZE = 256
 WORLD_TILE_SIZE = 32
 TEXTURE_SIZE = 32
+TEXTURE_SET_NAME = "liberty-city"
 RUNTIME_ATLAS_NAME = "liberty-city-atlas.webp"
 
 SAFE_SYMBOLS = list("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~")
-CATEGORY_PRIORITY = {"water": 0, "bridge": 1, "road": 2, "building": 3, "sidewalk": 4}
+CATEGORY_PRIORITY = {"water": 0, "road": 1, "building": 2, "obstacle": 3, "sidewalk": 4, "park": 5}
 
 
 @dataclass(frozen=True)
 class TileDefinition:
     category: str
-    subcategory: str
+    variant: str
     walkable: bool
     drivable: bool
     parkable: bool
@@ -52,7 +54,7 @@ class Cell:
     x: int
     y: int
     category: str
-    subcategory: str
+    variant: str
     walkable: bool
     drivable: bool
     parkable: bool
@@ -65,6 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=SOURCE)
     parser.add_argument("--output-map", type=Path, default=OUTPUT_MAP)
+    parser.add_argument("--output-texture-layout", type=Path, default=OUTPUT_TEXTURE_LAYOUT)
     parser.add_argument("--output-textures", type=Path, default=OUTPUT_TEXTURES)
     parser.add_argument("--preview", type=Path, default=PREVIEW)
     parser.add_argument("--grid-size", type=int, default=GRID_SIZE)
@@ -200,7 +203,7 @@ def initial_categories(features: dict[str, np.ndarray]) -> np.ndarray:
 
     category[water] = "water"
     category[road] = "road"
-    category[park] = "sidewalk"
+    category[park] = "park"
     category[building] = "building"
 
     return category
@@ -248,26 +251,77 @@ def keep_road_components(category: np.ndarray, features: dict[str, np.ndarray]) 
     category[rejected & ~(features["roof"] > 0.34)] = "sidewalk"
 
 
+def fill_building_enclosures(category: np.ndarray) -> int:
+    """Fill non-building pockets that are fully enclosed by building tiles."""
+
+    height, width = category.shape
+    building = category == "building"
+    outside = np.zeros(category.shape, dtype=bool)
+    q: deque[tuple[int, int]] = deque()
+
+    def enqueue(x: int, y: int) -> None:
+        if not building[y, x] and not outside[y, x]:
+            outside[y, x] = True
+            q.append((x, y))
+
+    for x in range(width):
+        enqueue(x, 0)
+        enqueue(x, height - 1)
+
+    for y in range(height):
+        enqueue(0, y)
+        enqueue(width - 1, y)
+
+    while q:
+        x, y = q.popleft()
+
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < width and 0 <= ny < height:
+                enqueue(nx, ny)
+
+    enclosed = ~building & ~outside
+    category[enclosed] = "building"
+
+    return int(np.count_nonzero(enclosed))
+
+
+def block_rooflike_walkable_islands(category: np.ndarray, features: dict[str, np.ndarray]) -> int:
+    """Block isolated gray roof surfaces that otherwise resemble concrete walkways."""
+
+    road_near = dilate(category == "road", 1)
+    rooflike_island = (
+        (category == "sidewalk")
+        & ~road_near
+        & (features["roof"] > 0.85)
+        & (features["asphalt"] < 0.30)
+        & (features["park"] < 0.20)
+    )
+
+    category[rooflike_island] = "building"
+
+    return int(np.count_nonzero(rooflike_island))
+
+
 def refine_categories(category: np.ndarray, features: dict[str, np.ndarray]) -> None:
     keep_road_components(category, features)
     water_near = dilate(category == "water", 1)
     category[(category == "building") & water_near] = "sidewalk"
 
-    for _ in range(2):
+    for _ in range(4):
+        road_near = dilate(category == "road", 1)
         building_near = neighbor_count(category == "building")
         grow = (
             (category == "sidewalk")
-            & (building_near >= 3)
+            & (building_near >= 2)
             & ~water_near
+            & ~road_near
             & (features["roof"] > 0.42)
-            & (features["edge"] > 0.08)
-            & (features["asphalt"] < 0.32)
+            & (features["edge"] > 0.06)
+            & (features["asphalt"] < 0.34)
         )
         category[grow] = "building"
 
-    # Keep a concrete ring around roads and shorelines.
-    road_near = dilate(category == "road", 1)
-    category[(category == "building") & road_near & (features["asphalt"] < 0.62)] = "sidewalk"
+    # Keep shoreline edges walkable, but do not carve roof edges back into sidewalk.
     category[(category == "building") & water_near] = "sidewalk"
 
     # Reconnect small one-cell road gaps caused by lane markings or seams.
@@ -278,21 +332,24 @@ def refine_categories(category: np.ndarray, features: dict[str, np.ndarray]) -> 
         gap = (horizontal_gap | vertical_gap) & ((features["asphalt"] > 0.20) | (features["lane"] > 0.01))
         category[gap] = "road"
 
+    fill_building_enclosures(category)
+    block_rooflike_walkable_islands(category, features)
 
-def mark_bridges(category: np.ndarray, features: dict[str, np.ndarray]) -> None:
+
+def water_crossing_roads(category: np.ndarray, features: dict[str, np.ndarray]) -> np.ndarray:
     water = category == "water"
     road = category == "road"
     water_near = dilate(water, 1)
-    bridge = road & water_near & ((features["asphalt"] > 0.20) | (features["lane"] > 0.004))
+    crossing = road & water_near & ((features["asphalt"] > 0.20) | (features["lane"] > 0.004))
 
     # Exclude narrow pedestrian/rail structures by requiring road continuity.
-    road_or_bridge = road | bridge
-    connected_horizontal = shift(road_or_bridge, 1, 0) | shift(road_or_bridge, -1, 0)
-    connected_vertical = shift(road_or_bridge, 0, 1) | shift(road_or_bridge, 0, -1)
-    category[bridge & (connected_horizontal | connected_vertical)] = "bridge"
+    road_or_crossing = road | crossing
+    connected_horizontal = shift(road_or_crossing, 1, 0) | shift(road_or_crossing, -1, 0)
+    connected_vertical = shift(road_or_crossing, 0, 1) | shift(road_or_crossing, 0, -1)
+    return crossing & (connected_horizontal | connected_vertical)
 
 
-def road_subcategory(mask: int) -> str:
+def road_variant(mask: int) -> str:
     return {
         0: "isolated",
         1: "deadend-n",
@@ -313,7 +370,7 @@ def road_subcategory(mask: int) -> str:
     }[mask]
 
 
-def edge_subcategory(category: np.ndarray, x: int, y: int, target: str) -> str:
+def edge_variant(category: np.ndarray, x: int, y: int, target: str) -> str:
     size = category.shape[0]
     mask = 0
     if y > 0 and category[y - 1, x] == target:
@@ -337,40 +394,40 @@ def has_cardinal_neighbor(category: np.ndarray, x: int, y: int, target: str) -> 
     )
 
 
-def tile_definition(category: str, subcategory: str) -> TileDefinition:
+def tile_definition(category: str, variant: str) -> TileDefinition:
     """Return generated gameplay metadata for a semantic tile variant."""
 
     if category == "sidewalk":
         return TileDefinition(
             category=category,
-            subcategory=subcategory,
+            variant=variant,
             walkable=True,
             drivable=False,
-            parkable="roadside" in subcategory and subcategory != "park",
+            parkable="roadside" in variant,
+        )
+
+    if category == "park":
+        return TileDefinition(
+            category=category,
+            variant=variant,
+            walkable=True,
+            drivable=False,
+            parkable=False,
         )
 
     if category == "road":
         return TileDefinition(
             category=category,
-            subcategory=subcategory,
+            variant=variant,
             # Mixed road/curb tiles act as pedestrian crossing edges without opening full traffic lanes.
-            walkable=subcategory.endswith(WALKABLE_ROAD_SUFFIX),
-            drivable=True,
-            parkable=False,
-        )
-
-    if category == "bridge":
-        return TileDefinition(
-            category=category,
-            subcategory=subcategory,
-            walkable=True,
+            walkable=variant.endswith(WALKABLE_ROAD_SUFFIX),
             drivable=True,
             parkable=False,
         )
 
     return TileDefinition(
         category=category,
-        subcategory=subcategory,
+        variant=variant,
         walkable=False,
         drivable=False,
         parkable=False,
@@ -382,19 +439,21 @@ def is_walkable_road(features: dict[str, np.ndarray], x: int, y: int) -> bool:
         features["sidewalk"][y, x] > 0.20
         and features["edge"][y, x] > 0.30
         and features["asphalt"][y, x] < 0.75
+        and features["roof"][y, x] < 0.85
     )
 
 
-def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]) -> list[Cell]:
+def classify_variants(category: np.ndarray, features: dict[str, np.ndarray]) -> list[Cell]:
     size = category.shape[0]
-    roadlike = (category == "road") | (category == "bridge")
+    roadlike = category == "road"
+    road_crossing = water_crossing_roads(category, features)
     water_near = dilate(category == "water", 1)
 
     cells: list[Cell] = []
     for y in range(size):
         for x in range(size):
             cat = str(category[y, x])
-            if cat in ("road", "bridge"):
+            if cat == "road":
                 mask = 0
                 if y > 0 and roadlike[y - 1, x]:
                     mask |= 1
@@ -404,17 +463,17 @@ def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]
                     mask |= 4
                 if x > 0 and roadlike[y, x - 1]:
                     mask |= 8
-                sub = road_subcategory(mask)
-                if cat == "road" and is_walkable_road(features, x, y):
+                sub = road_variant(mask)
+                if is_walkable_road(features, x, y) or road_crossing[y, x]:
                     sub = f"{sub}{WALKABLE_ROAD_SUFFIX}"
             elif cat == "water":
-                sub = edge_subcategory(category, x, y, "water")
+                sub = edge_variant(category, x, y, "water")
+            elif cat == "park":
+                sub = "park"
             elif cat == "sidewalk":
                 road_near = has_cardinal_neighbor(category, x, y, "road")
 
-                if features["park"][y, x] > 0.22:
-                    sub = "park"
-                elif water_near[y, x] and road_near:
+                if water_near[y, x] and road_near:
                     sub = "waterfront-roadside"
                 elif water_near[y, x]:
                     sub = "waterfront"
@@ -437,7 +496,7 @@ def classify_subcategories(category: np.ndarray, features: dict[str, np.ndarray]
                     x=x,
                     y=y,
                     category=definition.category,
-                    subcategory=definition.subcategory,
+                    variant=definition.variant,
                     walkable=definition.walkable,
                     drivable=definition.drivable,
                     parkable=definition.parkable,
@@ -486,7 +545,7 @@ def kmeans(features: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
     return labels, centers
 
 
-def variant_count(category: str, subcategory: str, count: int) -> int:
+def variant_count(category: str, variant: str, count: int) -> int:
     if count < 24:
         return 1
     if category in {"road", "sidewalk", "building", "water"} and count >= 900:
@@ -501,20 +560,19 @@ def symbol_stream() -> Iterable[str]:
 
 
 def assign_symbols(cells: list[Cell], grid_size: int) -> tuple[dict[str, dict[str, object]], list[str]]:
-    groups: dict[tuple[str, str, bool, bool, bool], str] = {}
+    groups: dict[tuple[str, bool, bool, bool], str] = {}
     legend: dict[str, dict[str, object]] = {}
     symbols = symbol_stream()
     symbol_by_cell: dict[tuple[int, int], str] = {}
 
-    for cell in sorted(cells, key=lambda item: (CATEGORY_PRIORITY[item.category], item.category, item.subcategory, item.y, item.x)):
-        key = (cell.category, cell.subcategory, cell.walkable, cell.drivable, cell.parkable)
+    for cell in sorted(cells, key=lambda item: (CATEGORY_PRIORITY[item.category], item.category, item.y, item.x)):
+        key = (cell.category, cell.walkable, cell.drivable, cell.parkable)
 
         if key not in groups:
             symbol = next(symbols)
             groups[key] = symbol
             legend[symbol] = {
                 "category": cell.category,
-                "subcategory": cell.subcategory,
                 "walkable": cell.walkable,
                 "drivable": cell.drivable,
                 "parkable": cell.parkable,
@@ -612,8 +670,20 @@ def write_map_json(path: Path, data: dict) -> None:
         comma = "," if index + 1 < len(data["rows"]) else ""
         lines.append(f"    {json.dumps(row)}{comma}")
 
-    lines.append("  ],")
-    lines.append('  "textureRows": [')
+    lines.append("  ]")
+    lines.append("}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_texture_layout_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "{",
+        f'  "width": {data["width"]},',
+        f'  "height": {data["height"]},',
+        f'  "textureSet": {json.dumps(data["textureSet"])},',
+        '  "textureRows": [',
+    ]
 
     for index, row in enumerate(data["textureRows"]):
         comma = "," if index + 1 < len(data["textureRows"]) else ""
@@ -643,7 +713,7 @@ def write_manifest(
     write_compact_json(
         path,
         {
-            "name": "gta",
+            "name": TEXTURE_SET_NAME,
             "tileSize": texture_size,
             "atlas": {
                 "file": atlas_file,
@@ -656,9 +726,10 @@ def write_manifest(
     )
 
 
-def write_preview(path: Path, map_data: dict, source: Image.Image, frames: list[list[int]], texture_size: int) -> None:
-    preview = Image.new("RGB", (map_data["width"] * texture_size, map_data["height"] * texture_size))
-    for y, row in enumerate(map_data["textureRows"]):
+def write_preview(path: Path, texture_layout: dict, source: Image.Image, frames: list[list[int]], texture_size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    preview = Image.new("RGB", (texture_layout["width"] * texture_size, texture_layout["height"] * texture_size))
+    for y, row in enumerate(texture_layout["textureRows"]):
         for x, texture_id in enumerate(row):
             frame = frames[texture_id]
             crop = source.crop((frame[0], frame[1], frame[0] + frame[2], frame[1] + frame[3]))
@@ -673,8 +744,7 @@ def main() -> None:
     features = source_features(rgb, args.grid_size)
     category = initial_categories(features)
     refine_categories(category, features)
-    mark_bridges(category, features)
-    cells = classify_subcategories(category, features)
+    cells = classify_variants(category, features)
 
     legend, rows = assign_symbols(cells, args.grid_size)
     texture_rows, frames, stats = decompose_source_tiles(source_image, args.grid_size)
@@ -699,20 +769,23 @@ def main() -> None:
         "width": args.grid_size,
         "height": args.grid_size,
         "tileSize": args.tile_size,
-        "textureSet": "gta",
+        "textureSet": TEXTURE_SET_NAME,
         "legend": legend,
         "rows": rows,
+    }
+    texture_layout = {
+        "width": args.grid_size,
+        "height": args.grid_size,
+        "textureSet": TEXTURE_SET_NAME,
         "textureRows": texture_rows,
     }
     write_map_json(args.output_map, map_data)
-    write_preview(args.preview, map_data, source_image, frames, args.texture_size)
+    write_texture_layout_json(args.output_texture_layout, texture_layout)
+    write_preview(args.preview, texture_layout, source_image, frames, args.texture_size)
 
-    cell_counts = Counter()
-    for row in rows:
-        for symbol in row:
-            entry = legend[symbol]
-            cell_counts[f'{entry["category"]}/{entry["subcategory"]}'] += 1
+    cell_counts = Counter(f"{cell.category}/{cell.variant}" for cell in cells)
     print(f"wrote {args.output_map}")
+    print(f"wrote {args.output_texture_layout}")
     print(f"wrote {manifest}")
     print(f"wrote {args.preview}")
     print(f"source atlas: {atlas_path}")
