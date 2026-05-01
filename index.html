@@ -139,14 +139,20 @@
       });
 
       const TEXTURE_SET_PATHS = Object.freeze({
-        'liberty-city': './maps/liberty-city/manifest.json'
+        'liberty-city': './maps/liberty-city/manifest.json',
+        'liberty-city-clean': './maps/liberty-city-clean/manifest.json'
       });
       const CITY_MAP_PATHS = Object.freeze({
         'liberty-city': {
           tileLayout: './maps/liberty-city/tile-layout.json',
           textureLayout: './maps/liberty-city/texture-layout.json'
+        },
+        'liberty-city-clean': {
+          tileLayout: './maps/liberty-city-clean/tile-layout.json',
+          textureLayout: './maps/liberty-city-clean/texture-layout.json'
         }
       });
+      const DEFAULT_CITY_MAP = 'liberty-city-clean';
 
       const PIXEL_ART_SCALE_MODE = 'nearest';
 
@@ -302,7 +308,8 @@
           installCameraControls(app, camera, applyCamera);
 
           // Keep map data pre-generated so the app has a stable, fast startup path.
-          const mapData = await loadCityMap(CITY_MAP_PATHS['liberty-city'].tileLayout, CITY_MAP_PATHS['liberty-city'].textureLayout);
+          const defaultMapPaths = CITY_MAP_PATHS[DEFAULT_CITY_MAP];
+          const mapData = await loadCityMap(defaultMapPaths.tileLayout, defaultMapPaths.textureLayout);
           const city = compileCityMap(mapData);
           let textureSet = await loadTextureSet(city.textureSetName);
 

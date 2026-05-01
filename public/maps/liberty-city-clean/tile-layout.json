@@ -2,43 +2,43 @@
   "width": 256,
   "height": 256,
   "tileSize": 32,
-  "textureSet": "liberty-city",
+  "textureSet": "liberty-city-clean",
   "legend": {
     "0": {
       "category": "building",
-      "walkable": null,
-      "drivable": null,
-      "parkable": null
+      "walkable": false,
+      "drivable": false,
+      "parkable": false
     },
     "1": {
       "category": "sidewalk",
-      "walkable": null,
-      "drivable": null,
-      "parkable": null
+      "walkable": true,
+      "drivable": false,
+      "parkable": false
     },
     "2": {
       "category": "water",
-      "walkable": null,
-      "drivable": null,
-      "parkable": null
+      "walkable": false,
+      "drivable": false,
+      "parkable": false
     },
     "3": {
       "category": "road",
-      "walkable": null,
-      "drivable": null,
-      "parkable": null
+      "walkable": false,
+      "drivable": true,
+      "parkable": false
     },
     "4": {
       "category": "park",
-      "walkable": null,
-      "drivable": null,
-      "parkable": null
+      "walkable": true,
+      "drivable": false,
+      "parkable": false
     },
     "5": {
       "category": "obstacle",
-      "walkable": null,
-      "drivable": null,
-      "parkable": null
+      "walkable": false,
+      "drivable": false,
+      "parkable": false
     }
   },
   "rows": [

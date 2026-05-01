@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-city/` as `/maps/liberty-city/`, and the app loads both `tile-layout.json` and `texture-layout.json`.
+Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/maps/`, and the app loads the `liberty-city-clean` map package by default.
 
 ## Controls
 
@@ -25,10 +25,10 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/liberty-c
 ## Project Structure
 
 - `index.html` contains the Pixi app, camera controls, map validation, runtime city API, atlas texture renderer, and pathfinding.
-- `public/maps/liberty-city/tile-layout.json` contains the static Liberty City semantic tile layout.
-- `public/maps/liberty-city/texture-layout.json` contains one atlas-frame texture ID per map cell.
-- `public/maps/liberty-city/manifest.json` describes the Liberty City atlas frames used by the texture set.
-- `public/maps/liberty-city/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
+- `public/maps/liberty-city-clean/tile-layout.json` contains the default static Liberty City semantic tile layout.
+- `public/maps/liberty-city-clean/texture-layout.json` contains one atlas-frame texture ID per map cell.
+- `public/maps/liberty-city-clean/manifest.json` describes the Liberty City atlas frames used by the default texture set.
+- `public/maps/liberty-city-clean/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
 - `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
 - `map-editor/` contains the interactive map editor, random-forest training loop, and Epi City JSON load/save tools.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
@@ -43,7 +43,7 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
   "width": 256,
   "height": 256,
   "tileSize": 32,
-  "textureSet": "liberty-city",
+  "textureSet": "liberty-city-clean",
   "legend": {
     "A": {
       "category": "road",
@@ -60,7 +60,7 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 {
   "width": 256,
   "height": 256,
-  "textureSet": "liberty-city",
+  "textureSet": "liberty-city-clean",
   "textureRows": [[0, 1, 2]]
 }
 ```
@@ -69,7 +69,7 @@ The runtime supports six base categories: `road`, `sidewalk`, `park`, `water`, `
 
 ## Movement Rules
 
-Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Sidewalks are walkable, roadside sidewalks are parkable, parks are walkable only, roads are drivable, mixed curb/road crossing tiles can also be walkable, and water, buildings, or obstacles are blocked by default.
+Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. In the default clean map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
 
 ## NPC Prototype
 
@@ -116,16 +116,16 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts from an empty semantic tile configuration plus the current `public/maps/liberty-city/texture-layout.json`, atlas, and texture manifest, can load atlas, tile configuration, texture rows, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels; when atlas and manifest assets are loaded, the classifier's pixel features come from the current `textureRows`. It stores predictions separately and applies predictions as one undoable operation. Save Tile Configuration writes semantic rows and can preserve incomplete labels as `null`, Save Texture Rows writes the visual texture layer, and neither save action overwrites files under `public/maps/liberty-city` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts from an empty semantic tile configuration plus the current `public/maps/liberty-city-clean/texture-layout.json`, atlas, and texture manifest, can load atlas, tile configuration, texture rows, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels; when atlas and manifest assets are loaded, the classifier's pixel features come from the current `textureRows`. It stores predictions separately and applies predictions as one undoable operation. Save Tile Configuration writes semantic rows and can preserve incomplete labels as `null`, Save Texture Rows writes the visual texture layer, and neither save action overwrites files under `public/maps/liberty-city-clean` automatically.
 
 ## Texture Sets
 
-The current texture set is `liberty-city`. The app loads `public/maps/liberty-city/manifest.json`, then loads the atlas image and creates Pixi subtextures from the manifest frame list. The generated manifest deduplicates exact source crops, so repeated map cells share one atlas frame while every cell still matches its original source tile.
+The default texture set is `liberty-city-clean`. The app loads `public/maps/liberty-city-clean/manifest.json`, then loads the atlas image and creates Pixi subtextures from the manifest frame list. The generated manifest deduplicates exact source crops, so repeated map cells share one atlas frame while every cell still matches its original source tile.
 
 In the console, switch texture sets with:
 
 ```js
-window.citySim.setTextureSet('liberty-city')
+window.citySim.setTextureSet('liberty-city-clean')
 ```
 
 ## Build

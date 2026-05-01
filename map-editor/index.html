@@ -268,6 +268,7 @@
     <script type="module">
       const GRID_SIZE = 256;
       const DEFAULT_TILE_SIZE = 32;
+      const DEFAULT_TEXTURE_SET = 'liberty-city-clean';
       const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
       const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
       const EMPTY_LABEL_VALUE = null;
@@ -371,7 +372,7 @@
         setStatus(defaultTextureAssetError
           ? `Ready. Default texture preview could not load: ${defaultTextureAssetError.message}`
           : state.config.defaultTileConfiguration
-          ? 'Ready. Default empty tile configuration, current texture rows, and Liberty City texture preview are loaded.'
+          ? 'Ready. Default empty tile configuration, current texture rows, and clean Liberty City texture preview are loaded.'
           : 'Ready. Load an atlas, tile configuration, texture rows, and texture manifest separately.');
         draw();
       }
@@ -394,7 +395,7 @@
         return createFilledEditableMap(EMPTY_LABEL_VALUE, 'untitled-default-map.json', {
           sourceName: 'untitled default map',
           tileSize: DEFAULT_TILE_SIZE,
-          textureSet: 'liberty-city'
+          textureSet: DEFAULT_TEXTURE_SET
         });
       }
 
@@ -409,7 +410,7 @@
           width: GRID_SIZE,
           height: GRID_SIZE,
           tileSize: metadata.tileSize || DEFAULT_TILE_SIZE,
-          textureSet: metadata.textureSet || 'liberty-city',
+          textureSet: metadata.textureSet || DEFAULT_TEXTURE_SET,
           sourceName: metadata.sourceName || fileName,
           visualSource: metadata.visualSource || 'source image',
           fileName,
@@ -447,7 +448,7 @@
         state.atlasFileName = state.config.defaultAtlasPath || manifest.atlas.file || 'default texture atlas';
         state.textureManifest = manifest;
         state.textureManifestFileName = state.config.defaultTextureManifestPath || 'manifest.json';
-        state.map.textureSet = manifest.name || state.map.textureSet || 'liberty-city';
+        state.map.textureSet = manifest.name || state.map.textureSet || DEFAULT_TEXTURE_SET;
         state.image = renderTextureMapImage(state.map.textureRows, state.textureManifest, state.atlasImage);
         state.map.visualSource = state.atlasFileName;
       }
@@ -722,7 +723,7 @@
           validateTextureManifest(manifest);
           state.textureManifest = manifest;
           state.textureManifestFileName = file.name;
-          state.map.textureSet = manifest.name || state.map.textureSet || 'liberty-city';
+          state.map.textureSet = manifest.name || state.map.textureSet || DEFAULT_TEXTURE_SET;
           if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
             state.selectedTextureId = null;
             state.texturePickMode = true;
@@ -803,7 +804,7 @@
           width: GRID_SIZE,
           height: GRID_SIZE,
           tileSize: payload.tileSize,
-          textureSet: payload.textureSet || 'liberty-city',
+          textureSet: payload.textureSet || DEFAULT_TEXTURE_SET,
           sourceName: metadata.sourceName || fileName,
           visualSource: metadata.visualSource || 'source image',
           fileName,
@@ -901,7 +902,7 @@
         state.map.textureRows = cloneTextureRows(textureRowsPayload.textureRows);
         state.map.textureRowsFileName = fileName;
         state.map.originalTextureLayout = textureRowsPayload;
-        state.map.textureSet = textureRowsPayload.textureSet || state.map.textureSet || 'liberty-city';
+        state.map.textureSet = textureRowsPayload.textureSet || state.map.textureSet || DEFAULT_TEXTURE_SET;
         state.latestPrediction = null;
         state.trainingSummary = null;
         state.undoStack.length = 0;
@@ -1596,7 +1597,7 @@
             width: GRID_SIZE,
             height: GRID_SIZE,
             tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
-            textureSet: state.map.textureSet || 'liberty-city',
+            textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
             legend: legendForSave(state.map.originalMap.legend),
             rows: [...state.map.originalMap.rows]
           };
@@ -1635,7 +1636,7 @@
           width: GRID_SIZE,
           height: GRID_SIZE,
           tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
-          textureSet: state.map.textureSet || 'liberty-city',
+          textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
           legend,
           rows
         };
@@ -1646,7 +1647,7 @@
           ...(state.map.originalTextureLayout || {}),
           width: GRID_SIZE,
           height: GRID_SIZE,
-          textureSet: state.map.textureSet || 'liberty-city',
+          textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
           textureRows: normalizeTextureRows(state.map.textureRows)
         };
       }

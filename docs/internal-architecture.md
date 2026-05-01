@@ -1,10 +1,10 @@
 # Internal Architecture
 
-Epi City currently keeps the implementation in one `index.html` file so early simulation ideas can move quickly. The public Liberty City map package lives in `public/maps/liberty-city`, while the browser compiles the tile layout into a faster runtime representation after validation.
+Epi City currently keeps the implementation in one `index.html` file so early simulation ideas can move quickly. The default Liberty City map package lives in `public/maps/liberty-city-clean`, while the browser compiles the tile layout into a faster runtime representation after validation.
 
 ## Map Data Flow
 
-The app loads `./maps/liberty-city/tile-layout.json` and `./maps/liberty-city/texture-layout.json` at startup. Vite serves `public/maps/liberty-city/` from the site root, so the same relative fetches work in development and production builds.
+The app loads `./maps/liberty-city-clean/tile-layout.json` and `./maps/liberty-city-clean/texture-layout.json` at startup. Vite serves `public/maps/` from the site root, so the same relative fetches work in development and production builds.
 
 Startup follows this sequence:
 
@@ -19,14 +19,14 @@ Startup follows this sequence:
 
 ## Map Schema
 
-`public/maps/liberty-city/tile-layout.json` uses this shape:
+`public/maps/liberty-city-clean/tile-layout.json` uses this shape:
 
 ```json
 {
   "width": 256,
   "height": 256,
   "tileSize": 32,
-  "textureSet": "liberty-city",
+  "textureSet": "liberty-city-clean",
   "legend": {
     "A": {
       "category": "road",
@@ -39,20 +39,20 @@ Startup follows this sequence:
 }
 ```
 
-`public/maps/liberty-city/texture-layout.json` stores the visual assignment layer separately:
+`public/maps/liberty-city-clean/texture-layout.json` stores the visual assignment layer separately:
 
 ```json
 {
   "width": 256,
   "height": 256,
-  "textureSet": "liberty-city",
+  "textureSet": "liberty-city-clean",
   "textureRows": [[0, 1, 2]]
 }
 ```
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
-Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
+Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city-clean/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
 The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Movement uses the generated behavior booleans instead of hard-coded category masks.
 
@@ -84,9 +84,9 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Water, buildings, and obstacles are not walkable, drivable, or parkable by default.
+Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. In the default clean map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
 
-The importer derives behavior from tile abstractions rather than hand-filled legend entries. Sidewalks are walkable, roadside sidewalks are also parkable, parks are walkable only, roads are drivable, mixed road/curb and water-crossing road tiles are also walkable, and water, buildings, or obstacles are blocked.
+The checked-in layout stores behavior as explicit legend properties instead of deriving movement masks from category names at runtime. This keeps map-editor corrections authoritative once a tile configuration is saved.
 
 A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Pedestrian movement exposes every adjacent `walkable` tile, including diagonal neighbors. Vehicle movement keeps stricter diagonal corner checks by requiring both adjacent cardinal cells to be drivable.
 
@@ -100,11 +100,11 @@ Each walkable tile currently has two side-by-side NPC slots. Collision uses two 
 
 ## Texture Sets
 
-A texture set lives inside its map package under `public/maps/<map-name>`. The current `liberty-city` manifest stores one source atlas and a list of deduplicated source frames:
+A texture set lives inside its map package under `public/maps/<map-name>`. The current `liberty-city-clean` manifest stores one source atlas and a list of deduplicated source frames:
 
 ```json
 {
-  "name": "liberty-city",
+  "name": "liberty-city-clean",
   "tileSize": 32,
   "atlas": {
     "file": "liberty-city-atlas.webp",
@@ -130,7 +130,7 @@ The `world` container has separate `map`, `overlays`, and `actors` layers. Map s
 
 `renderCity()` groups sprites into 16x16 tile containers. Grouping keeps the display tree structured by map region while preserving per-cell source textures. If a texture frame is missing, the renderer draws a simple flat-color fallback for the affected cell.
 
-The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in runtime assets live in `public/maps/liberty-city` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
+The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in default runtime assets live in `public/maps/liberty-city-clean` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
 
 ## Debug Dashboard
 
@@ -144,7 +144,7 @@ The tile-type overlay paints semantic categories with fixed debug colors: sidewa
 
 The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
 
-The browser owns the editable map state. Startup asks `/api/config` for an empty semantic tile configuration and the current Liberty City texture rows, then uses both as the default editable map and loads the default atlas plus texture manifest for immediate preview. `Load Atlas`, `Load Tile Configuration`, `Load Texture Rows`, and `Load Texture Manifest` fill separate browser-side asset slots and can replace those defaults. When both an atlas and manifest are loaded, the editor reconstructs the visual map from the loaded `textureRows`. `Reset to defaults` discards the current browser state and rebuilds from the empty semantic tile configuration and current Liberty City texture rows. `Save Tile Configuration` writes semantic rows through the browser, `Save Texture Rows` writes the visual assignment layer, and `Save Texture Manifest` writes only the currently loaded atlas-frame manifest, so the editor does not automatically overwrite files under `public/maps/liberty-city`.
+The browser owns the editable map state. Startup asks `/api/config` for an empty semantic tile configuration and the current clean Liberty City texture rows, then uses both as the default editable map and loads the default atlas plus texture manifest for immediate preview. `Load Atlas`, `Load Tile Configuration`, `Load Texture Rows`, and `Load Texture Manifest` fill separate browser-side asset slots and can replace those defaults. When both an atlas and manifest are loaded, the editor reconstructs the visual map from the loaded `textureRows`. `Reset to defaults` discards the current browser state and rebuilds from the empty semantic tile configuration and current clean Liberty City texture rows. `Save Tile Configuration` writes semantic rows through the browser, `Save Texture Rows` writes the visual assignment layer, and `Save Texture Manifest` writes only the currently loaded atlas-frame manifest, so the editor does not automatically overwrite files under `public/maps/liberty-city-clean`.
 
 Texture rows loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded atlas/manifest assets or is waiting for one of those assets.
 
