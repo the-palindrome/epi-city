@@ -36,7 +36,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 ## Map Format
 
-The map stores semantics and visuals in separate JSON files. `tile-layout.json` contains one legend symbol per cell for gameplay classification. `texture-layout.json` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments do not live in the texture manifest, so texture painting in the editor must be saved with `Save Texture Rows`.
+The map stores semantics and visuals in separate JSON files. `tile-layout.json` contains one legend symbol per cell for gameplay classification plus a compact `buildings` list for connected building components. `texture-layout.json` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments do not live in the texture manifest, so texture painting in the editor must be saved with `Save Texture Rows`.
 
 ```json
 {
@@ -52,6 +52,17 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
       "parkable": false
     }
   },
+  "buildings": {
+    "encoding": "row-spans-v1",
+    "defaultType": "residential",
+    "items": [
+      {
+        "id": "building-0001",
+        "type": "residential",
+        "spans": [[0, 0, 3]]
+      }
+    ]
+  },
   "rows": ["..."]
 }
 ```
@@ -65,7 +76,7 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports six base categories: `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules.
+The runtime supports six base categories: `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id` and `type`.
 
 ## Movement Rules
 
@@ -88,6 +99,8 @@ city.getTile(10, 10)
 city.getTileVariant(10, 10)
 city.getTextureId(10, 10)
 city.getTextureKey(10, 10)
+city.getBuilding(10, 10)
+city.getBuildingsByType('residential')
 city.isWalkable(10, 10)
 city.isDrivable(10, 10)
 city.isParkable(10, 10)
@@ -116,7 +129,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts from an empty semantic tile configuration plus the current `public/maps/liberty-city-clean/texture-layout.json`, atlas, and texture manifest, can load atlas, tile configuration, texture rows, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels; when atlas and manifest assets are loaded, the classifier's pixel features come from the current `textureRows`. It stores predictions separately and applies predictions as one undoable operation. Save Tile Configuration writes semantic rows and can preserve incomplete labels as `null`, Save Texture Rows writes the visual texture layer, and neither save action overwrites files under `public/maps/liberty-city-clean` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The map editor starts from an empty semantic tile configuration plus the current `public/maps/liberty-city-clean/texture-layout.json`, atlas, and texture manifest, can load atlas, tile configuration, texture rows, and texture manifest files separately, paints tile type and behavior labels directly into the current map state, edits connected building component types, and includes a texture picker for copying manifest frame IDs between tiles. It trains `sklearn` random-forest classifiers from non-empty labels; when atlas and manifest assets are loaded, the classifier's pixel features come from the current `textureRows`. It stores predictions separately and applies predictions as one undoable operation. Save Tile Configuration writes semantic rows and building metadata and can preserve incomplete labels as `null`, Save Texture Rows writes the visual texture layer, and neither save action overwrites files under `public/maps/liberty-city-clean` automatically.
 
 ## Texture Sets
 

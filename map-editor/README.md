@@ -75,12 +75,13 @@ The editor always displays the current editable map state. There is no separate 
 Use the `Paint layer` selector to choose what the brush updates:
 
 - `tile type` sets the tile to empty, `road`, `sidewalk`, `park`, `water`, `building`, or `obstacle`.
+- `building` sets the clicked connected building component to `residential`, `commercial`, or `hospital`.
 - `texture` picks and paints manifest frame IDs in `textureRows`.
 - `walkable` sets the current tile's walkable value to empty, `true`, or `false`.
 - `parkable` sets the current tile's parkable value to empty, `true`, or `false`.
 - `drivable` sets the current tile's drivable value to empty, `true`, or `false`.
 
-Painting a tile type does not auto-fill behavior attributes. This keeps labels sparse and lets the trainer learn each layer independently.
+Painting a tile type does not auto-fill behavior attributes. This keeps labels sparse and lets the trainer learn each layer independently. The building layer edits top-level building metadata, so one click updates the connected building component instead of changing the base tile category.
 
 In the texture layer, the `pick texture` tool samples the texture ID from the clicked tile. The editor then switches to painting that texture ID onto other tiles. Texture edits update `textureRows`, so `Save Texture Rows` writes the changed manifest-frame references without changing atlas pixels or manifest frame geometry. `Save Texture Manifest` does not update the app map after texture painting.
 
@@ -119,7 +120,7 @@ Saving never overwrites `public/maps/liberty-city-clean/tile-layout.json` or `te
 
 The main app still expects complete runtime tile configuration files. Fill or predict empty labels before replacing `public/maps/liberty-city-clean/tile-layout.json`.
 
-The saved tile configuration preserves `textureSet`, `width`, `height`, and `tileSize` from a loaded map. Legend entries contain only category and behavior properties. The saved texture rows file preserves `width`, `height`, `textureSet`, and `textureRows`.
+The saved tile configuration preserves `textureSet`, `width`, `height`, `tileSize`, and top-level `buildings` metadata from a loaded map. Legend entries contain only category and behavior properties. The saved texture rows file preserves `width`, `height`, `textureSet`, and `textureRows`.
 
 ## Controls
 
@@ -128,6 +129,7 @@ The saved tile configuration preserves `textureSet`, `width`, `height`, and `til
 - Right drag, middle drag, or hold `Space` to pan.
 - Mouse wheel zooms around the cursor.
 - For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` building, `6` obstacle, `e` empty.
+- For building type: `r` residential, `c` commercial, `h` hospital.
 - For texture: `p` switches back to the texture picker. `i` also works for compatibility.
 - For behavior layers: `t` true, `f` false, and `e` empty.
 - `Ctrl+S` opens Save Tile Configuration.
@@ -162,6 +164,17 @@ The editor saves semantic tile configuration JSON in this format:
       "parkable": false,
       "drivable": false
     }
+  },
+  "buildings": {
+    "encoding": "row-spans-v1",
+    "defaultType": "residential",
+    "items": [
+      {
+        "id": "building-0001",
+        "type": "residential",
+        "spans": [[0, 0, 3]]
+      }
+    ]
   },
   "rows": ["..."]
 }

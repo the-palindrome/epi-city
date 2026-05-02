@@ -153,6 +153,7 @@
         }
       });
       const DEFAULT_CITY_MAP = 'liberty-city-clean';
+      const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
 
       const PIXEL_ART_SCALE_MODE = 'nearest';
 
@@ -841,6 +842,8 @@
           }
         }
 
+        validateBuildingsLayout(data.buildings, data, legendEntries);
+
         if (data.textureRows !== undefined) {
           validateTextureRowsLayout(data, data);
         }
@@ -875,6 +878,182 @@
               throw new Error(`Texture rows JSON has invalid texture ID at ${x},${y}.`);
             }
           }
+        }
+      }
+
+      function validateBuildingsLayout(buildings, mapData, legendEntries) {
+        normalizeBuildingsLayout(buildings, mapData, legendEntries);
+      }
+
+      function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
+        if (buildings === undefined) {
+          return {
+            encoding: BUILDING_LAYOUT_ENCODING,
+            defaultType: 'residential',
+            items: []
+          };
+        }
+
+        if (!buildings || typeof buildings !== 'object' || Array.isArray(buildings)) {
+          throw new Error('Map JSON buildings must be an object when present.');
+        }
+
+        if (buildings.encoding !== BUILDING_LAYOUT_ENCODING) {
+          throw new Error(`Map JSON buildings.encoding must be "${BUILDING_LAYOUT_ENCODING}".`);
+        }
+
+        if (buildings.defaultType !== undefined && (typeof buildings.defaultType !== 'string' || buildings.defaultType.length === 0)) {
+          throw new Error('Map JSON buildings.defaultType must be a non-empty string when present.');
+        }
+
+        if (!Array.isArray(buildings.items)) {
+          throw new Error('Map JSON buildings.items must be an array.');
+        }
+
+        const { width, height, rows } = mapData;
+        const covered = new Int32Array(width * height);
+        const ids = new Set();
+        let expectedBuildingTiles = 0;
+        let coveredBuildingTiles = 0;
+
+        covered.fill(-1);
+
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            if (legendEntries[rows[y][x]].category === 'building') {
+              expectedBuildingTiles += 1;
+            }
+          }
+        }
+
+        const items = buildings.items.map((building, buildingIndex) => {
+          if (!building || typeof building !== 'object' || Array.isArray(building)) {
+            throw new Error(`Map JSON buildings.items[${buildingIndex}] must be an object.`);
+          }
+
+          if (typeof building.id !== 'string' || building.id.length === 0) {
+            throw new Error(`Map JSON buildings.items[${buildingIndex}].id must be a non-empty string.`);
+          }
+
+          if (ids.has(building.id)) {
+            throw new Error(`Map JSON buildings has duplicate id "${building.id}".`);
+          }
+
+          if (typeof building.type !== 'string' || building.type.length === 0) {
+            throw new Error(`Map JSON building "${building.id}" must include a non-empty type string.`);
+          }
+
+          if (!Array.isArray(building.spans) || building.spans.length === 0) {
+            throw new Error(`Map JSON building "${building.id}" must include non-empty spans.`);
+          }
+
+          ids.add(building.id);
+
+          const spans = [];
+          const componentCells = [];
+
+          for (let spanIndex = 0; spanIndex < building.spans.length; spanIndex += 1) {
+            const span = building.spans[spanIndex];
+
+            if (!Array.isArray(span) || span.length !== 3 || span.some((value) => !Number.isInteger(value))) {
+              throw new Error(`Map JSON building "${building.id}" span ${spanIndex} must be [y, x, length].`);
+            }
+
+            const [y, x, length] = span;
+
+            if (y < 0 || y >= height || x < 0 || length <= 0 || x + length > width) {
+              throw new Error(`Map JSON building "${building.id}" span ${spanIndex} is out of bounds.`);
+            }
+
+            spans.push([y, x, length]);
+
+            for (let offset = 0; offset < length; offset += 1) {
+              const tileX = x + offset;
+              const tileIndex = indexOf(tileX, y, width);
+
+              if (legendEntries[rows[y][tileX]].category !== 'building') {
+                throw new Error(`Map JSON building "${building.id}" covers non-building tile ${tileX},${y}.`);
+              }
+
+              if (covered[tileIndex] !== -1) {
+                throw new Error(`Map JSON building "${building.id}" overlaps another building at ${tileX},${y}.`);
+              }
+
+              covered[tileIndex] = buildingIndex;
+              componentCells.push(tileIndex);
+              coveredBuildingTiles += 1;
+            }
+          }
+
+          validateBuildingComponentConnectivity(componentCells, width, height, building.id);
+
+          return {
+            id: building.id,
+            type: building.type,
+            spans
+          };
+        });
+
+        if (coveredBuildingTiles !== expectedBuildingTiles) {
+          for (let y = 0; y < height; y += 1) {
+            for (let x = 0; x < width; x += 1) {
+              const tileIndex = indexOf(x, y, width);
+
+              if (legendEntries[rows[y][x]].category === 'building' && covered[tileIndex] === -1) {
+                throw new Error(`Map JSON buildings do not cover building tile ${x},${y}.`);
+              }
+            }
+          }
+
+          throw new Error(`Map JSON buildings cover ${coveredBuildingTiles} building tiles, expected ${expectedBuildingTiles}.`);
+        }
+
+        return {
+          encoding: buildings.encoding,
+          defaultType: buildings.defaultType || 'residential',
+          items
+        };
+      }
+
+      function validateBuildingComponentConnectivity(componentCells, width, height, buildingId) {
+        if (componentCells.length <= 1) {
+          return;
+        }
+
+        const componentSet = new Set(componentCells);
+        const visited = new Set([componentCells[0]]);
+        const stack = [componentCells[0]];
+
+        while (stack.length > 0) {
+          const current = stack.pop();
+          const x = current % width;
+          const y = Math.floor(current / width);
+
+          for (let dy = -1; dy <= 1; dy += 1) {
+            for (let dx = -1; dx <= 1; dx += 1) {
+              if (dx === 0 && dy === 0) {
+                continue;
+              }
+
+              const nx = x + dx;
+              const ny = y + dy;
+
+              if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+                continue;
+              }
+
+              const neighbor = indexOf(nx, ny, width);
+
+              if (componentSet.has(neighbor) && !visited.has(neighbor)) {
+                visited.add(neighbor);
+                stack.push(neighbor);
+              }
+            }
+          }
+        }
+
+        if (visited.size !== componentCells.length) {
+          throw new Error(`Map JSON building "${buildingId}" spans must form one 8-connected component.`);
         }
       }
 
@@ -927,6 +1106,11 @@
         const tileDrivable = new Uint8Array(width * height);
         const tileParkable = new Uint8Array(width * height);
         const tileLegendSymbols = new Array(width * height);
+        const normalizedBuildings = normalizeBuildingsLayout(data.buildings, data, legendEntries);
+        const tileBuildingIndexes = new Int32Array(width * height);
+        const buildingById = Object.create(null);
+
+        tileBuildingIndexes.fill(-1);
 
         for (let y = 0; y < height; y += 1) {
           const row = data.rows[y];
@@ -949,6 +1133,24 @@
             tileLegendSymbols[index] = symbol;
           }
         }
+
+        const buildings = normalizedBuildings.items.map((building, buildingIndex) => {
+          const runtimeBuilding = {
+            id: building.id,
+            type: building.type,
+            spans: building.spans.map((span) => [...span])
+          };
+
+          buildingById[building.id] = runtimeBuilding;
+
+          for (const [y, x, length] of building.spans) {
+            for (let offset = 0; offset < length; offset += 1) {
+              tileBuildingIndexes[indexOf(x + offset, y, width)] = buildingIndex;
+            }
+          }
+
+          return runtimeBuilding;
+        });
 
         function inBounds(x, y) {
           return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < width && y < height;
@@ -973,10 +1175,13 @@
           }
 
           const index = indexOf(x, y, width);
+          const building = getBuilding(x, y);
 
           return {
             ...legendEntries[tileLegendSymbols[index]],
-            textureId: tileTextureIds[index]
+            textureId: tileTextureIds[index],
+            buildingId: building ? building.id : null,
+            buildingType: building ? building.type : null
           };
         }
 
@@ -991,6 +1196,33 @@
         function getTextureKey(x, y) {
           const textureId = getTextureId(x, y);
           return textureId === null ? null : `tile-${textureId}`;
+        }
+
+        function getBuildingIndex(x, y) {
+          if (!inBounds(x, y)) {
+            return null;
+          }
+
+          const buildingIndex = tileBuildingIndexes[indexOf(x, y, width)];
+          return buildingIndex === -1 ? null : buildingIndex;
+        }
+
+        function getBuildingId(x, y) {
+          const buildingIndex = getBuildingIndex(x, y);
+          return buildingIndex === null ? null : buildings[buildingIndex].id;
+        }
+
+        function getBuilding(x, y) {
+          const buildingIndex = getBuildingIndex(x, y);
+          return buildingIndex === null ? null : buildings[buildingIndex];
+        }
+
+        function getBuildingById(id) {
+          return buildingById[id] || null;
+        }
+
+        function getBuildingsByType(type) {
+          return buildings.filter((building) => building.type === type);
         }
 
         const tilePropertyLayers = {
@@ -1176,13 +1408,20 @@
           tileWalkable,
           tileDrivable,
           tileParkable,
+          tileBuildingIndexes,
           legend: legendEntries,
+          buildings,
+          buildingById,
           index: (x, y) => indexOf(x, y, width),
           getTile,
           getTileId,
           getTileVariant,
           getTextureId,
           getTextureKey,
+          getBuildingId,
+          getBuilding,
+          getBuildingById,
+          getBuildingsByType,
           inBounds,
           isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
           isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
