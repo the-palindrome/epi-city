@@ -51,9 +51,6 @@ RUN install -d -m 0755 /etc/apt/keyrings \
   && apt-get install -y --no-install-recommends google-chrome-stable \
   && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages
-RUN pip install --no-cache-dir pandas matplotlib
-
 RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g @openai/codex playwright \
   && playwright install chromium \
   && chmod -R 755 /ms-playwright

@@ -9,7 +9,7 @@ import {
 import { clamp, indexOf, octileDistance, reconstructPath } from '../core/math.js'
 import { MinHeap } from '../core/min-heap.js'
 
-export async function loadCityMap(url, textureRowsUrl = deriveTextureRowsUrl(url)) {
+export async function loadCityMap(url, textureRowsUrl) {
   const data = await fetchJson(url, 'map')
   const textureRowsData = await loadTextureRows(textureRowsUrl, data)
 
@@ -20,26 +20,15 @@ export async function loadCityMap(url, textureRowsUrl = deriveTextureRowsUrl(url
   })
 }
 
-export async function loadTextureRows(url, mapData) {
-  if (!url && mapData.textureRows) {
-    validateTextureRowsLayout(mapData, mapData)
-    return mapData
+async function loadTextureRows(url, mapData) {
+  if (!url) {
+    throw new Error('Texture rows URL is required.')
   }
 
   const data = await fetchJson(url, 'texture rows')
 
   validateTextureRowsLayout(data, mapData)
   return data
-}
-
-export function deriveTextureRowsUrl(mapUrl) {
-  if (typeof mapUrl !== 'string' || mapUrl.length === 0) {
-    return null
-  }
-
-  const slash = mapUrl.lastIndexOf('/')
-  const base = slash >= 0 ? mapUrl.slice(0, slash + 1) : ''
-  return `${base}texture-layout.json`
 }
 
 async function fetchJson(url, description) {
@@ -118,7 +107,7 @@ export function validateCityMap(data) {
   }
 }
 
-export function validateTextureRowsLayout(data, mapData) {
+function validateTextureRowsLayout(data, mapData) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('Texture rows JSON must contain a JSON object.')
   }
@@ -150,7 +139,7 @@ export function validateTextureRowsLayout(data, mapData) {
   }
 }
 
-export function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
+function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
   if (buildings === undefined) {
     return {
       encoding: BUILDING_LAYOUT_ENCODING,
@@ -322,7 +311,7 @@ function validateBuildingComponentConnectivity(componentCells, width, height, bu
   }
 }
 
-export function normalizeLegend(legend) {
+function normalizeLegend(legend) {
   const entries = {}
 
   for (const [symbol, value] of Object.entries(legend)) {
@@ -369,7 +358,6 @@ export function compileCityMap(data) {
   const tileParkable = new Uint8Array(width * height)
   const tileLegendSymbols = new Array(width * height)
   const tileBuildingIndexes = new Int32Array(width * height)
-  const buildingById = Object.create(null)
   const pathScratch = createPathScratch(width * height)
 
   tileBuildingIndexes.fill(-1)
@@ -402,8 +390,6 @@ export function compileCityMap(data) {
       type: building.type,
       spans: building.spans.map((span) => [...span])
     }
-
-    buildingById[building.id] = runtimeBuilding
 
     for (const [y, x, length] of building.spans) {
       for (let offset = 0; offset < length; offset += 1) {
@@ -455,11 +441,6 @@ export function compileCityMap(data) {
     return tileTextureIds[indexOf(x, y, width)]
   }
 
-  function getTextureKey(x, y) {
-    const textureId = getTextureId(x, y)
-    return textureId === null ? null : `tile-${textureId}`
-  }
-
   function getBuildingIndex(x, y) {
     if (!inBounds(x, y)) {
       return null
@@ -477,14 +458,6 @@ export function compileCityMap(data) {
   function getBuilding(x, y) {
     const buildingIndex = getBuildingIndex(x, y)
     return buildingIndex === null ? null : buildings[buildingIndex]
-  }
-
-  function getBuildingById(id) {
-    return buildingById[id] || null
-  }
-
-  function getBuildingsByType(type) {
-    return buildings.filter((building) => building.type === type)
   }
 
   const tilePropertyLayers = {
@@ -538,33 +511,6 @@ export function compileCityMap(data) {
 
   function canStep(fromX, fromY, toX, toY, mode) {
     return canStepWithProperty(fromX, fromY, toX, toY, modeProperty(mode))
-  }
-
-  function forEachNeighbor(x, y, mode, visit) {
-    const property = modeProperty(mode)
-
-    if (!hasTileProperty(x, y, property)) {
-      return
-    }
-
-    for (const direction of DIRECTIONS) {
-      const nx = x + direction.dx
-      const ny = y + direction.dy
-
-      if (canStepWithProperty(x, y, nx, ny, property) && visit(nx, ny, direction.cost) === false) {
-        return
-      }
-    }
-  }
-
-  function neighbors(x, y, mode) {
-    const result = []
-
-    forEachNeighbor(x, y, mode, (nx, ny, cost) => {
-      result.push({ x: nx, y: ny, cost })
-    })
-
-    return result
   }
 
   function nearestPassableTile(x, y, mode, maxRadius = Math.max(width, height)) {
@@ -680,25 +626,19 @@ export function compileCityMap(data) {
     tileBuildingIndexes,
     legend: legendEntries,
     buildings,
-    buildingById,
     index: (x, y) => indexOf(x, y, width),
     getTile,
     getTileId,
     getTileVariant,
     getTextureId,
-    getTextureKey,
     getBuildingId,
     getBuilding,
-    getBuildingById,
-    getBuildingsByType,
     inBounds,
     canStep,
-    forEachNeighbor,
     isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
     isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
     isParkable: (x, y) => hasTileProperty(x, y, 'parkable'),
     isPassable,
-    neighbors,
     nearestPassableTile,
     findPath
   }

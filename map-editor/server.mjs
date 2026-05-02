@@ -13,13 +13,13 @@ const VENV_PYTHON_PATH = process.platform === 'win32'
   ? path.join(TOOL_DIR, '.venv', 'Scripts', 'python.exe')
   : path.join(TOOL_DIR, '.venv', 'bin', 'python');
 const SOURCE_IMAGE_PATH = path.join(REPO_ROOT, 'process_gta_map/source/gta1-liberty-city-hd.webp');
-const DEFAULT_TEXTURE_LAYOUT_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city-clean/texture-layout.json');
-const DEFAULT_TEXTURE_MANIFEST_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city-clean/manifest.json');
-const DEFAULT_ATLAS_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city-clean/liberty-city-atlas.webp');
+const DEFAULT_TEXTURE_LAYOUT_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/texture-layout.json');
+const DEFAULT_TEXTURE_MANIFEST_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/manifest.json');
+const DEFAULT_ATLAS_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/liberty-city-atlas.webp');
 const PORT = Number(process.env.PORT || 5174);
 const GRID_SIZE = 256;
 const DEFAULT_TILE_SIZE = 32;
-const TEXTURE_SET_NAME = 'liberty-city-clean';
+const TEXTURE_SET_NAME = 'liberty-city';
 const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
 const DEFAULT_BUILDING_TYPE = 'residential';
 const MAX_JSON_BODY_BYTES = 64 * 1024 * 1024;

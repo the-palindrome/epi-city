@@ -55,7 +55,7 @@ export class Game {
   }
 }
 
-export class GameLoop {
+class GameLoop {
   constructor({ update, render, maxDeltaSeconds = 0.1 }) {
     this.update = update
     this.render = render

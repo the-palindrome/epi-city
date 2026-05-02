@@ -2,66 +2,6 @@ import * as PIXI from 'pixi.js'
 import { DIRECTIONS } from '../core/constants.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
-class Entity {
-  constructor({ id, position, sprite }) {
-    this.id = id
-    this.position = { x: position.x, y: position.y }
-    this.sprite = { ...sprite }
-  }
-}
-
-class Npc extends Entity {
-  constructor({ id, position, sprite, tile, slot, movement }) {
-    super({ id, position, sprite })
-    this.tile = { x: tile.x, y: tile.y, index: tile.index }
-    this.slot = { id: slot.id, index: slot.index }
-    this.movement = {
-      speed: movement.speed,
-      target: null
-    }
-  }
-
-  get x() {
-    return this.position.x
-  }
-
-  get y() {
-    return this.position.y
-  }
-
-  get tileX() {
-    return this.tile.x
-  }
-
-  get tileY() {
-    return this.tile.y
-  }
-
-  get tileIndex() {
-    return this.tile.index
-  }
-
-  get slotIndex() {
-    return this.slot.index
-  }
-
-  get targetIndex() {
-    return this.movement.target ? this.movement.target.slot.index : -1
-  }
-
-  get targetX() {
-    return this.movement.target ? this.movement.target.position.x : this.position.x
-  }
-
-  get targetY() {
-    return this.movement.target ? this.movement.target.position.y : this.position.y
-  }
-
-  get speed() {
-    return this.movement.speed
-  }
-}
-
 export function createNpcSimulation(city, actorLayer, config) {
   const graphics = new PIXI.Graphics()
   const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
@@ -143,23 +83,15 @@ export function createNpcSimulation(city, actorLayer, config) {
 }
 
 function createNpcEntity({ id, position, tile, slot, config }) {
-  return new Npc({
-    id,
-    position,
-    tile,
-    slot,
-    sprite: createNpcSprite(config),
-    movement: {
-      speed: randomBetween(config.minSpeed, config.maxSpeed)
-    }
-  })
-}
-
-function createNpcSprite(config) {
   return {
-    kind: 'blob',
-    size: config.size,
-    color: config.color
+    id,
+    position: { x: position.x, y: position.y },
+    tile: { x: tile.x, y: tile.y, index: tile.index },
+    slot: { id: slot.id, index: slot.index },
+    movement: {
+      speed: randomBetween(config.minSpeed, config.maxSpeed),
+      target: null
+    }
   }
 }
 
@@ -295,7 +227,7 @@ function drawNpcs(graphics, npcs, config) {
   graphics.clear()
 
   for (const npc of npcs) {
-    drawNpcBlob(graphics, npc.position.x, npc.position.y, npc.sprite.size ?? config.size, npc.sprite.color ?? config.color)
+    drawNpcBlob(graphics, npc.position.x, npc.position.y, config.size, config.color)
   }
 }
 

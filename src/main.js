@@ -1,10 +1,7 @@
 import * as PIXI from 'pixi.js'
 import {
-  CITY_MAP_PATHS,
-  DEFAULT_CITY_MAP,
-  NPC_CONFIG,
-  TILE_NAMES,
-  TILE_TYPES
+  DEFAULT_CITY_MAP_PATHS,
+  NPC_CONFIG
 } from './core/constants.js'
 import { Game } from './engine/game.js'
 import {
@@ -16,7 +13,6 @@ import {
 import {
   compileCityMap,
   loadCityMap,
-  validateCityMap,
   validateCityTextureBindings
 } from './map/city-map.js'
 import { installDebugDashboard } from './debug/dashboard.js'
@@ -67,10 +63,9 @@ async function main() {
 
     const camera = createCamera()
     const applyCamera = () => applyCameraToWorld(camera, world)
-    const defaultMapPaths = CITY_MAP_PATHS[DEFAULT_CITY_MAP]
-    const mapData = await loadCityMap(defaultMapPaths.tileLayout, defaultMapPaths.textureLayout)
+    const mapData = await loadCityMap(DEFAULT_CITY_MAP_PATHS.tileLayout, DEFAULT_CITY_MAP_PATHS.textureLayout)
     const city = compileCityMap(mapData)
-    let textureSet = await loadTextureSet(city.textureSetName)
+    const textureSet = await loadTextureSet(city.textureSetName)
 
     validateCityTextureBindings(city, textureSet)
     renderCity(city, mapLayer, textureSet)
@@ -84,22 +79,6 @@ async function main() {
     game.addSystem(npcSimulation)
     game.start()
 
-    async function setTextureSet(name) {
-      const nextTextureSet = await loadTextureSet(name)
-
-      validateCityTextureBindings(city, nextTextureSet)
-      textureSet = nextTextureSet
-      city.textureSetName = name
-      renderCity(city, mapLayer, textureSet)
-      window.citySim.textureSet = textureSet
-      game.render()
-    }
-
-    function rerenderCity() {
-      renderCity(city, mapLayer, textureSet)
-      game.render()
-    }
-
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -112,31 +91,11 @@ async function main() {
     }
 
     window.citySim = {
-      app,
       camera,
-      world,
-      layers: {
-        map: mapLayer,
-        overlays: overlayLayer,
-        actors: actorLayer
-      },
-      tileTypes: TILE_TYPES,
-      tileNames: TILE_NAMES,
-      applyCamera,
       city,
-      mapData,
-      textureSet,
       dashboard,
-      game,
       gameLoop: game.loop,
-      npcSimulation,
       npcs: npcSimulation.npcs,
-      loadCityMap,
-      loadTextureSet,
-      setTextureSet,
-      validateCityMap,
-      compileCityMap,
-      renderCity: rerenderCity,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       destroy
     }
