@@ -35,6 +35,17 @@ Startup follows this sequence:
       "parkable": false
     }
   },
+  "buildings": {
+    "encoding": "row-spans-v1",
+    "defaultType": "residential",
+    "items": [
+      {
+        "id": "building-0001",
+        "type": "residential",
+        "spans": [[0, 0, 3]]
+      }
+    ]
+  },
   "rows": ["..."]
 }
 ```
@@ -52,6 +63,8 @@ Startup follows this sequence:
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
+The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a string `type`, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile.
+
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city-clean/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
 The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Movement uses the generated behavior booleans instead of hard-coded category masks.
@@ -66,13 +79,15 @@ The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `ob
 | `tiles` | Numeric `Uint8Array` with one base category ID per cell. |
 | `tileTextureIds` | Numeric `Uint32Array` with one atlas-frame ID per cell. |
 | `tileWalkable`, `tileDrivable`, `tileParkable` | Numeric `Uint8Array` layers with generated gameplay behavior per cell. |
+| `buildings`, `buildingById`, `tileBuildingIndexes` | Runtime building records and tile-to-building lookup data. |
 | `legend` | Normalized symbol metadata keyed by map symbol. |
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, buildingId, buildingType }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getTextureKey(x, y)` | Returns a stable debug string such as `tile-123`. |
+| `getBuildingId(x, y)`, `getBuilding(x, y)`, `getBuildingById(id)`, `getBuildingsByType(type)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
 | `isWalkable(x, y)`, `isDrivable(x, y)`, `isParkable(x, y)` | Checks generated tile behavior layers directly. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
@@ -148,11 +163,11 @@ The browser owns the editable map state. Startup asks `/api/config` for an empty
 
 Texture rows loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded atlas/manifest assets or is waiting for one of those assets.
 
-The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer.
+The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer. The building layer edits the selected connected building component's `type` in the top-level `buildings` metadata.
 
 The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from `texture-layout.json`, the editor directs users to `Save Texture Rows` after texture painting.
 
-The editor tracks semantic tile-property edits separately from texture-row edits. Tile configuration saves never include `textureRows`; texture row saves never rebuild `legend` or semantic `rows`. Incomplete semantic labels are saved as `null`, which keeps sparse labeling sessions serializable even before the map is ready for runtime use.
+The editor tracks semantic tile-property and building metadata edits separately from texture-row edits. Tile configuration saves never include `textureRows`; texture row saves never rebuild `legend`, `buildings`, or semantic `rows`. Incomplete semantic labels are saved as `null`, which keeps sparse labeling sessions serializable even before the map is ready for runtime use.
 
 `POST /api/train` runs `map-editor/train_random_forest.py` through the local `map-editor/.venv` interpreter when it exists. The browser posts the full current `rows` and `behaviorRows` grids, and when atlas/manifest assets are loaded it also posts the current texture feature source: the atlas image data, texture manifest, and `textureRows`. The trainer reconstructs its pixel feature image from those texture assignments, so texture painting affects later classifier runs. If texture assets are not loaded, training falls back to the canonical source image. Each layer trains only from non-empty labels. Layers without at least two distinct non-empty values are skipped and return their current sparse values unchanged.
 

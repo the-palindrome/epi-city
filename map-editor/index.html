@@ -199,6 +199,7 @@
           <label for="paint-layer">Paint layer</label>
           <select id="paint-layer">
             <option value="type">tile type</option>
+            <option value="building">building</option>
             <option value="texture">texture</option>
             <option value="walkable">walkable</option>
             <option value="parkable">parkable</option>
@@ -269,7 +270,10 @@
       const GRID_SIZE = 256;
       const DEFAULT_TILE_SIZE = 32;
       const DEFAULT_TEXTURE_SET = 'liberty-city-clean';
+      const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
+      const DEFAULT_BUILDING_TYPE = 'residential';
       const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
+      const BUILDING_TYPES = Object.freeze(['residential', 'commercial', 'hospital']);
       const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
       const EMPTY_LABEL_VALUE = null;
       const TYPE_COLORS = Object.freeze({
@@ -285,6 +289,12 @@
         true: '#2bd36f',
         false: '#d94a48'
       });
+      const BUILDING_TYPE_COLORS = Object.freeze({
+        residential: '#f2cc47',
+        commercial: '#4fb7d8',
+        hospital: '#ff6f91',
+        unknown: '#ffffff'
+      });
       const TYPE_KEYS = Object.freeze({
         '1': 'road',
         '2': 'sidewalk',
@@ -298,6 +308,11 @@
         t: true,
         f: false,
         e: null
+      });
+      const BUILDING_KEYS = Object.freeze({
+        r: 'residential',
+        c: 'commercial',
+        h: 'hospital'
       });
       const SAFE_SYMBOLS = Object.freeze([...('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~')]);
 
@@ -333,6 +348,7 @@
         latestPrediction: null,
         trainingSummary: null,
         selectedTypeLabel: EMPTY_LABEL_VALUE,
+        selectedBuildingType: DEFAULT_BUILDING_TYPE,
         selectedBehaviorValue: EMPTY_LABEL_VALUE,
         selectedTextureId: null,
         texturePickMode: true,
@@ -405,6 +421,7 @@
           property,
           Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => EMPTY_LABEL_VALUE))
         ]));
+        const buildings = createBuildingsFromRows(rows, metadata.buildings);
 
         return {
           width: GRID_SIZE,
@@ -416,6 +433,8 @@
           fileName,
           rows,
           behaviorRows,
+          buildings,
+          buildingLookup: createBuildingLookup(buildings),
           textureRows: metadata.textureRows ? cloneTextureRows(metadata.textureRows) : createDefaultTextureRows(),
           textureRowsFileName: metadata.textureRowsFileName || 'texture-layout.json',
           originalTextureLayout: metadata.originalTextureLayout || null,
@@ -542,13 +561,19 @@
             return;
           }
 
+          if (paintLayer.value === 'building' && Object.prototype.hasOwnProperty.call(BUILDING_KEYS, key)) {
+            setSelectedPaintValue(BUILDING_KEYS[key]);
+            event.preventDefault();
+            return;
+          }
+
           if (paintLayer.value === 'texture' && ['i', 'p'].includes(key)) {
             setSelectedPaintValue('pick');
             event.preventDefault();
             return;
           }
 
-          if (!['type', 'texture'].includes(paintLayer.value) && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
+          if (!['type', 'building', 'texture'].includes(paintLayer.value) && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
             const value = BEHAVIOR_KEYS[key];
             setSelectedPaintValue(value === null ? '' : String(value));
             event.preventDefault();
@@ -570,6 +595,8 @@
               { value: '', label: 'empty', color: null },
               ...TYPE_LABELS.map((label) => ({ value: label, label, color: TYPE_COLORS[label] }))
             ]
+          : layer === 'building'
+            ? BUILDING_TYPES.map((label) => ({ value: label, label, color: BUILDING_TYPE_COLORS[label] }))
           : layer === 'texture'
             ? [
                 { value: 'pick', label: 'pick texture', color: null },
@@ -607,6 +634,8 @@
       function setSelectedPaintValue(value) {
         if (paintLayer.value === 'type') {
           state.selectedTypeLabel = value === '' ? EMPTY_LABEL_VALUE : value;
+        } else if (paintLayer.value === 'building') {
+          state.selectedBuildingType = value;
         } else if (paintLayer.value === 'texture') {
           if (value === 'paint' && !hasSelectedTexture()) {
             setStatus('Pick a texture from the map before painting texture IDs.', true);
@@ -624,6 +653,10 @@
       function selectedPaintValue() {
         if (paintLayer.value === 'type') {
           return state.selectedTypeLabel ?? '';
+        }
+
+        if (paintLayer.value === 'building') {
+          return state.selectedBuildingType;
         }
 
         if (paintLayer.value === 'texture') {
@@ -800,6 +833,12 @@
           rows.push(row);
         }
 
+        if (payload.buildings !== undefined) {
+          validateBuildingLayout(payload.buildings, rows);
+        }
+
+        const buildings = createBuildingsFromRows(rows, payload.buildings);
+
         return {
           width: GRID_SIZE,
           height: GRID_SIZE,
@@ -810,6 +849,8 @@
           fileName,
           rows,
           behaviorRows,
+          buildings,
+          buildingLookup: createBuildingLookup(buildings),
           textureRows,
           textureRowsFileName: metadata.textureRowsFileName || state.map?.textureRowsFileName || (payload.textureRows ? fileName : 'texture-layout.json'),
           originalTextureLayout: metadata.originalTextureLayout || state.map?.originalTextureLayout || null,
@@ -833,6 +874,302 @@
         }
 
         return createDefaultTextureRows();
+      }
+
+      function createBuildingsFromRows(rows, previousBuildings = null) {
+        validateTypeRows(rows);
+
+        const previousByCell = previousBuildingMetadataByCell(previousBuildings, rows);
+        const usedIds = new Set();
+        const components = findBuildingComponents(rows);
+        const items = components.map((component, index) => {
+          const previous = pickPreviousBuildingMetadata(component, previousByCell, usedIds);
+          const id = previous ? previous.id : nextBuildingId(index + 1, usedIds);
+
+          usedIds.add(id);
+
+          return {
+            id,
+            type: previous ? previous.type : DEFAULT_BUILDING_TYPE,
+            spans: spansForBuildingCells(component.cells)
+          };
+        });
+
+        return {
+          encoding: BUILDING_LAYOUT_ENCODING,
+          defaultType: DEFAULT_BUILDING_TYPE,
+          items
+        };
+      }
+
+      function findBuildingComponents(rows) {
+        const visited = new Uint8Array(GRID_SIZE * GRID_SIZE);
+        const components = [];
+
+        for (let y = 0; y < GRID_SIZE; y += 1) {
+          for (let x = 0; x < GRID_SIZE; x += 1) {
+            const startIndex = gridIndex(x, y);
+
+            if (visited[startIndex] || rows[y][x] !== 'building') {
+              continue;
+            }
+
+            const queue = [[x, y]];
+            const cells = [];
+            visited[startIndex] = 1;
+
+            for (let cursor = 0; cursor < queue.length; cursor += 1) {
+              const [cx, cy] = queue[cursor];
+              cells.push([cx, cy]);
+
+              for (let dy = -1; dy <= 1; dy += 1) {
+                for (let dx = -1; dx <= 1; dx += 1) {
+                  if (dx === 0 && dy === 0) {
+                    continue;
+                  }
+
+                  const nx = cx + dx;
+                  const ny = cy + dy;
+
+                  if (!inGrid(nx, ny)) {
+                    continue;
+                  }
+
+                  const nextIndex = gridIndex(nx, ny);
+
+                  if (!visited[nextIndex] && rows[ny][nx] === 'building') {
+                    visited[nextIndex] = 1;
+                    queue.push([nx, ny]);
+                  }
+                }
+              }
+            }
+
+            components.push({ seedX: x, seedY: y, cells });
+          }
+        }
+
+        return components;
+      }
+
+      function previousBuildingMetadataByCell(buildings, rows) {
+        const byCell = new Map();
+
+        if (buildings === undefined || buildings === null) {
+          return byCell;
+        }
+
+        validateBuildingLayout(buildings, rows, { checkRows: false });
+
+        for (const building of buildings.items) {
+          for (const [y, x, length] of building.spans) {
+            for (let offset = 0; offset < length; offset += 1) {
+              byCell.set(tileKey(x + offset, y), {
+                id: building.id,
+                type: building.type
+              });
+            }
+          }
+        }
+
+        return byCell;
+      }
+
+      function validateBuildingLayout(buildings, rows, options = {}) {
+        const checkRows = options.checkRows !== false;
+
+        if (!buildings || typeof buildings !== 'object' || Array.isArray(buildings)) {
+          throw new Error('Map buildings must be an object when present.');
+        }
+
+        if (buildings.encoding !== BUILDING_LAYOUT_ENCODING) {
+          throw new Error(`Map buildings.encoding must be "${BUILDING_LAYOUT_ENCODING}".`);
+        }
+
+        if (!Array.isArray(buildings.items)) {
+          throw new Error('Map buildings.items must be an array.');
+        }
+
+        const covered = new Int32Array(GRID_SIZE * GRID_SIZE);
+        const ids = new Set();
+        covered.fill(-1);
+
+        for (let buildingIndex = 0; buildingIndex < buildings.items.length; buildingIndex += 1) {
+          const building = buildings.items[buildingIndex];
+
+          if (!building || typeof building !== 'object' || Array.isArray(building)) {
+            throw new Error(`Building ${buildingIndex} must be an object.`);
+          }
+
+          if (typeof building.id !== 'string' || building.id.length === 0) {
+            throw new Error(`Building ${buildingIndex} must have a non-empty id.`);
+          }
+
+          if (ids.has(building.id)) {
+            throw new Error(`Duplicate building id "${building.id}".`);
+          }
+
+          if (typeof building.type !== 'string' || building.type.length === 0) {
+            throw new Error(`Building "${building.id}" must have a non-empty type string.`);
+          }
+
+          if (!Array.isArray(building.spans) || building.spans.length === 0) {
+            throw new Error(`Building "${building.id}" must have non-empty spans.`);
+          }
+
+          ids.add(building.id);
+
+          for (const span of building.spans) {
+            if (!Array.isArray(span) || span.length !== 3 || span.some((value) => !Number.isInteger(value))) {
+              throw new Error(`Building "${building.id}" spans must be [y, x, length].`);
+            }
+
+            const [y, x, length] = span;
+
+            if (!inGrid(x, y) || length <= 0 || x + length > GRID_SIZE) {
+              throw new Error(`Building "${building.id}" has an out-of-bounds span.`);
+            }
+
+            for (let offset = 0; offset < length; offset += 1) {
+              const tileX = x + offset;
+              const index = gridIndex(tileX, y);
+
+              if (checkRows && rows[y][tileX] !== 'building') {
+                throw new Error(`Building "${building.id}" covers non-building tile ${tileX},${y}.`);
+              }
+
+              if (covered[index] !== -1) {
+                throw new Error(`Building "${building.id}" overlaps another building at ${tileX},${y}.`);
+              }
+
+              covered[index] = buildingIndex;
+            }
+          }
+        }
+      }
+
+      function pickPreviousBuildingMetadata(component, previousByCell, usedIds) {
+        const counts = new Map();
+
+        for (const [x, y] of component.cells) {
+          const previous = previousByCell.get(tileKey(x, y));
+
+          if (!previous || usedIds.has(previous.id)) {
+            continue;
+          }
+
+          const current = counts.get(previous.id) || {
+            id: previous.id,
+            type: previous.type,
+            count: 0
+          };
+          current.count += 1;
+          counts.set(previous.id, current);
+        }
+
+        let best = null;
+
+        for (const candidate of counts.values()) {
+          if (!best || candidate.count > best.count || (candidate.count === best.count && candidate.id < best.id)) {
+            best = candidate;
+          }
+        }
+
+        if (best) {
+          usedIds.add(best.id);
+          return {
+            id: best.id,
+            type: best.type
+          };
+        }
+
+        return null;
+      }
+
+      function spansForBuildingCells(cells) {
+        const rows = new Map();
+
+        for (const [x, y] of cells) {
+          if (!rows.has(y)) {
+            rows.set(y, []);
+          }
+
+          rows.get(y).push(x);
+        }
+
+        const spans = [];
+
+        for (const [y, xs] of [...rows.entries()].sort((a, b) => a[0] - b[0])) {
+          xs.sort((a, b) => a - b);
+          let start = xs[0];
+          let previous = xs[0];
+
+          for (let i = 1; i < xs.length; i += 1) {
+            const x = xs[i];
+
+            if (x === previous + 1) {
+              previous = x;
+              continue;
+            }
+
+            spans.push([y, start, previous - start + 1]);
+            start = x;
+            previous = x;
+          }
+
+          spans.push([y, start, previous - start + 1]);
+        }
+
+        return spans;
+      }
+
+      function nextBuildingId(start, usedIds) {
+        let index = start;
+
+        while (true) {
+          const id = `building-${String(index).padStart(4, '0')}`;
+
+          if (!usedIds.has(id)) {
+            return id;
+          }
+
+          index += 1;
+        }
+      }
+
+      function createBuildingLookup(buildings) {
+        const lookup = new Int32Array(GRID_SIZE * GRID_SIZE);
+        lookup.fill(-1);
+
+        for (let buildingIndex = 0; buildingIndex < buildings.items.length; buildingIndex += 1) {
+          const building = buildings.items[buildingIndex];
+
+          for (const [y, x, length] of building.spans) {
+            for (let offset = 0; offset < length; offset += 1) {
+              lookup[gridIndex(x + offset, y)] = buildingIndex;
+            }
+          }
+        }
+
+        return lookup;
+      }
+
+      function rebuildMapBuildingsFromRows() {
+        state.map.buildings = createBuildingsFromRows(state.map.rows, state.map.buildings);
+        state.map.buildingLookup = createBuildingLookup(state.map.buildings);
+      }
+
+      function getBuildingAt(x, y) {
+        if (!state.map || !state.map.buildingLookup || !inGrid(x, y)) {
+          return null;
+        }
+
+        const buildingIndex = state.map.buildingLookup[gridIndex(x, y)];
+        return buildingIndex === -1 ? null : state.map.buildings.items[buildingIndex];
+      }
+
+      function getBuildingById(id) {
+        return state.map.buildings.items.find((building) => building.id === id) || null;
       }
 
       function renderTextureMapImage(textureRows, manifest, atlasImage) {
@@ -1163,7 +1500,9 @@
               textureId: before.textureId,
               walkable: state.latestPrediction.behaviorRows.walkable[y][x],
               parkable: state.latestPrediction.behaviorRows.parkable[y][x],
-              drivable: state.latestPrediction.behaviorRows.drivable[y][x]
+              drivable: state.latestPrediction.behaviorRows.drivable[y][x],
+              buildingId: before.buildingId,
+              buildingType: before.buildingType
             };
 
             if (!sameTileSnapshot(before, after)) {
@@ -1182,6 +1521,7 @@
         state.redoStack.length = 0;
         state.dirty = true;
         state.semanticRowsDirty = true;
+        rebuildMapBuildingsFromRows();
         state.map.sourceName = `${state.map.sourceName} + prediction`;
         updateStats();
         draw();
@@ -1295,6 +1635,13 @@
             state.textureRowsDirty = true;
             refreshVisualFromAssets();
             setStatus(`Painted texture ${state.selectedTextureId}. Save Texture Rows to update the app map.`);
+          } else if (layer === 'building') {
+            state.semanticRowsDirty = true;
+            state.latestPrediction = null;
+            state.trainingSummary = null;
+            updateStats();
+            draw();
+            setStatus(`Set building type to ${state.selectedBuildingType}. Save Tile Configuration to update the app map.`);
           } else {
             state.semanticRowsDirty = true;
             state.latestPrediction = null;
@@ -1302,6 +1649,11 @@
             updateStats();
             draw();
           }
+        } else if (layer === 'building') {
+          const building = getBuildingAt(tileX, tileY);
+          setStatus(building
+            ? `Building ${building.id} is already ${state.selectedBuildingType}.`
+            : `No building at ${tileX},${tileY}.`, !building);
         }
       }
 
@@ -1353,6 +1705,14 @@
 
         if (layer === 'type') {
           state.map.rows[y][x] = state.selectedTypeLabel;
+        } else if (layer === 'building') {
+          const building = getBuildingAt(x, y);
+
+          if (!building) {
+            return false;
+          }
+
+          building.type = state.selectedBuildingType;
         } else if (layer === 'texture') {
           state.map.textureRows[y][x] = state.selectedTextureId;
         } else {
@@ -1370,17 +1730,27 @@
       }
 
       function snapshotTile(x, y) {
+        const building = getBuildingAt(x, y);
+
         return {
           type: state.map.rows[y][x],
           textureId: state.map.textureRows[y][x],
           walkable: state.map.behaviorRows.walkable[y][x],
           parkable: state.map.behaviorRows.parkable[y][x],
-          drivable: state.map.behaviorRows.drivable[y][x]
+          drivable: state.map.behaviorRows.drivable[y][x],
+          buildingId: building ? building.id : null,
+          buildingType: building ? building.type : null
         };
       }
 
       function sameTileSnapshot(a, b) {
-        return a.type === b.type && a.textureId === b.textureId && a.walkable === b.walkable && a.parkable === b.parkable && a.drivable === b.drivable;
+        return a.type === b.type &&
+          a.textureId === b.textureId &&
+          a.walkable === b.walkable &&
+          a.parkable === b.parkable &&
+          a.drivable === b.drivable &&
+          a.buildingId === b.buildingId &&
+          a.buildingType === b.buildingType;
       }
 
       function recordStrokeChange(x, y, before, after) {
@@ -1413,6 +1783,11 @@
 
         state.undoStack.push(operation);
         state.redoStack.length = 0;
+
+        if (operationChangesTileTypes(operation)) {
+          rebuildMapBuildingsFromRows();
+        }
+
         updateStats();
       }
 
@@ -1426,6 +1801,10 @@
 
         for (const change of operation) {
           restoreTileSnapshot(change.x, change.y, change.before);
+        }
+
+        if (operationChangesTileTypes(operation)) {
+          rebuildMapBuildingsFromRows();
         }
 
         state.redoStack.push(operation);
@@ -1457,6 +1836,10 @@
           restoreTileSnapshot(change.x, change.y, change.after);
         }
 
+        if (operationChangesTileTypes(operation)) {
+          rebuildMapBuildingsFromRows();
+        }
+
         state.undoStack.push(operation);
         state.dirty = true;
         state.trainingSummary = null;
@@ -1481,6 +1864,14 @@
         for (const property of BEHAVIOR_LABELS) {
           state.map.behaviorRows[property][y][x] = snapshot[property];
         }
+
+        if (snapshot.buildingId) {
+          const building = getBuildingById(snapshot.buildingId);
+
+          if (building) {
+            building.type = snapshot.buildingType;
+          }
+        }
       }
 
       function operationChangesTexture(operation) {
@@ -1492,8 +1883,13 @@
           change.before.type !== change.after.type ||
           change.before.walkable !== change.after.walkable ||
           change.before.parkable !== change.after.parkable ||
-          change.before.drivable !== change.after.drivable
+          change.before.drivable !== change.after.drivable ||
+          change.before.buildingType !== change.after.buildingType
         );
+      }
+
+      function operationChangesTileTypes(operation) {
+        return operation.some((change) => change.before.type !== change.after.type);
       }
 
       function draw() {
@@ -1537,6 +1933,12 @@
             } else if (layer === 'texture') {
               if (hasSelectedTexture() && state.map.textureRows[y][x] === state.selectedTextureId) {
                 drawTileFill(x, y, '#f2cc47');
+              }
+            } else if (layer === 'building') {
+              const building = getBuildingAt(x, y);
+
+              if (building) {
+                drawTileFill(x, y, BUILDING_TYPE_COLORS[building.type] || BUILDING_TYPE_COLORS.unknown);
               }
             } else {
               const value = state.map.behaviorRows[layer][y][x];
@@ -1590,8 +1992,10 @@
       }
 
       function buildEpiCityJson() {
+        rebuildMapBuildingsFromRows();
+
         if (state.map.originalMap && !state.semanticRowsDirty) {
-          const { textureRows, ...originalMap } = state.map.originalMap;
+          const { textureRows, buildings, ...originalMap } = state.map.originalMap;
           return {
             ...originalMap,
             width: GRID_SIZE,
@@ -1599,6 +2003,7 @@
             tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
             textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
             legend: legendForSave(state.map.originalMap.legend),
+            buildings: buildBuildingsJson(),
             rows: [...state.map.originalMap.rows]
           };
         }
@@ -1638,7 +2043,20 @@
           tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
           textureSet: state.map.textureSet || DEFAULT_TEXTURE_SET,
           legend,
+          buildings: buildBuildingsJson(),
           rows
+        };
+      }
+
+      function buildBuildingsJson() {
+        return {
+          encoding: BUILDING_LAYOUT_ENCODING,
+          defaultType: DEFAULT_BUILDING_TYPE,
+          items: state.map.buildings.items.map((building) => ({
+            id: building.id,
+            type: building.type,
+            spans: building.spans.map((span) => [...span])
+          }))
         };
       }
 
@@ -1722,6 +2140,30 @@
           addStat('texture tool', state.texturePickMode ? 'pick' : 'paint');
           addStat('selected usage', hasSelectedTexture() ? countTextureUsage(state.selectedTextureId) : 0);
           addStat('unique textures', countUniqueTextures());
+        } else if (layer === 'building') {
+          const counts = Object.fromEntries(BUILDING_TYPES.map((type) => [type, 0]));
+          let unknownCount = 0;
+          const hoverBuilding = state.hoverTile ? getBuildingAt(state.hoverTile.x, state.hoverTile.y) : null;
+
+          for (const building of state.map.buildings.items) {
+            if (Object.prototype.hasOwnProperty.call(counts, building.type)) {
+              counts[building.type] += 1;
+            } else {
+              unknownCount += 1;
+            }
+          }
+
+          addStat('selected type', state.selectedBuildingType);
+          addStat('buildings', state.map.buildings.items.length);
+          addStat('hover building', hoverBuilding ? hoverBuilding.id : 'none');
+
+          for (const type of BUILDING_TYPES) {
+            addStat(type, counts[type]);
+          }
+
+          if (unknownCount > 0) {
+            addStat('unknown', unknownCount);
+          }
         } else {
           let emptyCount = 0;
           let trueCount = 0;
@@ -1757,7 +2199,15 @@
           return null;
         }
 
-        return layer === 'type' ? state.trainingSummary.type : state.trainingSummary.behavior && state.trainingSummary.behavior[layer];
+        if (layer === 'type') {
+          return state.trainingSummary.type;
+        }
+
+        if (!BEHAVIOR_LABELS.includes(layer)) {
+          return null;
+        }
+
+        return state.trainingSummary.behavior && state.trainingSummary.behavior[layer];
       }
 
       function addStat(label, value) {
@@ -2105,6 +2555,10 @@
 
       function tileKey(x, y) {
         return `${x},${y}`;
+      }
+
+      function gridIndex(x, y) {
+        return y * GRID_SIZE + x;
       }
 
       function clamp(value, min, max) {

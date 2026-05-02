@@ -20,10 +20,13 @@ const PORT = Number(process.env.PORT || 5174);
 const GRID_SIZE = 256;
 const DEFAULT_TILE_SIZE = 32;
 const TEXTURE_SET_NAME = 'liberty-city-clean';
+const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
+const DEFAULT_BUILDING_TYPE = 'residential';
 const MAX_JSON_BODY_BYTES = 64 * 1024 * 1024;
 const MAX_TRAINER_OUTPUT_BYTES = 5 * 1024 * 1024;
 
 const TYPE_LABEL_OPTIONS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
+const BUILDING_TYPE_OPTIONS = Object.freeze(['residential', 'commercial', 'hospital']);
 const BEHAVIOR_LABEL_OPTIONS = Object.freeze(['walkable', 'parkable', 'drivable']);
 
 class HttpError extends Error {
@@ -189,6 +192,11 @@ function createDefaultTileConfiguration() {
         parkable: null
       }
     },
+    buildings: {
+      encoding: BUILDING_LAYOUT_ENCODING,
+      defaultType: DEFAULT_BUILDING_TYPE,
+      items: []
+    },
     rows: Array.from({ length: GRID_SIZE }, () => emptySymbol.repeat(GRID_SIZE))
   };
 }
@@ -248,6 +256,7 @@ async function handleRequest(request, response) {
         defaultAtlasUrl: '/default-texture-atlas',
         defaultAtlasPath: path.relative(REPO_ROOT, DEFAULT_ATLAS_PATH),
         typeLabels: TYPE_LABEL_OPTIONS,
+        buildingTypes: BUILDING_TYPE_OPTIONS,
         behaviorLabels: BEHAVIOR_LABEL_OPTIONS
       });
       return;
