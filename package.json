@@ -7,10 +7,16 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "check": "npm run test && npm run build && node --check map-editor/server.mjs && PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile map-editor/train_random_forest.py process_gta_map/build-gta-tilemap.py",
     "map-editor": "node map-editor/server.mjs",
     "map-editor:deps": "node map-editor/setup-python-env.mjs"
   },
   "devDependencies": {
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "pixi.js": "^8.18.1"
   }
 }

@@ -1,6 +1,6 @@
 # Internal Architecture
 
-Epi City currently keeps the implementation in one `index.html` file so early simulation ideas can move quickly. The default Liberty City map package lives in `public/maps/liberty-city-clean`, while the browser compiles the tile layout into a faster runtime representation after validation.
+Epi City uses a small `index.html` shell plus Vite-served modules under `src/`. The default Liberty City map package lives in `public/maps/liberty-city-clean`, while the browser validates and compiles the tile layout into a faster runtime representation before simulation starts.
 
 ## Map Data Flow
 
@@ -8,15 +8,16 @@ The app loads `./maps/liberty-city-clean/tile-layout.json` and `./maps/liberty-c
 
 Startup follows this sequence:
 
-1. Pixi creates a full-window canvas and a `world` container.
-2. The app installs left-drag pan and wheel zoom camera controls.
-3. `loadCityMap()` fetches the semantic tile layout, then fetches the texture rows layout and validates both files.
-4. `compileCityMap()` converts the merged semantic rows and texture rows into typed arrays.
-5. `loadTextureSet()` loads the selected texture manifest and atlas image.
-6. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
-7. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-8. `installDebugDashboard()` adds keyboard-controlled behavior overlays for movement debugging.
-9. `createNpcSimulation()` creates the NPC system, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, `update(dt)`, and `render()` each animation frame.
+1. Vite loads `src/main.js`, which imports Pixi from the npm dependency instead of a CDN global.
+2. Pixi creates a full-window canvas and a `world` container.
+3. The app installs left-drag pan and wheel zoom camera controls with a teardown handle.
+4. `loadCityMap()` fetches the semantic tile layout, fetches the texture rows layout, validates both files, and returns normalized map data.
+5. `compileCityMap()` converts the normalized semantic rows and texture rows into typed arrays.
+6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
+7. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
+8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
+9. `installDebugDashboard()` adds keyboard-controlled behavior overlays for movement debugging and caches overlay layers after their first build.
+10. `createNpcSimulation()` creates the NPC system, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
 
@@ -92,6 +93,8 @@ The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `ob
 | `inBounds(x, y)` | Checks integer grid bounds. |
 | `isWalkable(x, y)`, `isDrivable(x, y)`, `isParkable(x, y)` | Checks generated tile behavior layers directly. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
+| `canStep(fromX, fromY, toX, toY, mode)` | Checks a single movement step, including vehicle diagonal corner rules. |
+| `forEachNeighbor(x, y, mode, callback)` | Iterates passable neighbors without allocating an array. |
 | `neighbors(x, y, mode)` | Returns passable 8-way neighbors with movement costs. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
 | `findPath(start, end, mode)` | Runs on-demand A* and returns `{ x, y }` path points. |
@@ -106,7 +109,7 @@ The checked-in layout stores behavior as explicit legend properties instead of d
 
 A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Pedestrian movement exposes every adjacent `walkable` tile, including diagonal neighbors. Vehicle movement keeps stricter diagonal corner checks by requiring both adjacent cardinal cells to be drivable.
 
-`findPath()` currently runs on demand and allocates fresh search arrays per request. This is simple and correct for the current prototype. If hundreds of NPCs request routes every frame, add route caching, hierarchical routing, or per-mode navigation graphs before tuning visual rendering.
+`findPath()` currently runs on demand and reuses per-city scratch arrays for its open/closed/came-from/score state. If hundreds of NPCs request routes every frame, add route caching, hierarchical routing, or per-mode navigation graphs before tuning visual rendering.
 
 ## NPC Simulation
 
@@ -127,7 +130,7 @@ NPCs are `Npc` entity objects built from simple components:
 
 The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop.
 
-Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved.
+Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved. Movement selection uses the city's non-allocating step checks instead of building a fresh neighbor array for each NPC decision.
 
 ## Texture Sets
 
@@ -171,7 +174,7 @@ Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-
 
 The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, building slate, and obstacle red.
 
-`renderDebugOverlays()` redraws only the overlay layer. It uses the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
+Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 
 ## Map Editor
 
@@ -191,7 +194,7 @@ The editor tracks semantic tile-property and building metadata edits separately 
 
 Training stores predictions separately from the editable map. `Predict labels` applies the latest prediction to the map as one undoable operation, which lets users inspect training results before committing them. The main app still requires complete tile type and behavior labels before a saved editor configuration replaces the runtime map.
 
-The map editor server serves `/`, `/source-image`, `/api/config`, and `/api/train`. Older sparse label and server-side map load/write endpoints return `410 Gone`, which keeps loading and saving explicit in the browser.
+The map editor server serves `/`, `/source-image`, `/default-texture-manifest`, `/default-texture-atlas`, `/api/config`, and `/api/train`. Removed sparse-label and server-side map load/write routes now fall through to the standard unknown-route `404`.
 
 Run the map editor with:
 
@@ -224,7 +227,6 @@ window.citySim.dashboard.setOverlay('walkable', true)
 
 ## Near-Term Extension Points
 
-- Move code from `index.html` into modules once simulation systems grow beyond the prototype stage.
+- Add focused tests around editor-side validators once the browser editor is split into modules.
 - Add route caching or navigation graphs before many NPCs request long paths frequently.
-- Add actor rendering to `window.citySim.layers.actors` so NPCs stay separate from the static map layer.
 - Add simulation metadata outside the base tile category when infection dynamics need population, occupancy, or district information.

@@ -35,50 +35,22 @@ EMPTY_LABEL_VALUES = (None, "")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--map", type=Path, default=None)
-    parser.add_argument("--state", default=None, help="JSON file with rows/behaviorRows, or '-' to read stdin.")
+    parser.add_argument("--state", required=True, help="JSON file with rows/behaviorRows, or '-' to read stdin.")
     parser.add_argument("--grid-size", type=int, default=GRID_SIZE)
     parser.add_argument("--trees", type=int, default=48)
     return parser.parse_args()
 
 
-def load_baseline(map_path: Path, grid_size: int) -> tuple[list[list[str]], dict[str, list[list[bool]]]]:
-    data = read_json_object(map_path, "baseline map")
-    validate_baseline_map(data, grid_size)
-    legend = data["legend"]
-    type_rows: list[list[str]] = []
-    behavior_rows = {property_name: [] for property_name in BEHAVIOR_LABELS}
-
-    for y in range(grid_size):
-        row = data["rows"][y]
-        type_row = []
-        behavior_row_map = {property_name: [] for property_name in BEHAVIOR_LABELS}
-
-        for x in range(grid_size):
-            entry = legend[row[x]]
-            type_row.append(entry["category"])
-
-            for property_name in BEHAVIOR_LABELS:
-                behavior_row_map[property_name].append(bool(entry[property_name]))
-
-        type_rows.append(type_row)
-
-        for property_name in BEHAVIOR_LABELS:
-            behavior_rows[property_name].append(behavior_row_map[property_name])
-
-    return type_rows, behavior_rows
-
-
 def build_features(
     source_path: Path,
-    baseline_type_rows: list[list[str]],
-    baseline_behavior_rows: dict[str, list[list[bool]]],
+    type_rows: list[list[Any]],
+    behavior_rows: dict[str, list[list[Any]]],
     grid_size: int,
 ) -> tuple[np.ndarray, str]:
     return build_features_from_image(
         load_source_image(source_path, grid_size),
-        baseline_type_rows,
-        baseline_behavior_rows,
+        type_rows,
+        behavior_rows,
         grid_size,
         "source image",
     )
@@ -86,14 +58,14 @@ def build_features(
 
 def build_features_from_texture_source(
     texture_feature_source: dict[str, Any],
-    baseline_type_rows: list[list[str]],
-    baseline_behavior_rows: dict[str, list[list[bool]]],
+    type_rows: list[list[Any]],
+    behavior_rows: dict[str, list[list[Any]]],
     grid_size: int,
 ) -> tuple[np.ndarray, str]:
     return build_features_from_image(
         render_texture_feature_image(texture_feature_source, grid_size),
-        baseline_type_rows,
-        baseline_behavior_rows,
+        type_rows,
+        behavior_rows,
         grid_size,
         "textureRows",
     )
@@ -101,8 +73,8 @@ def build_features_from_texture_source(
 
 def build_features_from_image(
     resized: Image.Image,
-    baseline_type_rows: list[list[str]],
-    baseline_behavior_rows: dict[str, list[list[bool]]],
+    type_rows: list[list[Any]],
+    behavior_rows: dict[str, list[list[Any]]],
     grid_size: int,
     feature_source: str,
 ) -> tuple[np.ndarray, str]:
@@ -146,14 +118,14 @@ def build_features_from_image(
 
     for y in range(grid_size):
         for x in range(grid_size):
-            label = baseline_type_rows[y][x]
+            label = type_rows[y][x]
             if label in type_index:
                 type_one_hot[y, x, type_index[label]] = 1.0
 
     behavior = np.stack(
         [
             np.asarray(
-                [[1.0 if value is True else 0.0 for value in row] for row in baseline_behavior_rows[property_name]],
+                [[1.0 if value is True else 0.0 for value in row] for row in behavior_rows[property_name]],
                 dtype=np.float32,
             )
             for property_name in BEHAVIOR_LABELS
@@ -416,39 +388,7 @@ def validate_grid_size(grid_size: int) -> None:
         raise ValueError("--grid-size must be at least 2.")
 
 
-def validate_baseline_map(data: dict[str, Any], grid_size: int) -> None:
-    if data.get("width") != grid_size or data.get("height") != grid_size:
-        raise ValueError(f"Baseline map must be {grid_size}x{grid_size}.")
-
-    legend = data.get("legend")
-    if not isinstance(legend, dict):
-        raise ValueError("Baseline map legend must be an object.")
-
-    rows = data.get("rows")
-    if not isinstance(rows, list) or len(rows) != grid_size:
-        raise ValueError(f"Baseline map rows must contain {grid_size} rows.")
-
-    for y, row in enumerate(rows):
-        if not isinstance(row, str) or len(row) != grid_size:
-            raise ValueError(f"Baseline map row {y} must contain {grid_size} symbols.")
-
-        for x, symbol in enumerate(row):
-            entry = legend.get(symbol)
-            if not isinstance(entry, dict):
-                raise ValueError(f"Baseline map row {y} references missing legend symbol {symbol!r} at {x},{y}.")
-
-            if entry.get("category") not in TYPE_LABELS:
-                raise ValueError(f"Baseline map legend symbol {symbol!r} has unsupported category: {entry.get('category')!r}.")
-
-            for property_name in BEHAVIOR_LABELS:
-                if not isinstance(entry.get(property_name), bool):
-                    raise ValueError(f"Baseline map legend symbol {symbol!r} must include boolean {property_name}.")
-
-
-def read_state_object(state: str | None) -> dict[str, Any] | None:
-    if state is None:
-        return None
-
+def read_state_object(state: str) -> dict[str, Any]:
     if state == "-":
         try:
             data = json.load(sys.stdin)
@@ -512,15 +452,8 @@ def main() -> None:
     args = parse_args()
     validate_grid_size(args.grid_size)
     state = read_state_object(args.state)
-
-    if state is not None:
-        type_rows, behavior_rows = normalize_state_rows(state, args.grid_size)
-    elif args.map is not None:
-        type_rows, behavior_rows = load_baseline(args.map, args.grid_size)
-    else:
-        raise ValueError("--state is required unless --map is provided.")
-
-    texture_feature_source = state.get("textureFeatureSource") if state is not None else None
+    type_rows, behavior_rows = normalize_state_rows(state, args.grid_size)
+    texture_feature_source = state.get("textureFeatureSource")
 
     if texture_feature_source is not None:
         features, feature_source = build_features_from_texture_source(

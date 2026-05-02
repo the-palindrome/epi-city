@@ -24,7 +24,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 ## Project Structure
 
-- `index.html` contains the Pixi app, explicit game loop, camera controls, map validation, runtime city API, atlas texture renderer, NPC simulation, and pathfinding.
+- `index.html` is the app shell and loads the Vite module entrypoint.
+- `src/` contains the runtime modules: map validation/compilation, Pixi rendering, camera controls, game loop, debug dashboard, and NPC simulation.
 - `public/maps/liberty-city-clean/tile-layout.json` contains the default static Liberty City semantic tile layout.
 - `public/maps/liberty-city-clean/texture-layout.json` contains one atlas-frame texture ID per map cell.
 - `public/maps/liberty-city-clean/manifest.json` describes the Liberty City atlas frames used by the default texture set.
@@ -147,6 +148,12 @@ window.citySim.setTextureSet('liberty-city-clean')
 ```
 
 ## Build
+
+Run the unit tests and production build with:
+
+```bash
+npm run check
+```
 
 Create a production build with:
 

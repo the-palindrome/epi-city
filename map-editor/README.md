@@ -143,9 +143,9 @@ The browser UI talks to the local Node server through a small API:
 
 - `GET /api/config` returns editor options, source paths, the default empty tile configuration, and the default texture rows.
 - `GET /source-image` serves the source map image.
+- `GET /default-texture-manifest` serves the default clean Liberty City texture manifest.
+- `GET /default-texture-atlas` serves the default clean Liberty City atlas image.
 - `POST /api/train` trains from posted sparse `rows` and `behaviorRows`, plus optional atlas/manifest/`textureRows` feature data, and returns predicted grids.
-
-The old sparse label and server-side map write endpoints return `410 Gone`. Loading and saving happen through browser file pickers and Save As dialogs.
 
 ## Saved Map Format
 

@@ -262,31 +262,6 @@ async function handleRequest(request, response) {
       return;
     }
 
-    if (request.method === 'GET' && url.pathname === '/api/labels') {
-      sendError(response, 410, 'Sparse label files are deprecated. Keep labels in the browser state and POST rows/behaviorRows to /api/train.');
-      return;
-    }
-
-    if (request.method === 'POST' && url.pathname === '/api/labels') {
-      sendError(response, 410, 'Sparse label file writes are deprecated. Keep labels in the browser state and POST rows/behaviorRows to /api/train.');
-      return;
-    }
-
-    if (request.method === 'GET' && url.pathname === '/api/current-classification') {
-      sendError(response, 410, 'Server-side map loading is deprecated. Use Load Tile Configuration to load a local tile configuration into the browser state.');
-      return;
-    }
-
-    if (request.method === 'GET' && url.pathname === '/api/epi-city-map') {
-      sendError(response, 410, 'Server-side map loading is deprecated. Use Load Tile Configuration to load a local tile configuration into the browser state.');
-      return;
-    }
-
-    if (request.method === 'POST' && url.pathname === '/api/epi-city-map') {
-      sendError(response, 410, 'Server-side map JSON writes are deprecated. Save the current map as a downloaded JSON file from the browser.');
-      return;
-    }
-
     if (request.method === 'POST' && url.pathname === '/api/train') {
       const options = (await readRequestJson(request)) || {};
       validateTrainOptions(options);

@@ -17,7 +17,7 @@ Running the script updates these runtime files:
 - `public/maps/liberty-city/liberty-city-atlas.webp`
 - `process_gta_map/output/gta-256-textured-preview.png`
 
-The `process_gta_map/output/` preview is local inspection output and is ignored by Git. The `public/` files are the app-facing generated artifacts.
+The `process_gta_map/output/` preview is local inspection output and is ignored by Git. The generated `public/maps/liberty-city/` package is raw importer output. The app defaults to `public/maps/liberty-city-clean/`, which is the curated/editor-reviewed package with semantic corrections and building metadata.
 
 ## Requirements
 
@@ -71,6 +71,8 @@ xdg-open process_gta_map/output/gta-256-textured-preview.png
 ```
 
 The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing the generated files under `public/maps/liberty-city`.
+
+To promote regenerated raw assets into the default `liberty-city-clean` package, review the generated output, load the relevant files in the map editor, apply semantic/building corrections, then save over the clean package files intentionally. Do not copy raw importer output into `liberty-city-clean` without that review step.
 
 ## Notes
 
