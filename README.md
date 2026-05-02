@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/maps/`, and the app loads the `liberty-city-clean` map package by default.
+Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/maps/`, and the app loads the `liberty-city-clean` map package by default. Local dev and preview requests for `/maps/...` are served from `public/maps/...` with `no-store`, so editor changes to the source map files show up without relying on stale `dist/maps` copies.
 
 ## Controls
 

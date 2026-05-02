@@ -4,7 +4,7 @@ Epi City currently keeps the implementation in one `index.html` file so early si
 
 ## Map Data Flow
 
-The app loads `./maps/liberty-city-clean/tile-layout.json` and `./maps/liberty-city-clean/texture-layout.json` at startup. Vite serves `public/maps/` from the site root, so the same relative fetches work in development and production builds.
+The app loads `./maps/liberty-city-clean/tile-layout.json` and `./maps/liberty-city-clean/texture-layout.json` at startup. Vite serves `public/maps/` from the site root, so the same relative fetches work in development and production builds. The local Vite dev and preview servers intercept `/maps/...` and serve those files directly from `public/maps/...` with `no-store`, which keeps local map-editor saves from being hidden by stale `dist/maps` build output.
 
 Startup follows this sequence:
 
