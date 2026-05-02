@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build a 256x256 exact-tile Liberty City map from the source image.
+"""Build a 256x256 exact-tile Liberty City raw map from the source image.
 
-The generated JSON and texture assets are the committed/runtime artifacts. The
-script decomposes the source map into 65,536 source tiles, deduplicates exact
-duplicate crops, and verifies that every texture layout entry points back to
-matching source pixels.
+The generated JSON and texture assets are raw importer output. The script
+decomposes the source map into 65,536 source tiles, deduplicates exact duplicate
+crops, and verifies that every texture layout entry points back to matching
+source pixels.
 """
 
 from __future__ import annotations
@@ -26,9 +26,9 @@ PROCESS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROCESS_DIR.parent
 
 SOURCE = PROCESS_DIR / "source/gta1-liberty-city-hd.webp"
-OUTPUT_MAP = REPO_ROOT / "public/maps/liberty-city/tile-layout.json"
-OUTPUT_TEXTURE_LAYOUT = REPO_ROOT / "public/maps/liberty-city/texture-layout.json"
-OUTPUT_TEXTURES = REPO_ROOT / "public/maps/liberty-city"
+OUTPUT_MAP = PROCESS_DIR / "output/liberty-city-raw/tile-layout.json"
+OUTPUT_TEXTURE_LAYOUT = PROCESS_DIR / "output/liberty-city-raw/texture-layout.json"
+OUTPUT_TEXTURES = PROCESS_DIR / "output/liberty-city-raw"
 PREVIEW = PROCESS_DIR / "output/gta-256-textured-preview.png"
 GRID_SIZE = 256
 WORLD_TILE_SIZE = 32

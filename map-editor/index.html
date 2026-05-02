@@ -241,7 +241,6 @@
           <button id="load-texture-manifest" type="button">Load Texture Manifest</button>
           <button id="save-tile-config" class="primary" type="button" title="Writes semantic rows and behavior flags for the app map.">Save Tile Configuration</button>
           <button id="save-texture-rows" type="button" title="Writes textureRows for the app map.">Save Texture Rows</button>
-          <button id="save-texture-manifest" type="button" title="Writes atlas frame metadata only. Texture painting is saved separately with texture rows.">Save Texture Manifest</button>
           <button id="reset-defaults" type="button">Reset to defaults</button>
           <button id="fit" type="button">Fit map</button>
           <button id="undo" type="button">Undo</button>
@@ -269,7 +268,7 @@
     <script type="module">
       const GRID_SIZE = 256;
       const DEFAULT_TILE_SIZE = 32;
-      const DEFAULT_TEXTURE_SET = 'liberty-city-clean';
+      const DEFAULT_TEXTURE_SET = 'liberty-city';
       const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
       const DEFAULT_BUILDING_TYPE = 'residential';
       const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
@@ -388,7 +387,7 @@
         setStatus(defaultTextureAssetError
           ? `Ready. Default texture preview could not load: ${defaultTextureAssetError.message}`
           : state.config.defaultTileConfiguration
-          ? 'Ready. Default empty tile configuration, current texture rows, and clean Liberty City texture preview are loaded.'
+          ? 'Ready. Default empty tile configuration, current texture rows, and Liberty City texture preview are loaded.'
           : 'Ready. Load an atlas, tile configuration, texture rows, and texture manifest separately.');
         draw();
       }
@@ -507,7 +506,6 @@
         textureManifestFileInput.addEventListener('change', loadSelectedTextureManifest);
         document.getElementById('save-tile-config').addEventListener('click', saveTileConfiguration);
         document.getElementById('save-texture-rows').addEventListener('click', saveTextureRows);
-        document.getElementById('save-texture-manifest').addEventListener('click', saveTextureManifest);
         document.getElementById('reset-defaults').addEventListener('click', resetToDefaults);
         trainButton.addEventListener('click', trainModel);
         predictButton.addEventListener('click', applyLatestPrediction);
@@ -567,7 +565,7 @@
             return;
           }
 
-          if (paintLayer.value === 'texture' && ['i', 'p'].includes(key)) {
+          if (paintLayer.value === 'texture' && key === 'p') {
             setSelectedPaintValue('pick');
             event.preventDefault();
             return;
@@ -1312,41 +1310,6 @@
         }
       }
 
-      async function saveTextureManifest() {
-        if (!state.textureManifest) {
-          setStatus('Load a texture manifest before saving one.', true);
-          return;
-        }
-
-        if (state.dirty) {
-          const dirtyFiles = [];
-          if (state.semanticRowsDirty) {
-            dirtyFiles.push('tile configuration');
-          }
-          if (state.textureRowsDirty) {
-            dirtyFiles.push('texture rows');
-          }
-          setStatus(`Unsaved ${dirtyFiles.join(' and ')} changes are pending. Save Texture Manifest only writes atlas frame metadata.`, true);
-          return;
-        }
-
-        const fileName = suggestedTextureManifestSaveName();
-
-        try {
-          const text = `${JSON.stringify(state.textureManifest)}\n`;
-          await saveTextFile(fileName, text, 'Texture Manifest JSON');
-          setStatus(`Saved texture manifest ${fileName}. This only writes atlas frame metadata.`);
-        } catch (error) {
-          if (error.name === 'AbortError') {
-            setStatus('Save texture manifest canceled.');
-            return;
-          }
-
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
       async function saveTextFile(fileName, text, description) {
         if ('showSaveFilePicker' in window) {
           const handle = await window.showSaveFilePicker({
@@ -1372,11 +1335,6 @@
       function suggestedTextureRowsSaveName() {
         const base = (state.map.textureRowsFileName || 'texture-layout.json').replace(/\.json$/i, '');
         return `${base || 'texture-layout'}-edited.json`;
-      }
-
-      function suggestedTextureManifestSaveName() {
-        const base = (state.textureManifestFileName || 'manifest.json').replace(/\.json$/i, '');
-        return `${base || 'manifest'}-edited.json`;
       }
 
       function downloadText(fileName, text, mimeType) {

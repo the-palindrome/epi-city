@@ -13,13 +13,13 @@ const VENV_PYTHON_PATH = process.platform === 'win32'
   ? path.join(TOOL_DIR, '.venv', 'Scripts', 'python.exe')
   : path.join(TOOL_DIR, '.venv', 'bin', 'python');
 const SOURCE_IMAGE_PATH = path.join(REPO_ROOT, 'process_gta_map/source/gta1-liberty-city-hd.webp');
-const DEFAULT_TEXTURE_LAYOUT_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city-clean/texture-layout.json');
-const DEFAULT_TEXTURE_MANIFEST_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city-clean/manifest.json');
-const DEFAULT_ATLAS_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city-clean/liberty-city-atlas.webp');
+const DEFAULT_TEXTURE_LAYOUT_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/texture-layout.json');
+const DEFAULT_TEXTURE_MANIFEST_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/manifest.json');
+const DEFAULT_ATLAS_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/liberty-city-atlas.webp');
 const PORT = Number(process.env.PORT || 5174);
 const GRID_SIZE = 256;
 const DEFAULT_TILE_SIZE = 32;
-const TEXTURE_SET_NAME = 'liberty-city-clean';
+const TEXTURE_SET_NAME = 'liberty-city';
 const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
 const DEFAULT_BUILDING_TYPE = 'residential';
 const MAX_JSON_BODY_BYTES = 64 * 1024 * 1024;
@@ -259,31 +259,6 @@ async function handleRequest(request, response) {
         buildingTypes: BUILDING_TYPE_OPTIONS,
         behaviorLabels: BEHAVIOR_LABEL_OPTIONS
       });
-      return;
-    }
-
-    if (request.method === 'GET' && url.pathname === '/api/labels') {
-      sendError(response, 410, 'Sparse label files are deprecated. Keep labels in the browser state and POST rows/behaviorRows to /api/train.');
-      return;
-    }
-
-    if (request.method === 'POST' && url.pathname === '/api/labels') {
-      sendError(response, 410, 'Sparse label file writes are deprecated. Keep labels in the browser state and POST rows/behaviorRows to /api/train.');
-      return;
-    }
-
-    if (request.method === 'GET' && url.pathname === '/api/current-classification') {
-      sendError(response, 410, 'Server-side map loading is deprecated. Use Load Tile Configuration to load a local tile configuration into the browser state.');
-      return;
-    }
-
-    if (request.method === 'GET' && url.pathname === '/api/epi-city-map') {
-      sendError(response, 410, 'Server-side map loading is deprecated. Use Load Tile Configuration to load a local tile configuration into the browser state.');
-      return;
-    }
-
-    if (request.method === 'POST' && url.pathname === '/api/epi-city-map') {
-      sendError(response, 410, 'Server-side map JSON writes are deprecated. Save the current map as a downloaded JSON file from the browser.');
       return;
     }
 

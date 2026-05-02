@@ -34,7 +34,7 @@ function recreateVenv(reason) {
   console.log(`${reason} Recreating ${displayPath(VENV_DIR)}...`);
   removeVenv();
 
-  const result = spawnSync(bootstrapPython, ['-m', 'venv', '--copies', VENV_DIR], {
+  const result = spawnSync(bootstrapPython, ['-m', 'venv', VENV_DIR], {
     cwd: REPO_ROOT,
     stdio: 'inherit'
   });

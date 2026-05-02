@@ -5,19 +5,19 @@ This folder contains the reproducible import pipeline for the Liberty City map u
 ## Contents
 
 - `source/gta1-liberty-city-hd.webp` is the canonical downloaded source image.
-- `build-gta-tilemap.py` converts the source image into the runtime map and texture assets.
+- `build-gta-tilemap.py` converts the source image into raw importer map and texture assets.
 
 ## Generated Files
 
-Running the script updates these runtime files:
+Running the script writes ignored raw importer output:
 
-- `public/maps/liberty-city/tile-layout.json`
-- `public/maps/liberty-city/texture-layout.json`
-- `public/maps/liberty-city/manifest.json`
-- `public/maps/liberty-city/liberty-city-atlas.webp`
+- `process_gta_map/output/liberty-city-raw/tile-layout.json`
+- `process_gta_map/output/liberty-city-raw/texture-layout.json`
+- `process_gta_map/output/liberty-city-raw/manifest.json`
+- `process_gta_map/output/liberty-city-raw/liberty-city-atlas.webp`
 - `process_gta_map/output/gta-256-textured-preview.png`
 
-The `process_gta_map/output/` preview is local inspection output and is ignored by Git. The `public/` files are the app-facing generated artifacts.
+The generated `process_gta_map/output/` files are local inspection outputs ignored by Git. The app defaults to `public/maps/liberty-city/`, which is the curated/editor-reviewed package with semantic corrections and building metadata.
 
 ## Requirements
 
@@ -48,13 +48,7 @@ The script performs these steps:
 7. Verifies each `textureRows` entry against the original source pixels.
 8. Writes a preview image to `process_gta_map/output/gta-256-textured-preview.png`.
 
-Expected current stats:
-
-```text
-source tiles checked: 65536
-unique tiles: 64193
-duplicates removed: 1343
-```
+The script prints current dedupe stats after it runs.
 
 ## Verify The App
 
@@ -70,7 +64,9 @@ For visual inspection, open the preview:
 xdg-open process_gta_map/output/gta-256-textured-preview.png
 ```
 
-The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing the generated files under `public/maps/liberty-city`.
+The preview should match the source map tile-by-tile. If it does not, treat the preprocessing script as the source of truth and fix the importer rather than manually editing generated output files.
+
+To promote regenerated raw assets into the default `public/maps/liberty-city/` package, review the generated output, load the relevant files in the map editor, apply semantic/building corrections, then save over the runtime package files intentionally. Do not copy raw importer output directly into `public/maps/liberty-city/` without that review step.
 
 ## Notes
 
@@ -78,4 +74,3 @@ The preview should match the source map tile-by-tile. If it does not, treat the 
 - `rows` stores gameplay semantics through legend symbols in `tile-layout.json`.
 - The legend stores generated `walkable`, `drivable`, and `parkable` booleans for each symbol.
 - `textureRows` stores exact atlas frame IDs for rendering in `texture-layout.json`.
-- Do not keep legacy import formats in this folder.
