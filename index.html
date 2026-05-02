@@ -243,12 +243,14 @@
           await app.init({
             background: '#ffffff',
             resizeTo: window,
+            autoStart: false,
             autoDensity: true,
             antialias: false,
             roundPixels: true,
             resolution: window.devicePixelRatio || 1
           });
 
+          app.stop();
           app.renderer.roundPixels = true;
           document.body.appendChild(app.canvas);
 
@@ -317,13 +319,18 @@
           renderCity(city, mapLayer, textureSet);
           centerCameraOnCity(city);
           const dashboard = installDebugDashboard(city, overlayLayer);
-          const npcSimulation = createNpcSimulation(city, actorLayer, app, NPC_CONFIG);
+          const npcSimulation = createNpcSimulation(city, actorLayer, NPC_CONFIG);
+          const game = new Game(app);
+
+          game.addSystem(npcSimulation);
+          game.start();
 
           async function setTextureSet(name) {
             textureSet = await loadTextureSet(name);
             city.textureSetName = name;
             renderCity(city, mapLayer, textureSet);
             window.citySim.textureSet = textureSet;
+            game.render();
           }
 
           Object.assign(window.citySim, {
@@ -331,6 +338,8 @@
             mapData,
             textureSet,
             dashboard,
+            game,
+            gameLoop: game.loop,
             npcSimulation,
             npcs: npcSimulation.npcs,
             loadCityMap,
@@ -338,7 +347,10 @@
             setTextureSet,
             validateCityMap,
             compileCityMap,
-            renderCity: () => renderCity(city, mapLayer, textureSet),
+            renderCity: () => {
+              renderCity(city, mapLayer, textureSet);
+              game.render();
+            },
             centerCameraOnCity: () => centerCameraOnCity(city)
           });
 
@@ -1462,12 +1474,205 @@
         return path;
       }
 
-      function createNpcSimulation(city, actorLayer, app, config) {
+      class Game {
+        constructor(app) {
+          this.app = app;
+          this.systems = [];
+          this.loop = new GameLoop({
+            update: (deltaSeconds) => this.update(deltaSeconds),
+            render: () => this.render()
+          });
+        }
+
+        addSystem(system) {
+          if (!system || this.systems.includes(system)) {
+            return;
+          }
+
+          this.systems.push(system);
+        }
+
+        removeSystem(system) {
+          const index = this.systems.indexOf(system);
+
+          if (index !== -1) {
+            this.systems.splice(index, 1);
+          }
+        }
+
+        start() {
+          this.loop.start();
+        }
+
+        stop() {
+          this.loop.stop();
+        }
+
+        update(deltaSeconds) {
+          for (const system of this.systems) {
+            if (typeof system.update === 'function') {
+              system.update(deltaSeconds);
+            }
+          }
+        }
+
+        render() {
+          for (const system of this.systems) {
+            if (typeof system.render === 'function') {
+              system.render();
+            }
+          }
+
+          this.app.render();
+        }
+
+        destroy() {
+          this.stop();
+
+          for (const system of this.systems) {
+            if (typeof system.destroy === 'function') {
+              system.destroy();
+            }
+          }
+
+          this.systems.length = 0;
+        }
+      }
+
+      class GameLoop {
+        constructor({ update, render, maxDeltaSeconds = 0.1 }) {
+          this.update = update;
+          this.render = render;
+          this.maxDeltaSeconds = maxDeltaSeconds;
+          this.running = false;
+          this.frameRequestId = null;
+          this.lastFrameTime = null;
+          this.lastDeltaSeconds = 0;
+          this.frameCount = 0;
+          this.tick = this.tick.bind(this);
+        }
+
+        start() {
+          if (this.running) {
+            return;
+          }
+
+          this.running = true;
+          this.lastFrameTime = null;
+          this.frameRequestId = requestAnimationFrame(this.tick);
+        }
+
+        stop() {
+          this.running = false;
+
+          if (this.frameRequestId !== null) {
+            cancelAnimationFrame(this.frameRequestId);
+            this.frameRequestId = null;
+          }
+        }
+
+        getDeltaTime(frameTime) {
+          if (this.lastFrameTime === null) {
+            this.lastFrameTime = frameTime;
+            this.lastDeltaSeconds = 0;
+            return 0;
+          }
+
+          const rawDeltaSeconds = Math.max(0, (frameTime - this.lastFrameTime) / 1000);
+
+          this.lastFrameTime = frameTime;
+          this.lastDeltaSeconds = Math.min(rawDeltaSeconds, this.maxDeltaSeconds);
+          return this.lastDeltaSeconds;
+        }
+
+        tick(frameTime) {
+          if (!this.running) {
+            return;
+          }
+
+          // Browser-friendly form of: while (running) { dt = getDeltaTime(); update(dt); render(); }
+          const deltaSeconds = this.getDeltaTime(frameTime);
+
+          this.update(deltaSeconds);
+          this.render();
+          this.frameCount += 1;
+          this.frameRequestId = requestAnimationFrame(this.tick);
+        }
+      }
+
+      class Entity {
+        constructor({ id, position, sprite }) {
+          this.id = id;
+          this.position = { x: position.x, y: position.y };
+          this.sprite = { ...sprite };
+        }
+      }
+
+      class Npc extends Entity {
+        constructor({ id, position, sprite, tile, slot, movement }) {
+          super({ id, position, sprite });
+          this.tile = { x: tile.x, y: tile.y, index: tile.index };
+          this.slot = { id: slot.id, index: slot.index };
+          this.movement = {
+            speed: movement.speed,
+            target: null
+          };
+        }
+
+        get x() {
+          return this.position.x;
+        }
+
+        get y() {
+          return this.position.y;
+        }
+
+        get tileX() {
+          return this.tile.x;
+        }
+
+        get tileY() {
+          return this.tile.y;
+        }
+
+        get tileIndex() {
+          return this.tile.index;
+        }
+
+        get slotIndex() {
+          return this.slot.index;
+        }
+
+        get targetIndex() {
+          return this.movement.target ? this.movement.target.slot.index : -1;
+        }
+
+        get targetX() {
+          return this.movement.target ? this.movement.target.position.x : this.position.x;
+        }
+
+        get targetY() {
+          return this.movement.target ? this.movement.target.position.y : this.position.y;
+        }
+
+        get speed() {
+          return this.movement.speed;
+        }
+      }
+
+      function createNpcSimulation(city, actorLayer, config) {
         const graphics = new PIXI.Graphics();
         const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity);
         const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity);
         const spawnSlots = collectNpcSpawnSlots(city, config.tileCapacity);
         const npcs = [];
+        const context = {
+          city,
+          occupiedSlots,
+          reservedSlots,
+          config
+        };
+        let destroyed = false;
 
         occupiedSlots.fill(-1);
         reservedSlots.fill(-1);
@@ -1484,42 +1689,36 @@
           const position = tileSlotPosition(city, tileX, tileY, spawnSlot.slot, config);
 
           occupiedSlots[spawnSlotIndex] = id;
-          npcs.push({
+          npcs.push(createNpcEntity({
             id,
-            x: position.x,
-            y: position.y,
-            tileX,
-            tileY,
-            tileIndex,
-            slot: spawnSlot.slot,
-            slotIndex: spawnSlotIndex,
-            targetX: position.x,
-            targetY: position.y,
-            targetTileX: tileX,
-            targetTileY: tileY,
-            targetTileIndex: tileIndex,
-            targetSlot: spawnSlot.slot,
-            targetIndex: -1,
-            speed: randomBetween(config.minSpeed, config.maxSpeed)
-          });
+            position,
+            tile: { x: tileX, y: tileY, index: tileIndex },
+            slot: { id: spawnSlot.slot, index: spawnSlotIndex },
+            config
+          }));
         }
 
         function update(deltaSeconds) {
-          const safeDelta = Math.min(deltaSeconds, 0.1);
+          if (destroyed) {
+            return;
+          }
+
+          const safeDelta = Math.min(Math.max(deltaSeconds, 0), 0.1);
 
           for (const npc of npcs) {
-            updateNpc(npc, safeDelta, city, occupiedSlots, reservedSlots, config);
+            updateNpc(npc, safeDelta, context);
+          }
+        }
+
+        function render() {
+          if (destroyed) {
+            return;
           }
 
           drawNpcs(graphics, npcs, config);
         }
 
-        const tickerUpdate = (ticker) => {
-          update(ticker.deltaMS / 1000);
-        };
-
-        app.ticker.add(tickerUpdate);
-        drawNpcs(graphics, npcs, config);
+        render();
 
         return {
           npcs,
@@ -1528,10 +1727,33 @@
           tileCapacity: config.tileCapacity,
           graphics,
           update,
+          render,
           destroy() {
-            app.ticker.remove(tickerUpdate);
+            destroyed = true;
+            actorLayer.removeChild(graphics);
             graphics.destroy();
           }
+        };
+      }
+
+      function createNpcEntity({ id, position, tile, slot, config }) {
+        return new Npc({
+          id,
+          position,
+          tile,
+          slot,
+          sprite: createNpcSprite(config),
+          movement: {
+            speed: randomBetween(config.minSpeed, config.maxSpeed)
+          }
+        });
+      }
+
+      function createNpcSprite(config) {
+        return {
+          kind: 'blob',
+          size: config.size,
+          color: config.color
         };
       }
 
@@ -1549,44 +1771,47 @@
         return slots;
       }
 
-      function updateNpc(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config) {
-        if (npc.targetIndex !== -1) {
-          moveNpcTowardTarget(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config);
+      function updateNpc(npc, deltaSeconds, context) {
+        if (npc.movement.target) {
+          moveNpcTowardTarget(npc, deltaSeconds, context);
           return;
         }
 
-        chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config);
+        chooseNpcNextTile(npc, context);
       }
 
-      function moveNpcTowardTarget(npc, deltaSeconds, city, occupiedSlots, reservedSlots, config) {
-        const dx = npc.targetX - npc.x;
-        const dy = npc.targetY - npc.y;
+      function moveNpcTowardTarget(npc, deltaSeconds, context) {
+        const { occupiedSlots, reservedSlots } = context;
+        const target = npc.movement.target;
+        const dx = target.position.x - npc.position.x;
+        const dy = target.position.y - npc.position.y;
         const distance = Math.hypot(dx, dy);
-        const maxStep = npc.speed * deltaSeconds;
+        const maxStep = npc.movement.speed * deltaSeconds;
 
         if (distance <= maxStep || distance === 0) {
-          occupiedSlots[npc.slotIndex] = -1;
-          reservedSlots[npc.targetIndex] = -1;
-          occupiedSlots[npc.targetIndex] = npc.id;
-          npc.x = npc.targetX;
-          npc.y = npc.targetY;
-          npc.tileX = npc.targetTileX;
-          npc.tileY = npc.targetTileY;
-          npc.tileIndex = npc.targetTileIndex;
-          npc.slot = npc.targetSlot;
-          npc.slotIndex = npc.targetIndex;
-          npc.targetIndex = -1;
-          chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config);
+          occupiedSlots[npc.slot.index] = -1;
+          reservedSlots[target.slot.index] = -1;
+          occupiedSlots[target.slot.index] = npc.id;
+          npc.position.x = target.position.x;
+          npc.position.y = target.position.y;
+          npc.tile.x = target.tile.x;
+          npc.tile.y = target.tile.y;
+          npc.tile.index = target.tile.index;
+          npc.slot.id = target.slot.id;
+          npc.slot.index = target.slot.index;
+          npc.movement.target = null;
+          chooseNpcNextTile(npc, context);
           return;
         }
 
         const ratio = maxStep / distance;
-        npc.x += dx * ratio;
-        npc.y += dy * ratio;
+        npc.position.x += dx * ratio;
+        npc.position.y += dy * ratio;
       }
 
-      function chooseNpcNextTile(npc, city, occupiedSlots, reservedSlots, config) {
-        const neighbors = city.neighbors(npc.tileX, npc.tileY, 'pedestrian');
+      function chooseNpcNextTile(npc, context) {
+        const { city, occupiedSlots, reservedSlots, config } = context;
+        const neighbors = city.neighbors(npc.tile.x, npc.tile.y, 'pedestrian');
 
         if (neighbors.length === 0) {
           return;
@@ -1606,13 +1831,18 @@
           const target = tileSlotPosition(city, candidate.x, candidate.y, targetSlot.slot, config);
 
           reservedSlots[targetSlot.slotIndex] = npc.id;
-          npc.targetTileX = candidate.x;
-          npc.targetTileY = candidate.y;
-          npc.targetTileIndex = targetIndex;
-          npc.targetSlot = targetSlot.slot;
-          npc.targetIndex = targetSlot.slotIndex;
-          npc.targetX = target.x;
-          npc.targetY = target.y;
+          npc.movement.target = {
+            position: target,
+            tile: {
+              x: candidate.x,
+              y: candidate.y,
+              index: targetIndex
+            },
+            slot: {
+              id: targetSlot.slot,
+              index: targetSlot.slotIndex
+            }
+          };
           return;
         }
       }
@@ -1658,7 +1888,7 @@
         graphics.clear();
 
         for (const npc of npcs) {
-          drawNpcBlob(graphics, npc.x, npc.y, config.size, config.color);
+          drawNpcBlob(graphics, npc.position.x, npc.position.y, npc.sprite.size ?? config.size, npc.sprite.color ?? config.color);
         }
       }
 

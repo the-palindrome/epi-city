@@ -24,7 +24,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 ## Project Structure
 
-- `index.html` contains the Pixi app, camera controls, map validation, runtime city API, atlas texture renderer, and pathfinding.
+- `index.html` contains the Pixi app, explicit game loop, camera controls, map validation, runtime city API, atlas texture renderer, NPC simulation, and pathfinding.
 - `public/maps/liberty-city-clean/tile-layout.json` contains the default static Liberty City semantic tile layout.
 - `public/maps/liberty-city-clean/texture-layout.json` contains one atlas-frame texture ID per map cell.
 - `public/maps/liberty-city-clean/manifest.json` describes the Liberty City atlas frames used by the default texture set.
@@ -84,9 +84,11 @@ Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. P
 
 ## NPC Prototype
 
-The app spawns 1000 pedestrian NPCs when the city loads. NPCs render as small `#e5c748` pixel blobs and choose random neighboring walkable tiles.
+The app spawns 1000 pedestrian NPCs when the city loads. NPCs are structured entities with `position`, `sprite`, `tile`, `slot`, and `movement` components, render as small `#e5c748` pixel blobs, and choose random neighboring walkable tiles.
 
 Each walkable tile has two NPC slots. Collision uses occupied and reserved slot grids, so up to two NPCs can share one tile without stacking visually. Slot anchors sit side by side inside the tile, and NPCs interpolate smoothly between slot positions.
+
+The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage.
 
 ## Debugging From The Console
 
@@ -107,7 +109,10 @@ city.isParkable(10, 10)
 city.isPassable(10, 10, 'vehicle')
 city.neighbors(10, 10, 'pedestrian')
 city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
+window.citySim.gameLoop.running
 window.citySim.npcs.length
+window.citySim.npcs[0].position
+window.citySim.npcs[0].sprite
 ```
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.

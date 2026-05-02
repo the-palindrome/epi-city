@@ -16,6 +16,7 @@ Startup follows this sequence:
 6. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
 7. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
 8. `installDebugDashboard()` adds keyboard-controlled behavior overlays for movement debugging.
+9. `createNpcSimulation()` creates the NPC system, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
 
@@ -111,6 +112,21 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `createNpcSimulation()` spawns 1000 pedestrian NPCs after the map renders. NPCs start on walkable tile slots, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs, and move smoothly from slot anchor to slot anchor.
 
+NPCs are `Npc` entity objects built from simple components:
+
+```js
+{
+  id,
+  position: { x, y },
+  sprite: { kind, size, color },
+  tile: { x, y, index },
+  slot: { id, index },
+  movement: { speed, target }
+}
+```
+
+The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop.
+
 Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved.
 
 ## Texture Sets
@@ -144,6 +160,8 @@ The extraction script checks every map cell against the original image. Each `te
 The `world` container has separate `map`, `overlays`, and `actors` layers. Map sprites stay at the bottom, debug overlays render above the city, and NPC actors render on top.
 
 `renderCity()` groups sprites into 16x16 tile containers. Grouping keeps the display tree structured by map region while preserving per-cell source textures. If a texture frame is missing, the renderer draws a simple flat-color fallback for the affected cell.
+
+Pixi automatic rendering is disabled during app initialization. The app-level `GameLoop` owns frame timing instead: it clamps delta time, calls each system's `update(deltaSeconds)`, calls each system's `render()`, then calls `app.render()` once. Static map rendering remains event-driven and only rebuilds the map layer on startup or texture-set changes.
 
 The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in default runtime assets live in `public/maps/liberty-city-clean` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
 
@@ -186,7 +204,7 @@ The dependency command creates or repairs `map-editor/.venv` with copied Python 
 
 ## Debugging Hooks
 
-`window.citySim` exposes the Pixi app, camera, world container, layers, tile constants, map data, compiled city, and texture-set helpers. This is intentional during prototyping because the browser console is the fastest way to inspect paths, passability, textures, and rendering state.
+`window.citySim` exposes the Pixi app, game loop, camera, world container, layers, tile constants, map data, compiled city, NPC simulation, and texture-set helpers. This is intentional during prototyping because the browser console is the fastest way to inspect paths, passability, textures, and rendering state.
 
 Useful console checks:
 
@@ -197,6 +215,9 @@ window.citySim.city.getTextureId(100, 100)
 window.citySim.city.getTextureKey(100, 100)
 window.citySim.city.nearestPassableTile(120, 140, 'pedestrian')
 window.citySim.city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
+window.citySim.gameLoop.running
+window.citySim.npcs[0].position
+window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()
 window.citySim.dashboard.setOverlay('walkable', true)
 ```
