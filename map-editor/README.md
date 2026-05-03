@@ -1,6 +1,6 @@
 # Epi City Map Editor
 
-The map editor is a local maintenance tool for correcting semantic tile types, behavior attributes, building metadata, and texture-row assignments while keeping atlas pixels and manifest frames unchanged. It keeps one editable 256x256 map state in the browser, trains from sparse labels, and saves tile configuration or texture rows through browser Save As flows.
+The map editor is a local maintenance tool for correcting semantic tile types, behavior attributes, building metadata, and texture-row assignments while keeping atlas pixels and manifest frames unchanged. It keeps one editable 256x256 map state in the browser, trains from sparse labels, and loads or saves complete map package folders.
 
 ## Run
 
@@ -56,15 +56,18 @@ On startup, the default semantic state is a 256x256 empty tile configuration: ti
 
 ## Loading Maps
 
-Click `Load Atlas` to choose the atlas image used by the current texture manifest. The editor accepts WebP, PNG, or JPEG images. This replaces the default atlas preview for the browser session.
+Click `Load Map Folder` to choose an Epi City map package folder such as `public/maps/liberty-city`. Folder loading requires a browser with the File System Access API, such as Chrome or Edge on `localhost`.
 
-Click `Load Tile Configuration` to choose an Epi City tile configuration JSON such as `public/maps/liberty-city/tile-layout.json`. The browser reads the file and replaces the editable tile state.
+The folder must contain:
 
-Click `Load Texture Rows` to choose an Epi City texture rows JSON such as `public/maps/liberty-city/texture-layout.json`. The browser reads the file and replaces the editable `textureRows` state without changing tile semantics.
+- `tile-layout.json`
+- `texture-layout.json`
+- `manifest.json`
+- the atlas file named by `manifest.json`'s `atlas.file`
 
-Click `Load Texture Manifest` to choose a texture manifest JSON such as `public/maps/liberty-city/manifest.json`. When both an atlas and manifest are loaded, the editor reconstructs the visual map from `textureRows` and manifest frames.
+The browser reads those files together, replaces the editable tile state, loads the texture rows, and reconstructs the visual map from the manifest frames and atlas.
 
-The editor does not automatically overwrite `public/maps/liberty-city/tile-layout.json` or `texture-layout.json`. It starts from an empty semantic layout and the current Liberty City visual assets by default, but you can still load another tile configuration, texture rows file, atlas, or manifest explicitly. Use `Save Tile Configuration` for semantic edits and `Save Texture Rows` for texture edits.
+The editor does not automatically overwrite `public/maps/liberty-city/tile-layout.json` or `texture-layout.json`. It starts from an empty semantic layout and the current Liberty City visual assets by default, but loading a folder makes that folder the active save target.
 
 Texture rows loading requires a valid 256x256 `textureRows` grid. The editor reports the number of unique texture IDs it loaded and previews those IDs whenever an atlas and texture manifest are present.
 
@@ -83,9 +86,9 @@ Use the `Paint layer` selector to choose what the brush updates:
 
 Painting a tile type does not auto-fill behavior attributes. This keeps labels sparse and lets the trainer learn each layer independently. The building layer edits top-level building metadata, so one click updates the connected building component instead of changing the base tile category.
 
-In the texture layer, the `pick texture` tool samples the texture ID from the clicked tile. The editor then switches to painting that texture ID onto other tiles. Texture edits update `textureRows`, so `Save Texture Rows` writes the changed manifest-frame references without changing atlas pixels or manifest frame geometry.
+In the texture layer, the `pick texture` tool samples the texture ID from the clicked tile. The editor then switches to painting that texture ID onto other tiles. Texture edits update `textureRows`, so `Save Map Folder` writes the changed manifest-frame references without changing atlas pixels or manifest frame geometry.
 
-When only texture assignments changed, `Save Texture Rows` updates `textureRows` without touching the loaded `legend` and semantic `rows`. This keeps texture retouching from creating tile-property diffs.
+When only texture assignments changed, `Save Map Folder` preserves the loaded semantic rows while updating `texture-layout.json`.
 
 ## Training And Prediction
 
@@ -110,15 +113,16 @@ Click `Reset to defaults` to discard the current browser state and return to the
 
 ## Saving
 
-Click `Save Tile Configuration` to save the current state as an Epi City tile configuration JSON file. Incomplete tile type and behavior labels are saved as `null`. Browsers with the File System Access API show a native Save As dialog. Other browsers download the file.
+Click `Save Map Folder` to write the current editable state into the active map package folder. If no folder has been loaded yet, the editor asks you to choose one.
 
-Click `Save Texture Rows` to save the current `textureRows` as an Epi City texture rows JSON file.
+Saving writes:
 
-Saving never overwrites `public/maps/liberty-city/tile-layout.json` or `texture-layout.json` automatically. Replace the app map files manually only after you review the saved output.
+- `tile-layout.json` for semantic rows, behavior flags, and building metadata
+- `texture-layout.json` for texture row assignments
 
-The main app still expects complete runtime tile configuration files. Fill or predict empty labels before replacing `public/maps/liberty-city/tile-layout.json`.
+Incomplete tile type and behavior labels are saved as `null`. Saving does not rewrite `manifest.json`, atlas pixels, or manifest frame geometry. The main app still expects complete runtime tile configuration files, so fill or predict empty labels before saving over a runtime map package.
 
-The saved tile configuration preserves `textureSet`, `width`, `height`, `tileSize`, and top-level `buildings` metadata from a loaded map. Legend entries contain only category and behavior properties. The saved texture rows file preserves `width`, `height`, `textureSet`, and `textureRows`.
+The saved `tile-layout.json` preserves `textureSet`, `width`, `height`, `tileSize`, and top-level `buildings` metadata from a loaded map. Legend entries contain only category and behavior properties. The saved `texture-layout.json` preserves `width`, `height`, `textureSet`, and `textureRows`.
 
 ## Controls
 
@@ -130,7 +134,7 @@ The saved tile configuration preserves `textureSet`, `width`, `height`, `tileSiz
 - For building type: `r` residential, `c` commercial, `h` hospital.
 - For texture: `p` switches back to the texture picker.
 - For behavior layers: `t` true, `f` false, and `e` empty.
-- `Ctrl+S` opens Save Tile Configuration.
+- `Ctrl+S` saves the current map folder.
 - `Ctrl+Z` undoes.
 - `Ctrl+Shift+Z` redoes.
 - `Ctrl+Y` redoes.

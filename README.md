@@ -37,7 +37,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 ## Map Format
 
-The map stores semantics and visuals in separate JSON files. `tile-layout.json` contains one legend symbol per cell for gameplay classification plus a compact `buildings` list for connected building components. `texture-layout.json` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments do not live in the texture manifest, so texture painting in the editor must be saved with `Save Texture Rows`.
+The map stores semantics and visuals in separate JSON files. `tile-layout.json` contains one legend symbol per cell for gameplay classification plus a compact `buildings` list for connected building components. `texture-layout.json` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments do not live in the texture manifest, so texture painting in the editor is saved through `Save Map Folder`.
 
 ```json
 {
@@ -134,7 +134,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Save Tile Configuration` for semantic rows/buildings and `Save Texture Rows` for visual tile assignments. Neither action overwrites files under `public/maps/liberty-city` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
 
 ## Texture Sets
 

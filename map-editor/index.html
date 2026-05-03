@@ -185,10 +185,6 @@
   </head>
   <body>
     <canvas id="map"></canvas>
-    <input id="atlas-file" type="file" accept="image/webp,image/png,image/jpeg" hidden>
-    <input id="tile-config-file" type="file" accept="application/json,.json" hidden>
-    <input id="texture-rows-file" type="file" accept="application/json,.json" hidden>
-    <input id="texture-manifest-file" type="file" accept="application/json,.json" hidden>
 
     <aside class="panel">
       <h1>Map Editor</h1>
@@ -235,12 +231,8 @@
 
       <div class="section">
         <div class="button-grid">
-          <button id="load-atlas" type="button">Load Atlas</button>
-          <button id="load-tile-config" type="button">Load Tile Configuration</button>
-          <button id="load-texture-rows" type="button">Load Texture Rows</button>
-          <button id="load-texture-manifest" type="button">Load Texture Manifest</button>
-          <button id="save-tile-config" class="primary" type="button" title="Writes semantic rows and behavior flags for the app map.">Save Tile Configuration</button>
-          <button id="save-texture-rows" type="button" title="Writes textureRows for the app map.">Save Texture Rows</button>
+          <button id="load-map-folder" type="button">Load Map Folder</button>
+          <button id="save-map-folder" class="primary" type="button" title="Writes tile-layout.json and texture-layout.json into the current map folder.">Save Map Folder</button>
           <button id="reset-defaults" type="button">Reset to defaults</button>
           <button id="fit" type="button">Fit map</button>
           <button id="undo" type="button">Undo</button>
@@ -271,6 +263,11 @@
       const DEFAULT_TEXTURE_SET = 'liberty-city';
       const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
       const DEFAULT_BUILDING_TYPE = 'residential';
+      const MAP_PACKAGE_FILES = Object.freeze({
+        tileLayout: 'tile-layout.json',
+        textureLayout: 'texture-layout.json',
+        manifest: 'manifest.json'
+      });
       const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle', 'crosswalk']);
       const BUILDING_TYPES = Object.freeze(['residential', 'commercial', 'hospital']);
       const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
@@ -320,10 +317,6 @@
 
       const canvas = document.getElementById('map');
       const ctx = canvas.getContext('2d', { alpha: false });
-      const atlasFileInput = document.getElementById('atlas-file');
-      const tileConfigFileInput = document.getElementById('tile-config-file');
-      const textureRowsFileInput = document.getElementById('texture-rows-file');
-      const textureManifestFileInput = document.getElementById('texture-manifest-file');
       const paintLayer = document.getElementById('paint-layer');
       const labelButtons = document.getElementById('label-buttons');
       const brushSize = document.getElementById('brush-size');
@@ -359,6 +352,8 @@
         dirty: false,
         semanticRowsDirty: false,
         textureRowsDirty: false,
+        mapDirectoryHandle: null,
+        mapDirectoryName: null,
         isPainting: false,
         isPanning: false,
         spaceDown: false,
@@ -391,7 +386,7 @@
           ? `Ready. Default texture preview could not load: ${defaultTextureAssetError.message}`
           : state.config.defaultTileConfiguration
           ? 'Ready. Default empty tile configuration, current texture rows, and Liberty City texture preview are loaded.'
-          : 'Ready. Load an atlas, tile configuration, texture rows, and texture manifest separately.');
+          : 'Ready. Load a map folder containing tile-layout.json, texture-layout.json, manifest.json, and the atlas.');
         draw();
       }
 
@@ -499,16 +494,8 @@
           element.addEventListener('change', draw);
         }
 
-        document.getElementById('load-atlas').addEventListener('click', () => atlasFileInput.click());
-        document.getElementById('load-tile-config').addEventListener('click', () => tileConfigFileInput.click());
-        document.getElementById('load-texture-rows').addEventListener('click', () => textureRowsFileInput.click());
-        document.getElementById('load-texture-manifest').addEventListener('click', () => textureManifestFileInput.click());
-        atlasFileInput.addEventListener('change', loadSelectedAtlas);
-        tileConfigFileInput.addEventListener('change', loadSelectedTileConfiguration);
-        textureRowsFileInput.addEventListener('change', loadSelectedTextureRows);
-        textureManifestFileInput.addEventListener('change', loadSelectedTextureManifest);
-        document.getElementById('save-tile-config').addEventListener('click', saveTileConfiguration);
-        document.getElementById('save-texture-rows').addEventListener('click', saveTextureRows);
+        document.getElementById('load-map-folder').addEventListener('click', loadMapFolder);
+        document.getElementById('save-map-folder').addEventListener('click', saveMapFolder);
         document.getElementById('reset-defaults').addEventListener('click', resetToDefaults);
         trainButton.addEventListener('click', trainModel);
         predictButton.addEventListener('click', applyLatestPrediction);
@@ -532,7 +519,7 @@
 
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
-            saveTileConfiguration();
+            saveMapFolder();
             return;
           }
 
@@ -679,100 +666,137 @@
         }
       }
 
-      async function loadSelectedAtlas() {
-        const file = selectedFile(atlasFileInput);
-        atlasFileInput.value = '';
-
-        if (!file) {
-          return;
-        }
+      async function loadMapFolder() {
+        endPointerAction();
 
         try {
-          setStatus(`Loading atlas ${file.name}...`);
-          const atlasDataUrl = await readFileAsDataUrl(file);
-          state.atlasImage = await loadImage(atlasDataUrl);
-          state.atlasDataUrl = atlasDataUrl;
-
-          state.atlasFileName = file.name;
-          refreshVisualFromAssets({ fit: true });
-          setStatus(formatTexturePreviewStatus(`Loaded atlas ${file.name}.`));
+          const directoryHandle = await pickMapDirectory();
+          await loadMapPackageFromDirectory(directoryHandle);
         } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
-      async function loadSelectedTileConfiguration() {
-        const file = selectedFile(tileConfigFileInput);
-        tileConfigFileInput.value = '';
-
-        if (!file) {
-          return;
-        }
-
-        try {
-          setStatus(`Loading tile configuration ${file.name}...`);
-          const payload = JSON.parse(await file.text());
-          replaceCurrentMap(editableMapFromJson(payload, file.name), {
-            fit: true
-          });
-          setStatus(formatTexturePreviewStatus(`Loaded tile configuration ${file.name}.`));
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
-      async function loadSelectedTextureRows() {
-        const file = selectedFile(textureRowsFileInput);
-        textureRowsFileInput.value = '';
-
-        if (!file) {
-          return;
-        }
-
-        try {
-          setStatus(`Loading texture rows ${file.name}...`);
-          const payload = JSON.parse(await file.text());
-          validateTextureRowsJson(payload);
-          replaceTextureRows(payload, file.name, { fit: true });
-          setStatus(formatTexturePreviewStatus(`Loaded texture rows ${file.name}.`));
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
-      async function loadSelectedTextureManifest() {
-        const file = selectedFile(textureManifestFileInput);
-        textureManifestFileInput.value = '';
-
-        if (!file) {
-          return;
-        }
-
-        try {
-          setStatus(`Loading texture manifest ${file.name}...`);
-          const manifest = JSON.parse(await file.text());
-          validateTextureManifest(manifest);
-          state.textureManifest = manifest;
-          state.textureManifestFileName = file.name;
-          state.map.textureSet = manifest.name || state.map.textureSet || DEFAULT_TEXTURE_SET;
-          if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
-            state.selectedTextureId = null;
-            state.texturePickMode = true;
+          if (error.name === 'AbortError') {
+            setStatus('Load map folder canceled.');
+            return;
           }
-          createLabelButtons();
-          refreshVisualFromAssets({ fit: true });
-          setStatus(formatTexturePreviewStatus(`Loaded texture manifest ${file.name}.`));
-        } catch (error) {
+
           console.error(error);
           setStatus(error.message, true);
         }
       }
 
-      function selectedFile(input) {
-        return input.files && input.files[0] ? input.files[0] : null;
+      async function loadMapPackageFromDirectory(directoryHandle) {
+        setStatus(`Loading map folder ${directoryHandle.name}...`);
+
+        const tileLayout = await readDirectoryJson(directoryHandle, MAP_PACKAGE_FILES.tileLayout);
+        const textureLayout = await readDirectoryJson(directoryHandle, MAP_PACKAGE_FILES.textureLayout);
+        const manifest = await readDirectoryJson(directoryHandle, MAP_PACKAGE_FILES.manifest);
+
+        validateTextureRowsJson(textureLayout);
+        validateTextureManifest(manifest);
+
+        const atlasFileName = manifest.atlas.file;
+        const atlasFile = await readDirectoryFile(directoryHandle, atlasFileName);
+        const atlasDataUrl = await readBlobAsDataUrl(atlasFile, atlasFileName);
+        const atlasImage = await loadImage(atlasDataUrl);
+        const nextMap = editableMapFromJson(tileLayout, MAP_PACKAGE_FILES.tileLayout, {
+          sourceName: directoryHandle.name,
+          visualSource: atlasFileName,
+          textureRows: textureLayout.textureRows,
+          textureRowsFileName: MAP_PACKAGE_FILES.textureLayout,
+          originalTextureLayout: textureLayout
+        });
+
+        state.mapDirectoryHandle = directoryHandle;
+        state.mapDirectoryName = directoryHandle.name;
+        state.atlasImage = atlasImage;
+        state.atlasDataUrl = atlasDataUrl;
+        state.atlasFileName = atlasFileName;
+        state.textureManifest = manifest;
+        state.textureManifestFileName = MAP_PACKAGE_FILES.manifest;
+        nextMap.textureSet = manifest.name || textureLayout.textureSet || tileLayout.textureSet || nextMap.textureSet || DEFAULT_TEXTURE_SET;
+
+        if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
+          state.selectedTextureId = null;
+          state.texturePickMode = true;
+        }
+
+        replaceCurrentMap(nextMap, { fit: true });
+        createLabelButtons();
+        setStatus(formatTexturePreviewStatus(`Loaded map folder ${directoryHandle.name}.`));
+      }
+
+      async function pickMapDirectory() {
+        if (!('showDirectoryPicker' in window)) {
+          throw new Error('Map folder loading and saving requires a browser with the File System Access API, such as Chrome or Edge on localhost.');
+        }
+
+        return window.showDirectoryPicker({ mode: 'readwrite' });
+      }
+
+      async function readDirectoryJson(directoryHandle, filePath) {
+        const file = await readDirectoryFile(directoryHandle, filePath);
+
+        try {
+          return JSON.parse(await file.text());
+        } catch (error) {
+          throw new Error(`Could not parse ${filePath}: ${error.message}`);
+        }
+      }
+
+      async function readDirectoryFile(directoryHandle, filePath) {
+        const { directory, fileName } = await directoryAtPath(directoryHandle, filePath);
+        const fileHandle = await directory.getFileHandle(fileName);
+        return fileHandle.getFile();
+      }
+
+      async function writeDirectoryText(directoryHandle, filePath, text) {
+        const { directory, fileName } = await directoryAtPath(directoryHandle, filePath, { create: true });
+        const fileHandle = await directory.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+
+        await writable.write(text);
+        await writable.close();
+      }
+
+      async function directoryAtPath(directoryHandle, filePath, options = {}) {
+        const parts = safeRelativePathParts(filePath);
+        let directory = directoryHandle;
+
+        for (const part of parts.slice(0, -1)) {
+          directory = await directory.getDirectoryHandle(part, { create: Boolean(options.create) });
+        }
+
+        return {
+          directory,
+          fileName: parts.at(-1)
+        };
+      }
+
+      function safeRelativePathParts(filePath) {
+        if (typeof filePath !== 'string' || filePath.length === 0) {
+          throw new Error('Map package file paths must be non-empty strings.');
+        }
+
+        const parts = filePath.replaceAll('\\', '/').split('/').filter((part) => part.length > 0 && part !== '.');
+
+        if (parts.length === 0 || parts.some((part) => part === '..')) {
+          throw new Error(`Invalid map package file path "${filePath}".`);
+        }
+
+        return parts;
+      }
+
+      async function ensureDirectoryWritable(directoryHandle) {
+        const options = { mode: 'readwrite' };
+
+        if (typeof directoryHandle.queryPermission === 'function' && await directoryHandle.queryPermission(options) === 'granted') {
+          return;
+        }
+
+        if (typeof directoryHandle.requestPermission === 'function' && await directoryHandle.requestPermission(options) === 'granted') {
+          return;
+        }
+
+        throw new Error(`Write permission was not granted for ${directoryHandle.name}.`);
       }
 
       function formatTexturePreviewStatus(prefix) {
@@ -1235,29 +1259,9 @@
         refreshVisualFromAssets({ fit: Boolean(options.fit) });
       }
 
-      function replaceTextureRows(textureRowsPayload, fileName, options = {}) {
-        endPointerAction();
-        state.map.textureRows = cloneTextureRows(textureRowsPayload.textureRows);
-        state.map.textureRowsFileName = fileName;
-        state.map.originalTextureLayout = textureRowsPayload;
-        state.map.textureSet = textureRowsPayload.textureSet || state.map.textureSet || DEFAULT_TEXTURE_SET;
-        state.latestPrediction = null;
-        state.trainingSummary = null;
-        state.undoStack.length = 0;
-        state.redoStack.length = 0;
-        state.textureRowsDirty = Boolean(options.dirty);
-        state.dirty = state.semanticRowsDirty || state.textureRowsDirty;
-
-        if (hasSelectedTexture() && !isValidTextureId(state.selectedTextureId)) {
-          state.selectedTextureId = null;
-          state.texturePickMode = true;
-          createLabelButtons();
-        }
-
-        refreshVisualFromAssets({ fit: Boolean(options.fit) });
-      }
-
       function resetToDefaults() {
+        state.mapDirectoryHandle = null;
+        state.mapDirectoryName = null;
         replaceCurrentMap(createDefaultEditableMap(), {
           dirty: false,
           semanticRowsDirty: false,
@@ -1269,88 +1273,41 @@
           : 'Reset the editor to an empty 256x256 sparse-label map.');
       }
 
-      async function saveTileConfiguration() {
+      async function saveMapFolder() {
         endPointerAction();
-        const fileName = suggestedTileConfigurationSaveName();
 
         try {
-          const text = `${JSON.stringify(buildEpiCityJson(), null, 2)}\n`;
-          await saveTextFile(fileName, text, 'Epi City Tile Configuration JSON');
+          const directoryHandle = state.mapDirectoryHandle || await pickMapDirectory();
+
+          await ensureDirectoryWritable(directoryHandle);
+
+          const tileLayout = buildEpiCityJson();
+          const textureLayout = buildTextureRowsJson();
+
+          await writeDirectoryText(directoryHandle, MAP_PACKAGE_FILES.tileLayout, `${JSON.stringify(tileLayout, null, 2)}\n`);
+          await writeDirectoryText(directoryHandle, MAP_PACKAGE_FILES.textureLayout, `${JSON.stringify(textureLayout, null, 2)}\n`);
+
+          state.mapDirectoryHandle = directoryHandle;
+          state.mapDirectoryName = directoryHandle.name;
+          state.map.sourceName = directoryHandle.name;
+          state.map.fileName = MAP_PACKAGE_FILES.tileLayout;
+          state.map.textureRowsFileName = MAP_PACKAGE_FILES.textureLayout;
+          state.map.originalMap = tileLayout;
+          state.map.originalTextureLayout = textureLayout;
           state.semanticRowsDirty = false;
-          state.dirty = state.textureRowsDirty;
-          updateStats();
-          setStatus(`Saved tile configuration ${fileName}. Empty labels remain null; save texture rows separately for texture painting changes.`);
-        } catch (error) {
-          if (error.name === 'AbortError') {
-            setStatus('Save tile configuration canceled.');
-            return;
-          }
-
-          console.error(error);
-          setStatus(error.message, true);
-        }
-      }
-
-      async function saveTextureRows() {
-        endPointerAction();
-        const fileName = suggestedTextureRowsSaveName();
-
-        try {
-          const text = `${JSON.stringify(buildTextureRowsJson(), null, 2)}\n`;
-          await saveTextFile(fileName, text, 'Epi City Texture Rows JSON');
           state.textureRowsDirty = false;
-          state.dirty = state.semanticRowsDirty;
+          state.dirty = false;
           updateStats();
-          setStatus(`Saved texture rows ${fileName}. The main app reads textureRows from this file.`);
+          setStatus(`Saved map folder ${directoryHandle.name}: ${MAP_PACKAGE_FILES.tileLayout} and ${MAP_PACKAGE_FILES.textureLayout}.`);
         } catch (error) {
           if (error.name === 'AbortError') {
-            setStatus('Save texture rows canceled.');
+            setStatus('Save map folder canceled.');
             return;
           }
 
           console.error(error);
           setStatus(error.message, true);
         }
-      }
-
-      async function saveTextFile(fileName, text, description) {
-        if ('showSaveFilePicker' in window) {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: fileName,
-            types: [{
-              description,
-              accept: { 'application/json': ['.json'] }
-            }]
-          });
-          const writable = await handle.createWritable();
-          await writable.write(text);
-          await writable.close();
-        } else {
-          downloadText(fileName, text, 'application/json');
-        }
-      }
-
-      function suggestedTileConfigurationSaveName() {
-        const base = (state.map.fileName || 'epi-city-map.json').replace(/\.json$/i, '');
-        return `${base || 'tile-layout'}-edited.json`;
-      }
-
-      function suggestedTextureRowsSaveName() {
-        const base = (state.map.textureRowsFileName || 'texture-layout.json').replace(/\.json$/i, '');
-        return `${base || 'texture-layout'}-edited.json`;
-      }
-
-      function downloadText(fileName, text, mimeType) {
-        const blob = new Blob([text], { type: `${mimeType};charset=utf-8` });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        link.rel = 'noopener';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(url), 0);
       }
 
       async function trainModel() {
@@ -1595,14 +1552,14 @@
           if (layer === 'texture') {
             state.textureRowsDirty = true;
             refreshVisualFromAssets();
-            setStatus(`Painted texture ${state.selectedTextureId}. Save Texture Rows to update the app map.`);
+            setStatus(`Painted texture ${state.selectedTextureId}. Save Map Folder to update the app map.`);
           } else if (layer === 'building') {
             state.semanticRowsDirty = true;
             state.latestPrediction = null;
             state.trainingSummary = null;
             updateStats();
             draw();
-            setStatus(`Set building type to ${state.selectedBuildingType}. Save Tile Configuration to update the app map.`);
+            setStatus(`Set building type to ${state.selectedBuildingType}. Save Map Folder to update the app map.`);
           } else {
             state.semanticRowsDirty = true;
             state.latestPrediction = null;
@@ -2090,6 +2047,7 @@
         stats.innerHTML = '';
         mapName.textContent = state.map.sourceName || 'untitled map';
         addStat('active layer', paintLayer.value);
+        addStat('map folder', state.mapDirectoryName || 'not loaded');
         addStat('map source', state.map.sourceName || 'untitled map');
         addStat('visual source', state.map.visualSource || 'source image');
         addStat('texture set', state.map.textureSet || 'none');
@@ -2591,10 +2549,6 @@
           image.onerror = () => reject(new Error(`Could not load ${url}.`));
           image.src = url;
         });
-      }
-
-      function readFileAsDataUrl(file) {
-        return readBlobAsDataUrl(file, file.name);
       }
 
       async function fetchDataUrl(url, description) {
