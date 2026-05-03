@@ -99,7 +99,7 @@ function collectNpcSpawnSlots(city, tileCapacity) {
   const slots = []
 
   for (let index = 0; index < city.tileWalkable.length; index += 1) {
-    if (city.tileWalkable[index]) {
+    if (city.tileWalkable[index] && !city.tileCrosswalk[index]) {
       for (let slot = 0; slot < tileCapacity; slot += 1) {
         slots.push(npcSlotIndex(index, slot, tileCapacity))
       }

@@ -271,7 +271,7 @@
       const DEFAULT_TEXTURE_SET = 'liberty-city';
       const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
       const DEFAULT_BUILDING_TYPE = 'residential';
-      const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle']);
+      const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle', 'crosswalk']);
       const BUILDING_TYPES = Object.freeze(['residential', 'commercial', 'hospital']);
       const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
       const EMPTY_LABEL_VALUE = null;
@@ -282,6 +282,8 @@
         water: '#0786c8',
         building: '#68716b',
         obstacle: '#d94a48',
+        crosswalk: '#111611',
+        crosswalkStripe: '#ffffff',
         unknown: '#ffffff'
       });
       const BEHAVIOR_COLORS = Object.freeze({
@@ -301,6 +303,7 @@
         '4': 'water',
         '5': 'building',
         '6': 'obstacle',
+        '7': 'crosswalk',
         e: ''
       });
       const BEHAVIOR_KEYS = Object.freeze({
@@ -1886,7 +1889,11 @@
               const type = state.map.rows[y][x];
 
               if (!isEmptyLabelValue(type)) {
-                drawTileFill(x, y, TYPE_COLORS[type] || TYPE_COLORS.unknown);
+                if (type === 'crosswalk') {
+                  drawCrosswalkTileFill(x, y);
+                } else {
+                  drawTileFill(x, y, TYPE_COLORS[type] || TYPE_COLORS.unknown);
+                }
               }
             } else if (layer === 'texture') {
               if (hasSelectedTexture() && state.map.textureRows[y][x] === state.selectedTextureId) {
@@ -1915,6 +1922,31 @@
         const bounds = tileBounds(x, y);
         ctx.fillStyle = color;
         ctx.fillRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+      }
+
+      function drawCrosswalkTileFill(x, y) {
+        const bounds = tileBounds(x, y);
+        const width = bounds.x1 - bounds.x0;
+        const height = bounds.y1 - bounds.y0;
+        const stripeCount = 4;
+        const stripeWidth = Math.max(1, Math.round(width * 0.12));
+        const stripeGap = Math.max(1, Math.round(width * 0.09));
+        const stripeHeight = Math.max(1, height - Math.round(height * 0.22));
+        const stripeTop = bounds.y0 + Math.round((height - stripeHeight) / 2);
+        const stripeSpan = stripeCount * stripeWidth + (stripeCount - 1) * stripeGap;
+        const stripeLeft = bounds.x0 + Math.round((width - stripeSpan) / 2);
+
+        drawTileFill(x, y, TYPE_COLORS.crosswalk);
+        ctx.fillStyle = TYPE_COLORS.crosswalkStripe;
+
+        for (let stripe = 0; stripe < stripeCount; stripe += 1) {
+          ctx.fillRect(
+            stripeLeft + stripe * (stripeWidth + stripeGap),
+            stripeTop,
+            stripeWidth,
+            stripeHeight
+          );
+        }
       }
 
       function drawGrid() {

@@ -37,7 +37,7 @@ TEXTURE_SET_NAME = "liberty-city"
 RUNTIME_ATLAS_NAME = "liberty-city-atlas.webp"
 
 SAFE_SYMBOLS = list("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~")
-CATEGORY_PRIORITY = {"water": 0, "road": 1, "building": 2, "obstacle": 3, "sidewalk": 4, "park": 5}
+CATEGORY_PRIORITY = {"water": 0, "road": 1, "crosswalk": 2, "building": 3, "obstacle": 4, "sidewalk": 5, "park": 6}
 
 
 @dataclass(frozen=True)
@@ -421,6 +421,15 @@ def tile_definition(category: str, variant: str) -> TileDefinition:
             variant=variant,
             # Mixed road/curb tiles act as pedestrian crossing edges without opening full traffic lanes.
             walkable=variant.endswith(WALKABLE_ROAD_SUFFIX),
+            drivable=True,
+            parkable=False,
+        )
+
+    if category == "crosswalk":
+        return TileDefinition(
+            category=category,
+            variant=variant,
+            walkable=True,
             drivable=True,
             parkable=False,
         )

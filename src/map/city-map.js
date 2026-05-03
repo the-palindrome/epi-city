@@ -1,6 +1,7 @@
 import {
   BUILDING_LAYOUT_ENCODING,
   CATEGORY_TO_TILE,
+  CROSSWALK_SIGNAL_PHASES,
   DEFAULT_BUILDING_TYPE,
   DIRECTIONS,
   MOVEMENT_PROPERTY_BY_MODE,
@@ -356,9 +357,11 @@ export function compileCityMap(data) {
   const tileWalkable = new Uint8Array(width * height)
   const tileDrivable = new Uint8Array(width * height)
   const tileParkable = new Uint8Array(width * height)
+  const tileCrosswalk = new Uint8Array(width * height)
   const tileLegendSymbols = new Array(width * height)
   const tileBuildingIndexes = new Int32Array(width * height)
   const pathScratch = createPathScratch(width * height)
+  const crosswalkSignals = createCrosswalkSignalController(CROSSWALK_SIGNAL_PHASES)
 
   tileBuildingIndexes.fill(-1)
 
@@ -380,6 +383,7 @@ export function compileCityMap(data) {
       tileWalkable[tileIndex] = entry.walkable ? 1 : 0
       tileDrivable[tileIndex] = entry.drivable ? 1 : 0
       tileParkable[tileIndex] = entry.parkable ? 1 : 0
+      tileCrosswalk[tileIndex] = entry.category === 'crosswalk' ? 1 : 0
       tileLegendSymbols[tileIndex] = symbol
     }
   }
@@ -490,6 +494,14 @@ export function compileCityMap(data) {
     return layer[indexOf(x, y, width)] === 1
   }
 
+  function isCrosswalk(x, y) {
+    if (!inBounds(x, y)) {
+      return false
+    }
+
+    return tileCrosswalk[indexOf(x, y, width)] === 1
+  }
+
   function isPassable(x, y, mode) {
     return hasTileProperty(x, y, modeProperty(mode))
   }
@@ -497,6 +509,16 @@ export function compileCityMap(data) {
   function canStepWithProperty(fromX, fromY, toX, toY, property) {
     if (!hasTileProperty(toX, toY, property)) {
       return false
+    }
+
+    if (property === 'walkable' && isCrosswalk(toX, toY)) {
+      const signalState = crosswalkSignals.getState()
+
+      if (signalState === 'green') {
+        return true
+      }
+
+      return signalState === 'yellow' && isCrosswalk(fromX, fromY)
     }
 
     const dx = toX - fromX
@@ -623,6 +645,7 @@ export function compileCityMap(data) {
     tileWalkable,
     tileDrivable,
     tileParkable,
+    tileCrosswalk,
     tileBuildingIndexes,
     legend: legendEntries,
     buildings,
@@ -638,9 +661,56 @@ export function compileCityMap(data) {
     isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
     isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
     isParkable: (x, y) => hasTileProperty(x, y, 'parkable'),
+    isCrosswalk,
+    getCrosswalkSignalState: () => crosswalkSignals.getState(),
+    setCrosswalkSignalState: (state) => crosswalkSignals.setState(state),
+    updateCrosswalkSignals: (deltaSeconds) => crosswalkSignals.update(deltaSeconds),
     isPassable,
     nearestPassableTile,
     findPath
+  }
+}
+
+function createCrosswalkSignalController(phases) {
+  let phaseIndex = 0
+  let elapsedSeconds = 0
+
+  function currentPhase() {
+    return phases[phaseIndex]
+  }
+
+  function getState() {
+    return currentPhase().state
+  }
+
+  function setState(state) {
+    const nextIndex = phases.findIndex((phase) => phase.state === state)
+
+    if (nextIndex === -1) {
+      throw new Error(`Unknown crosswalk signal state "${state}".`)
+    }
+
+    phaseIndex = nextIndex
+    elapsedSeconds = 0
+  }
+
+  function update(deltaSeconds) {
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+      return
+    }
+
+    elapsedSeconds += deltaSeconds
+
+    while (elapsedSeconds >= currentPhase().duration) {
+      elapsedSeconds -= currentPhase().duration
+      phaseIndex = (phaseIndex + 1) % phases.length
+    }
+  }
+
+  return {
+    getState,
+    setState,
+    update
   }
 }
 

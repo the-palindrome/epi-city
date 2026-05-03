@@ -76,6 +76,7 @@ async function main() {
     const npcSimulation = createNpcSimulation(city, actorLayer, NPC_CONFIG)
     const game = new Game(app)
 
+    game.addSystem({ update: (deltaSeconds) => city.updateCrosswalkSignals(deltaSeconds) })
     game.addSystem(npcSimulation)
     game.start()
 

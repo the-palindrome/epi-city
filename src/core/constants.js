@@ -4,7 +4,8 @@ const TILE_TYPES = Object.freeze({
   park: 2,
   water: 3,
   building: 4,
-  obstacle: 5
+  obstacle: 5,
+  crosswalk: 6
 })
 
 export const TILE_NAMES = Object.freeze([
@@ -13,7 +14,8 @@ export const TILE_NAMES = Object.freeze([
   'park',
   'water',
   'building',
-  'obstacle'
+  'obstacle',
+  'crosswalk'
 ])
 
 export const CATEGORY_TO_TILE = Object.freeze({
@@ -22,8 +24,15 @@ export const CATEGORY_TO_TILE = Object.freeze({
   park: TILE_TYPES.park,
   water: TILE_TYPES.water,
   building: TILE_TYPES.building,
-  obstacle: TILE_TYPES.obstacle
+  obstacle: TILE_TYPES.obstacle,
+  crosswalk: TILE_TYPES.crosswalk
 })
+
+export const CROSSWALK_SIGNAL_PHASES = Object.freeze([
+  Object.freeze({ state: 'red', duration: 4 }),
+  Object.freeze({ state: 'green', duration: 6 }),
+  Object.freeze({ state: 'yellow', duration: 2 })
+])
 
 export const TEXTURE_SET_PATHS = Object.freeze({
   'liberty-city': './maps/liberty-city/manifest.json'
@@ -74,6 +83,8 @@ export const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
   water: 0x0786c8,
   building: 0x5f6762,
   obstacle: 0xd94a48,
+  crosswalk: 0x151a16,
+  crosswalkStripe: 0xffffff,
   alpha: 0.86
 })
 

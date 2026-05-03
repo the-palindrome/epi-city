@@ -143,27 +143,70 @@ function isEditableTarget(target) {
 }
 
 function drawTileTypeOverlay(city, layer) {
-  drawChunkedOverlay(city, layer, (x, y) => {
+  drawChunkedOverlay(city, layer, (graphics, x, y) => {
     const variant = city.getTileVariant(x, y)
-    return {
-      color: TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.building,
-      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+
+    if (variant.category === 'crosswalk') {
+      drawCrosswalkTileTypeOverlay(graphics, city, x, y)
+      return
     }
+
+    fillRect(
+      graphics,
+      x * city.tileSize,
+      y * city.tileSize,
+      city.tileSize,
+      city.tileSize,
+      TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.building,
+      TILE_TYPE_OVERLAY_COLORS.alpha
+    )
   })
 }
 
 function drawBehaviorOverlay(city, layer, propertyLayer) {
-  drawChunkedOverlay(city, layer, (x, y) => {
+  drawChunkedOverlay(city, layer, (graphics, x, y) => {
     const enabled = propertyLayer[city.index(x, y)] === 1
 
-    return {
-      color: enabled ? DEBUG_OVERLAY_COLORS.enabled : DEBUG_OVERLAY_COLORS.disabled,
-      alpha: enabled ? DEBUG_OVERLAY_COLORS.enabledAlpha : DEBUG_OVERLAY_COLORS.disabledAlpha
-    }
+    fillRect(
+      graphics,
+      x * city.tileSize,
+      y * city.tileSize,
+      city.tileSize,
+      city.tileSize,
+      enabled ? DEBUG_OVERLAY_COLORS.enabled : DEBUG_OVERLAY_COLORS.disabled,
+      enabled ? DEBUG_OVERLAY_COLORS.enabledAlpha : DEBUG_OVERLAY_COLORS.disabledAlpha
+    )
   })
 }
 
-function drawChunkedOverlay(city, layer, colorAt) {
+function drawCrosswalkTileTypeOverlay(graphics, city, x, y) {
+  const tileSize = city.tileSize
+  const px = x * tileSize
+  const py = y * tileSize
+  const stripeCount = 4
+  const stripeWidth = Math.max(2, Math.round(tileSize * 0.12))
+  const stripeGap = Math.max(2, Math.round(tileSize * 0.09))
+  const stripeHeight = Math.max(1, tileSize - Math.round(tileSize * 0.22))
+  const stripeTop = py + Math.round((tileSize - stripeHeight) / 2)
+  const stripeSpan = stripeCount * stripeWidth + (stripeCount - 1) * stripeGap
+  const stripeLeft = px + Math.round((tileSize - stripeSpan) / 2)
+
+  fillRect(graphics, px, py, tileSize, tileSize, TILE_TYPE_OVERLAY_COLORS.crosswalk, TILE_TYPE_OVERLAY_COLORS.alpha)
+
+  for (let stripe = 0; stripe < stripeCount; stripe += 1) {
+    fillRect(
+      graphics,
+      stripeLeft + stripe * (stripeWidth + stripeGap),
+      stripeTop,
+      stripeWidth,
+      stripeHeight,
+      TILE_TYPE_OVERLAY_COLORS.crosswalkStripe,
+      TILE_TYPE_OVERLAY_COLORS.alpha
+    )
+  }
+}
+
+function drawChunkedOverlay(city, layer, drawTile) {
   const chunkSize = 16
 
   for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
@@ -174,9 +217,7 @@ function drawChunkedOverlay(city, layer, colorAt) {
 
       for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
         for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
-          const { color, alpha } = colorAt(x, y)
-
-          fillRect(graphics, x * city.tileSize, y * city.tileSize, city.tileSize, city.tileSize, color, alpha)
+          drawTile(graphics, x, y)
         }
       }
 

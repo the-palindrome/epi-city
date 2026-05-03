@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CROSSWALK_SIGNAL_PHASES } from '../core/constants.js'
 import { compileCityMap, validateCityMap, validateCityTextureBindings } from './city-map.js'
 
 function createMap(overrides = {}) {
@@ -33,6 +34,34 @@ function createMap(overrides = {}) {
   }
 }
 
+function createCrosswalkMap(overrides = {}) {
+  return {
+    width: 4,
+    height: 2,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      r: { category: 'road', walkable: false, drivable: true, parkable: false },
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      c: { category: 'crosswalk', walkable: true, drivable: true, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: []
+    },
+    rows: [
+      'sccs',
+      'rrrr'
+    ],
+    textureRows: [
+      [0, 0, 0, 0],
+      [1, 1, 1, 1]
+    ],
+    ...overrides
+  }
+}
+
 describe('city map validation and compile', () => {
   it('normalizes valid authoring JSON into the runtime city API', () => {
     const map = validateCityMap(createMap())
@@ -47,6 +76,53 @@ describe('city map validation and compile', () => {
     })
     expect(city.isWalkable(0, 0)).toBe(true)
     expect(city.isDrivable(0, 2)).toBe(true)
+  })
+
+  it('compiles crosswalk tiles as walkable and drivable map cells', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap()))
+
+    expect(city.getTile(1, 0)).toBe('crosswalk')
+    expect(city.getTileVariant(1, 0)).toMatchObject({
+      category: 'crosswalk',
+      walkable: true,
+      drivable: true
+    })
+    expect(city.isWalkable(1, 0)).toBe(true)
+    expect(city.isDrivable(1, 0)).toBe(true)
+    expect(city.isCrosswalk(1, 0)).toBe(true)
+  })
+
+  it('gates pedestrian crosswalk entry by signal state while letting vehicles drive', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap()))
+
+    city.setCrosswalkSignalState('green')
+    expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(true)
+
+    city.setCrosswalkSignalState('yellow')
+    expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(false)
+    expect(city.canStep(1, 0, 2, 0, 'pedestrian')).toBe(true)
+    expect(city.canStep(2, 0, 3, 0, 'pedestrian')).toBe(true)
+
+    city.setCrosswalkSignalState('red')
+    expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(false)
+    expect(city.canStep(1, 0, 2, 0, 'pedestrian')).toBe(false)
+    expect(city.canStep(2, 0, 3, 0, 'pedestrian')).toBe(true)
+    expect(city.canStep(1, 1, 1, 0, 'vehicle')).toBe(true)
+  })
+
+  it('cycles crosswalk signals through red, green, and yellow phases', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap()))
+
+    expect(city.getCrosswalkSignalState()).toBe('red')
+
+    city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[0].duration)
+    expect(city.getCrosswalkSignalState()).toBe('green')
+
+    city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[1].duration)
+    expect(city.getCrosswalkSignalState()).toBe('yellow')
+
+    city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[2].duration)
+    expect(city.getCrosswalkSignalState()).toBe('red')
   })
 
   it('rejects building metadata that does not cover building tiles', () => {

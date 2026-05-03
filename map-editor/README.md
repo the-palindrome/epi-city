@@ -74,7 +74,7 @@ The editor always displays the current editable map state. There is no separate 
 
 Use the `Paint layer` selector to choose what the brush updates:
 
-- `tile type` sets the tile to empty, `road`, `sidewalk`, `park`, `water`, `building`, or `obstacle`.
+- `tile type` sets the tile to empty, `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, or `obstacle`.
 - `building` sets the clicked connected building component to `residential`, `commercial`, or `hospital`.
 - `texture` picks and paints manifest frame IDs in `textureRows`.
 - `walkable` sets the current tile's walkable value to empty, `true`, or `false`.
@@ -126,7 +126,7 @@ The saved tile configuration preserves `textureSet`, `width`, `height`, `tileSiz
 - One paint drag creates one undoable stroke.
 - Right drag, middle drag, or hold `Space` to pan.
 - Mouse wheel zooms around the cursor.
-- For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` building, `6` obstacle, `e` empty.
+- For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` building, `6` obstacle, `7` crosswalk, `e` empty.
 - For building type: `r` residential, `c` commercial, `h` hospital.
 - For texture: `p` switches back to the texture picker.
 - For behavior layers: `t` true, `f` false, and `e` empty.

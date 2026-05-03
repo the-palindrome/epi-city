@@ -69,7 +69,7 @@ The optional `buildings` object uses `row-spans-v1`: each building has a stable 
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
-The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Movement uses the generated behavior booleans instead of hard-coded category masks.
+The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Movement uses the generated behavior booleans instead of hard-coded category masks, with crosswalks adding a signal-state gate for pedestrian entry.
 
 ## Runtime City Object
 
@@ -81,6 +81,7 @@ The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `ob
 | `tiles` | Numeric `Uint8Array` with one base category ID per cell. |
 | `tileTextureIds` | Numeric `Uint32Array` with one atlas-frame ID per cell. |
 | `tileWalkable`, `tileDrivable`, `tileParkable` | Numeric `Uint8Array` layers with generated gameplay behavior per cell. |
+| `tileCrosswalk` | Numeric `Uint8Array` layer marking cells controlled by the crosswalk signal. |
 | `buildings`, `tileBuildingIndexes` | Runtime building records and tile-to-building lookup data. |
 | `legend` | Normalized symbol metadata keyed by map symbol. |
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
@@ -91,6 +92,8 @@ The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `ob
 | `getBuildingId(x, y)`, `getBuilding(x, y)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
 | `isWalkable(x, y)`, `isDrivable(x, y)`, `isParkable(x, y)` | Checks generated tile behavior layers directly. |
+| `isCrosswalk(x, y)` | Checks whether a cell is a crosswalk tile. |
+| `getCrosswalkSignalState()`, `setCrosswalkSignalState(state)`, `updateCrosswalkSignals(dt)` | Reads, tests, and advances the shared crosswalk signal cycle. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
 | `canStep(fromX, fromY, toX, toY, mode)` | Checks a single movement step, including vehicle diagonal corner rules. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
@@ -100,7 +103,9 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+
+The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow, NPCs already on a crosswalk can continue to another crosswalk tile or step off the crossing, but NPCs outside the crossing cannot begin entering it. During red, NPCs cannot step onto crosswalk tiles, though any NPC already on one can still step off to a non-crosswalk walkable tile.
 
 The checked-in layout stores behavior as explicit legend properties instead of deriving movement masks from category names at runtime. This keeps map-editor corrections authoritative once a tile configuration is saved.
 
@@ -125,6 +130,8 @@ NPCs are plain objects with the state the simulation needs:
 ```
 
 The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop.
+
+NPCs do not spawn directly on crosswalk tiles. Once spawned, random movement uses `city.canStep()` so crosswalk signal rules are enforced at the same boundary as other tile movement checks.
 
 Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved. Movement selection uses the city's non-allocating step checks instead of building a fresh neighbor array for each NPC decision.
 
@@ -168,7 +175,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
 
-The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, building slate, and obstacle red.
+The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
 
 Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 
