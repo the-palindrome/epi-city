@@ -16,8 +16,8 @@ Startup follows this sequence:
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds keyboard-controlled behavior overlays for movement debugging and caches overlay layers after their first build.
-10. `createNpcSimulation()` creates the NPC system, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, `update(dt)`, and `render()` each animation frame.
+9. `installDebugDashboard()` adds simulation controls, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
+10. `createNpcSimulation()` creates the NPC system with the configured random source, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
 
@@ -93,7 +93,7 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `inBounds(x, y)` | Checks integer grid bounds. |
 | `isWalkable(x, y)`, `isDrivable(x, y)`, `isParkable(x, y)` | Checks generated tile behavior layers directly. |
 | `isCrosswalk(x, y)` | Checks whether a cell is a crosswalk tile. |
-| `getCrosswalkSignalState()`, `setCrosswalkSignalState(state)`, `updateCrosswalkSignals(dt)` | Reads, tests, and advances the shared crosswalk signal cycle. |
+| `getCrosswalkSignalState()`, `setCrosswalkSignalState(state)`, `resetCrosswalkSignals()`, `updateCrosswalkSignals(dt)` | Reads, tests, resets, and advances the shared crosswalk signal cycle. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
 | `canStep(fromX, fromY, toX, toY, mode)` | Checks a single movement step, including vehicle diagonal corner rules. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
@@ -113,6 +113,12 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `findPath()` currently runs on demand and reuses per-city scratch arrays for its open/closed/came-from/score state. If hundreds of NPCs request routes every frame, add route caching, hierarchical routing, or per-mode navigation graphs before tuning visual rendering.
 
+## Simulation Clock
+
+`Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
+
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so NPC movement and crosswalk signals advance together.
+
 ## NPC Simulation
 
 `createNpcSimulation()` spawns 1000 pedestrian NPCs after the map renders. NPCs start on walkable tile slots, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs, and move smoothly from slot anchor to slot anchor.
@@ -130,6 +136,8 @@ NPCs are plain objects with the state the simulation needs:
 ```
 
 The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop.
+
+The NPC system receives a random source through config. The default app state enables the `epi-city` seed, which makes spawn slot selection, speed assignment, neighbor choice, and target-slot choice repeat when the simulation restarts with the same seed.
 
 NPCs do not spawn directly on crosswalk tiles. Once spawned, random movement uses `city.canStep()` so crosswalk signal rules are enforced at the same boundary as other tile movement checks.
 
@@ -221,6 +229,11 @@ window.citySim.city.getTextureId(100, 100)
 window.citySim.city.nearestPassableTile(120, 140, 'pedestrian')
 window.citySim.city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
+window.citySim.pause()
+window.citySim.play()
+window.citySim.setSeed('demo-seed')
+window.citySim.restart()
+window.citySim.setSpeed(4)
 window.citySim.npcs[0].position
 window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()

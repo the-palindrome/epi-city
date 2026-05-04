@@ -1,9 +1,11 @@
 import * as PIXI from 'pixi.js'
 import { DIRECTIONS } from '../core/constants.js'
+import { createSystemRandom } from '../core/random.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
 export function createNpcSimulation(city, actorLayer, config) {
   const graphics = new PIXI.Graphics()
+  const random = config.random || createSystemRandom()
   const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
   const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
   const spawnSlots = collectNpcSpawnSlots(city, config.tileCapacity)
@@ -12,6 +14,7 @@ export function createNpcSimulation(city, actorLayer, config) {
     city,
     occupiedSlots,
     reservedSlots,
+    random,
     config
   }
   let destroyed = false
@@ -23,7 +26,7 @@ export function createNpcSimulation(city, actorLayer, config) {
   actorLayer.addChild(graphics)
 
   for (let id = 0; id < config.count && spawnSlots.length > 0; id += 1) {
-    const spawnSlotIndex = takeRandomArrayItem(spawnSlots)
+    const spawnSlotIndex = takeRandomArrayItem(spawnSlots, random)
     const spawnSlot = npcSlotFromIndex(spawnSlotIndex, config.tileCapacity)
     const tileIndex = spawnSlot.tileIndex
     const tileX = tileIndex % city.width
@@ -36,6 +39,7 @@ export function createNpcSimulation(city, actorLayer, config) {
       position,
       tile: { x: tileX, y: tileY, index: tileIndex },
       slot: { id: spawnSlot.slot, index: spawnSlotIndex },
+      random,
       config
     }))
   }
@@ -82,14 +86,14 @@ export function createNpcSimulation(city, actorLayer, config) {
   }
 }
 
-function createNpcEntity({ id, position, tile, slot, config }) {
+function createNpcEntity({ id, position, tile, slot, random, config }) {
   return {
     id,
     position: { x: position.x, y: position.y },
     tile: { x: tile.x, y: tile.y, index: tile.index },
     slot: { id: slot.id, index: slot.index },
     movement: {
-      speed: randomBetween(config.minSpeed, config.maxSpeed),
+      speed: random.between(config.minSpeed, config.maxSpeed),
       target: null
     }
   }
@@ -148,8 +152,8 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
 }
 
 function chooseNpcNextTile(npc, context) {
-  const { city, occupiedSlots, reservedSlots, config } = context
-  const start = Math.floor(Math.random() * DIRECTIONS.length)
+  const { city, occupiedSlots, reservedSlots, random, config } = context
+  const start = random.int(DIRECTIONS.length)
 
   for (let offset = 0; offset < DIRECTIONS.length; offset += 1) {
     const direction = DIRECTIONS[(start + offset) % DIRECTIONS.length]
@@ -161,7 +165,7 @@ function chooseNpcNextTile(npc, context) {
     }
 
     const targetIndex = city.index(candidateX, candidateY)
-    const targetSlot = findAvailableNpcSlot(targetIndex, occupiedSlots, reservedSlots, config.tileCapacity)
+    const targetSlot = findAvailableNpcSlot(targetIndex, occupiedSlots, reservedSlots, random, config.tileCapacity)
 
     if (!targetSlot) {
       continue
@@ -186,8 +190,8 @@ function chooseNpcNextTile(npc, context) {
   }
 }
 
-function findAvailableNpcSlot(tileIndex, occupiedSlots, reservedSlots, tileCapacity) {
-  const startSlot = Math.floor(Math.random() * tileCapacity)
+function findAvailableNpcSlot(tileIndex, occupiedSlots, reservedSlots, random, tileCapacity) {
+  const startSlot = random.int(tileCapacity)
 
   for (let offset = 0; offset < tileCapacity; offset += 1) {
     const slot = (startSlot + offset) % tileCapacity
@@ -239,16 +243,12 @@ function drawNpcBlob(graphics, x, y, size, color) {
   fillRect(graphics, px, py + 2, size, size - 4, color)
 }
 
-function takeRandomArrayItem(items) {
-  const index = Math.floor(Math.random() * items.length)
+function takeRandomArrayItem(items, random) {
+  const index = random.int(items.length)
   const item = items[index]
 
   items[index] = items[items.length - 1]
   items.pop()
 
   return item
-}
-
-function randomBetween(min, max) {
-  return min + Math.random() * (max - min)
 }

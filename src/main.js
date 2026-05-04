@@ -1,8 +1,10 @@
 import * as PIXI from 'pixi.js'
 import {
   DEFAULT_CITY_MAP_PATHS,
-  NPC_CONFIG
+  NPC_CONFIG,
+  SIMULATION_CONFIG
 } from './core/constants.js'
+import { createSeededRandom, createSystemRandom } from './core/random.js'
 import { Game } from './engine/game.js'
 import {
   applyCameraToWorld,
@@ -71,14 +73,110 @@ async function main() {
     renderCity(city, mapLayer, textureSet)
     centerCameraOnCity(camera, world, city)
 
-    const cameraControls = installCameraControls(app, camera, applyCamera)
-    const dashboard = installDebugDashboard(city, overlayLayer)
-    const npcSimulation = createNpcSimulation(city, actorLayer, NPC_CONFIG)
     const game = new Game(app)
+    const simulationState = {
+      seedEnabled: SIMULATION_CONFIG.seedEnabled,
+      seed: SIMULATION_CONFIG.seed,
+      speed: SIMULATION_CONFIG.speed
+    }
+    let npcSimulation = null
 
+    function createNpcRandom() {
+      return simulationState.seedEnabled
+        ? createSeededRandom(simulationState.seed)
+        : createSystemRandom()
+    }
+
+    function createConfiguredNpcSimulation() {
+      return createNpcSimulation(city, actorLayer, {
+        ...NPC_CONFIG,
+        random: createNpcRandom()
+      })
+    }
+
+    function clampSimulationSpeed(speed) {
+      const { min, max } = SIMULATION_CONFIG.speedRange
+      const value = Number(speed)
+
+      if (!Number.isFinite(value)) {
+        return min
+      }
+
+      return Math.min(Math.max(value, min), max)
+    }
+
+    function restartSimulation() {
+      if (npcSimulation) {
+        game.removeSystem(npcSimulation)
+        npcSimulation.destroy()
+      }
+
+      city.resetCrosswalkSignals()
+      npcSimulation = createConfiguredNpcSimulation()
+      game.addSystem(npcSimulation)
+
+      if (window.citySim) {
+        window.citySim.npcSimulation = npcSimulation
+      }
+
+      game.render()
+    }
+
+    const cameraControls = installCameraControls(app, camera, applyCamera)
+    const dashboard = installDebugDashboard(city, overlayLayer, {
+      paused: game.paused,
+      seedEnabled: simulationState.seedEnabled,
+      seed: simulationState.seed,
+      speed: simulationState.speed,
+      speedRange: SIMULATION_CONFIG.speedRange,
+      onPlay: () => game.play(),
+      onPause: () => game.pause(),
+      onRestart: restartSimulation,
+      onSeedEnabledChange: (enabled) => {
+        simulationState.seedEnabled = enabled
+      },
+      onSeedChange: (seed) => {
+        simulationState.seed = seed
+      },
+      onSpeedChange: (speed) => {
+        simulationState.speed = speed
+        game.setSpeed(speed)
+      }
+    })
+
+    game.setSpeed(simulationState.speed)
     game.addSystem({ update: (deltaSeconds) => city.updateCrosswalkSignals(deltaSeconds) })
+    npcSimulation = createConfiguredNpcSimulation()
     game.addSystem(npcSimulation)
     game.start()
+
+    function playSimulation() {
+      game.play()
+      dashboard.simulation.setPaused(false)
+    }
+
+    function pauseSimulation() {
+      game.pause()
+      dashboard.simulation.setPaused(true)
+    }
+
+    function setSimulationSpeed(speed) {
+      const nextSpeed = clampSimulationSpeed(speed)
+
+      game.setSpeed(nextSpeed)
+      simulationState.speed = nextSpeed
+      dashboard.simulation.setSpeed(simulationState.speed)
+    }
+
+    function setSimulationSeed(seed) {
+      simulationState.seed = String(seed)
+      dashboard.simulation.setSeed(simulationState.seed)
+    }
+
+    function setSimulationSeedEnabled(enabled) {
+      simulationState.seedEnabled = Boolean(enabled)
+      dashboard.simulation.setSeedEnabled(simulationState.seedEnabled)
+    }
 
     function destroy() {
       game.destroy()
@@ -96,7 +194,18 @@ async function main() {
       city,
       dashboard,
       gameLoop: game.loop,
-      npcs: npcSimulation.npcs,
+      game,
+      npcSimulation,
+      simulationState,
+      get npcs() {
+        return npcSimulation.npcs
+      },
+      play: playSimulation,
+      pause: pauseSimulation,
+      restart: restartSimulation,
+      setSpeed: setSimulationSpeed,
+      setSeed: setSimulationSeed,
+      setSeedEnabled: setSimulationSeedEnabled,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       destroy
     }

@@ -6,25 +6,30 @@ import {
 } from '../core/constants.js'
 import { clearPixiContainer, fillRect } from '../render/pixi-rendering.js'
 
-export function installDebugDashboard(city, overlayLayer) {
+export function installDebugDashboard(city, overlayLayer, simulationControls = {}) {
   const dashboard = document.getElementById('debug-dashboard')
   const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]))
   const controls = new Map()
   const layers = new Map()
+  const simulation = createSimulationControls(simulationControls)
+  const overlaySection = createDashboardSection('Overlays')
 
   dashboard.innerHTML = ''
   dashboard.appendChild(createDashboardTitle())
+  dashboard.appendChild(simulation.element)
 
   for (const overlay of DASHBOARD_OVERLAYS) {
     const control = createOverlayToggle(overlay)
 
     controls.set(overlay.id, control.input)
-    dashboard.appendChild(control.label)
+    overlaySection.appendChild(control.label)
 
     control.input.addEventListener('change', () => {
       setOverlay(overlay.id, control.input.checked)
     })
   }
+
+  dashboard.appendChild(overlaySection)
 
   function render() {
     for (const overlay of DASHBOARD_OVERLAYS) {
@@ -89,6 +94,7 @@ export function installDebugDashboard(city, overlayLayer) {
   return {
     element: dashboard,
     overlays: overlayState,
+    simulation,
     setOverlay,
     toggle: toggleDashboard,
     render,
@@ -112,6 +118,214 @@ function createDashboardTitle() {
   title.appendChild(shortcut)
 
   return title
+}
+
+function createDashboardSection(titleText) {
+  const section = document.createElement('div')
+  const title = document.createElement('div')
+
+  section.className = 'dashboard-section'
+  title.className = 'dashboard-section-title'
+  title.textContent = titleText
+  section.appendChild(title)
+
+  return section
+}
+
+function createSimulationControls(options) {
+  const state = {
+    paused: Boolean(options.paused),
+    seedEnabled: Boolean(options.seedEnabled),
+    seed: options.seed || '',
+    speed: options.speed || 1
+  }
+  const callbacks = {
+    onPlay: options.onPlay || noop,
+    onPause: options.onPause || noop,
+    onRestart: options.onRestart || noop,
+    onSeedEnabledChange: options.onSeedEnabledChange || noop,
+    onSeedChange: options.onSeedChange || noop,
+    onSpeedChange: options.onSpeedChange || noop
+  }
+  const speedRange = normalizeSpeedRange(options.speedRange)
+  const section = createDashboardSection('Simulation')
+  const actions = document.createElement('div')
+  const playButton = createDashboardButton('Play', 'play')
+  const pauseButton = createDashboardButton('Pause', 'pause')
+  const restartButton = createDashboardButton('Restart', 'restart')
+  const seedToggle = createSeedToggle(state.seedEnabled)
+  const seedField = createSeedField(state.seed)
+  const speedField = createSpeedField(state.speed, speedRange)
+
+  actions.className = 'dashboard-actions'
+  actions.appendChild(playButton)
+  actions.appendChild(pauseButton)
+  actions.appendChild(restartButton)
+  section.appendChild(actions)
+  section.appendChild(seedToggle.label)
+  section.appendChild(seedField.label)
+  section.appendChild(speedField.label)
+
+  playButton.addEventListener('click', () => {
+    callbacks.onPlay()
+    setPaused(false)
+  })
+
+  pauseButton.addEventListener('click', () => {
+    callbacks.onPause()
+    setPaused(true)
+  })
+
+  restartButton.addEventListener('click', () => {
+    callbacks.onRestart()
+  })
+
+  seedToggle.input.addEventListener('change', () => {
+    setSeedEnabled(seedToggle.input.checked)
+    callbacks.onSeedEnabledChange(state.seedEnabled)
+  })
+
+  seedField.input.addEventListener('input', () => {
+    state.seed = seedField.input.value
+    callbacks.onSeedChange(state.seed)
+  })
+
+  speedField.input.addEventListener('input', () => {
+    const speed = Number(speedField.input.value)
+
+    setSpeed(speed)
+    callbacks.onSpeedChange(state.speed)
+  })
+
+  function setPaused(paused) {
+    state.paused = Boolean(paused)
+    playButton.disabled = !state.paused
+    pauseButton.disabled = state.paused
+  }
+
+  function setSeedEnabled(enabled) {
+    state.seedEnabled = Boolean(enabled)
+    seedToggle.input.checked = state.seedEnabled
+  }
+
+  function setSeed(seed) {
+    state.seed = seed
+    seedField.input.value = state.seed
+  }
+
+  function setSpeed(speed) {
+    state.speed = clampSpeed(Number(speed), speedRange)
+    speedField.input.value = String(state.speed)
+    speedField.value.textContent = formatSpeed(state.speed)
+  }
+
+  setPaused(state.paused)
+  setSeedEnabled(state.seedEnabled)
+  setSeed(state.seed)
+  setSpeed(state.speed)
+
+  return {
+    element: section,
+    state,
+    setPaused,
+    setSeedEnabled,
+    setSeed,
+    setSpeed
+  }
+}
+
+function createDashboardButton(label, action) {
+  const button = document.createElement('button')
+
+  button.className = 'dashboard-button'
+  button.type = 'button'
+  button.dataset.simulationAction = action
+  button.textContent = label
+
+  return button
+}
+
+function createSeedToggle(enabled) {
+  const label = document.createElement('label')
+  const input = document.createElement('input')
+  const text = document.createElement('span')
+
+  label.className = 'dashboard-toggle'
+  input.type = 'checkbox'
+  input.dataset.simulationSeedToggle = 'true'
+  input.checked = enabled
+  text.textContent = 'use seed'
+
+  label.appendChild(input)
+  label.appendChild(text)
+
+  return { label, input }
+}
+
+function createSeedField(seed) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const input = document.createElement('input')
+
+  label.className = 'dashboard-field'
+  text.textContent = 'random seed'
+  input.type = 'text'
+  input.value = seed
+  input.autocomplete = 'off'
+  input.spellcheck = false
+  input.dataset.simulationSeed = 'true'
+
+  label.appendChild(text)
+  label.appendChild(input)
+
+  return { label, input }
+}
+
+function createSpeedField(speed, speedRange) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const input = document.createElement('input')
+  const value = document.createElement('output')
+
+  label.className = 'dashboard-field dashboard-slider-field'
+  text.textContent = 'speed'
+  input.type = 'range'
+  input.min = String(speedRange.min)
+  input.max = String(speedRange.max)
+  input.step = String(speedRange.step)
+  input.value = String(clampSpeed(speed, speedRange))
+  input.dataset.simulationSpeed = 'true'
+  value.className = 'dashboard-speed-value'
+  value.textContent = formatSpeed(Number(input.value))
+  label.appendChild(text)
+  label.appendChild(input)
+  label.appendChild(value)
+
+  return { label, input, value }
+}
+
+function normalizeSpeedRange(range) {
+  const min = Number(range && range.min)
+  const max = Number(range && range.max)
+  const step = Number(range && range.step)
+
+  if (Number.isFinite(min) && Number.isFinite(max) && max >= min && Number.isFinite(step) && step > 0) {
+    return { min, max, step }
+  }
+
+  return { min: 1, max: 16, step: 0.25 }
+}
+
+function clampSpeed(speed, range) {
+  if (!Number.isFinite(speed)) {
+    return range.min
+  }
+
+  return Math.min(Math.max(speed, range.min), range.max)
+}
+
+function formatSpeed(speed) {
+  return `${Number(speed.toFixed(2))}x`
 }
 
 function createOverlayToggle(overlay) {
@@ -139,8 +353,10 @@ function isEditableTarget(target) {
     return false
   }
 
-  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
 }
+
+function noop() {}
 
 function drawTileTypeOverlay(city, layer) {
   drawChunkedOverlay(city, layer, (graphics, x, y) => {

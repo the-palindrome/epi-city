@@ -62,6 +62,17 @@ export const NPC_CONFIG = Object.freeze({
   maxSpeed: 58
 })
 
+export const SIMULATION_CONFIG = Object.freeze({
+  seedEnabled: true,
+  seed: 'epi-city',
+  speed: 1,
+  speedRange: Object.freeze({
+    min: 1,
+    max: 16,
+    step: 0.25
+  })
+})
+
 export const DASHBOARD_OVERLAYS = Object.freeze([
   { id: 'tileType', label: 'overlay tile type', kind: 'tileType' },
   { id: 'walkable', label: 'overlay walkable', layer: 'tileWalkable' },

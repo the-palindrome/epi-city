@@ -664,6 +664,7 @@ export function compileCityMap(data) {
     isCrosswalk,
     getCrosswalkSignalState: () => crosswalkSignals.getState(),
     setCrosswalkSignalState: (state) => crosswalkSignals.setState(state),
+    resetCrosswalkSignals: () => crosswalkSignals.reset(),
     updateCrosswalkSignals: (deltaSeconds) => crosswalkSignals.update(deltaSeconds),
     isPassable,
     nearestPassableTile,
@@ -694,6 +695,11 @@ function createCrosswalkSignalController(phases) {
     elapsedSeconds = 0
   }
 
+  function reset() {
+    phaseIndex = 0
+    elapsedSeconds = 0
+  }
+
   function update(deltaSeconds) {
     if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
       return
@@ -710,6 +716,7 @@ function createCrosswalkSignalController(phases) {
   return {
     getState,
     setState,
+    reset,
     update
   }
 }

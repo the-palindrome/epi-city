@@ -125,6 +125,19 @@ describe('city map validation and compile', () => {
     expect(city.getCrosswalkSignalState()).toBe('red')
   })
 
+  it('resets crosswalk signals to the initial red phase', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap()))
+
+    city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[0].duration + 1)
+    expect(city.getCrosswalkSignalState()).toBe('green')
+
+    city.resetCrosswalkSignals()
+    expect(city.getCrosswalkSignalState()).toBe('red')
+
+    city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[0].duration - 0.1)
+    expect(city.getCrosswalkSignalState()).toBe('red')
+  })
+
   it('rejects building metadata that does not cover building tiles', () => {
     expect(() => validateCityMap(createMap({
       buildings: {
