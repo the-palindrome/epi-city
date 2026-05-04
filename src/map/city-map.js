@@ -1013,11 +1013,15 @@ function canUsePrecomputedStep({ currentIndex, nextIndex, directionIndex, width,
       return true
     }
 
+    if (tileCrosswalk[currentIndex] === 1) {
+      return true
+    }
+
     if (signalState === 'green') {
       return true
     }
 
-    return signalState === 'yellow' && tileCrosswalk[currentIndex] === 1
+    return false
   }
 
   if (Math.abs(DIRECTION_DX[directionIndex]) === 1 && Math.abs(DIRECTION_DY[directionIndex]) === 1) {

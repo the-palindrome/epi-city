@@ -84,7 +84,7 @@ The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `pa
 
 ## Movement Rules
 
-Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Crosswalks are both walkable and drivable, and their pedestrian signal cycles through `red`, `green`, and `yellow`; NPCs enter only on green, can continue across on yellow, and do not enter on red. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
+Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Crosswalks are both walkable and drivable, and their pedestrian signal cycles through `red`, `green`, and `yellow`; NPCs enter only on green, but NPCs already on a crosswalk can keep moving or step off at any signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
 
 ## NPC Prototype
 

@@ -110,7 +110,7 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. Building entrance cells keep the `building` category, but `compileCityMap()` marks them walkable after validating the entrance metadata.
 
-The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow, NPCs already on a crosswalk can continue to another crosswalk tile or step off the crossing, but NPCs outside the crossing cannot begin entering it. During red, NPCs cannot step onto crosswalk tiles, though any NPC already on one can still step off to a non-crosswalk walkable tile.
+The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow or red, NPCs outside the crossing cannot begin entering it, but any NPC already on a crosswalk can continue moving through crosswalk tiles or step off to another walkable tile.
 
 The checked-in layout stores behavior as explicit legend properties instead of deriving movement masks from category names at runtime. This keeps map-editor corrections authoritative once a tile configuration is saved.
 
