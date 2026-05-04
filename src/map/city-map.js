@@ -15,9 +15,6 @@ const FNV_PRIME = 0x01000193
 const NAVIGATION_CACHE_LIMIT = 4
 const ROUTE_FIELD_CACHE_LIMIT = 384
 const ROUTE_FIELD_UNREACHABLE = 0xffffffff
-const DEFAULT_ROUTE_CONGESTION_SLACK = 40
-const DEFAULT_OCCUPIED_SLOT_PENALTY = 3
-const DEFAULT_RESERVED_SLOT_PENALTY = 5
 const DEFAULT_ROUTE_VARIATION_CHANCE = 0.35
 const DEFAULT_ROUTE_VARIATION_SLACK = 20
 const SIGNAL_STATE_KEYS = Object.freeze(['red', 'green', 'yellow'])
@@ -1176,10 +1173,9 @@ function reconstructRouteFieldPathIndexes(field, stepMasks, offsets, startIndex,
 function chooseRouteFieldDirection(field, stepMasks, offsets, currentIndex, options) {
   const { nextDirection, distance } = field
   const fallbackDirection = nextDirection[currentIndex]
-  const congestion = options && options.congestion ? options.congestion : null
   const variation = options && options.variation ? options.variation : null
 
-  if ((!congestion && !variation) || fallbackDirection > 7) {
+  if (!variation || fallbackDirection > 7) {
     return fallbackDirection
   }
 
@@ -1191,21 +1187,11 @@ function chooseRouteFieldDirection(field, stepMasks, offsets, currentIndex, opti
 
   const variationTriggered = shouldVaryRouteStep(variation)
 
-  if (!variationTriggered && !congestion) {
+  if (!variationTriggered) {
     return fallbackDirection
   }
 
-  if (!variationTriggered) {
-    const fallbackPenalty = tileCongestionPenalty(currentIndex + offsets[fallbackDirection], congestion)
-
-    if (fallbackPenalty === 0) {
-      return fallbackDirection
-    }
-  }
-
-  const congestionSlack = congestion ? nonNegativeNumberOrDefault(congestion.slack, DEFAULT_ROUTE_CONGESTION_SLACK) : 0
   const variationSlack = variation ? nonNegativeNumberOrDefault(variation.slack, DEFAULT_ROUTE_VARIATION_SLACK) : 0
-  const slack = Math.max(congestionSlack, variationSlack)
   let directionMask = stepMasks.outgoing[currentIndex]
   let bestDirection = fallbackDirection
   let bestScore = Number.POSITIVE_INFINITY
@@ -1225,24 +1211,21 @@ function chooseRouteFieldDirection(field, stepMasks, offsets, currentIndex, opti
 
     const routeCost = DIRECTION_COST[directionIndex] + nextDistance
 
-    if (routeCost > currentDistance + slack) {
+    if (routeCost > currentDistance + variationSlack) {
       continue
     }
 
-    const congestionPenalty = congestion ? tileCongestionPenalty(nextIndex, congestion) : 0
-    const score = routeCost + congestionPenalty
-
     routeCandidateDirections[candidateCount] = directionIndex
-    routeCandidateScores[candidateCount] = score
+    routeCandidateScores[candidateCount] = routeCost
     candidateCount += 1
 
-    if (score < bestScore) {
-      bestScore = score
+    if (routeCost < bestScore) {
+      bestScore = routeCost
       bestDirection = directionIndex
     }
   }
 
-  if (variationTriggered && bestScore !== Number.POSITIVE_INFINITY) {
+  if (bestScore !== Number.POSITIVE_INFINITY) {
     return chooseNearGoodRouteFieldDirection(candidateCount, variationSlack, bestDirection, bestScore, variation)
   }
 
@@ -1287,47 +1270,6 @@ function chooseNearGoodRouteFieldDirection(totalCandidates, scoreSlack, bestDire
   }
 
   return bestDirection
-}
-
-function tileCongestionPenalty(tileIndex, congestion) {
-  if (congestion.unlimitedCapacityTiles && congestion.unlimitedCapacityTiles[tileIndex]) {
-    return 0
-  }
-
-  const occupiedPenalty = nonNegativeNumberOrDefault(congestion.occupiedSlotPenalty, DEFAULT_OCCUPIED_SLOT_PENALTY)
-  const reservedPenalty = nonNegativeNumberOrDefault(congestion.reservedSlotPenalty, DEFAULT_RESERVED_SLOT_PENALTY)
-
-  if (congestion.occupiedSlotCounts || congestion.reservedSlotCounts) {
-    const occupiedCount = congestion.occupiedSlotCounts ? congestion.occupiedSlotCounts[tileIndex] : 0
-    const reservedCount = congestion.reservedSlotCounts ? congestion.reservedSlotCounts[tileIndex] : 0
-
-    return occupiedCount * occupiedPenalty + reservedCount * reservedPenalty
-  }
-
-  const tileCapacity = congestion.tileCapacity
-
-  if (!Number.isInteger(tileCapacity) || tileCapacity <= 0) {
-    return 0
-  }
-
-  const occupiedSlots = congestion.occupiedSlots
-  const reservedSlots = congestion.reservedSlots
-  const baseSlotIndex = tileIndex * tileCapacity
-  let penalty = 0
-
-  for (let slot = 0; slot < tileCapacity; slot += 1) {
-    const slotIndex = baseSlotIndex + slot
-
-    if (occupiedSlots && occupiedSlots[slotIndex] !== -1) {
-      penalty += occupiedPenalty
-    }
-
-    if (reservedSlots && reservedSlots[slotIndex] !== -1) {
-      penalty += reservedPenalty
-    }
-  }
-
-  return penalty
 }
 
 function nonNegativeNumberOrDefault(value, fallback) {

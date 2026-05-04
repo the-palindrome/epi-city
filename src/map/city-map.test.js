@@ -194,33 +194,6 @@ describe('city map validation and compile', () => {
     expect(stats.routeFields).toBeGreaterThanOrEqual(2)
   })
 
-  it('applies soft congestion penalties while extracting cached paths', () => {
-    const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
-    const tileCapacity = 8
-    const occupiedSlots = new Int32Array(city.tiles.length * tileCapacity)
-    const reservedSlots = new Int32Array(city.tiles.length * tileCapacity)
-    const congestedTileIndex = city.index(1, 1)
-
-    occupiedSlots.fill(-1)
-    reservedSlots.fill(-1)
-
-    for (let slot = 0; slot < tileCapacity; slot += 1) {
-      occupiedSlots[congestedTileIndex * tileCapacity + slot] = slot
-    }
-
-    expect(city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')).toContainEqual({ x: 1, y: 1 })
-    expect(city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian', {
-      congestion: {
-        occupiedSlots,
-        reservedSlots,
-        tileCapacity,
-        occupiedSlotPenalty: 8,
-        reservedSlotPenalty: 8,
-        slack: 40
-      }
-    })).not.toContainEqual({ x: 1, y: 1 })
-  })
-
   it('chooses among near-good cached route steps when variation is enabled', () => {
     const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
     const shortest = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')

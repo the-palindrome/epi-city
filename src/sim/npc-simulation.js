@@ -12,10 +12,6 @@ export function createNpcSimulation(city, entityLayer, config) {
   const random = config.random || createSystemRandom()
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
   const clock = config.clock || STATIC_CLOCK
-  const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
-  const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
-  const occupiedSlotCounts = new Uint32Array(city.tiles.length)
-  const reservedSlotCounts = new Uint32Array(city.tiles.length)
   const visibleTileCounts = new Uint8Array(city.tiles.length)
   const visibleTileIndexes = []
   const slotOffsets = createNpcSlotOffsets(city, config)
@@ -27,10 +23,6 @@ export function createNpcSimulation(city, entityLayer, config) {
   const context = {
     city,
     clock,
-    occupiedSlots,
-    reservedSlots,
-    occupiedSlotCounts,
-    reservedSlotCounts,
     slotOffsets,
     unlimitedCapacityTiles,
     random,
@@ -40,8 +32,6 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
   let destroyed = false
 
-  occupiedSlots.fill(-1)
-  reservedSlots.fill(-1)
   graphics.eventMode = 'none'
   graphics.zIndex = zorder
   graphics.zorder = zorder
@@ -56,10 +46,6 @@ export function createNpcSimulation(city, entityLayer, config) {
 
     if (!spawnState) {
       break
-    }
-
-    if (spawnState.present) {
-      occupyNpcTile(spawnState.tile.index, context)
     }
 
     npcs.push(new NpcEntity({
@@ -112,10 +98,6 @@ export function createNpcSimulation(city, entityLayer, config) {
 
   return {
     npcs,
-    occupiedSlots,
-    reservedSlots,
-    occupiedSlotCounts,
-    reservedSlotCounts,
     tileCapacity: config.tileCapacity,
     routePlanner,
     graphics,
@@ -464,10 +446,6 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const maxStep = npc.movement.speed * deltaSeconds
 
   if (distance <= maxStep || distance === 0) {
-    releaseOccupiedNpcTile(npc.tile.index, context)
-    releaseReservedNpcTile(target.tile.index, context)
-    occupyNpcTile(target.tile.index, context)
-
     npc.position.x = target.position.x
     npc.position.y = target.position.y
     npc.tile.x = target.tile.x
@@ -546,14 +524,6 @@ function planRouteForNpc(npc, context) {
   const start = { x: npc.tile.x, y: npc.tile.y }
   const end = { x: npc.goal.location.x, y: npc.goal.location.y }
   const routeOptions = {
-    congestion: {
-      occupiedSlotCounts: context.occupiedSlotCounts,
-      reservedSlotCounts: context.reservedSlotCounts,
-      unlimitedCapacityTiles: context.unlimitedCapacityTiles,
-      slack: finiteNumberOrDefault(context.config.routeCongestionSlack, NPC_CONFIG.routeCongestionSlack),
-      occupiedSlotPenalty: finiteNumberOrDefault(context.config.routeOccupiedSlotPenalty, NPC_CONFIG.routeOccupiedSlotPenalty),
-      reservedSlotPenalty: finiteNumberOrDefault(context.config.routeReservedSlotPenalty, NPC_CONFIG.routeReservedSlotPenalty)
-    },
     variation: {
       random: context.random,
       chance: finiteNumberOrDefault(context.config.routeVariationChance, NPC_CONFIG.routeVariationChance),
@@ -637,8 +607,6 @@ function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null) {
     ? tileCenterPosition(city, tileX, tileY)
     : tileSlotPosition(city, tileX, tileY, targetSlot.slot, config, context.slotOffsets)
 
-  reserveNpcTile(targetIndex, context)
-
   npc.movement.target = {
     position: target,
     tile: {
@@ -669,8 +637,6 @@ function tryExitCurrentLocation(npc, context) {
     ? tileCenterPosition(context.city, location.x, location.y)
     : tileSlotPosition(context.city, location.x, location.y, targetSlot.slot, context.config, context.slotOffsets)
 
-  occupyNpcTile(location.index, context)
-
   npc.present = true
   npc.locationState = null
   npc.position.x = position.x
@@ -689,7 +655,6 @@ function enterGoalLocation(npc, context) {
     return
   }
 
-  releaseNpcSlot(npc, context)
   npc.present = false
   npc.locationState = {
     timetableElementId: npc.goal.id,
@@ -703,48 +668,12 @@ function enterGoalLocation(npc, context) {
   npc.routing = createEmptyRouteState()
 }
 
-function releaseNpcSlot(npc, context) {
-  releaseOccupiedNpcTile(npc.tile.index, context)
-}
-
 function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
     return { slot: -1, slotIndex: -1, unlimited: true }
   }
 
   return { slot: random.int(tileCapacity), slotIndex: -1, unlimited: false }
-}
-
-function occupyNpcTile(tileIndex, context) {
-  incrementTileCount(context.occupiedSlotCounts, tileIndex)
-}
-
-function reserveNpcTile(tileIndex, context) {
-  incrementTileCount(context.reservedSlotCounts, tileIndex)
-}
-
-function releaseOccupiedNpcTile(tileIndex, context) {
-  decrementTileCount(context.occupiedSlotCounts, tileIndex)
-}
-
-function releaseReservedNpcTile(tileIndex, context) {
-  decrementTileCount(context.reservedSlotCounts, tileIndex)
-}
-
-function incrementTileCount(counts, tileIndex) {
-  if (tileIndex < 0) {
-    return
-  }
-
-  counts[tileIndex] += 1
-}
-
-function decrementTileCount(counts, tileIndex) {
-  if (tileIndex < 0 || counts[tileIndex] === 0) {
-    return
-  }
-
-  counts[tileIndex] -= 1
 }
 
 function createNpcSlotOffsets(city, config) {

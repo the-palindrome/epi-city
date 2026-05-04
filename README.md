@@ -92,7 +92,7 @@ The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `wor
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
-Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. The simulation keeps tile-level occupied and reserved counts for soft congestion-aware routing, and NPCs interpolate smoothly between anchor positions.
+Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. NPCs interpolate smoothly between anchor positions.
 
 The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed. The debug dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time.
 

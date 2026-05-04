@@ -120,9 +120,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `findPath()` runs on-demand A* with stamped typed arrays, so searches reuse scratch memory without clearing the whole map on each route. `findCachedPath()` builds a reverse route field for the current destination and movement state, caches the field with an LRU policy, and extracts future paths to that same destination by following next-hop indexes. This matches NPC commute patterns because many NPCs route to the same work or home entrances.
 
-Cached path extraction can also apply a soft congestion penalty from the live NPC tile counts. The route field stores distance-to-goal values, so extraction can choose a nearby next step when the shortest next step is crowded, as long as the alternate step remains within `routeCongestionSlack`. `routeOccupiedSlotPenalty` and `routeReservedSlotPenalty` tune how strongly occupied or reserved NPCs discourage a path from using a tile.
-
-NPC route extraction uses the same route-field distances for path variation. On each extracted step, the planner usually takes the best congestion-adjusted next hop, but `routeVariationChance` lets it choose among near-good steps whose scores stay within `routeVariationSlack`. Every candidate must still reduce distance to the destination, so variation changes route shape without allowing wandering loops.
+NPC route extraction uses the same route-field distances for path variation. On each extracted step, the planner usually takes the shortest next hop, but `routeVariationChance` lets it choose among near-good steps whose scores stay within `routeVariationSlack`. Every candidate must still reduce distance to the destination, so variation changes route shape without allowing wandering loops.
 
 ## Simulation Clock
 
@@ -160,9 +158,9 @@ The simulation owns movement decisions and tile occupancy bookkeeping. NPC entit
 
 The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn anchor selection, speed assignment, and route choices repeat when the simulation restarts with the same seed.
 
-NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` with live occupied and reserved tile counts to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
+NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
 
-Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile, while the simulation keeps unbounded tile-indexed occupied and reserved counts so congestion scoring can read a tile's pressure in O(1). Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
+Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
 
 ## Texture Sets
 

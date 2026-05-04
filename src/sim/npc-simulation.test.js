@@ -194,14 +194,11 @@ describe('NPC simulation randomness', () => {
       count: 24,
       initialUpdate: false
     })
-    const occupiedSlots = simulation.occupiedSlots.filter((id) => id !== -1)
     const minCenter = NPC_CONFIG.size / 2
     const maxCenter = city.tileSize - NPC_CONFIG.size / 2
 
     expect(simulation.tileCapacity).toBe(9)
     expect(simulation.npcs).toHaveLength(24)
-    expect(occupiedSlots).toHaveLength(0)
-    expect(simulation.occupiedSlotCounts[0]).toBe(24)
     expect(simulation.npcs.every((npc) => npc.slot.index === -1)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.slot.id >= 0 && npc.slot.id < simulation.tileCapacity)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 0 && npc.tile.y === 0)).toBe(true)
@@ -216,7 +213,7 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
-  it('allows movement into a normal tile that already exceeds visual capacity', () => {
+  it('allows movement into a normal tile without tile capacity bookkeeping', () => {
     const city = createCity({
       width: 2,
       height: 1,
@@ -233,10 +230,6 @@ describe('NPC simulation randomness', () => {
     npc.tile = { x: 0, y: 0, index: 0 }
     npc.slot = { id: 0, index: -1 }
     npc.movement.target = null
-    simulation.occupiedSlotCounts.fill(0)
-    simulation.reservedSlotCounts.fill(0)
-    simulation.occupiedSlotCounts[0] = 1
-    simulation.occupiedSlotCounts[1] = simulation.tileCapacity + 4
 
     simulation.update(1 / 60)
 
@@ -244,7 +237,6 @@ describe('NPC simulation randomness', () => {
       tile: { x: 1, y: 0, index: 1 },
       slot: { index: -1 }
     })
-    expect(simulation.reservedSlotCounts[1]).toBe(1)
 
     simulation.destroy()
   })
@@ -371,8 +363,7 @@ describe('NPC simulation randomness', () => {
 
     expect(simulation.npcs.every((npc) => npc.present)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 1 && npc.tile.y === 1)).toBe(true)
-    expect(simulation.occupiedSlots.filter((id) => id !== -1)).toHaveLength(0)
-    expect(simulation.occupiedSlotCounts.reduce((total, count) => total + count, 0)).toBe(4)
+    expect(simulation.npcs.every((npc) => npc.slot.index === -1)).toBe(true)
 
     simulation.destroy()
   })
