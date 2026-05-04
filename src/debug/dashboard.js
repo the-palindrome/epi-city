@@ -32,6 +32,8 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   dashboard.appendChild(overlaySection)
 
   function render() {
+    simulation.render()
+
     for (const overlay of DASHBOARD_OVERLAYS) {
       const enabled = overlayState[overlay.id]
       const layer = enabled ? ensureOverlayLayer(overlay) : layers.get(overlay.id)
@@ -138,7 +140,8 @@ function createSimulationControls(options) {
     seedEnabled: Boolean(options.seedEnabled),
     seed: options.seed || '',
     speed: options.speed || 1,
-    npcCount: normalizeNpcCount(options.npcCount ?? 1000, options.npcCountRange)
+    npcCount: normalizeNpcCount(options.npcCount ?? 1000, options.npcCountRange),
+    dayNightOverlayEnabled: options.dayNightOverlayEnabled !== false
   }
   const callbacks = {
     onPlay: options.onPlay || noop,
@@ -147,7 +150,8 @@ function createSimulationControls(options) {
     onSeedEnabledChange: options.onSeedEnabledChange || noop,
     onSeedChange: options.onSeedChange || noop,
     onSpeedChange: options.onSpeedChange || noop,
-    onNpcCountChange: options.onNpcCountChange || noop
+    onNpcCountChange: options.onNpcCountChange || noop,
+    onDayNightOverlayChange: options.onDayNightOverlayChange || noop
   }
   const speedRange = normalizeSpeedRange(options.speedRange)
   const npcCountRange = normalizeNpcCountRange(options.npcCountRange)
@@ -156,20 +160,24 @@ function createSimulationControls(options) {
   const playButton = createDashboardButton('Play', 'play')
   const pauseButton = createDashboardButton('Pause', 'pause')
   const restartButton = createDashboardButton('Restart', 'restart')
+  const clockField = createClockField()
   const seedToggle = createSeedToggle(state.seedEnabled)
   const seedField = createSeedField(state.seed)
   const speedField = createSpeedField(state.speed, speedRange)
   const npcCountField = createNpcCountField(state.npcCount, npcCountRange)
+  const dayNightToggle = createDayNightToggle(state.dayNightOverlayEnabled)
 
   actions.className = 'dashboard-actions'
   actions.appendChild(playButton)
   actions.appendChild(pauseButton)
   actions.appendChild(restartButton)
   section.appendChild(actions)
+  section.appendChild(clockField.label)
   section.appendChild(seedToggle.label)
   section.appendChild(seedField.label)
   section.appendChild(speedField.label)
   section.appendChild(npcCountField.label)
+  section.appendChild(dayNightToggle.label)
 
   playButton.addEventListener('click', () => {
     callbacks.onPlay()
@@ -215,6 +223,11 @@ function createSimulationControls(options) {
     callbacks.onNpcCountChange(state.npcCount)
   })
 
+  dayNightToggle.input.addEventListener('change', () => {
+    setDayNightOverlayEnabled(dayNightToggle.input.checked)
+    callbacks.onDayNightOverlayChange(state.dayNightOverlayEnabled)
+  })
+
   function setPaused(paused) {
     state.paused = Boolean(paused)
     playButton.disabled = !state.paused
@@ -243,20 +256,33 @@ function createSimulationControls(options) {
     npcCountField.input.value = String(state.npcCount)
   }
 
+  function setDayNightOverlayEnabled(enabled) {
+    state.dayNightOverlayEnabled = Boolean(enabled)
+    dayNightToggle.input.checked = state.dayNightOverlayEnabled
+  }
+
+  function render() {
+    clockField.value.textContent = formatClockDisplay(options.clock)
+  }
+
   setPaused(state.paused)
   setSeedEnabled(state.seedEnabled)
   setSeed(state.seed)
   setSpeed(state.speed)
   setNpcCount(state.npcCount)
+  setDayNightOverlayEnabled(state.dayNightOverlayEnabled)
+  render()
 
   return {
     element: section,
     state,
+    render,
     setPaused,
     setSeedEnabled,
     setSeed,
     setSpeed,
-    setNpcCount
+    setNpcCount,
+    setDayNightOverlayEnabled
   }
 }
 
@@ -305,6 +331,21 @@ function createSeedField(seed) {
   label.appendChild(input)
 
   return { label, input }
+}
+
+function createClockField() {
+  const label = document.createElement('div')
+  const text = document.createElement('span')
+  const value = document.createElement('output')
+
+  label.className = 'dashboard-field dashboard-clock-field'
+  text.textContent = 'time'
+  value.className = 'dashboard-clock-value'
+  value.dataset.simulationClock = 'true'
+  label.appendChild(text)
+  label.appendChild(value)
+
+  return { label, value }
 }
 
 function createSpeedField(speed, speedRange) {
@@ -360,6 +401,23 @@ function createNpcCountField(count, countRange) {
   return { label, slider, input }
 }
 
+function createDayNightToggle(enabled) {
+  const label = document.createElement('label')
+  const input = document.createElement('input')
+  const text = document.createElement('span')
+
+  label.className = 'dashboard-toggle'
+  input.type = 'checkbox'
+  input.dataset.simulationDayNightToggle = 'true'
+  input.checked = enabled
+  text.textContent = 'day-night overlay'
+
+  label.appendChild(input)
+  label.appendChild(text)
+
+  return { label, input }
+}
+
 function normalizeSpeedRange(range) {
   const min = Number(range && range.min)
   const max = Number(range && range.max)
@@ -405,6 +463,16 @@ function clampSpeed(speed, range) {
 
 function formatSpeed(speed) {
   return `${Number(speed.toFixed(2))}x`
+}
+
+function formatClockDisplay(clock) {
+  if (!clock || typeof clock.formatTimeOfDay !== 'function') {
+    return '--:--'
+  }
+
+  const dayIndex = typeof clock.getDayIndex === 'function' ? clock.getDayIndex() : 0
+
+  return `day ${dayIndex + 1} ${clock.formatTimeOfDay()}`
 }
 
 function createOverlayToggle(overlay) {

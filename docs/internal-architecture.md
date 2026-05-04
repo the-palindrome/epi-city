@@ -16,7 +16,7 @@ Startup follows this sequence:
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds simulation controls, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
+9. `installDebugDashboard()` adds simulation controls, the clock display, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
 10. `SimulationClock` and `createNpcSimulation()` create the clock and NPC systems with the configured random source, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
@@ -128,7 +128,7 @@ NPC route extraction uses the same route-field distances for path variation. On 
 
 `Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
 
-The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, and crosswalk signals advance together. The dashboard also exposes the NPC count as a slider plus exact number input. Changing it restarts the NPC system with a clamped count from 100 to 10000; the default remains 1000.
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes the NPC count as a slider plus exact number input, and includes a checkbox for the day-night overlay. Changing the NPC count restarts the NPC system with a clamped count from 100 to 10000; the default remains 1000.
 
 `SimulationClock` advances one simulated hour for every 60 game seconds. Since `Game` applies speed before fixed updates reach systems, `1x` speed makes one real minute equal one simulation hour, and higher speeds multiply that rate. Restarting the simulation resets the clock to the configured start hour.
 
@@ -192,7 +192,7 @@ The extraction script checks every map cell against the original image. Each `te
 
 ## Rendering Strategy
 
-The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC graphics render at `zorder: 1`, and building tile chunks render at `zorder: 2`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below NPCs while building overlays stay above building tiles.
+The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below NPCs while building overlays stay above building tiles.
 
 `renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
 
@@ -202,7 +202,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboard
 
-Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+Press `d` to toggle the top-right debug dashboard. The dashboard displays the simulation clock, exposes a day-night overlay checkbox, and includes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
 
 The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
 
@@ -256,6 +256,7 @@ window.citySim.play()
 window.citySim.setSeed('demo-seed')
 window.citySim.restart()
 window.citySim.setSpeed(4)
+window.citySim.setDayNightOverlayEnabled(false)
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
 window.citySim.npcs[0].timetable.elements

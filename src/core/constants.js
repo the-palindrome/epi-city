@@ -68,9 +68,6 @@ export const NPC_CONFIG = Object.freeze({
   routePlanBudget: 24,
   routeRetrySeconds: 1,
   routeBlockedReplanSeconds: 2,
-  routeCongestionSlack: 40,
-  routeOccupiedSlotPenalty: 3,
-  routeReservedSlotPenalty: 5,
   routeVariationChance: 0.35,
   routeVariationSlack: 20
 })
@@ -79,6 +76,7 @@ export const SIMULATION_CONFIG = Object.freeze({
   seedEnabled: true,
   seed: 'epi-city',
   speed: 1,
+  dayNightOverlayEnabled: true,
   clock: Object.freeze({
     startHour: 8,
     secondsPerSimulationHour: 60

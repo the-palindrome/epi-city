@@ -21,6 +21,7 @@ import { installDebugDashboard } from './debug/dashboard.js'
 import { createNpcSimulation } from './sim/npc-simulation.js'
 import { SimulationClock } from './sim/simulation-clock.js'
 import { renderCity } from './render/city-renderer.js'
+import { createDayNightOverlay } from './render/day-night-overlay.js'
 import {
   clearPixiContainer,
   configurePixelArtRendering,
@@ -77,10 +78,14 @@ async function main() {
       seedEnabled: SIMULATION_CONFIG.seedEnabled,
       seed: SIMULATION_CONFIG.seed,
       speed: SIMULATION_CONFIG.speed,
-      npcCount: NPC_CONFIG.count
+      npcCount: NPC_CONFIG.count,
+      dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled
     }
     let npcSimulation = null
     const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
+    const dayNightOverlay = createDayNightOverlay(city, entityLayer, simulationClock, {
+      enabled: simulationState.dayNightOverlayEnabled
+    })
 
     function createNpcRandom() {
       return simulationState.seedEnabled
@@ -146,6 +151,8 @@ async function main() {
       speedRange: SIMULATION_CONFIG.speedRange,
       npcCount: simulationState.npcCount,
       npcCountRange: SIMULATION_CONFIG.npcCountRange,
+      clock: simulationClock,
+      dayNightOverlayEnabled: simulationState.dayNightOverlayEnabled,
       onPlay: () => game.play(),
       onPause: () => game.pause(),
       onRestart: restartSimulation,
@@ -163,12 +170,18 @@ async function main() {
         simulationState.npcCount = clampNpcCount(count)
         dashboard.simulation.setNpcCount(simulationState.npcCount)
         restartSimulation()
+      },
+      onDayNightOverlayChange: (enabled) => {
+        simulationState.dayNightOverlayEnabled = Boolean(enabled)
+        dayNightOverlay.setEnabled(simulationState.dayNightOverlayEnabled)
       }
     })
 
     game.setSpeed(simulationState.speed)
     game.addSystem(simulationClock)
     game.addSystem({ update: (deltaSeconds) => city.updateCrosswalkSignals(deltaSeconds) })
+    game.addSystem(dayNightOverlay)
+    game.addSystem({ render: () => dashboard.render() })
     npcSimulation = createConfiguredNpcSimulation()
     game.addSystem(npcSimulation)
     game.start()
@@ -207,6 +220,12 @@ async function main() {
       restartSimulation()
     }
 
+    function setDayNightOverlayEnabled(enabled) {
+      simulationState.dayNightOverlayEnabled = Boolean(enabled)
+      dayNightOverlay.setEnabled(simulationState.dayNightOverlayEnabled)
+      dashboard.simulation.setDayNightOverlayEnabled(simulationState.dayNightOverlayEnabled)
+    }
+
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -221,6 +240,7 @@ async function main() {
       city,
       dashboard,
       simulationClock,
+      dayNightOverlay,
       gameLoop: game.loop,
       game,
       npcSimulation,
@@ -235,6 +255,7 @@ async function main() {
       setSeed: setSimulationSeed,
       setSeedEnabled: setSimulationSeedEnabled,
       setNpcCount,
+      setDayNightOverlayEnabled,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       destroy
     }

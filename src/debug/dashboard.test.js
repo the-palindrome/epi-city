@@ -219,4 +219,48 @@ describe('debug dashboard overlays', () => {
 
     dashboard.destroy()
   })
+
+  it('shows the simulation clock and toggles the day-night overlay control', () => {
+    const changes = []
+    const clock = {
+      dayIndex: 0,
+      time: '08:00',
+      formatTimeOfDay() {
+        return this.time
+      },
+      getDayIndex() {
+        return this.dayIndex
+      }
+    }
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      clock,
+      dayNightOverlayEnabled: true,
+      onDayNightOverlayChange(enabled) {
+        changes.push(enabled)
+      }
+    })
+    const clockDisplay = findByDataset(dashboard.element, 'simulationClock')
+    const dayNightToggle = findByDataset(dashboard.element, 'simulationDayNightToggle')
+
+    expect(clockDisplay.textContent).toBe('day 1 08:00')
+    expect(dayNightToggle.checked).toBe(true)
+
+    clock.dayIndex = 2
+    clock.time = '23:45'
+    dashboard.render()
+
+    expect(clockDisplay.textContent).toBe('day 3 23:45')
+
+    dayNightToggle.checked = false
+    dayNightToggle.eventListeners.change()
+
+    expect(dashboard.simulation.state.dayNightOverlayEnabled).toBe(false)
+    expect(changes).toEqual([false])
+
+    dashboard.simulation.setDayNightOverlayEnabled(true)
+
+    expect(dayNightToggle.checked).toBe(true)
+
+    dashboard.destroy()
+  })
 })
