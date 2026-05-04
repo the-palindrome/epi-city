@@ -97,9 +97,11 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `getCrosswalkSignalState()`, `setCrosswalkSignalState(state)`, `resetCrosswalkSignals()`, `updateCrosswalkSignals(dt)` | Reads, tests, resets, and advances the shared crosswalk signal cycle. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
 | `canStep(fromX, fromY, toX, toY, mode)` | Checks a single movement step, including vehicle diagonal corner rules. |
+| `canStepIndex(fromIndex, toIndex, mode)` | Checks a single movement step by tile index for hot simulation loops. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
 | `findPath(start, end, mode)` | Runs on-demand A* and returns `{ x, y }` path points. |
 | `findCachedPath(start, end, mode)` | Uses a cached destination route field and returns `{ x, y }` path points. |
+| `findCachedPathIndexes(start, end, mode)` | Uses the same route field and returns tile indexes for NPC routing. |
 | `navigationCacheKey`, `getNavigationCacheStats()` | Exposes the compiled navigation signature and route-field cache counters for debugging. |
 
 The typed-array representation keeps simulation code numeric and predictable. JSON remains the authoring format; typed arrays are the runtime format.
@@ -117,6 +119,10 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 `compileCityMap()` precomputes movement masks and reverse movement masks for pedestrian signal states and vehicle movement. The runtime caches these typed-array navigation structures by a hash of the map's walkable, drivable, and crosswalk layers. When the map folder changes those semantic layers, the hash changes and the runtime rebuilds the navigation data for the new layout.
 
 `findPath()` runs on-demand A* with stamped typed arrays, so searches reuse scratch memory without clearing the whole map on each route. `findCachedPath()` builds a reverse route field for the current destination and movement state, caches the field with an LRU policy, and extracts future paths to that same destination by following next-hop indexes. This matches NPC commute patterns because many NPCs route to the same work or home entrances.
+
+Cached path extraction can also apply a soft congestion penalty from the live NPC slot grids. The route field stores distance-to-goal values, so extraction can choose a nearby next step when the shortest next step is crowded, as long as the alternate step remains within `routeCongestionSlack`. `routeOccupiedSlotPenalty` and `routeReservedSlotPenalty` tune how strongly occupied or reserved slots discourage a path from using a tile.
+
+NPC route extraction uses the same route-field distances for path variation. On each extracted step, the planner usually takes the best congestion-adjusted next hop, but `routeVariationChance` lets it choose among near-good steps whose scores stay within `routeVariationSlack`. Every candidate must still reduce distance to the destination, so variation changes route shape without allowing wandering loops.
 
 ## Simulation Clock
 
@@ -154,9 +160,9 @@ The simulation owns movement decisions and slot bookkeeping. NPC entities keep i
 
 The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn slot selection, speed assignment, and route choices repeat when the simulation restarts with the same seed.
 
-NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
+NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` with live occupied and reserved slot grids to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
 
-Each normal walkable tile currently has eight NPC slots arranged as a compact grid inside the tile. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move into a normal target tile when at least one slot is both unoccupied and unreserved. Building entrance tiles are unlimited-capacity holding points, so many NPCs can enter, wait inside, or leave the same building without blocking the doorway.
+Each normal walkable tile currently has eight NPC slots arranged as a compact grid inside the tile. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. The NPC system also maintains tile-indexed occupied and reserved counts so congestion scoring can read a tile's pressure in O(1). An NPC can only start a move into a normal target tile when at least one slot is both unoccupied and unreserved. Building entrance tiles are unlimited-capacity holding points, so many NPCs can enter, wait inside, or leave the same building without blocking the doorway.
 
 ## Texture Sets
 

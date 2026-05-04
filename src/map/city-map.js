@@ -14,6 +14,12 @@ const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
 const NAVIGATION_CACHE_LIMIT = 4
 const ROUTE_FIELD_CACHE_LIMIT = 384
+const ROUTE_FIELD_UNREACHABLE = 0xffffffff
+const DEFAULT_ROUTE_CONGESTION_SLACK = 40
+const DEFAULT_OCCUPIED_SLOT_PENALTY = 3
+const DEFAULT_RESERVED_SLOT_PENALTY = 5
+const DEFAULT_ROUTE_VARIATION_CHANCE = 0.35
+const DEFAULT_ROUTE_VARIATION_SLACK = 20
 const SIGNAL_STATE_KEYS = Object.freeze(['red', 'green', 'yellow'])
 const SIGNAL_STATE_INDEX = Object.freeze({
   red: 0,
@@ -25,6 +31,8 @@ const DIRECTION_DY = Object.freeze(DIRECTIONS.map((direction) => direction.dy))
 const DIRECTION_COST = Object.freeze(DIRECTIONS.map((direction) => direction.cost))
 const OPPOSITE_DIRECTION = Object.freeze([1, 0, 3, 2, 7, 6, 5, 4])
 const DIRECTION_INDEX_BY_OFFSET = new Int8Array([7, 3, 5, 1, -1, 0, 6, 2, 4])
+const routeCandidateDirections = new Uint8Array(8)
+const routeCandidateScores = new Float64Array(8)
 const navigationCache = new Map()
 
 export async function loadCityMap(url, textureRowsUrl) {
@@ -607,6 +615,41 @@ export function compileCityMap(data) {
     return canStepWithProperty(fromX, fromY, toX, toY, modeProperty(mode))
   }
 
+  function canStepIndex(fromIndex, toIndex, mode) {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= tiles.length || toIndex >= tiles.length) {
+      return false
+    }
+
+    const property = modeProperty(mode)
+
+    if (fromIndex === toIndex) {
+      return tilePropertyLayers[property][toIndex] === 1
+    }
+
+    const fromX = fromIndex % width
+    const toX = toIndex % width
+    const dx = toX - fromX
+
+    if (dx < -1 || dx > 1) {
+      return false
+    }
+
+    const dy = Math.floor(toIndex / width) - Math.floor(fromIndex / width)
+
+    if (dy < -1 || dy > 1) {
+      return false
+    }
+
+    const directionIndex = DIRECTION_INDEX_BY_OFFSET[(dy + 1) * 3 + dx + 1]
+
+    if (directionIndex === -1) {
+      return false
+    }
+
+    const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
+    return (stepMasks.outgoing[fromIndex] & (1 << directionIndex)) !== 0
+  }
+
   function nearestPassableTile(x, y, mode, maxRadius = Math.max(width, height)) {
     const property = modeProperty(mode)
     const startX = clamp(Math.round(x), 0, width - 1)
@@ -709,7 +752,13 @@ export function compileCityMap(data) {
     return []
   }
 
-  function findCachedPath(start, end, mode) {
+  function findCachedPath(start, end, mode, options = null) {
+    const pathIndexes = findCachedPathIndexes(start, end, mode, options)
+
+    return indexesToPath(pathIndexes, width)
+  }
+
+  function findCachedPathIndexes(start, end, mode, options = null) {
     const property = modeProperty(mode)
     const startTile = nearestPassableTile(start.x, start.y, mode)
     const endTile = nearestPassableTile(end.x, end.y, mode)
@@ -722,13 +771,13 @@ export function compileCityMap(data) {
     const endIndex = indexOf(endTile.x, endTile.y, width)
 
     if (startIndex === endIndex) {
-      return [startTile]
+      return [startIndex]
     }
 
     const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
     const field = navigation.routeFields.get(endIndex, stepMasks.cacheKey, stepMasks.incoming)
 
-    return reconstructRouteFieldPath(field.nextDirection, navigation.offsets, startIndex, endIndex, width)
+    return reconstructRouteFieldPathIndexes(field, stepMasks, navigation.offsets, startIndex, endIndex, options)
   }
 
   return {
@@ -755,6 +804,7 @@ export function compileCityMap(data) {
     getBuilding,
     inBounds,
     canStep,
+    canStepIndex,
     isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
     isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
     isParkable: (x, y) => hasTileProperty(x, y, 'parkable'),
@@ -767,6 +817,7 @@ export function compileCityMap(data) {
     nearestPassableTile,
     findPath,
     findCachedPath,
+    findCachedPathIndexes,
     navigationCacheKey: navigation.cacheKey,
     getNavigationCacheStats: () => ({
       cacheKey: navigation.cacheKey,
@@ -1033,14 +1084,17 @@ function createRouteFieldCache(length, offsets) {
 
 function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
   const nextDirection = new Uint8Array(length)
+  const distance = new Uint32Array(length)
   const runId = beginSearchRun(scratch)
   const { open, closedRuns, scoreRuns, gScore } = scratch
 
   nextDirection.fill(255)
+  distance.fill(ROUTE_FIELD_UNREACHABLE)
   open.clear()
   gScore[endIndex] = 0
   scoreRuns[endIndex] = runId
   nextDirection[endIndex] = 254
+  distance[endIndex] = 0
   open.push(endIndex, 0)
 
   while (open.length > 0) {
@@ -1071,12 +1125,13 @@ function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
         gScore[previousIndex] = tentativeScore
         scoreRuns[previousIndex] = runId
         nextDirection[previousIndex] = OPPOSITE_DIRECTION[directionIndex]
+        distance[previousIndex] = tentativeScore
         open.push(previousIndex, tentativeScore)
       }
     }
   }
 
-  return { nextDirection }
+  return { nextDirection, distance }
 }
 
 function reconstructStampedPath(cameFrom, cameFromRuns, endIndex, width, runId) {
@@ -1092,7 +1147,9 @@ function reconstructStampedPath(cameFrom, cameFromRuns, endIndex, width, runId) 
   return indexesToPath(indexes, width)
 }
 
-function reconstructRouteFieldPath(nextDirection, offsets, startIndex, endIndex, width) {
+function reconstructRouteFieldPathIndexes(field, stepMasks, offsets, startIndex, endIndex, options) {
+  const { nextDirection, distance } = field
+
   if (nextDirection[startIndex] === 255) {
     return []
   }
@@ -1102,7 +1159,7 @@ function reconstructRouteFieldPath(nextDirection, offsets, startIndex, endIndex,
   let guard = 0
 
   while (current !== endIndex && guard < nextDirection.length) {
-    const directionIndex = nextDirection[current]
+    const directionIndex = chooseRouteFieldDirection(field, stepMasks, offsets, current, options)
 
     if (directionIndex > 7) {
       return []
@@ -1113,7 +1170,180 @@ function reconstructRouteFieldPath(nextDirection, offsets, startIndex, endIndex,
     guard += 1
   }
 
-  return current === endIndex ? indexesToPath(indexes, width) : []
+  return current === endIndex ? indexes : []
+}
+
+function chooseRouteFieldDirection(field, stepMasks, offsets, currentIndex, options) {
+  const { nextDirection, distance } = field
+  const fallbackDirection = nextDirection[currentIndex]
+  const congestion = options && options.congestion ? options.congestion : null
+  const variation = options && options.variation ? options.variation : null
+
+  if ((!congestion && !variation) || fallbackDirection > 7) {
+    return fallbackDirection
+  }
+
+  const currentDistance = distance[currentIndex]
+
+  if (currentDistance === ROUTE_FIELD_UNREACHABLE) {
+    return fallbackDirection
+  }
+
+  const variationTriggered = shouldVaryRouteStep(variation)
+
+  if (!variationTriggered && !congestion) {
+    return fallbackDirection
+  }
+
+  if (!variationTriggered) {
+    const fallbackPenalty = tileCongestionPenalty(currentIndex + offsets[fallbackDirection], congestion)
+
+    if (fallbackPenalty === 0) {
+      return fallbackDirection
+    }
+  }
+
+  const congestionSlack = congestion ? nonNegativeNumberOrDefault(congestion.slack, DEFAULT_ROUTE_CONGESTION_SLACK) : 0
+  const variationSlack = variation ? nonNegativeNumberOrDefault(variation.slack, DEFAULT_ROUTE_VARIATION_SLACK) : 0
+  const slack = Math.max(congestionSlack, variationSlack)
+  let directionMask = stepMasks.outgoing[currentIndex]
+  let bestDirection = fallbackDirection
+  let bestScore = Number.POSITIVE_INFINITY
+  let candidateCount = 0
+
+  for (let directionIndex = 0; directionMask !== 0; directionIndex += 1, directionMask >>>= 1) {
+    if ((directionMask & 1) === 0) {
+      continue
+    }
+
+    const nextIndex = currentIndex + offsets[directionIndex]
+    const nextDistance = distance[nextIndex]
+
+    if (nextDistance === ROUTE_FIELD_UNREACHABLE || nextDistance >= currentDistance) {
+      continue
+    }
+
+    const routeCost = DIRECTION_COST[directionIndex] + nextDistance
+
+    if (routeCost > currentDistance + slack) {
+      continue
+    }
+
+    const congestionPenalty = congestion ? tileCongestionPenalty(nextIndex, congestion) : 0
+    const score = routeCost + congestionPenalty
+
+    routeCandidateDirections[candidateCount] = directionIndex
+    routeCandidateScores[candidateCount] = score
+    candidateCount += 1
+
+    if (score < bestScore) {
+      bestScore = score
+      bestDirection = directionIndex
+    }
+  }
+
+  if (variationTriggered && bestScore !== Number.POSITIVE_INFINITY) {
+    return chooseNearGoodRouteFieldDirection(candidateCount, variationSlack, bestDirection, bestScore, variation)
+  }
+
+  return bestDirection
+}
+
+function shouldVaryRouteStep(variation) {
+  if (!variation || !variation.random || typeof variation.random.next !== 'function') {
+    return false
+  }
+
+  const chance = boundedNumberOrDefault(variation.chance, DEFAULT_ROUTE_VARIATION_CHANCE, 0, 1)
+
+  return chance > 0 && variation.random.next() < chance
+}
+
+function chooseNearGoodRouteFieldDirection(totalCandidates, scoreSlack, bestDirection, bestScore, variation) {
+  let nearGoodCount = 0
+
+  for (let index = 0; index < totalCandidates; index += 1) {
+    if (routeCandidateScores[index] <= bestScore + scoreSlack) {
+      nearGoodCount += 1
+    }
+  }
+
+  if (nearGoodCount <= 1) {
+    return bestDirection
+  }
+
+  let candidateIndex = randomInteger(variation.random, nearGoodCount)
+
+  for (let index = 0; index < totalCandidates; index += 1) {
+    if (routeCandidateScores[index] > bestScore + scoreSlack) {
+      continue
+    }
+
+    if (candidateIndex === 0) {
+      return routeCandidateDirections[index]
+    }
+
+    candidateIndex -= 1
+  }
+
+  return bestDirection
+}
+
+function tileCongestionPenalty(tileIndex, congestion) {
+  if (congestion.unlimitedCapacityTiles && congestion.unlimitedCapacityTiles[tileIndex]) {
+    return 0
+  }
+
+  const occupiedPenalty = nonNegativeNumberOrDefault(congestion.occupiedSlotPenalty, DEFAULT_OCCUPIED_SLOT_PENALTY)
+  const reservedPenalty = nonNegativeNumberOrDefault(congestion.reservedSlotPenalty, DEFAULT_RESERVED_SLOT_PENALTY)
+
+  if (congestion.occupiedSlotCounts || congestion.reservedSlotCounts) {
+    const occupiedCount = congestion.occupiedSlotCounts ? congestion.occupiedSlotCounts[tileIndex] : 0
+    const reservedCount = congestion.reservedSlotCounts ? congestion.reservedSlotCounts[tileIndex] : 0
+
+    return occupiedCount * occupiedPenalty + reservedCount * reservedPenalty
+  }
+
+  const tileCapacity = congestion.tileCapacity
+
+  if (!Number.isInteger(tileCapacity) || tileCapacity <= 0) {
+    return 0
+  }
+
+  const occupiedSlots = congestion.occupiedSlots
+  const reservedSlots = congestion.reservedSlots
+  const baseSlotIndex = tileIndex * tileCapacity
+  let penalty = 0
+
+  for (let slot = 0; slot < tileCapacity; slot += 1) {
+    const slotIndex = baseSlotIndex + slot
+
+    if (occupiedSlots && occupiedSlots[slotIndex] !== -1) {
+      penalty += occupiedPenalty
+    }
+
+    if (reservedSlots && reservedSlots[slotIndex] !== -1) {
+      penalty += reservedPenalty
+    }
+  }
+
+  return penalty
+}
+
+function nonNegativeNumberOrDefault(value, fallback) {
+  return Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+function boundedNumberOrDefault(value, fallback, min, max) {
+  return Number.isFinite(value) ? clamp(value, min, max) : fallback
+}
+
+function randomInteger(random, maxExclusive) {
+  if (typeof random.int === 'function') {
+    return random.int(maxExclusive)
+  }
+
+  return Math.floor(random.next() * maxExclusive)
 }
 
 function indexesToPath(indexes, width) {

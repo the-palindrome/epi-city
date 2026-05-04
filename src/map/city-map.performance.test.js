@@ -74,4 +74,62 @@ describe('city map performance', () => {
 
     expect(speedup).toBeGreaterThanOrEqual(10)
   })
+
+  it('extracts NPC-ready index routes with live congestion at least 10x faster than uncached routes', () => {
+    const city = loadLibertyCity()
+    const target = city.buildings.find((building) => building.id === 'building-0007')?.entrance
+    const occupiedSlotCounts = new Uint16Array(city.tiles.length)
+    const reservedSlotCounts = new Uint16Array(city.tiles.length)
+
+    expect(target).toBeTruthy()
+
+    city.setCrosswalkSignalState('green')
+
+    const starts = collectLongEntranceRoutes(city, target, 300)
+
+    expect(starts.length).toBeGreaterThanOrEqual(256)
+
+    for (let tileIndex = 0; tileIndex < city.tiles.length; tileIndex += 3) {
+      occupiedSlotCounts[tileIndex] = 4
+    }
+
+    for (let tileIndex = 1; tileIndex < city.tiles.length; tileIndex += 7) {
+      reservedSlotCounts[tileIndex] = 2
+    }
+
+    const routeOptions = {
+      congestion: {
+        occupiedSlotCounts,
+        reservedSlotCounts,
+        occupiedSlotPenalty: 3,
+        reservedSlotPenalty: 5,
+        slack: 40
+      },
+      variation: {
+        random: {
+          next: () => 1,
+          int: () => 0
+        },
+        chance: 1,
+        slack: 20
+      }
+    }
+
+    const uncachedMs = measure(() => {
+      for (const start of starts) {
+        expect(city.findPath(start, target, 'pedestrian').length).toBeGreaterThan(0)
+      }
+    })
+
+    city.findCachedPathIndexes(starts[0], target, 'pedestrian', routeOptions)
+
+    const cachedIndexMs = measure(() => {
+      for (const start of starts) {
+        expect(city.findCachedPathIndexes(start, target, 'pedestrian', routeOptions).length).toBeGreaterThan(0)
+      }
+    })
+    const speedup = uncachedMs / Math.max(cachedIndexMs, 0.001)
+
+    expect(speedup).toBeGreaterThanOrEqual(10)
+  })
 })

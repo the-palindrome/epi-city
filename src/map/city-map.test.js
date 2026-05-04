@@ -62,6 +62,34 @@ function createCrosswalkMap(overrides = {}) {
   }
 }
 
+function createOpenSidewalkMap(overrides = {}) {
+  return {
+    width: 3,
+    height: 3,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: []
+    },
+    rows: [
+      'sss',
+      'sss',
+      'sss'
+    ],
+    textureRows: [
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0]
+    ],
+    ...overrides
+  }
+}
+
 describe('city map validation and compile', () => {
   it('normalizes valid authoring JSON into the runtime city API', () => {
     const map = validateCityMap(createMap())
@@ -134,9 +162,11 @@ describe('city map validation and compile', () => {
 
     city.setCrosswalkSignalState('green')
     expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(true)
+    expect(city.canStepIndex(city.index(0, 0), city.index(1, 0), 'pedestrian')).toBe(true)
 
     city.setCrosswalkSignalState('yellow')
     expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(false)
+    expect(city.canStepIndex(city.index(0, 0), city.index(1, 0), 'pedestrian')).toBe(false)
     expect(city.canStep(1, 0, 2, 0, 'pedestrian')).toBe(true)
     expect(city.canStep(2, 0, 3, 0, 'pedestrian')).toBe(true)
 
@@ -162,6 +192,55 @@ describe('city map validation and compile', () => {
 
     expect(stats.routeFieldHits).toBeGreaterThanOrEqual(0)
     expect(stats.routeFields).toBeGreaterThanOrEqual(2)
+  })
+
+  it('applies soft congestion penalties while extracting cached paths', () => {
+    const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
+    const tileCapacity = 8
+    const occupiedSlots = new Int32Array(city.tiles.length * tileCapacity)
+    const reservedSlots = new Int32Array(city.tiles.length * tileCapacity)
+    const congestedTileIndex = city.index(1, 1)
+
+    occupiedSlots.fill(-1)
+    reservedSlots.fill(-1)
+
+    for (let slot = 0; slot < tileCapacity; slot += 1) {
+      occupiedSlots[congestedTileIndex * tileCapacity + slot] = slot
+    }
+
+    expect(city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')).toContainEqual({ x: 1, y: 1 })
+    expect(city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian', {
+      congestion: {
+        occupiedSlots,
+        reservedSlots,
+        tileCapacity,
+        occupiedSlotPenalty: 8,
+        reservedSlotPenalty: 8,
+        slack: 40
+      }
+    })).not.toContainEqual({ x: 1, y: 1 })
+  })
+
+  it('chooses among near-good cached route steps when variation is enabled', () => {
+    const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
+    const shortest = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')
+    const varied = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian', {
+      variation: {
+        random: {
+          next: () => 0,
+          int: (maxExclusive) => maxExclusive - 1
+        },
+        chance: 1,
+        slack: 20
+      }
+    })
+
+    expect(shortest).toContainEqual({ x: 1, y: 1 })
+    expect(varied).toEqual([
+      { x: 0, y: 1 },
+      { x: 1, y: 0 },
+      { x: 2, y: 1 }
+    ])
   })
 
   it('cycles crosswalk signals through red, green, and yellow phases', () => {

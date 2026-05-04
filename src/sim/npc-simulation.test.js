@@ -279,10 +279,7 @@ describe('NPC simulation randomness', () => {
     expect(npc.present).toBe(true)
     expect(npc.goal).toMatchObject({ id: 'work', buildingId: npc.work })
     expect(npc.routing.destination).toMatchObject(npc.goal.location)
-    expect(npc.routing.path.at(-1)).toMatchObject({
-      x: npc.goal.location.x,
-      y: npc.goal.location.y
-    })
+    expect(npc.routing.path.at(-1)).toBe(city.index(npc.goal.location.x, npc.goal.location.y))
 
     simulation.destroy()
   })
@@ -332,6 +329,7 @@ describe('NPC simulation randomness', () => {
     expect(simulation.npcs.every((npc) => npc.present)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 1 && npc.tile.y === 1)).toBe(true)
     expect(simulation.occupiedSlots.filter((id) => id !== -1)).toHaveLength(0)
+    expect(simulation.occupiedSlotCounts.reduce((total, count) => total + count, 0)).toBe(0)
 
     simulation.destroy()
   })
