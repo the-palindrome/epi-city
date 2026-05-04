@@ -102,6 +102,7 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `findPath(start, end, mode)` | Runs on-demand A* and returns `{ x, y }` path points. |
 | `findCachedPath(start, end, mode)` | Uses a cached destination route field and returns `{ x, y }` path points. |
 | `findCachedPathIndexes(start, end, mode)` | Uses the same route field and returns tile indexes for NPC routing. |
+| `findCachedPathIndexesByIndex(startIndex, endIndex, mode)` | Index-native route extraction for simulation hot paths that already store tile indexes. |
 | `navigationCacheKey`, `getNavigationCacheStats()` | Exposes the compiled navigation signature and route-field cache counters for debugging. |
 
 The typed-array representation keeps simulation code numeric and predictable. JSON remains the authoring format; typed arrays are the runtime format.
@@ -118,9 +119,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `compileCityMap()` precomputes movement masks and reverse movement masks for pedestrian signal states and vehicle movement. The runtime caches these typed-array navigation structures by a hash of the map's walkable, drivable, and crosswalk layers. When the map folder changes those semantic layers, the hash changes and the runtime rebuilds the navigation data for the new layout.
 
-`findPath()` runs on-demand A* with stamped typed arrays, so searches reuse scratch memory without clearing the whole map on each route. `findCachedPath()` builds a reverse route field for the current destination and movement state, caches the field with an LRU policy, and extracts future paths to that same destination by following next-hop indexes. This matches NPC commute patterns because many NPCs route to the same work or home entrances.
-
-NPC route extraction uses the same route-field distances for path variation. On each extracted step, the planner usually takes the shortest next hop, but `routeVariationChance` lets it choose among near-good steps whose scores stay within `routeVariationSlack`. Every candidate must still reduce distance to the destination, so variation changes route shape without allowing wandering loops.
+`findPath()` runs on-demand A* with stamped typed arrays, so searches reuse scratch memory without clearing the whole map on each route. `findCachedPath()` builds a reverse route field for the current destination and movement state, caches the field with an LRU policy, and extracts future paths to that same destination by following deterministic next-hop indexes. `findCachedPathIndexesByIndex()` keeps NPC route planning index-native, and each route field caches exact start-to-destination index paths after extraction. This matches NPC commute patterns because many NPCs route to the same work or home entrances.
 
 ## Simulation Clock
 
@@ -156,7 +155,7 @@ NPC entities expose the state the simulation needs:
 
 The simulation owns movement decisions and tile occupancy bookkeeping. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
 
-The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn anchor selection, speed assignment, and route choices repeat when the simulation restarts with the same seed.
+The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn anchor selection, and speed assignment repeat when the simulation restarts with the same seed. NPCs without an active goal stay idle instead of choosing random adjacent path tiles.
 
 NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
 

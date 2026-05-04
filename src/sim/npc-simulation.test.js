@@ -213,7 +213,7 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
-  it('allows movement into a normal tile without tile capacity bookkeeping', () => {
+  it('keeps goal-less NPCs idle instead of choosing random path tiles', () => {
     const city = createCity({
       width: 2,
       height: 1,
@@ -233,10 +233,8 @@ describe('NPC simulation randomness', () => {
 
     simulation.update(1 / 60)
 
-    expect(npc.movement.target).toMatchObject({
-      tile: { x: 1, y: 0, index: 1 },
-      slot: { index: -1 }
-    })
+    expect(npc.movement.target).toBeNull()
+    expect(npc.tile).toMatchObject({ x: 0, y: 0, index: 0 })
 
     simulation.destroy()
   })
@@ -378,7 +376,7 @@ describe('NPC simulation randomness', () => {
     second.destroy()
   })
 
-  it('changes spawn or movement state when the seed changes', () => {
+  it('changes spawn or speed state when the seed changes', () => {
     const first = createSimulation('repeatable')
     const second = createSimulation('different')
 

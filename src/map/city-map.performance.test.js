@@ -45,37 +45,7 @@ function measure(fn) {
 }
 
 describe('city map performance', () => {
-  it('extracts repeated destination routes at least 10x faster from cached route fields', () => {
-    const city = loadLibertyCity()
-    const target = city.buildings.find((building) => building.id === 'building-0007')?.entrance
-
-    expect(target).toBeTruthy()
-
-    city.setCrosswalkSignalState('green')
-
-    const starts = collectLongEntranceRoutes(city, target, 80)
-
-    expect(starts.length).toBeGreaterThanOrEqual(64)
-
-    const uncachedMs = measure(() => {
-      for (const start of starts) {
-        expect(city.findPath(start, target, 'pedestrian').length).toBeGreaterThan(0)
-      }
-    })
-
-    city.findCachedPath(starts[0], target, 'pedestrian')
-
-    const cachedMs = measure(() => {
-      for (const start of starts) {
-        expect(city.findCachedPath(start, target, 'pedestrian').length).toBeGreaterThan(0)
-      }
-    })
-    const speedup = uncachedMs / Math.max(cachedMs, 0.001)
-
-    expect(speedup).toBeGreaterThanOrEqual(10)
-  })
-
-  it('extracts NPC-ready index routes with route variation at least 10x faster than uncached routes', () => {
+  it('extracts repeated destination index routes at least 10x faster from cached route fields', () => {
     const city = loadLibertyCity()
     const target = city.buildings.find((building) => building.id === 'building-0007')?.entrance
 
@@ -87,16 +57,38 @@ describe('city map performance', () => {
 
     expect(starts.length).toBeGreaterThanOrEqual(256)
 
-    const routeOptions = {
-      variation: {
-        random: {
-          next: () => 1,
-          int: () => 0
-        },
-        chance: 1,
-        slack: 20
+    const uncachedMs = measure(() => {
+      for (const start of starts) {
+        expect(city.findPath(start, target, 'pedestrian').length).toBeGreaterThan(0)
       }
-    }
+    })
+
+    const startIndexes = starts.map((start) => city.index(start.x, start.y))
+    const targetIndex = city.index(target.x, target.y)
+
+    city.findCachedPathIndexesByIndex(startIndexes[0], targetIndex, 'pedestrian')
+
+    const cachedMs = measure(() => {
+      for (const startIndex of startIndexes) {
+        expect(city.findCachedPathIndexesByIndex(startIndex, targetIndex, 'pedestrian').length).toBeGreaterThan(0)
+      }
+    })
+    const speedup = uncachedMs / Math.max(cachedMs, 0.001)
+
+    expect(speedup).toBeGreaterThanOrEqual(10)
+  })
+
+  it('extracts NPC-ready index routes at least 10x faster than uncached routes', () => {
+    const city = loadLibertyCity()
+    const target = city.buildings.find((building) => building.id === 'building-0007')?.entrance
+
+    expect(target).toBeTruthy()
+
+    city.setCrosswalkSignalState('green')
+
+    const starts = collectLongEntranceRoutes(city, target, 300)
+
+    expect(starts.length).toBeGreaterThanOrEqual(256)
 
     const uncachedMs = measure(() => {
       for (const start of starts) {
@@ -104,11 +96,14 @@ describe('city map performance', () => {
       }
     })
 
-    city.findCachedPathIndexes(starts[0], target, 'pedestrian', routeOptions)
+    const startIndexes = starts.map((start) => city.index(start.x, start.y))
+    const targetIndex = city.index(target.x, target.y)
+
+    city.findCachedPathIndexesByIndex(startIndexes[0], targetIndex, 'pedestrian')
 
     const cachedIndexMs = measure(() => {
-      for (const start of starts) {
-        expect(city.findCachedPathIndexes(start, target, 'pedestrian', routeOptions).length).toBeGreaterThan(0)
+      for (const startIndex of startIndexes) {
+        expect(city.findCachedPathIndexesByIndex(startIndex, targetIndex, 'pedestrian').length).toBeGreaterThan(0)
       }
     })
     const speedup = uncachedMs / Math.max(cachedIndexMs, 0.001)

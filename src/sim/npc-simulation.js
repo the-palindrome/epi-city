@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { DIRECTIONS, NPC_CONFIG } from '../core/constants.js'
+import { NPC_CONFIG } from '../core/constants.js'
 import { createSystemRandom } from '../core/random.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
@@ -432,10 +432,7 @@ function updateNpcMovement(npc, deltaSeconds, context) {
 
   if (npc.goal) {
     followRoute(npc, deltaSeconds, context)
-    return
   }
-
-  chooseRandomNextTile(npc, context)
 }
 
 function moveNpcTowardTarget(npc, deltaSeconds, context) {
@@ -479,20 +476,20 @@ function followRoute(npc, deltaSeconds, context) {
     return
   }
 
-  const nextTile = nextRouteTile(npc, context.city)
+  const nextIndex = nextRouteTileIndex(npc, context.city)
 
-  if (!nextTile) {
+  if (nextIndex === -1) {
     context.routePlanner.request(npc)
     return
   }
 
-  if (Math.abs(nextTile.x - npc.tile.x) > 1 || Math.abs(nextTile.y - npc.tile.y) > 1) {
+  if (!areNeighborTileIndexes(context.city, npc.tile.index, nextIndex)) {
     npc.routing.path = null
     context.routePlanner.request(npc)
     return
   }
 
-  if (tryStartMoveToTile(npc, nextTile.x, nextTile.y, context, npc.routing.cursor)) {
+  if (tryStartMoveToIndex(npc, nextIndex, context, npc.routing.cursor)) {
     npc.routing.blockedSeconds = 0
     return
   }
@@ -506,7 +503,7 @@ function followRoute(npc, deltaSeconds, context) {
   }
 }
 
-function nextRouteTile(npc, city) {
+function nextRouteTileIndex(npc, city) {
   while (
     npc.routing.path &&
     npc.routing.cursor < npc.routing.path.length &&
@@ -516,25 +513,38 @@ function nextRouteTile(npc, city) {
   }
 
   return npc.routing.path && npc.routing.path[npc.routing.cursor] !== undefined
-    ? routeTileAt(npc.routing.path, npc.routing.cursor, city)
-    : null
+    ? routeTileIndex(npc.routing.path, npc.routing.cursor, city)
+    : -1
+}
+
+function areNeighborTileIndexes(city, fromIndex, toIndex) {
+  const fromX = fromIndex % city.width
+  const toX = toIndex % city.width
+  const dx = toX - fromX
+
+  if (dx < -1 || dx > 1) {
+    return false
+  }
+
+  const dy = Math.floor(toIndex / city.width) - Math.floor(fromIndex / city.width)
+
+  return dy >= -1 && dy <= 1
 }
 
 function planRouteForNpc(npc, context) {
-  const start = { x: npc.tile.x, y: npc.tile.y }
-  const end = { x: npc.goal.location.x, y: npc.goal.location.y }
-  const routeOptions = {
-    variation: {
-      random: context.random,
-      chance: finiteNumberOrDefault(context.config.routeVariationChance, NPC_CONFIG.routeVariationChance),
-      slack: finiteNumberOrDefault(context.config.routeVariationSlack, NPC_CONFIG.routeVariationSlack)
-    }
+  let path
+
+  if (typeof context.city.findCachedPathIndexesByIndex === 'function') {
+    path = context.city.findCachedPathIndexesByIndex(npc.tile.index, npc.goal.location.index, 'pedestrian')
+  } else {
+    const start = { x: npc.tile.x, y: npc.tile.y }
+    const end = { x: npc.goal.location.x, y: npc.goal.location.y }
+    path = typeof context.city.findCachedPathIndexes === 'function'
+      ? context.city.findCachedPathIndexes(start, end, 'pedestrian')
+      : typeof context.city.findCachedPath === 'function'
+        ? context.city.findCachedPath(start, end, 'pedestrian')
+        : context.city.findPath(start, end, 'pedestrian')
   }
-  const path = typeof context.city.findCachedPathIndexes === 'function'
-    ? context.city.findCachedPathIndexes(start, end, 'pedestrian', routeOptions)
-    : typeof context.city.findCachedPath === 'function'
-      ? context.city.findCachedPath(start, end, 'pedestrian', routeOptions)
-      : context.city.findPath(start, end, 'pedestrian')
 
   if (path.length === 0) {
     npc.routing.path = null
@@ -556,39 +566,18 @@ function routeTileIndex(route, cursor, city) {
   return typeof tile === 'number' ? tile : city.index(tile.x, tile.y)
 }
 
-function routeTileAt(route, cursor, city) {
-  const tile = route[cursor]
-
-  if (typeof tile !== 'number') {
-    return tile
-  }
-
-  return {
-    x: tile % city.width,
-    y: Math.floor(tile / city.width),
-    index: tile
-  }
+function tryStartMoveToIndex(npc, targetIndex, context, routeCursor = null) {
+  const tileX = targetIndex % context.city.width
+  const tileY = Math.floor(targetIndex / context.city.width)
+  return tryStartMoveToTile(npc, tileX, tileY, context, routeCursor, targetIndex)
 }
 
-function chooseRandomNextTile(npc, context) {
-  const { random } = context
-  const start = random.int(DIRECTIONS.length)
-
-  for (let offset = 0; offset < DIRECTIONS.length; offset += 1) {
-    const direction = DIRECTIONS[(start + offset) % DIRECTIONS.length]
-    const candidateX = npc.tile.x + direction.dx
-    const candidateY = npc.tile.y + direction.dy
-
-    if (tryStartMoveToTile(npc, candidateX, candidateY, context)) {
-      return
-    }
-  }
-}
-
-function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null) {
+function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null, knownTargetIndex = null) {
   const { city, random, config } = context
-  const targetIndex = city.index(tileX, tileY)
-  const canStep = typeof city.canStepIndex === 'function'
+  const targetIndex = knownTargetIndex ?? city.index(tileX, tileY)
+  const canStep = typeof city.canStepPedestrianIndex === 'function'
+    ? city.canStepPedestrianIndex(npc.tile.index, targetIndex)
+    : typeof city.canStepIndex === 'function'
     ? city.canStepIndex(npc.tile.index, targetIndex, 'pedestrian')
     : city.canStep(npc.tile.x, npc.tile.y, tileX, tileY, 'pedestrian')
 

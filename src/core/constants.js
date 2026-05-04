@@ -67,9 +67,7 @@ export const NPC_CONFIG = Object.freeze({
   scheduleVariationHours: 0.75,
   routePlanBudget: 24,
   routeRetrySeconds: 1,
-  routeBlockedReplanSeconds: 2,
-  routeVariationChance: 0.35,
-  routeVariationSlack: 20
+  routeBlockedReplanSeconds: 2
 })
 
 export const SIMULATION_CONFIG = Object.freeze({

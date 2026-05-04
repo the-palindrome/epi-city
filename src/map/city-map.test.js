@@ -386,26 +386,13 @@ describe('city map validation and compile', () => {
     expect(stats.routeFields).toBeGreaterThanOrEqual(2)
   })
 
-  it('chooses among near-good cached route steps when variation is enabled', () => {
+  it('keeps cached route extraction deterministic', () => {
     const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
-    const shortest = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')
-    const varied = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian', {
-      variation: {
-        random: {
-          next: () => 0,
-          int: (maxExclusive) => maxExclusive - 1
-        },
-        chance: 1,
-        slack: 20
-      }
-    })
+    const first = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')
+    const second = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')
 
-    expect(shortest).toContainEqual({ x: 1, y: 1 })
-    expect(varied).toEqual([
-      { x: 0, y: 1 },
-      { x: 1, y: 0 },
-      { x: 2, y: 1 }
-    ])
+    expect(first).toContainEqual({ x: 1, y: 1 })
+    expect(second).toEqual(first)
   })
 
   it('cycles crosswalk signals through red, green, and yellow phases', () => {

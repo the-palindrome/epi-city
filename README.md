@@ -88,7 +88,7 @@ Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. P
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and routing choices can repeat after a restart.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, and NPC speeds can repeat after a restart. Route extraction is deterministic.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
