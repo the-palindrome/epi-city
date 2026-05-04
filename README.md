@@ -19,7 +19,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Use the mouse wheel to zoom around the cursor.
 - Press `d` to toggle the debug dashboard in the top-right corner.
 - Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
-- Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, park green, water blue, building slate, and obstacle red.
+- Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
@@ -37,7 +37,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 ## Map Format
 
-The map stores semantics and visuals in separate JSON files. `tile-layout.json` contains one legend symbol per cell for gameplay classification plus a compact `buildings` list for connected building components. `texture-layout.json` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments do not live in the texture manifest, so texture painting in the editor must be saved with `Save Texture Rows`.
+The map stores semantics and visuals in separate JSON files. `tile-layout.json` contains one legend symbol per cell for gameplay classification plus a compact `buildings` list for connected building components. `texture-layout.json` contains one deduplicated source texture ID per cell for exact rendering. Tile-to-texture assignments do not live in the texture manifest, so texture painting in the editor is saved through `Save Map Folder`.
 
 ```json
 {
@@ -77,11 +77,11 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports six base categories: `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id` and `type`.
+The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id` and `type`.
 
 ## Movement Rules
 
-Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Crosswalks are both walkable and drivable, and their pedestrian signal cycles through `red`, `green`, and `yellow`; NPCs enter only on green, can continue across on yellow, and do not enter on red. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
 
 ## NPC Prototype
 
@@ -105,6 +105,9 @@ city.getBuilding(10, 10)
 city.isWalkable(10, 10)
 city.isDrivable(10, 10)
 city.isParkable(10, 10)
+city.isCrosswalk(10, 10)
+city.getCrosswalkSignalState()
+city.setCrosswalkSignalState('green')
 city.isPassable(10, 10, 'vehicle')
 city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
@@ -131,7 +134,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Save Tile Configuration` for semantic rows/buildings and `Save Texture Rows` for visual tile assignments. Neither action overwrites files under `public/maps/liberty-city` automatically.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
 
 ## Texture Sets
 

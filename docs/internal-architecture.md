@@ -69,7 +69,7 @@ The optional `buildings` object uses `row-spans-v1`: each building has a stable 
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
-The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `obstacle`. Movement uses the generated behavior booleans instead of hard-coded category masks.
+The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Movement uses the generated behavior booleans instead of hard-coded category masks, with crosswalks adding a signal-state gate for pedestrian entry.
 
 ## Runtime City Object
 
@@ -81,6 +81,7 @@ The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `ob
 | `tiles` | Numeric `Uint8Array` with one base category ID per cell. |
 | `tileTextureIds` | Numeric `Uint32Array` with one atlas-frame ID per cell. |
 | `tileWalkable`, `tileDrivable`, `tileParkable` | Numeric `Uint8Array` layers with generated gameplay behavior per cell. |
+| `tileCrosswalk` | Numeric `Uint8Array` layer marking cells controlled by the crosswalk signal. |
 | `buildings`, `tileBuildingIndexes` | Runtime building records and tile-to-building lookup data. |
 | `legend` | Normalized symbol metadata keyed by map symbol. |
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
@@ -91,6 +92,8 @@ The base categories are `road`, `sidewalk`, `park`, `water`, `building`, and `ob
 | `getBuildingId(x, y)`, `getBuilding(x, y)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
 | `isWalkable(x, y)`, `isDrivable(x, y)`, `isParkable(x, y)` | Checks generated tile behavior layers directly. |
+| `isCrosswalk(x, y)` | Checks whether a cell is a crosswalk tile. |
+| `getCrosswalkSignalState()`, `setCrosswalkSignalState(state)`, `updateCrosswalkSignals(dt)` | Reads, tests, and advances the shared crosswalk signal cycle. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
 | `canStep(fromX, fromY, toX, toY, mode)` | Checks a single movement step, including vehicle diagonal corner rules. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
@@ -100,7 +103,9 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+
+The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow, NPCs already on a crosswalk can continue to another crosswalk tile or step off the crossing, but NPCs outside the crossing cannot begin entering it. During red, NPCs cannot step onto crosswalk tiles, though any NPC already on one can still step off to a non-crosswalk walkable tile.
 
 The checked-in layout stores behavior as explicit legend properties instead of deriving movement masks from category names at runtime. This keeps map-editor corrections authoritative once a tile configuration is saved.
 
@@ -125,6 +130,8 @@ NPCs are plain objects with the state the simulation needs:
 ```
 
 The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop.
+
+NPCs do not spawn directly on crosswalk tiles. Once spawned, random movement uses `city.canStep()` so crosswalk signal rules are enforced at the same boundary as other tile movement checks.
 
 Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved. Movement selection uses the city's non-allocating step checks instead of building a fresh neighbor array for each NPC decision.
 
@@ -168,7 +175,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
 
-The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, park green, water blue, building slate, and obstacle red.
+The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
 
 Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
 
@@ -176,15 +183,15 @@ Each debug overlay layer is built lazily the first time it is enabled, then late
 
 The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
 
-The browser owns the editable map state. Startup asks `/api/config` for an empty semantic tile configuration and the current Liberty City texture rows, then loads the default atlas plus texture manifest for immediate preview. The load buttons replace those browser-side assets. `Reset to defaults` rebuilds the empty semantic state with the current visual layer. `Save Tile Configuration` writes semantic rows/buildings, and `Save Texture Rows` writes the visual assignment layer; neither save action overwrites files under `public/maps/liberty-city`.
+The browser owns the editable map state. Startup asks `/api/config` for an empty semantic tile configuration and the current Liberty City texture rows, then loads the default atlas plus texture manifest for immediate preview. `Load Map Folder` opens a package folder containing `tile-layout.json`, `texture-layout.json`, `manifest.json`, and the atlas named by the manifest. `Reset to defaults` rebuilds the empty semantic state with the current visual layer. `Save Map Folder` writes the editable semantic rows/buildings and visual assignment layer back to `tile-layout.json` and `texture-layout.json` together.
 
-Texture rows loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded atlas/manifest assets or is waiting for one of those assets.
+Texture rows loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded folder assets or is waiting for one of those assets.
 
 The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer. The building layer edits the selected connected building component's `type` in the top-level `buildings` metadata.
 
-The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from `texture-layout.json`, the editor directs users to `Save Texture Rows` after texture painting.
+The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from `texture-layout.json`, the editor directs users to `Save Map Folder` after texture painting.
 
-The editor tracks semantic tile-property and building metadata edits separately from texture-row edits. Tile configuration saves never include `textureRows`; texture row saves never rebuild `legend`, `buildings`, or semantic `rows`. Incomplete semantic labels are saved as `null`, which keeps sparse labeling sessions serializable even before the map is ready for runtime use.
+The editor tracks semantic tile-property and building metadata edits separately from texture-row edits, but package saving writes both JSON files in one operation. Incomplete semantic labels are saved as `null`, which keeps sparse labeling sessions serializable even before the map is ready for runtime use.
 
 `POST /api/train` runs `map-editor/train_random_forest.py` through the local `map-editor/.venv` interpreter when it exists. The browser posts the full current `rows` and `behaviorRows` grids, and when atlas/manifest assets are loaded it also posts the current texture feature source: the atlas image data, texture manifest, and `textureRows`. The trainer reconstructs its pixel feature image from those texture assignments, so texture painting affects later classifier runs. If texture assets are not loaded, training falls back to the canonical source image. Each layer trains only from non-empty labels. Layers without at least two distinct non-empty values are skipped and return their current sparse values unchanged.
 
