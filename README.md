@@ -86,7 +86,7 @@ Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. P
 
 ## NPC Prototype
 
-The app spawns 1000 pedestrian NPCs when the city loads. NPCs keep `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs, and choose random neighboring walkable tiles. The default runtime uses the `epi-city` seed so spawn slots, NPC speeds, and movement choices can repeat after a restart.
+The app spawns 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs, and choose random neighboring walkable tiles. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, spawn slots, NPC speeds, and movement choices can repeat after a restart.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
@@ -116,6 +116,8 @@ city.isPassable(10, 10, 'vehicle')
 city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
 window.citySim.npcs.length
+window.citySim.npcs[0].home
+window.citySim.npcs[0].work
 window.citySim.npcs[0].position
 window.citySim.pause()
 window.citySim.play()

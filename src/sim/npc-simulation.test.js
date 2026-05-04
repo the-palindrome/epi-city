@@ -22,7 +22,7 @@ vi.mock('pixi.js', () => ({
   }
 }))
 
-function createCity() {
+function createCity(overrides = {}) {
   return compileCityMap(validateCityMap({
     width: 4,
     height: 3,
@@ -40,8 +40,40 @@ function createCity() {
       [0, 0, 0, 0],
       [0, 0, 0, 0],
       [0, 0, 0, 0]
-    ]
+    ],
+    ...overrides
   }))
+}
+
+function createCityWithBuildingTypes() {
+  return createCity({
+    width: 9,
+    height: 3,
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: [
+        { id: 'home-1', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'home-2', type: 'residential', entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
+        { id: 'work-1', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] },
+        { id: 'work-2', type: 'commercial', entrance: { x: 7, y: 1 }, spans: [[1, 7, 1]] }
+      ]
+    },
+    rows: [
+      'sssssssss',
+      'sbsbsbsbs',
+      'sssssssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]
+  })
 }
 
 function createActorLayer() {
@@ -59,8 +91,7 @@ function createActorLayer() {
   }
 }
 
-function createSimulation(seed) {
-  const city = createCity()
+function createSimulation(seed, city = createCity()) {
   const simulation = createNpcSimulation(city, createActorLayer(), {
     count: 8,
     zorder: 1,
@@ -81,6 +112,8 @@ function createSimulation(seed) {
 function snapshot(simulation) {
   return simulation.npcs.map((npc) => ({
     zorder: npc.zorder,
+    home: npc.home,
+    work: npc.work,
     position: { ...npc.position },
     tile: { ...npc.tile },
     slot: { ...npc.slot },
@@ -104,6 +137,22 @@ describe('NPC simulation randomness', () => {
     expect(simulation.graphics.zIndex).toBe(1)
 
     simulation.destroy()
+  })
+
+  it('assigns each NPC a residential home and commercial work building', () => {
+    const city = createCityWithBuildingTypes()
+    const simulation = createSimulation('building-assignments', city)
+    const repeated = createSimulation('building-assignments', city)
+    const homeIds = new Set(['home-1', 'home-2'])
+    const workIds = new Set(['work-1', 'work-2'])
+    const assignments = simulation.npcs.map((npc) => ({ home: npc.home, work: npc.work }))
+
+    expect(simulation.npcs.every((npc) => homeIds.has(npc.home))).toBe(true)
+    expect(simulation.npcs.every((npc) => workIds.has(npc.work))).toBe(true)
+    expect(assignments).toEqual(repeated.npcs.map((npc) => ({ home: npc.home, work: npc.work })))
+
+    simulation.destroy()
+    repeated.destroy()
   })
 
   it('recreates the same spawn and first movement state with the same seed', () => {

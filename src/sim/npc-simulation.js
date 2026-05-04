@@ -10,6 +10,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
   const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
   const spawnSlots = collectNpcSpawnSlots(city, config.tileCapacity)
+  const buildingIdsByType = collectBuildingIdsByType(city)
   const npcs = []
   const context = {
     city,
@@ -44,6 +45,7 @@ export function createNpcSimulation(city, entityLayer, config) {
       position,
       tile: { x: tileX, y: tileY, index: tileIndex },
       slot: { id: spawnSlot.slot, index: spawnSlotIndex },
+      buildingAssignment: createNpcBuildingAssignment(buildingIdsByType, random),
       random,
       zorder,
       config
@@ -92,10 +94,12 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
 }
 
-function createNpcEntity({ id, position, tile, slot, random, zorder, config }) {
+function createNpcEntity({ id, position, tile, slot, buildingAssignment, random, zorder, config }) {
   return {
     id,
     zorder,
+    home: buildingAssignment.home,
+    work: buildingAssignment.work,
     position: { x: position.x, y: position.y },
     tile: { x: tile.x, y: tile.y, index: tile.index },
     slot: { id: slot.id, index: slot.index },
@@ -104,6 +108,36 @@ function createNpcEntity({ id, position, tile, slot, random, zorder, config }) {
       target: null
     }
   }
+}
+
+function collectBuildingIdsByType(city) {
+  const idsByType = {
+    residential: [],
+    commercial: []
+  }
+
+  for (const building of city.buildings || []) {
+    if (Object.prototype.hasOwnProperty.call(idsByType, building.type)) {
+      idsByType[building.type].push(building.id)
+    }
+  }
+
+  return idsByType
+}
+
+function createNpcBuildingAssignment(buildingIdsByType, random) {
+  return {
+    home: takeRandomBuildingId(buildingIdsByType.residential, random),
+    work: takeRandomBuildingId(buildingIdsByType.commercial, random)
+  }
+}
+
+function takeRandomBuildingId(buildingIds, random) {
+  if (!buildingIds || buildingIds.length === 0) {
+    return null
+  }
+
+  return buildingIds[random.int(buildingIds.length)]
 }
 
 function collectNpcSpawnSlots(city, tileCapacity) {

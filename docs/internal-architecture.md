@@ -130,6 +130,8 @@ NPCs are plain objects with the state the simulation needs:
 {
   id,
   zorder,
+  home,
+  work,
   position: { x, y },
   tile: { x, y, index },
   slot: { id, index },
@@ -139,7 +141,7 @@ NPCs are plain objects with the state the simulation needs:
 
 The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
 
-The NPC system receives a random source through config. The default app state enables the `epi-city` seed, which makes spawn slot selection, speed assignment, neighbor choice, and target-slot choice repeat when the simulation restarts with the same seed.
+The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings. The default app state enables the `epi-city` seed, which makes home/work assignment, spawn slot selection, speed assignment, neighbor choice, and target-slot choice repeat when the simulation restarts with the same seed.
 
 NPCs do not spawn directly on crosswalk tiles. Once spawned, random movement uses `city.canStep()` so crosswalk signal rules are enforced at the same boundary as other tile movement checks.
 
@@ -236,6 +238,8 @@ window.citySim.play()
 window.citySim.setSeed('demo-seed')
 window.citySim.restart()
 window.citySim.setSpeed(4)
+window.citySim.npcs[0].home
+window.citySim.npcs[0].work
 window.citySim.npcs[0].position
 window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()
