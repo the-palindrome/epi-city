@@ -147,6 +147,23 @@ describe('city map validation and compile', () => {
     expect(city.canStep(1, 1, 1, 0, 'vehicle')).toBe(true)
   })
 
+  it('keeps cached pedestrian paths aligned with crosswalk signal state', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap()))
+
+    city.setCrosswalkSignalState('red')
+    expect(city.findCachedPath({ x: 0, y: 0 }, { x: 3, y: 0 }, 'pedestrian')).toEqual([])
+
+    city.setCrosswalkSignalState('green')
+    expect(city.findCachedPath({ x: 0, y: 0 }, { x: 3, y: 0 }, 'pedestrian')).toEqual(
+      city.findPath({ x: 0, y: 0 }, { x: 3, y: 0 }, 'pedestrian')
+    )
+
+    const stats = city.getNavigationCacheStats()
+
+    expect(stats.routeFieldHits).toBeGreaterThanOrEqual(0)
+    expect(stats.routeFields).toBeGreaterThanOrEqual(2)
+  })
+
   it('cycles crosswalk signals through red, green, and yellow phases', () => {
     const city = compileCityMap(validateCityMap(createCrosswalkMap()))
 

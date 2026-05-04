@@ -99,6 +99,8 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `canStep(fromX, fromY, toX, toY, mode)` | Checks a single movement step, including vehicle diagonal corner rules. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
 | `findPath(start, end, mode)` | Runs on-demand A* and returns `{ x, y }` path points. |
+| `findCachedPath(start, end, mode)` | Uses a cached destination route field and returns `{ x, y }` path points. |
+| `navigationCacheKey`, `getNavigationCacheStats()` | Exposes the compiled navigation signature and route-field cache counters for debugging. |
 
 The typed-array representation keeps simulation code numeric and predictable. JSON remains the authoring format; typed arrays are the runtime format.
 
@@ -112,7 +114,9 @@ The checked-in layout stores behavior as explicit legend properties instead of d
 
 A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Pedestrian movement exposes every adjacent `walkable` tile, including diagonal neighbors. Vehicle movement keeps stricter diagonal corner checks by requiring both adjacent cardinal cells to be drivable.
 
-`findPath()` currently runs on demand and reuses per-city scratch arrays for its open/closed/came-from/score state. If hundreds of NPCs request routes every frame, add route caching, hierarchical routing, or per-mode navigation graphs before tuning visual rendering.
+`compileCityMap()` precomputes movement masks and reverse movement masks for pedestrian signal states and vehicle movement. The runtime caches these typed-array navigation structures by a hash of the map's walkable, drivable, and crosswalk layers. When the map folder changes those semantic layers, the hash changes and the runtime rebuilds the navigation data for the new layout.
+
+`findPath()` runs on-demand A* with stamped typed arrays, so searches reuse scratch memory without clearing the whole map on each route. `findCachedPath()` builds a reverse route field for the current destination and movement state, caches the field with an LRU policy, and extracts future paths to that same destination by following next-hop indexes. This matches NPC commute patterns because many NPCs route to the same work or home entrances.
 
 ## Simulation Clock
 
@@ -150,7 +154,7 @@ The simulation owns movement decisions and slot bookkeeping. NPC entities keep i
 
 The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn slot selection, speed assignment, and route choices repeat when the simulation restarts with the same seed.
 
-NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not force every NPC to run A* in one frame.
+NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
 
 Each normal walkable tile currently has eight NPC slots arranged as a compact grid inside the tile. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move into a normal target tile when at least one slot is both unoccupied and unreserved. Building entrance tiles are unlimited-capacity holding points, so many NPCs can enter, wait inside, or leave the same building without blocking the doorway.
 
@@ -258,5 +262,5 @@ window.citySim.dashboard.setOverlay('walkable', true)
 ## Near-Term Extension Points
 
 - Add focused tests around editor-side validators once the browser editor is split into modules.
-- Add route caching or navigation graphs before many NPCs request long paths frequently.
+- Add hierarchical routing if future maps become much larger than the current 256x256 Liberty City layout.
 - Add simulation metadata outside the base tile category when infection dynamics need population, occupancy, or district information.

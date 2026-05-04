@@ -193,6 +193,7 @@ class NpcRoutePlanner {
   constructor(config) {
     this.planBudget = positiveIntegerOrDefault(config.routePlanBudget, NPC_CONFIG.routePlanBudget)
     this.queue = []
+    this.head = 0
   }
 
   request(npc) {
@@ -207,8 +208,11 @@ class NpcRoutePlanner {
   process(context) {
     let planned = 0
 
-    while (planned < this.planBudget && this.queue.length > 0) {
-      const npc = this.queue.shift()
+    while (planned < this.planBudget && this.head < this.queue.length) {
+      const npc = this.queue[this.head]
+
+      this.queue[this.head] = null
+      this.head += 1
 
       npc.routing.queued = false
 
@@ -216,6 +220,25 @@ class NpcRoutePlanner {
         planRouteForNpc(npc, context)
         planned += 1
       }
+    }
+
+    this.compactQueue()
+  }
+
+  compactQueue() {
+    if (this.head === 0) {
+      return
+    }
+
+    if (this.head >= this.queue.length) {
+      this.queue.length = 0
+      this.head = 0
+      return
+    }
+
+    if (this.head > 1024 && this.head * 2 > this.queue.length) {
+      this.queue.splice(0, this.head)
+      this.head = 0
     }
   }
 }
@@ -517,11 +540,11 @@ function nextRouteTile(npc) {
 }
 
 function planRouteForNpc(npc, context) {
-  const path = context.city.findPath(
-    { x: npc.tile.x, y: npc.tile.y },
-    { x: npc.goal.location.x, y: npc.goal.location.y },
-    'pedestrian'
-  )
+  const start = { x: npc.tile.x, y: npc.tile.y }
+  const end = { x: npc.goal.location.x, y: npc.goal.location.y }
+  const path = typeof context.city.findCachedPath === 'function'
+    ? context.city.findCachedPath(start, end, 'pedestrian')
+    : context.city.findPath(start, end, 'pedestrian')
 
   if (path.length === 0) {
     npc.routing.path = null
