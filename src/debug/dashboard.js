@@ -4,9 +4,9 @@ import {
   DEBUG_OVERLAY_COLORS,
   TILE_TYPE_OVERLAY_COLORS
 } from '../core/constants.js'
-import { clearPixiContainer, fillRect } from '../render/pixi-rendering.js'
+import { fillRect } from '../render/pixi-rendering.js'
 
-export function installDebugDashboard(city, overlayLayer, simulationControls = {}) {
+export function installDebugDashboard(city, entityLayer, simulationControls = {}) {
   const dashboard = document.getElementById('debug-dashboard')
   const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]))
   const controls = new Map()
@@ -37,16 +37,14 @@ export function installDebugDashboard(city, overlayLayer, simulationControls = {
       const layer = enabled ? ensureOverlayLayer(overlay) : layers.get(overlay.id)
 
       if (layer) {
-        layer.visible = enabled
+        setOverlayLayerVisible(layer, enabled)
       }
     }
   }
 
   function ensureOverlayLayer(overlay) {
     if (!layers.has(overlay.id)) {
-      const layer = new PIXI.Container()
-
-      layer.eventMode = 'none'
+      const layer = createOverlayLayer(entityLayer)
 
       if (overlay.kind === 'tileType') {
         drawTileTypeOverlay(city, layer)
@@ -54,7 +52,6 @@ export function installDebugDashboard(city, overlayLayer, simulationControls = {
         drawBehaviorOverlay(city, layer, city[overlay.layer])
       }
 
-      overlayLayer.addChild(layer)
       layers.set(overlay.id, layer)
     }
 
@@ -100,7 +97,10 @@ export function installDebugDashboard(city, overlayLayer, simulationControls = {
     render,
     destroy() {
       document.removeEventListener('keydown', onKeyDown)
-      clearPixiContainer(overlayLayer)
+      for (const layer of layers.values()) {
+        destroyOverlayLayer(layer)
+      }
+
       dashboard.innerHTML = ''
       layers.clear()
     }
@@ -358,6 +358,39 @@ function isEditableTarget(target) {
 
 function noop() {}
 
+function createOverlayLayer(entityLayer) {
+  entityLayer.sortableChildren = true
+
+  return {
+    children: [],
+    visible: true,
+    addChild(child) {
+      this.children.push(child)
+      entityLayer.addChild(child)
+    }
+  }
+}
+
+function setOverlayLayerVisible(layer, visible) {
+  layer.visible = visible
+
+  for (const child of layer.children) {
+    child.visible = visible
+  }
+}
+
+function destroyOverlayLayer(layer) {
+  for (const child of layer.children) {
+    if (child.parent && typeof child.parent.removeChild === 'function') {
+      child.parent.removeChild(child)
+    }
+
+    child.destroy({ children: true })
+  }
+
+  layer.children.length = 0
+}
+
 function drawTileTypeOverlay(city, layer) {
   drawChunkedOverlay(city, layer, (graphics, x, y) => {
     const variant = city.getTileVariant(x, y)
@@ -427,17 +460,30 @@ function drawChunkedOverlay(city, layer, drawTile) {
 
   for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
     for (let chunkX = 0; chunkX < city.width; chunkX += chunkSize) {
-      const graphics = new PIXI.Graphics()
-
-      graphics.eventMode = 'none'
+      const graphicsByZorder = new Map()
 
       for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
         for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
+          const zorder = city.tileZOrders[city.index(x, y)]
+          const graphics = ensureOverlayGraphics(layer, graphicsByZorder, zorder)
+
           drawTile(graphics, x, y)
         }
       }
-
-      layer.addChild(graphics)
     }
   }
+}
+
+function ensureOverlayGraphics(layer, graphicsByZorder, zorder) {
+  if (!graphicsByZorder.has(zorder)) {
+    const graphics = new PIXI.Graphics()
+
+    graphics.eventMode = 'none'
+    graphics.zIndex = zorder
+    graphics.zorder = zorder
+    graphicsByZorder.set(zorder, graphics)
+    layer.addChild(graphics)
+  }
+
+  return graphicsByZorder.get(zorder)
 }

@@ -63,6 +63,7 @@ function createSimulation(seed) {
   const city = createCity()
   const simulation = createNpcSimulation(city, createActorLayer(), {
     count: 8,
+    zorder: 1,
     tileCapacity: 2,
     slotSpacing: 11,
     color: 0xe5c748,
@@ -79,6 +80,7 @@ function createSimulation(seed) {
 
 function snapshot(simulation) {
   return simulation.npcs.map((npc) => ({
+    zorder: npc.zorder,
     position: { ...npc.position },
     tile: { ...npc.tile },
     slot: { ...npc.slot },
@@ -94,6 +96,16 @@ function snapshot(simulation) {
 }
 
 describe('NPC simulation randomness', () => {
+  it('assigns NPC entities and their graphics layer to zorder 1', () => {
+    const simulation = createSimulation('zorder')
+
+    expect(simulation.npcs.every((npc) => npc.zorder === 1)).toBe(true)
+    expect(simulation.graphics.zorder).toBe(1)
+    expect(simulation.graphics.zIndex).toBe(1)
+
+    simulation.destroy()
+  })
+
   it('recreates the same spawn and first movement state with the same seed', () => {
     const first = createSimulation('repeatable')
     const second = createSimulation('repeatable')

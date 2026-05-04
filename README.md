@@ -85,7 +85,9 @@ Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. P
 
 ## NPC Prototype
 
-The app spawns 1000 pedestrian NPCs when the city loads. NPCs keep `position`, `tile`, `slot`, and `movement` state, render as small `#e5c748` pixel blobs, and choose random neighboring walkable tiles. The default runtime uses the `epi-city` seed so spawn slots, NPC speeds, and movement choices can repeat after a restart.
+The app spawns 1000 pedestrian NPCs when the city loads. NPCs keep `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs, and choose random neighboring walkable tiles. The default runtime uses the `epi-city` seed so spawn slots, NPC speeds, and movement choices can repeat after a restart.
+
+Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
 Each walkable tile has two NPC slots. Collision uses occupied and reserved slot grids, so up to two NPCs can share one tile without stacking visually. Slot anchors sit side by side inside the tile, and NPCs interpolate smoothly between slot positions.
 

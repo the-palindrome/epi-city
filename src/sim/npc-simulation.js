@@ -1,11 +1,12 @@
 import * as PIXI from 'pixi.js'
-import { DIRECTIONS } from '../core/constants.js'
+import { DIRECTIONS, NPC_CONFIG } from '../core/constants.js'
 import { createSystemRandom } from '../core/random.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
-export function createNpcSimulation(city, actorLayer, config) {
+export function createNpcSimulation(city, entityLayer, config) {
   const graphics = new PIXI.Graphics()
   const random = config.random || createSystemRandom()
+  const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
   const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
   const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
   const spawnSlots = collectNpcSpawnSlots(city, config.tileCapacity)
@@ -15,6 +16,7 @@ export function createNpcSimulation(city, actorLayer, config) {
     occupiedSlots,
     reservedSlots,
     random,
+    zorder,
     config
   }
   let destroyed = false
@@ -22,8 +24,11 @@ export function createNpcSimulation(city, actorLayer, config) {
   occupiedSlots.fill(-1)
   reservedSlots.fill(-1)
   graphics.eventMode = 'none'
-  actorLayer.eventMode = 'none'
-  actorLayer.addChild(graphics)
+  graphics.zIndex = zorder
+  graphics.zorder = zorder
+  entityLayer.eventMode = 'none'
+  entityLayer.sortableChildren = true
+  entityLayer.addChild(graphics)
 
   for (let id = 0; id < config.count && spawnSlots.length > 0; id += 1) {
     const spawnSlotIndex = takeRandomArrayItem(spawnSlots, random)
@@ -40,6 +45,7 @@ export function createNpcSimulation(city, actorLayer, config) {
       tile: { x: tileX, y: tileY, index: tileIndex },
       slot: { id: spawnSlot.slot, index: spawnSlotIndex },
       random,
+      zorder,
       config
     }))
   }
@@ -86,9 +92,10 @@ export function createNpcSimulation(city, actorLayer, config) {
   }
 }
 
-function createNpcEntity({ id, position, tile, slot, random, config }) {
+function createNpcEntity({ id, position, tile, slot, random, zorder, config }) {
   return {
     id,
+    zorder,
     position: { x: position.x, y: position.y },
     tile: { x: tile.x, y: tile.y, index: tile.index },
     slot: { id: slot.id, index: slot.index },

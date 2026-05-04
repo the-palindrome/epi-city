@@ -54,6 +54,7 @@ export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
 
 export const NPC_CONFIG = Object.freeze({
   count: 1000,
+  zorder: 1,
   tileCapacity: 2,
   slotSpacing: 11,
   color: 0xe5c748,
@@ -71,6 +72,11 @@ export const SIMULATION_CONFIG = Object.freeze({
     max: 16,
     step: 0.25
   })
+})
+
+export const TILE_ZORDERS = Object.freeze({
+  default: 0,
+  building: 2
 })
 
 export const DASHBOARD_OVERLAYS = Object.freeze([

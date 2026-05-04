@@ -14,7 +14,7 @@ Startup follows this sequence:
 4. `loadCityMap()` fetches the semantic tile layout, fetches the texture rows layout, validates both files, and returns normalized map data.
 5. `compileCityMap()` converts the normalized semantic rows and texture rows into typed arrays.
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
-7. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
+7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
 9. `installDebugDashboard()` adds simulation controls, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
 10. `createNpcSimulation()` creates the NPC system with the configured random source, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
@@ -82,12 +82,13 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `tileTextureIds` | Numeric `Uint32Array` with one atlas-frame ID per cell. |
 | `tileWalkable`, `tileDrivable`, `tileParkable` | Numeric `Uint8Array` layers with generated gameplay behavior per cell. |
 | `tileCrosswalk` | Numeric `Uint8Array` layer marking cells controlled by the crosswalk signal. |
+| `tileZOrders` | Numeric `Int16Array` layer with each tile's render order. Normal tiles use `0`; building tiles use `2`. |
 | `buildings`, `tileBuildingIndexes` | Runtime building records and tile-to-building lookup data. |
 | `legend` | Normalized symbol metadata keyed by map symbol. |
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, buildingId, buildingType }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getBuildingId(x, y)`, `getBuilding(x, y)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
@@ -128,6 +129,7 @@ NPCs are plain objects with the state the simulation needs:
 ```js
 {
   id,
+  zorder,
   position: { x, y },
   tile: { x, y, index },
   slot: { id, index },
@@ -135,7 +137,7 @@ NPCs are plain objects with the state the simulation needs:
 }
 ```
 
-The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop.
+The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
 
 The NPC system receives a random source through config. The default app state enables the `epi-city` seed, which makes spawn slot selection, speed assignment, neighbor choice, and target-slot choice repeat when the simulation restarts with the same seed.
 
@@ -171,11 +173,11 @@ The extraction script checks every map cell against the original image. Each `te
 
 ## Rendering Strategy
 
-The `world` container has separate `map`, `overlays`, and `actors` layers. Map sprites stay at the bottom, debug overlays render above the city, and NPC actors render on top.
+The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC graphics render at `zorder: 1`, and building tile chunks render at `zorder: 2`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below NPCs while building overlays stay above building tiles.
 
-`renderCity()` groups sprites into 16x16 tile containers. Grouping keeps the display tree structured by map region while preserving per-cell source textures. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
+`renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
 
-Pixi automatic rendering is disabled during app initialization. The app-level `GameLoop` owns frame timing instead: it clamps delta time, calls each system's `update(deltaSeconds)`, calls each system's `render()`, then calls `app.render()` once. Static map rendering builds the map layer once at startup.
+Pixi automatic rendering is disabled during app initialization. The app-level `GameLoop` owns frame timing instead: it clamps delta time, calls each system's `update(deltaSeconds)`, calls each system's `render()`, then calls `app.render()` once. Static tile rendering builds the entity layer once at startup.
 
 The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in default runtime assets live in `public/maps/liberty-city` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
 
@@ -185,7 +187,7 @@ Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-
 
 The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
 
-Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
+Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without covering NPCs.
 
 ## Map Editor
 

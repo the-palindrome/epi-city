@@ -71,9 +71,16 @@ describe('city map validation and compile', () => {
     expect(city.getTileVariant(1, 1)).toMatchObject({
       category: 'building',
       textureId: 1,
+      zorder: 2,
       buildingId: 'building-0001',
       buildingType: 'residential'
     })
+    expect(city.getTileVariant(0, 0)).toMatchObject({
+      category: 'sidewalk',
+      zorder: 0
+    })
+    expect(city.tileZOrders[city.index(1, 1)]).toBe(2)
+    expect(city.tileZOrders[city.index(0, 0)]).toBe(0)
     expect(city.isWalkable(0, 0)).toBe(true)
     expect(city.isDrivable(0, 2)).toBe(true)
   })

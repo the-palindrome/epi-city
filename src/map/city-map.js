@@ -5,7 +5,8 @@ import {
   DEFAULT_BUILDING_TYPE,
   DIRECTIONS,
   MOVEMENT_PROPERTY_BY_MODE,
-  TILE_NAMES
+  TILE_NAMES,
+  TILE_ZORDERS
 } from '../core/constants.js'
 import { clamp, indexOf, octileDistance, reconstructPath } from '../core/math.js'
 import { MinHeap } from '../core/min-heap.js'
@@ -347,6 +348,10 @@ function normalizeLegend(legend) {
   return entries
 }
 
+function tileZorderForCategory(category) {
+  return category === 'building' ? TILE_ZORDERS.building : TILE_ZORDERS.default
+}
+
 export function compileCityMap(data) {
   const width = data.width
   const height = data.height
@@ -358,6 +363,7 @@ export function compileCityMap(data) {
   const tileDrivable = new Uint8Array(width * height)
   const tileParkable = new Uint8Array(width * height)
   const tileCrosswalk = new Uint8Array(width * height)
+  const tileZOrders = new Int16Array(width * height)
   const tileLegendSymbols = new Array(width * height)
   const tileBuildingIndexes = new Int32Array(width * height)
   const pathScratch = createPathScratch(width * height)
@@ -384,6 +390,7 @@ export function compileCityMap(data) {
       tileDrivable[tileIndex] = entry.drivable ? 1 : 0
       tileParkable[tileIndex] = entry.parkable ? 1 : 0
       tileCrosswalk[tileIndex] = entry.category === 'crosswalk' ? 1 : 0
+      tileZOrders[tileIndex] = tileZorderForCategory(entry.category)
       tileLegendSymbols[tileIndex] = symbol
     }
   }
@@ -432,6 +439,7 @@ export function compileCityMap(data) {
     return {
       ...legendEntries[tileLegendSymbols[tileIndex]],
       textureId: tileTextureIds[tileIndex],
+      zorder: tileZOrders[tileIndex],
       buildingId: building ? building.id : null,
       buildingType: building ? building.type : null
     }
@@ -646,6 +654,7 @@ export function compileCityMap(data) {
     tileDrivable,
     tileParkable,
     tileCrosswalk,
+    tileZOrders,
     tileBuildingIndexes,
     legend: legendEntries,
     buildings,

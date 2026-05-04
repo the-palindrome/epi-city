@@ -54,13 +54,11 @@ async function main() {
     document.body.appendChild(app.canvas)
 
     const world = new PIXI.Container()
-    const mapLayer = new PIXI.Container()
-    const overlayLayer = new PIXI.Container()
-    const actorLayer = new PIXI.Container()
+    const entityLayer = new PIXI.Container()
 
-    world.addChild(mapLayer)
-    world.addChild(overlayLayer)
-    world.addChild(actorLayer)
+    entityLayer.eventMode = 'none'
+    entityLayer.sortableChildren = true
+    world.addChild(entityLayer)
     app.stage.addChild(world)
 
     const camera = createCamera()
@@ -70,7 +68,7 @@ async function main() {
     const textureSet = await loadTextureSet(city.textureSetName)
 
     validateCityTextureBindings(city, textureSet)
-    renderCity(city, mapLayer, textureSet)
+    renderCity(city, entityLayer, textureSet)
     centerCameraOnCity(camera, world, city)
 
     const game = new Game(app)
@@ -88,7 +86,7 @@ async function main() {
     }
 
     function createConfiguredNpcSimulation() {
-      return createNpcSimulation(city, actorLayer, {
+      return createNpcSimulation(city, entityLayer, {
         ...NPC_CONFIG,
         random: createNpcRandom()
       })
@@ -123,7 +121,7 @@ async function main() {
     }
 
     const cameraControls = installCameraControls(app, camera, applyCamera)
-    const dashboard = installDebugDashboard(city, overlayLayer, {
+    const dashboard = installDebugDashboard(city, entityLayer, {
       paused: game.paused,
       seedEnabled: simulationState.seedEnabled,
       seed: simulationState.seed,
@@ -182,9 +180,7 @@ async function main() {
       game.destroy()
       dashboard.destroy()
       cameraControls.destroy()
-      clearPixiContainer(mapLayer)
-      clearPixiContainer(overlayLayer)
-      clearPixiContainer(actorLayer)
+      clearPixiContainer(entityLayer)
       app.destroy({ removeView: true }, { children: true })
       delete window.citySim
     }
