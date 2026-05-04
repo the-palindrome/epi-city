@@ -176,3 +176,7 @@ Preview the production build with:
 ```bash
 npm run preview
 ```
+
+### Lane Graph Traffic Metadata
+
+Car traffic can use optional manually authored `laneGraph` metadata in each map `tile-layout.json`. The map editor's lane graph layer builds directed segments by clicking road or crosswalk tiles in travel order; each tile owns one centered node, and each saved edge connects neighboring road or crosswalk tiles. Duplicate directed edges are collapsed during normalization. Runtime code rejects legacy generated metadata, lane offsets, layered lane fields, and connector edges before compiling the graph into `LaneGraph`, `LaneNode`, and `LaneEdge` objects for efficient vehicle simulation.

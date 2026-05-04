@@ -269,3 +269,7 @@ window.citySim.dashboard.setOverlay('walkable', true)
 - Add focused tests around editor-side validators once the browser editor is split into modules.
 - Add hierarchical routing if future maps become much larger than the current 256x256 Liberty City layout.
 - Add simulation metadata outside the base tile category when infection dynamics need population, occupancy, or district information.
+
+## Lane Graph
+
+The city map loader validates optional `laneGraph` metadata and compiles it alongside tile masks. Lane graph data uses `directed-lanes-v1`, `drivingSide: "right"`, tile-space coordinates, one centered node per tile, and directed neighboring-tile edges. Duplicate directed edges are collapsed during normalization. The map editor authors lane graph segments by clicking road or crosswalk tiles in travel order; lane edges model fixed travel between neighboring tiles, and turn edges model direction changes between neighboring tiles. Legacy generated metadata, lane offsets, layered lane fields, and connector edges are rejected.

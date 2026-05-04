@@ -9,6 +9,7 @@ import {
   TILE_ZORDERS
 } from '../core/constants.js'
 import { clamp, indexOf, octileDistance } from '../core/math.js'
+import { compileLaneGraphLayout, normalizeLaneGraphLayout } from './lane-graph.js'
 
 const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
@@ -118,6 +119,7 @@ export function validateCityMap(data) {
   }
 
   const buildings = normalizeBuildingsLayout(data.buildings, data, legendEntries)
+  const laneGraph = normalizeLaneGraphLayout(data.laneGraph, data, legendEntries)
 
   if (data.textureRows !== undefined) {
     validateTextureRowsLayout(data, data)
@@ -126,7 +128,8 @@ export function validateCityMap(data) {
   return {
     ...data,
     legend: legendEntries,
-    buildings
+    buildings,
+    laneGraph
   }
 }
 
@@ -419,6 +422,7 @@ export function compileCityMap(data) {
   const tileBuildingIndexes = new Int32Array(width * height)
   const pathScratch = createPathScratch(width * height)
   const crosswalkSignals = createCrosswalkSignalController(CROSSWALK_SIGNAL_PHASES)
+  const laneGraph = compileLaneGraphLayout(data.laneGraph, tileSize)
 
   tileBuildingIndexes.fill(-1)
 
@@ -792,6 +796,7 @@ export function compileCityMap(data) {
     tileBuildingIndexes,
     legend: legendEntries,
     buildings,
+    laneGraph,
     index: (x, y) => indexOf(x, y, width),
     getTile,
     getTileId,

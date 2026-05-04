@@ -195,3 +195,7 @@ The editor saves texture rows JSON in this format:
 ```
 
 `rows` stores semantic legend symbols. `textureRows` stores visual texture IDs and remains separate from the edited semantic labels.
+
+## Lane Graph Editing
+
+The map editor includes a `lane graph` paint layer. Use `draw segment` to click a road or crosswalk tile, then click road or crosswalk tiles in travel order to add directed lane graph edges. Clicking farther along the same row or column fills every intermediate tile until the endpoint. Each tile owns one centered lane node; clicking an existing node closes the active segment. Use `new segment` to start another sequence, `delete tile` to remove the node on one tile, and `clear graph` to remove the authored graph. Saving writes top-level `laneGraph` metadata only when the graph has nodes or edges. The editor accepts only this manual centered format; legacy generated metadata, lane offsets, layered lane fields, and connector edges must be removed from old maps.

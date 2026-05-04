@@ -95,6 +95,13 @@ describe('city map validation and compile', () => {
     const map = validateCityMap(createMap())
     const city = compileCityMap(map)
 
+    expect(map.laneGraph).toMatchObject({
+      encoding: 'directed-lanes-v1',
+      drivingSide: 'right',
+      nodes: [],
+      edges: []
+    })
+
     expect(city.getTile(0, 0)).toBe('sidewalk')
     expect(city.getTileVariant(1, 1)).toMatchObject({
       category: 'building',
@@ -111,6 +118,188 @@ describe('city map validation and compile', () => {
     expect(city.tileZOrders[city.index(0, 0)]).toBe(0)
     expect(city.isWalkable(0, 0)).toBe(true)
     expect(city.isDrivable(0, 2)).toBe(true)
+  })
+
+  it('normalizes and compiles fixed vehicle lane graph metadata', () => {
+    const laneGraph = {
+      encoding: 'directed-lanes-v1',
+      drivingSide: 'right',
+      coordinateSpace: 'tile',
+      nodes: [
+        { id: 'lane-a', x: 0.5, y: 2.5, tile: { x: 0, y: 2 }, direction: 'east' },
+        { id: 'lane-b', x: 1.5, y: 2.5, tile: { x: 1, y: 2 }, direction: 'east' }
+      ],
+      edges: [
+        {
+          id: 'edge-a-b',
+          from: 'lane-a',
+          to: 'lane-b',
+          type: 'lane',
+          direction: 'east',
+          speedLimit: 28,
+          path: [[0.5, 2.5], [1.5, 2.5]]
+        }
+      ]
+    }
+    const city = compileCityMap(validateCityMap(createMap({ laneGraph })))
+
+    expect(city.laneGraph.nodes).toHaveLength(2)
+    expect(city.laneGraph.edges).toHaveLength(1)
+    expect(city.laneGraph.getNode('lane-a')).toMatchObject({ direction: 'east', worldX: 16 })
+    expect(city.laneGraph.getOutgoingEdges('lane-a')).toHaveLength(1)
+    expect(city.laneGraph.edges[0].worldPath[1]).toEqual([48, 80])
+  })
+
+  it('normalizes duplicate directed lane graph edges', () => {
+    const laneGraph = {
+      encoding: 'directed-lanes-v1',
+      drivingSide: 'right',
+      coordinateSpace: 'tile',
+      nodes: [
+        { id: 'lane-a', x: 0.5, y: 2.5, tile: { x: 0, y: 2 }, direction: 'east' },
+        { id: 'lane-b', x: 1.5, y: 2.5, tile: { x: 1, y: 2 }, direction: 'east' }
+      ],
+      edges: [
+        {
+          id: 'edge-a-b',
+          from: 'lane-a',
+          to: 'lane-b',
+          type: 'lane',
+          direction: 'east',
+          speedLimit: 28,
+          path: [[0.5, 2.5], [1.5, 2.5]]
+        },
+        {
+          id: 'edge-a-b-copy',
+          from: 'lane-a',
+          to: 'lane-b',
+          type: 'lane',
+          direction: 'east',
+          speedLimit: 28,
+          path: [[0.5, 2.5], [1.5, 2.5]]
+        }
+      ]
+    }
+    const map = validateCityMap(createMap({ laneGraph }))
+    const city = compileCityMap(map)
+
+    expect(map.laneGraph.edges).toHaveLength(1)
+    expect(map.laneGraph.edges[0].id).toBe('edge-a-b')
+    expect(city.laneGraph.edges).toHaveLength(1)
+    expect(city.laneGraph.getOutgoingEdges('lane-a')).toHaveLength(1)
+  })
+
+  it('rejects lane graphs with missing edge node references', () => {
+    expect(() => validateCityMap(createMap({
+      laneGraph: {
+        encoding: 'directed-lanes-v1',
+        drivingSide: 'right',
+        coordinateSpace: 'tile',
+        nodes: [
+          { id: 'lane-a', x: 0.5, y: 2.5, tile: { x: 0, y: 2 }, direction: 'east' }
+        ],
+        edges: [
+          {
+            id: 'broken',
+            from: 'lane-a',
+            to: 'missing',
+            type: 'lane',
+            direction: 'east',
+            speedLimit: 28,
+            path: [[0.5, 2.5], [1.5, 2.5]]
+          }
+        ]
+      }
+    }))).toThrow(/unknown to node/)
+  })
+
+  it('rejects legacy generated lane graph metadata', () => {
+    expect(() => validateCityMap(createMap({
+      laneGraph: {
+        encoding: 'directed-lanes-v1',
+        drivingSide: 'right',
+        coordinateSpace: 'tile',
+        laneOffset: 0.22,
+        nodes: [],
+        edges: []
+      }
+    }))).toThrow(/laneOffset is not supported/)
+  })
+
+  it('rejects legacy connector lane graph edges', () => {
+    expect(() => validateCityMap(createMap({
+      laneGraph: {
+        encoding: 'directed-lanes-v1',
+        drivingSide: 'right',
+        coordinateSpace: 'tile',
+        nodes: [
+          { id: 'lane-a', x: 0.5, y: 2.5, tile: { x: 0, y: 2 }, direction: 'east' },
+          { id: 'lane-b', x: 1.5, y: 2.5, tile: { x: 1, y: 2 }, direction: 'east' }
+        ],
+        edges: [
+          {
+            id: 'edge-a-b',
+            from: 'lane-a',
+            to: 'lane-b',
+            type: 'connector',
+            direction: 'east',
+            speedLimit: 28,
+            path: [[0.5, 2.5], [1.5, 2.5]]
+          }
+        ]
+      }
+    }))).toThrow(/type/)
+  })
+
+  it('rejects lane graph nodes that are not centered on their tile', () => {
+    expect(() => validateCityMap(createMap({
+      laneGraph: {
+        encoding: 'directed-lanes-v1',
+        drivingSide: 'right',
+        coordinateSpace: 'tile',
+        nodes: [
+          { id: 'lane-a', x: 0.5, y: 2.72, tile: { x: 0, y: 2 }, direction: 'east' }
+        ],
+        edges: []
+      }
+    }))).toThrow(/center/)
+  })
+
+  it('rejects lane graph nodes on drivable non-road tiles', () => {
+    expect(() => validateCityMap(createMap({
+      legend: {
+        r: { category: 'road', walkable: false, drivable: true, parkable: false },
+        d: { category: 'obstacle', walkable: false, drivable: true, parkable: false },
+        s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false }
+      },
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultType: 'residential',
+        items: []
+      },
+      rows: ['rrr', 'rdr', 'rrr'],
+      laneGraph: {
+        encoding: 'directed-lanes-v1',
+        drivingSide: 'right',
+        coordinateSpace: 'tile',
+        nodes: [
+          { id: 'lane-a', x: 1.5, y: 1.5, tile: { x: 1, y: 1 }, direction: 'east' }
+        ],
+        edges: []
+      }
+    }))).toThrow(/road or crosswalk tile/)
+  })
+
+  it('rejects non-right-side lane graphs', () => {
+    expect(() => validateCityMap(createMap({
+      laneGraph: {
+        encoding: 'directed-lanes-v1',
+        drivingSide: 'left',
+        coordinateSpace: 'tile',
+        nodes: [],
+        edges: []
+      }
+    }))).toThrow(/right-side driving/)
   })
 
   it('compiles crosswalk tiles as walkable and drivable map cells', () => {

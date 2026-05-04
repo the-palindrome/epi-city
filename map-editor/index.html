@@ -200,6 +200,7 @@
             <option value="walkable">walkable</option>
             <option value="parkable">parkable</option>
             <option value="drivable">drivable</option>
+            <option value="laneGraph">lane graph</option>
           </select>
         </div>
         <div class="button-grid" id="label-buttons"></div>
@@ -271,6 +272,33 @@
       const TYPE_LABELS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle', 'crosswalk']);
       const BUILDING_TYPES = Object.freeze(['residential', 'commercial', 'hospital']);
       const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
+      const LANE_GRAPH_ENCODING = 'directed-lanes-v1';
+      const LANE_GRAPH_DIRECTIONS = Object.freeze(['north', 'east', 'south', 'west']);
+      const LANE_GRAPH_DIRECTION_OFFSETS = Object.freeze({
+        north: { dx: 0, dy: -1 },
+        east: { dx: 1, dy: 0 },
+        south: { dx: 0, dy: 1 },
+        west: { dx: -1, dy: 0 }
+      });
+      const LANE_GRAPH_OPPOSITES = Object.freeze({ north: 'south', east: 'west', south: 'north', west: 'east' });
+      const LANE_GRAPH_RIGHT_TURNS = Object.freeze({ north: 'east', east: 'south', south: 'west', west: 'north' });
+      const LANE_GRAPH_LEFT_TURNS = Object.freeze({ north: 'west', west: 'south', south: 'east', east: 'north' });
+      const LANE_GRAPH_EDGE_TYPES = Object.freeze(['lane', 'turn']);
+      const LANE_GRAPH_TURN_TYPES = Object.freeze(['left', 'right', 'straight', 'u-turn', 'merge']);
+      const LANE_GRAPH_TOOLS = Object.freeze([
+        { value: 'segment', label: 'draw segment', color: '#4fb7d8' },
+        { value: 'new-segment', label: 'new segment', color: '#f2cc47' },
+        { value: 'delete', label: 'delete tile', color: '#d94a48' },
+        { value: 'clear', label: 'clear graph', color: '#ffffff' }
+      ]);
+      const LANE_GRAPH_COLORS = Object.freeze({
+        lane: '#4fb7d8',
+        turn: '#f2cc47',
+        node: '#ffffff',
+        selected: '#ff6f91',
+        activeTile: '#ff6f91',
+        preview: '#2bd36f'
+      });
       const EMPTY_LABEL_VALUE = null;
       const TYPE_COLORS = Object.freeze({
         road: '#111611',
@@ -347,6 +375,9 @@
         selectedBehaviorValue: EMPTY_LABEL_VALUE,
         selectedTextureId: null,
         texturePickMode: true,
+        selectedLaneGraphTool: 'segment',
+        selectedLaneNodeId: null,
+        activeLaneSegmentTile: null,
         undoStack: [],
         redoStack: [],
         dirty: false,
@@ -431,6 +462,7 @@
           rows,
           behaviorRows,
           buildings,
+          laneGraph: normalizeLaneGraphLayout(metadata.laneGraph),
           buildingLookup: createBuildingLookup(buildings),
           textureRows: metadata.textureRows ? cloneTextureRows(metadata.textureRows) : createDefaultTextureRows(),
           textureRowsFileName: metadata.textureRowsFileName || 'texture-layout.json',
@@ -449,6 +481,700 @@
 
       function createZeroTextureRows() {
         return Array.from({ length: GRID_SIZE }, () => Array.from({ length: GRID_SIZE }, () => 0));
+      }
+
+      function createEmptyLaneGraph() {
+        return {
+          encoding: LANE_GRAPH_ENCODING,
+          drivingSide: 'right',
+          coordinateSpace: 'tile',
+          nodes: [],
+          edges: []
+        };
+      }
+
+      function normalizeLaneGraphLayout(laneGraph) {
+        if (laneGraph === undefined || laneGraph === null) {
+          return createEmptyLaneGraph();
+        }
+
+        const normalizedGraph = {
+          ...laneGraph,
+          edges: Array.isArray(laneGraph.edges)
+            ? uniqueDirectedLaneEdges(laneGraph.edges)
+            : laneGraph.edges
+        };
+
+        validateLaneGraph(normalizedGraph);
+
+        return {
+          encoding: LANE_GRAPH_ENCODING,
+          drivingSide: normalizedGraph.drivingSide,
+          coordinateSpace: normalizedGraph.coordinateSpace,
+          nodes: normalizedGraph.nodes.map((node) => ({
+            ...node,
+            tile: { ...node.tile }
+          })),
+          edges: normalizedGraph.edges.map((edge) => ({
+            ...edge,
+            path: edge.path.map((point) => [...point])
+          }))
+        };
+      }
+
+      function uniqueDirectedLaneEdges(edges) {
+        const seen = new Set();
+        const uniqueEdges = [];
+
+        for (const edge of edges) {
+          if (!edge || typeof edge !== 'object' || typeof edge.from !== 'string' || typeof edge.to !== 'string') {
+            uniqueEdges.push(edge);
+            continue;
+          }
+
+          const edgeKey = `${edge.from}->${edge.to}`;
+
+          if (seen.has(edgeKey)) {
+            continue;
+          }
+
+          seen.add(edgeKey);
+          uniqueEdges.push(edge);
+        }
+
+        return uniqueEdges;
+      }
+
+      function cloneLaneGraph(laneGraph) {
+        return normalizeLaneGraphLayout(laneGraph);
+      }
+
+      function buildLaneGraphJson() {
+        const laneGraph = cloneLaneGraph(state.map.laneGraph);
+
+        if (laneGraph.nodes.length === 0 && laneGraph.edges.length === 0) {
+          return null;
+        }
+
+        return laneGraph;
+      }
+
+      function assignLaneGraphJson(payload) {
+        const laneGraph = buildLaneGraphJson();
+
+        if (laneGraph) {
+          payload.laneGraph = laneGraph;
+        }
+
+        return payload;
+      }
+
+      function isLaneGraphOperation(operation) {
+        return operation && operation.kind === 'laneGraph';
+      }
+
+      function recordLaneGraphOperation(before, after) {
+        state.undoStack.push({ kind: 'laneGraph', before, after });
+        state.redoStack.length = 0;
+        state.dirty = true;
+        state.trainingSummary = null;
+        updateStats();
+        draw();
+      }
+
+      function applyLaneGraphMutation(mutator, message) {
+        const before = cloneLaneGraph(state.map.laneGraph);
+        const changed = mutator(state.map.laneGraph);
+        state.map.laneGraph = cloneLaneGraph(state.map.laneGraph);
+        const after = cloneLaneGraph(state.map.laneGraph);
+
+        if (!changed || JSON.stringify(before) === JSON.stringify(after)) {
+          return false;
+        }
+
+        recordLaneGraphOperation(before, after);
+        setStatus(message);
+        return true;
+      }
+
+      function restoreLaneGraphOperation(operation, snapshot) {
+        state.map.laneGraph = cloneLaneGraph(snapshot);
+
+        if (state.selectedLaneNodeId && !state.map.laneGraph.nodes.some((node) => node.id === state.selectedLaneNodeId)) {
+          state.selectedLaneNodeId = null;
+        }
+
+        state.dirty = true;
+        state.trainingSummary = null;
+        updateStats();
+        draw();
+      }
+
+      function lanePointForTile(tileX, tileY) {
+        return {
+          x: tileX + 0.5,
+          y: tileY + 0.5
+        };
+      }
+
+      function nextLaneNodeId(graph = state.map.laneGraph) {
+        const used = new Set(graph.nodes.map((node) => node.id));
+        let index = graph.nodes.length + 1;
+
+        while (used.has(`lane-node-${String(index).padStart(4, '0')}`)) {
+          index += 1;
+        }
+
+        return `lane-node-${String(index).padStart(4, '0')}`;
+      }
+
+      function nextLaneEdgeId(graph = state.map.laneGraph) {
+        const used = new Set(graph.edges.map((edge) => edge.id));
+        let index = graph.edges.length + 1;
+
+        while (used.has(`lane-edge-${String(index).padStart(4, '0')}`)) {
+          index += 1;
+        }
+
+        return `lane-edge-${String(index).padStart(4, '0')}`;
+      }
+
+      function laneNodeForTile(graph, tileX, tileY) {
+        return graph.nodes.find((node) => node.tile.x === tileX && node.tile.y === tileY) || null;
+      }
+
+      function addLaneNode(graph, tileX, tileY, direction) {
+        const point = lanePointForTile(tileX, tileY);
+        const node = {
+          id: nextLaneNodeId(graph),
+          x: Number(point.x.toFixed(4)),
+          y: Number(point.y.toFixed(4)),
+          tile: { x: tileX, y: tileY },
+          direction
+        };
+
+        graph.nodes.push(node);
+        return node;
+      }
+
+      function ensureLaneNode(graph, tileX, tileY, direction) {
+        return laneNodeForTile(graph, tileX, tileY) || addLaneNode(graph, tileX, tileY, direction);
+      }
+
+      function deleteLaneTile(graph, tileX, tileY) {
+        const nodeIds = new Set(graph.nodes
+          .filter((node) => node.tile.x === tileX && node.tile.y === tileY)
+          .map((node) => node.id));
+
+        if (nodeIds.size === 0) {
+          return false;
+        }
+
+        graph.nodes = graph.nodes.filter((node) => !nodeIds.has(node.id));
+        graph.edges = graph.edges.filter((edge) => !nodeIds.has(edge.from) && !nodeIds.has(edge.to));
+
+        if (state.selectedLaneNodeId && nodeIds.has(state.selectedLaneNodeId)) {
+          state.selectedLaneNodeId = null;
+        }
+
+        if (state.activeLaneSegmentTile && state.activeLaneSegmentTile.x === tileX && state.activeLaneSegmentTile.y === tileY) {
+          state.activeLaneSegmentTile = null;
+        }
+
+        return true;
+      }
+
+      function clearLaneGraph(graph) {
+        if (graph.nodes.length === 0 && graph.edges.length === 0) {
+          return false;
+        }
+
+        graph.nodes = [];
+        graph.edges = [];
+        state.selectedLaneNodeId = null;
+        state.activeLaneSegmentTile = null;
+        return true;
+      }
+
+      function laneTurnType(fromDirection, toDirection) {
+        if (fromDirection === toDirection) {
+          return 'straight';
+        }
+
+        if (LANE_GRAPH_OPPOSITES[fromDirection] === toDirection) {
+          return 'u-turn';
+        }
+
+        if (LANE_GRAPH_RIGHT_TURNS[fromDirection] === toDirection) {
+          return 'right';
+        }
+
+        if (LANE_GRAPH_LEFT_TURNS[fromDirection] === toDirection) {
+          return 'left';
+        }
+
+        return 'merge';
+      }
+
+      function isLaneAuthoringTile(tileX, tileY) {
+        const type = inGrid(tileX, tileY) ? state.map.rows[tileY][tileX] : null;
+        return type === 'road' || type === 'crosswalk';
+      }
+
+      function cardinalLaneDirection(fromTile, toTile) {
+        const dx = toTile.x - fromTile.x;
+        const dy = toTile.y - fromTile.y;
+
+        if (Math.abs(dx) + Math.abs(dy) !== 1) {
+          return null;
+        }
+
+        for (const [direction, offset] of Object.entries(LANE_GRAPH_DIRECTION_OFFSETS)) {
+          if (offset.dx === dx && offset.dy === dy) {
+            return direction;
+          }
+        }
+
+        return null;
+      }
+
+      function laneTileLine(fromTile, toTile) {
+        if (fromTile.x !== toTile.x && fromTile.y !== toTile.y) {
+          return null;
+        }
+
+        const stepX = Math.sign(toTile.x - fromTile.x);
+        const stepY = Math.sign(toTile.y - fromTile.y);
+        const tiles = [{ x: fromTile.x, y: fromTile.y }];
+        let x = fromTile.x;
+        let y = fromTile.y;
+
+        while (x !== toTile.x || y !== toTile.y) {
+          x += stepX;
+          y += stepY;
+          tiles.push({ x, y });
+        }
+
+        return tiles;
+      }
+
+      function firstBlockedLaneTile(tiles) {
+        return tiles.find((tile) => !isLaneAuthoringTile(tile.x, tile.y)) || null;
+      }
+
+      function sameTile(a, b) {
+        return Boolean(a && b && a.x === b.x && a.y === b.y);
+      }
+
+      function laneEdgeExists(graph, fromId, toId) {
+        return graph.edges.some((edge) => edge.from === fromId && edge.to === toId);
+      }
+
+      function addLaneEdge(graph, fromNode, toNode, type, direction, turnFromDirection = fromNode?.direction) {
+        if (!fromNode || !toNode || fromNode.id === toNode.id || laneEdgeExists(graph, fromNode.id, toNode.id)) {
+          return false;
+        }
+
+        const edge = {
+          id: nextLaneEdgeId(graph),
+          from: fromNode.id,
+          to: toNode.id,
+          type,
+          direction,
+          turn: type === 'turn' ? laneTurnType(turnFromDirection, direction) : null,
+          speedLimit: type === 'lane' ? 28 : 12,
+          path: [[fromNode.x, fromNode.y], [toNode.x, toNode.y]]
+        };
+
+        graph.edges.push(edge);
+        return true;
+      }
+
+      function appendLaneGraphSegmentStep(graph, fromTile, toTile) {
+        const direction = cardinalLaneDirection(fromTile, toTile);
+
+        if (!direction) {
+          return null;
+        }
+
+        const activeNode = state.selectedLaneNodeId
+          ? graph.nodes.find((node) => node.id === state.selectedLaneNodeId)
+          : null;
+        const fromNode = activeNode && activeNode.tile.x === fromTile.x && activeNode.tile.y === fromTile.y
+          ? activeNode
+          : ensureLaneNode(graph, fromTile.x, fromTile.y, direction);
+        const toNode = ensureLaneNode(graph, toTile.x, toTile.y, direction);
+        const fromDirection = fromNode.direction;
+        const edgeType = fromDirection === direction ? 'lane' : 'turn';
+
+        addLaneEdge(graph, fromNode, toNode, edgeType, direction, fromDirection);
+        fromNode.direction = direction;
+        return { toNodeId: toNode.id, direction, edgeType };
+      }
+
+      function appendLaneGraphSegmentLine(graph, tiles) {
+        let finalStep = null;
+
+        for (let index = 1; index < tiles.length; index += 1) {
+          finalStep = appendLaneGraphSegmentStep(graph, tiles[index - 1], tiles[index]);
+
+          if (!finalStep) {
+            return null;
+          }
+        }
+
+        return finalStep;
+      }
+
+      function laneTileLabel(tile) {
+        return tile ? `${tile.x},${tile.y}` : 'none';
+      }
+
+      function startLaneSegment(tileX, tileY) {
+        if (!isLaneAuthoringTile(tileX, tileY)) {
+          setStatus('Lane segments can start on road or crosswalk tiles only.', true);
+          return;
+        }
+
+        state.activeLaneSegmentTile = { x: tileX, y: tileY };
+        state.selectedLaneNodeId = laneNodeForTile(state.map.laneGraph, tileX, tileY)?.id || null;
+        updateStats();
+        draw();
+        setStatus(`Lane segment start set to ${tileX},${tileY}.`);
+      }
+
+      function handleLaneGraphClick(tileX, tileY) {
+        const tool = state.selectedLaneGraphTool;
+
+        if (tool === 'delete') {
+          if (!applyLaneGraphMutation((graph) => deleteLaneTile(graph, tileX, tileY), `Deleted lane graph nodes on ${tileX},${tileY}.`)) {
+            setStatus(`No lane graph nodes on ${tileX},${tileY}.`, true);
+          }
+          return;
+        }
+
+        if (tool !== 'segment') {
+          return;
+        }
+
+        if (!state.activeLaneSegmentTile) {
+          startLaneSegment(tileX, tileY);
+          return;
+        }
+
+        if (!isLaneAuthoringTile(tileX, tileY)) {
+          setStatus('Lane segments can use road or crosswalk tiles only.', true);
+          return;
+        }
+
+        const fromTile = { ...state.activeLaneSegmentTile };
+        const toTile = { x: tileX, y: tileY };
+        const existingToNode = laneNodeForTile(state.map.laneGraph, tileX, tileY);
+        const lineTiles = laneTileLine(fromTile, toTile);
+
+        if (sameTile(fromTile, toTile)) {
+          state.activeLaneSegmentTile = null;
+          state.selectedLaneNodeId = existingToNode?.id || null;
+          updateStats();
+          draw();
+          setStatus(`Lane segment closed at ${laneTileLabel(toTile)}.`);
+          return;
+        }
+
+        if (!lineTiles) {
+          setStatus('Lane segments must stay on one north-south or east-west tile line.', true);
+          return;
+        }
+
+        const blockedTile = firstBlockedLaneTile(lineTiles);
+
+        if (blockedTile) {
+          setStatus(`Lane segment line is blocked at ${laneTileLabel(blockedTile)}. Use road or crosswalk tiles only.`, true);
+          return;
+        }
+
+        let nextStep = null;
+        const changed = applyLaneGraphMutation((graph) => {
+          nextStep = appendLaneGraphSegmentLine(graph, lineTiles);
+          return Boolean(nextStep);
+        }, `Added ${lineTiles.length - 1} lane segment step${lineTiles.length === 2 ? '' : 's'} from ${laneTileLabel(fromTile)} to ${laneTileLabel(toTile)}.`);
+
+        if (nextStep) {
+          state.activeLaneSegmentTile = existingToNode ? null : toTile;
+          state.selectedLaneNodeId = nextStep.toNodeId;
+          updateStats();
+          draw();
+
+          if (existingToNode) {
+            setStatus(`Lane segment closed at ${laneTileLabel(toTile)}.`);
+          } else if (!changed) {
+            setStatus(`Lane segment end moved to ${laneTileLabel(toTile)}.`);
+          }
+        }
+      }
+
+      function drawLaneGraphOverlay(alpha) {
+        const graph = state.map.laneGraph;
+        ctx.globalAlpha = alpha;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        for (const edge of graph.edges) {
+          ctx.strokeStyle = LANE_GRAPH_COLORS[edge.type] || LANE_GRAPH_COLORS.lane;
+          ctx.lineWidth = (edge.type === 'turn' ? 2.4 : 1.8) / state.view.zoom;
+          ctx.beginPath();
+
+          edge.path.forEach(([x, y], index) => {
+            const point = laneGraphPointToCanvas(x, y);
+
+            if (index === 0) {
+              ctx.moveTo(point.x, point.y);
+            } else {
+              ctx.lineTo(point.x, point.y);
+            }
+          });
+
+          ctx.stroke();
+
+          drawLaneGraphArrowHead(edge);
+        }
+
+        for (const node of graph.nodes) {
+          const selected = node.id === state.selectedLaneNodeId;
+          const point = laneGraphPointToCanvas(node.x, node.y);
+          const radius = (selected ? 4.5 : 3) / state.view.zoom;
+          ctx.fillStyle = selected ? LANE_GRAPH_COLORS.selected : LANE_GRAPH_COLORS.node;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          const direction = LANE_GRAPH_DIRECTION_OFFSETS[node.direction];
+          ctx.strokeStyle = selected ? LANE_GRAPH_COLORS.selected : LANE_GRAPH_COLORS.node;
+          ctx.lineWidth = 1.6 / state.view.zoom;
+          ctx.beginPath();
+          ctx.moveTo(point.x, point.y);
+          ctx.lineTo(
+            point.x + direction.dx * 8 / state.view.zoom,
+            point.y + direction.dy * 8 / state.view.zoom
+          );
+          ctx.stroke();
+        }
+
+        drawLaneGraphSegmentPreview();
+        ctx.globalAlpha = 1;
+      }
+
+      function drawLaneGraphSegmentPreview() {
+        if (!state.activeLaneSegmentTile) {
+          return;
+        }
+
+        const bounds = tileBounds(state.activeLaneSegmentTile.x, state.activeLaneSegmentTile.y);
+        ctx.fillStyle = LANE_GRAPH_COLORS.activeTile;
+        ctx.globalAlpha = 0.18;
+        ctx.fillRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = LANE_GRAPH_COLORS.activeTile;
+        ctx.lineWidth = 2.6 / state.view.zoom;
+        ctx.strokeRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+
+        if (!state.hoverTile || sameTile(state.activeLaneSegmentTile, state.hoverTile)) {
+          return;
+        }
+
+        const lineTiles = laneTileLine(state.activeLaneSegmentTile, state.hoverTile);
+
+        if (!lineTiles || firstBlockedLaneTile(lineTiles)) {
+          return;
+        }
+
+        const start = laneGraphPointToCanvas(state.activeLaneSegmentTile.x + 0.5, state.activeLaneSegmentTile.y + 0.5);
+        const end = laneGraphPointToCanvas(state.hoverTile.x + 0.5, state.hoverTile.y + 0.5);
+        ctx.strokeStyle = LANE_GRAPH_COLORS.preview;
+        ctx.lineWidth = 2 / state.view.zoom;
+        ctx.setLineDash([6 / state.view.zoom, 4 / state.view.zoom]);
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+
+      function drawLaneGraphArrowHead(edge) {
+        if (!edge.path || edge.path.length < 2) {
+          return;
+        }
+
+        const end = laneGraphPointToCanvas(edge.path[edge.path.length - 1][0], edge.path[edge.path.length - 1][1]);
+        const previous = laneGraphPointToCanvas(edge.path[edge.path.length - 2][0], edge.path[edge.path.length - 2][1]);
+        const angle = Math.atan2(end.y - previous.y, end.x - previous.x);
+        const size = 7 / state.view.zoom;
+
+        ctx.fillStyle = LANE_GRAPH_COLORS[edge.type] || LANE_GRAPH_COLORS.lane;
+        ctx.beginPath();
+        ctx.moveTo(end.x, end.y);
+        ctx.lineTo(end.x - Math.cos(angle - Math.PI / 6) * size, end.y - Math.sin(angle - Math.PI / 6) * size);
+        ctx.lineTo(end.x - Math.cos(angle + Math.PI / 6) * size, end.y - Math.sin(angle + Math.PI / 6) * size);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function laneGraphPointToCanvas(x, y) {
+        return {
+          x: x * state.image.width / GRID_SIZE,
+          y: y * state.image.height / GRID_SIZE
+        };
+      }
+
+      function validateLaneGraph(laneGraph) {
+        if (!laneGraph || typeof laneGraph !== 'object' || Array.isArray(laneGraph)) {
+          throw new Error('Lane graph must be an object.');
+        }
+
+        if (laneGraph.encoding !== LANE_GRAPH_ENCODING) {
+          throw new Error(`Lane graph encoding must be ${LANE_GRAPH_ENCODING}.`);
+        }
+
+        if (laneGraph.drivingSide !== 'right') {
+          throw new Error('Lane graph currently supports right-side driving only.');
+        }
+
+        if (laneGraph.coordinateSpace !== 'tile') {
+          throw new Error('Lane graph coordinateSpace must be tile.');
+        }
+
+        if (Object.prototype.hasOwnProperty.call(laneGraph, 'laneOffset')) {
+          throw new Error('Lane graph laneOffset is not supported; nodes must be centered on tiles.');
+        }
+
+        if (Object.prototype.hasOwnProperty.call(laneGraph, 'generated')) {
+          throw new Error('Generated lane graph metadata is not supported.');
+        }
+
+        if (!Array.isArray(laneGraph.nodes) || !Array.isArray(laneGraph.edges)) {
+          throw new Error('Lane graph nodes and edges must be arrays.');
+        }
+
+        const nodeIds = new Set();
+        const nodeTiles = new Set();
+        const nodesById = new Map();
+
+        for (const node of laneGraph.nodes) {
+          if (!node || typeof node !== 'object' || typeof node.id !== 'string' || node.id.length === 0) {
+            throw new Error('Lane graph nodes must have ids.');
+          }
+
+          if (nodeIds.has(node.id)) {
+            throw new Error(`Lane graph node ${node.id} is duplicated.`);
+          }
+
+          nodeIds.add(node.id);
+          rejectLaneGraphLegacyFields(`Lane graph node ${node.id}`, node);
+
+          if (!Number.isFinite(node.x) || !Number.isFinite(node.y) || node.x < 0 || node.y < 0 || node.x > GRID_SIZE || node.y > GRID_SIZE) {
+            throw new Error(`Lane graph node ${node.id} is outside the map.`);
+          }
+
+          if (!node.tile || !inGrid(node.tile.x, node.tile.y)) {
+            throw new Error(`Lane graph node ${node.id} must include an in-bounds tile.`);
+          }
+
+          const nodeTileKey = tileKey(node.tile.x, node.tile.y);
+
+          if (nodeTiles.has(nodeTileKey)) {
+            throw new Error(`Lane graph has more than one node on tile ${nodeTileKey}.`);
+          }
+
+          nodeTiles.add(nodeTileKey);
+
+          if (node.x !== node.tile.x + 0.5 || node.y !== node.tile.y + 0.5) {
+            throw new Error(`Lane graph node ${node.id} must be centered on its tile.`);
+          }
+
+          if (!LANE_GRAPH_DIRECTIONS.includes(node.direction)) {
+            throw new Error(`Lane graph node ${node.id} has an invalid direction.`);
+          }
+
+          nodesById.set(node.id, node);
+        }
+
+        const edgeIds = new Set();
+
+        for (const edge of laneGraph.edges) {
+          if (!edge || typeof edge !== 'object' || typeof edge.id !== 'string' || edge.id.length === 0) {
+            throw new Error('Lane graph edges must have ids.');
+          }
+
+          if (edgeIds.has(edge.id)) {
+            throw new Error(`Lane graph edge ${edge.id} is duplicated.`);
+          }
+
+          edgeIds.add(edge.id);
+          rejectLaneGraphLegacyFields(`Lane graph edge ${edge.id}`, edge);
+
+          const fromNode = nodesById.get(edge.from);
+          const toNode = nodesById.get(edge.to);
+
+          if (!fromNode || !toNode) {
+            throw new Error(`Lane graph edge ${edge.id} references a missing node.`);
+          }
+
+          if (!LANE_GRAPH_EDGE_TYPES.includes(edge.type)) {
+            throw new Error(`Lane graph edge ${edge.id} has an invalid type.`);
+          }
+
+          if (!LANE_GRAPH_DIRECTIONS.includes(edge.direction)) {
+            throw new Error(`Lane graph edge ${edge.id} has an invalid direction.`);
+          }
+
+          if (edge.type === 'lane' && edge.turn !== null && edge.turn !== undefined) {
+            throw new Error(`Lane graph lane edge ${edge.id} must not include a turn type.`);
+          }
+
+          if (edge.type === 'turn' && !LANE_GRAPH_TURN_TYPES.includes(edge.turn)) {
+            throw new Error(`Lane graph turn edge ${edge.id} must include a valid turn type.`);
+          }
+
+          const expectedDirection = cardinalLaneDirection(fromNode.tile, toNode.tile);
+
+          if (!expectedDirection) {
+            throw new Error(`Lane graph edge ${edge.id} must connect neighboring tiles.`);
+          }
+
+          if (edge.direction !== expectedDirection) {
+            throw new Error(`Lane graph edge ${edge.id} direction does not match its tile order.`);
+          }
+
+          if (!Number.isFinite(edge.speedLimit) || edge.speedLimit <= 0) {
+            throw new Error(`Lane graph edge ${edge.id} speedLimit must be positive.`);
+          }
+
+          if (!Array.isArray(edge.path) || edge.path.length !== 2) {
+            throw new Error(`Lane graph edge ${edge.id} must contain exactly two path points.`);
+          }
+
+          for (const point of edge.path) {
+            if (!Array.isArray(point) || point.length !== 2 || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) {
+              throw new Error(`Lane graph edge ${edge.id} has an invalid path point.`);
+            }
+          }
+
+          if (edge.path[0][0] !== fromNode.x ||
+              edge.path[0][1] !== fromNode.y ||
+              edge.path[1][0] !== toNode.x ||
+              edge.path[1][1] !== toNode.y) {
+            throw new Error(`Lane graph edge ${edge.id} path must connect its centered endpoint nodes.`);
+          }
+        }
+      }
+
+      function rejectLaneGraphLegacyFields(subject, value) {
+        for (const field of ['axis', 'laneIndex', 'laneCount', 'bandId', 'layer', 'orientation']) {
+          if (Object.prototype.hasOwnProperty.call(value, field)) {
+            throw new Error(`${subject} includes unsupported legacy field ${field}.`);
+          }
+        }
       }
 
       async function loadDefaultTextureAssets() {
@@ -543,6 +1269,16 @@
 
           const key = event.key.toLowerCase();
 
+          if (paintLayer.value === 'laneGraph' && event.key === 'Escape') {
+            state.activeLaneSegmentTile = null;
+            state.selectedLaneNodeId = null;
+            updateStats();
+            draw();
+            setStatus('Lane segment selection cleared.');
+            event.preventDefault();
+            return;
+          }
+
           if (paintLayer.value === 'type' && Object.prototype.hasOwnProperty.call(TYPE_KEYS, key)) {
             setSelectedPaintValue(TYPE_KEYS[key]);
             event.preventDefault();
@@ -561,7 +1297,7 @@
             return;
           }
 
-          if (!['type', 'building', 'texture'].includes(paintLayer.value) && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
+          if (BEHAVIOR_LABELS.includes(paintLayer.value) && Object.prototype.hasOwnProperty.call(BEHAVIOR_KEYS, key)) {
             const value = BEHAVIOR_KEYS[key];
             setSelectedPaintValue(value === null ? '' : String(value));
             event.preventDefault();
@@ -578,6 +1314,12 @@
       function createLabelButtons() {
         labelButtons.innerHTML = '';
         const layer = paintLayer.value;
+        const laneToolValues = new Set(LANE_GRAPH_TOOLS.map((tool) => tool.value));
+
+        if (layer === 'laneGraph' && !laneToolValues.has(state.selectedLaneGraphTool)) {
+          state.selectedLaneGraphTool = 'segment';
+        }
+
         const buttons = layer === 'type'
           ? [
               { value: '', label: 'empty', color: null },
@@ -590,6 +1332,8 @@
                 { value: 'pick', label: 'pick texture', color: null },
                 { value: 'paint', label: texturePaintLabel(), color: null }
               ]
+          : layer === 'laneGraph'
+            ? LANE_GRAPH_TOOLS.map((tool) => ({ ...tool }))
           : [
               { value: '', label: `${layer}: empty`, color: null },
               { value: 'true', label: `${layer}: true`, color: BEHAVIOR_COLORS.true },
@@ -631,6 +1375,29 @@
           }
 
           state.texturePickMode = value !== 'paint';
+        } else if (paintLayer.value === 'laneGraph') {
+          if (value === 'new-segment') {
+            state.selectedLaneGraphTool = 'segment';
+            state.activeLaneSegmentTile = null;
+            state.selectedLaneNodeId = null;
+            setStatus('Ready for a new lane segment.');
+            updateStats();
+            draw();
+          } else if (value === 'clear') {
+            state.selectedLaneGraphTool = 'segment';
+            state.activeLaneSegmentTile = null;
+            state.selectedLaneNodeId = null;
+
+            if (!applyLaneGraphMutation((graph) => clearLaneGraph(graph), 'Cleared the lane graph.')) {
+              updateStats();
+              draw();
+              setStatus('Lane graph is already empty.');
+            }
+          } else {
+            state.selectedLaneGraphTool = value;
+            updateStats();
+            draw();
+          }
         } else {
           state.selectedBehaviorValue = value === '' ? EMPTY_LABEL_VALUE : value === 'true';
         }
@@ -649,6 +1416,10 @@
 
         if (paintLayer.value === 'texture') {
           return state.texturePickMode ? 'pick' : 'paint';
+        }
+
+        if (paintLayer.value === 'laneGraph') {
+          return state.selectedLaneGraphTool;
         }
 
         return state.selectedBehaviorValue === null ? '' : String(state.selectedBehaviorValue);
@@ -863,6 +1634,7 @@
         }
 
         const buildings = createBuildingsFromRows(rows, payload.buildings);
+        const laneGraph = normalizeLaneGraphLayout(payload.laneGraph);
 
         return {
           width: GRID_SIZE,
@@ -875,6 +1647,7 @@
           rows,
           behaviorRows,
           buildings,
+          laneGraph,
           buildingLookup: createBuildingLookup(buildings),
           textureRows,
           textureRowsFileName: metadata.textureRowsFileName || state.map?.textureRowsFileName || (payload.textureRows ? fileName : 'texture-layout.json'),
@@ -1274,6 +2047,8 @@
         state.trainingSummary = options.trainingSummary || null;
         state.undoStack.length = 0;
         state.redoStack.length = 0;
+        state.selectedLaneNodeId = null;
+        state.activeLaneSegmentTile = null;
         state.dirty = Boolean(options.dirty);
         state.semanticRowsDirty = Boolean(options.semanticRowsDirty);
         state.textureRowsDirty = Boolean(options.textureRowsDirty);
@@ -1512,6 +2287,14 @@
           return;
         }
 
+        state.hoverTile = tile;
+        cursorTile.textContent = `${tile.x},${tile.y}`;
+
+        if (paintLayer.value === 'laneGraph') {
+          handleLaneGraphClick(tile.x, tile.y);
+          return;
+        }
+
         if (paintLayer.value === 'texture' && state.texturePickMode) {
           pickTextureAt(tile.x, tile.y);
           return;
@@ -1561,6 +2344,10 @@
 
       function paintAt(tileX, tileY) {
         const layer = paintLayer.value;
+
+        if (layer === 'laneGraph') {
+          return;
+        }
 
         if (layer === 'texture' && !canPaintSelectedTexture()) {
           return;
@@ -1666,8 +2453,10 @@
           building.type = state.selectedBuildingType;
         } else if (layer === 'texture') {
           state.map.textureRows[y][x] = state.selectedTextureId;
-        } else {
+        } else if (BEHAVIOR_LABELS.includes(layer)) {
           state.map.behaviorRows[layer][y][x] = state.selectedBehaviorValue;
+        } else {
+          return false;
         }
 
         const after = snapshotTile(x, y);
@@ -1750,6 +2539,12 @@
           return;
         }
 
+        if (isLaneGraphOperation(operation)) {
+          restoreLaneGraphOperation(operation, operation.before);
+          state.redoStack.push(operation);
+          return;
+        }
+
         for (const change of operation) {
           restoreTileSnapshot(change.x, change.y, change.before);
         }
@@ -1780,6 +2575,12 @@
         const operation = state.redoStack.pop();
 
         if (!operation) {
+          return;
+        }
+
+        if (isLaneGraphOperation(operation)) {
+          restoreLaneGraphOperation(operation, operation.after);
+          state.undoStack.push(operation);
           return;
         }
 
@@ -1871,6 +2672,12 @@
 
       function drawCurrentLayerOverlay(alpha) {
         const layer = paintLayer.value;
+
+        if (layer === 'laneGraph') {
+          drawLaneGraphOverlay(alpha);
+          return;
+        }
+
         ctx.globalAlpha = alpha;
 
         for (let y = 0; y < GRID_SIZE; y += 1) {
@@ -1975,8 +2782,8 @@
         rebuildMapBuildingsFromRows();
 
         if (state.map.originalMap && !state.semanticRowsDirty) {
-          const { textureRows, buildings, ...originalMap } = state.map.originalMap;
-          return {
+          const { textureRows, buildings, laneGraph, ...originalMap } = state.map.originalMap;
+          return assignLaneGraphJson({
             ...originalMap,
             width: GRID_SIZE,
             height: GRID_SIZE,
@@ -1985,7 +2792,7 @@
             legend: legendForSave(state.map.originalMap.legend),
             buildings: buildBuildingsJson(),
             rows: [...state.map.originalMap.rows]
-          };
+          });
         }
 
         const definitionToSymbol = new Map();
@@ -2017,7 +2824,10 @@
           rows.push(row);
         }
 
-        return {
+        const { textureRows, ...originalMap } = state.map.originalMap || {};
+
+        return assignLaneGraphJson({
+          ...originalMap,
           width: GRID_SIZE,
           height: GRID_SIZE,
           tileSize: state.map.tileSize || DEFAULT_TILE_SIZE,
@@ -2025,7 +2835,7 @@
           legend,
           buildings: buildBuildingsJson(),
           rows
-        };
+        });
       }
 
       function buildBuildingsJson() {
@@ -2154,6 +2964,12 @@
           if (unknownCount > 0) {
             addStat('unknown', unknownCount);
           }
+        } else if (layer === 'laneGraph') {
+          addStat('lane nodes', state.map.laneGraph.nodes.length);
+          addStat('lane edges', state.map.laneGraph.edges.length);
+          addStat('lane tool', state.selectedLaneGraphTool);
+          addStat('segment end', laneTileLabel(state.activeLaneSegmentTile));
+          addStat('selected node', state.selectedLaneNodeId || 'none');
         } else {
           let emptyCount = 0;
           let trueCount = 0;
@@ -2277,6 +3093,10 @@
 
         if (map.textureRows !== undefined) {
           validateTextureRows(map.textureRows);
+        }
+
+        if (map.laneGraph !== undefined) {
+          validateLaneGraph(map.laneGraph);
         }
       }
 
