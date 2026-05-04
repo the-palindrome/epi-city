@@ -131,6 +131,22 @@ function createCity() {
   }))
 }
 
+function findByDataset(root, key) {
+  if (root.dataset && Object.prototype.hasOwnProperty.call(root.dataset, key)) {
+    return root
+  }
+
+  for (const child of root.children || []) {
+    const found = findByDataset(child, key)
+
+    if (found) {
+      return found
+    }
+  }
+
+  return null
+}
+
 describe('debug dashboard overlays', () => {
   const originalDocument = globalThis.document
 
@@ -157,6 +173,49 @@ describe('debug dashboard overlays', () => {
     dashboard.setOverlay('walkable', false)
 
     expect(entityLayer.children.map((child) => child.visible)).toEqual([false, false])
+
+    dashboard.destroy()
+  })
+
+  it('updates NPC count from the slider and exact number input', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      npcCount: 1000,
+      npcCountRange: { min: 100, max: 10000, step: 100 },
+      onNpcCountChange(count) {
+        changes.push(count)
+      }
+    })
+    const slider = findByDataset(dashboard.element, 'simulationNpcCountSlider')
+    const input = findByDataset(dashboard.element, 'simulationNpcCount')
+
+    expect(slider.min).toBe('100')
+    expect(slider.max).toBe('10000')
+    expect(slider.value).toBe('1000')
+    expect(input.value).toBe('1000')
+
+    slider.value = '2500'
+    slider.eventListeners.input()
+
+    expect(dashboard.simulation.state.npcCount).toBe(2500)
+    expect(input.value).toBe('2500')
+
+    slider.eventListeners.change()
+
+    expect(changes).toEqual([2500])
+
+    input.value = '1234'
+    input.eventListeners.change()
+
+    expect(dashboard.simulation.state.npcCount).toBe(1234)
+    expect(slider.value).toBe('1234')
+    expect(changes).toEqual([2500, 1234])
+
+    input.value = '42'
+    input.eventListeners.change()
+
+    expect(dashboard.simulation.state.npcCount).toBe(100)
+    expect(changes).toEqual([2500, 1234, 100])
 
     dashboard.destroy()
   })

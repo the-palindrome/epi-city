@@ -137,7 +137,8 @@ function createSimulationControls(options) {
     paused: Boolean(options.paused),
     seedEnabled: Boolean(options.seedEnabled),
     seed: options.seed || '',
-    speed: options.speed || 1
+    speed: options.speed || 1,
+    npcCount: normalizeNpcCount(options.npcCount ?? 1000, options.npcCountRange)
   }
   const callbacks = {
     onPlay: options.onPlay || noop,
@@ -145,9 +146,11 @@ function createSimulationControls(options) {
     onRestart: options.onRestart || noop,
     onSeedEnabledChange: options.onSeedEnabledChange || noop,
     onSeedChange: options.onSeedChange || noop,
-    onSpeedChange: options.onSpeedChange || noop
+    onSpeedChange: options.onSpeedChange || noop,
+    onNpcCountChange: options.onNpcCountChange || noop
   }
   const speedRange = normalizeSpeedRange(options.speedRange)
+  const npcCountRange = normalizeNpcCountRange(options.npcCountRange)
   const section = createDashboardSection('Simulation')
   const actions = document.createElement('div')
   const playButton = createDashboardButton('Play', 'play')
@@ -156,6 +159,7 @@ function createSimulationControls(options) {
   const seedToggle = createSeedToggle(state.seedEnabled)
   const seedField = createSeedField(state.seed)
   const speedField = createSpeedField(state.speed, speedRange)
+  const npcCountField = createNpcCountField(state.npcCount, npcCountRange)
 
   actions.className = 'dashboard-actions'
   actions.appendChild(playButton)
@@ -165,6 +169,7 @@ function createSimulationControls(options) {
   section.appendChild(seedToggle.label)
   section.appendChild(seedField.label)
   section.appendChild(speedField.label)
+  section.appendChild(npcCountField.label)
 
   playButton.addEventListener('click', () => {
     callbacks.onPlay()
@@ -197,6 +202,19 @@ function createSimulationControls(options) {
     callbacks.onSpeedChange(state.speed)
   })
 
+  npcCountField.slider.addEventListener('input', () => {
+    setNpcCount(npcCountField.slider.value)
+  })
+
+  npcCountField.slider.addEventListener('change', () => {
+    callbacks.onNpcCountChange(state.npcCount)
+  })
+
+  npcCountField.input.addEventListener('change', () => {
+    setNpcCount(npcCountField.input.value)
+    callbacks.onNpcCountChange(state.npcCount)
+  })
+
   function setPaused(paused) {
     state.paused = Boolean(paused)
     playButton.disabled = !state.paused
@@ -219,10 +237,17 @@ function createSimulationControls(options) {
     speedField.value.textContent = formatSpeed(state.speed)
   }
 
+  function setNpcCount(count) {
+    state.npcCount = normalizeNpcCount(count, npcCountRange)
+    npcCountField.slider.value = String(state.npcCount)
+    npcCountField.input.value = String(state.npcCount)
+  }
+
   setPaused(state.paused)
   setSeedEnabled(state.seedEnabled)
   setSeed(state.seed)
   setSpeed(state.speed)
+  setNpcCount(state.npcCount)
 
   return {
     element: section,
@@ -230,7 +255,8 @@ function createSimulationControls(options) {
     setPaused,
     setSeedEnabled,
     setSeed,
-    setSpeed
+    setSpeed,
+    setNpcCount
   }
 }
 
@@ -304,6 +330,36 @@ function createSpeedField(speed, speedRange) {
   return { label, input, value }
 }
 
+function createNpcCountField(count, countRange) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const controls = document.createElement('div')
+  const slider = document.createElement('input')
+  const input = document.createElement('input')
+
+  label.className = 'dashboard-field dashboard-npc-count-field'
+  text.textContent = 'NPCs'
+  controls.className = 'dashboard-paired-inputs'
+  slider.type = 'range'
+  slider.min = String(countRange.min)
+  slider.max = String(countRange.max)
+  slider.step = String(countRange.step)
+  slider.value = String(normalizeNpcCount(count, countRange))
+  slider.dataset.simulationNpcCountSlider = 'true'
+  input.type = 'number'
+  input.min = String(countRange.min)
+  input.max = String(countRange.max)
+  input.step = '1'
+  input.value = String(normalizeNpcCount(count, countRange))
+  input.dataset.simulationNpcCount = 'true'
+  controls.appendChild(slider)
+  controls.appendChild(input)
+  label.appendChild(text)
+  label.appendChild(controls)
+
+  return { label, slider, input }
+}
+
 function normalizeSpeedRange(range) {
   const min = Number(range && range.min)
   const max = Number(range && range.max)
@@ -314,6 +370,29 @@ function normalizeSpeedRange(range) {
   }
 
   return { min: 1, max: 16, step: 0.25 }
+}
+
+function normalizeNpcCountRange(range) {
+  const min = Number(range && range.min)
+  const max = Number(range && range.max)
+  const step = Number(range && range.step)
+
+  if (Number.isInteger(min) && min >= 0 && Number.isInteger(max) && max >= min && Number.isInteger(step) && step > 0) {
+    return { min, max, step }
+  }
+
+  return { min: 100, max: 10000, step: 100 }
+}
+
+function normalizeNpcCount(count, range) {
+  const countRange = normalizeNpcCountRange(range)
+  const value = Math.round(Number(count))
+
+  if (!Number.isFinite(value)) {
+    return countRange.min
+  }
+
+  return Math.min(Math.max(value, countRange.min), countRange.max)
 }
 
 function clampSpeed(speed, range) {

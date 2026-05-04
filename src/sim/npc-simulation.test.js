@@ -9,11 +9,16 @@ vi.mock('pixi.js', () => ({
     constructor() {
       this.eventMode = 'auto'
       this.parent = null
+      this.drawnRects = 0
     }
 
-    clear() {}
+    clear() {
+      this.drawnRects = 0
+    }
 
     rect() {
+      this.drawnRects += 1
+
       return {
         fill() {}
       }
@@ -135,6 +140,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     count: options.count || 8,
     zorder: 1,
     tileCapacity: options.tileCapacity ?? NPC_CONFIG.tileCapacity,
+    maxVisiblePerTile: options.maxVisiblePerTile ?? NPC_CONFIG.maxVisiblePerTile,
     slotSpacing: NPC_CONFIG.slotSpacing,
     color: 0xe5c748,
     size: NPC_CONFIG.size,
@@ -177,24 +183,27 @@ function snapshot(simulation) {
 }
 
 describe('NPC simulation randomness', () => {
-  it('allows eight NPCs to occupy one normal walkable tile', () => {
+  it('allows more NPCs than visual slots to occupy one normal walkable tile', () => {
     const city = createCity({
       width: 1,
       height: 1,
       rows: ['s'],
       textureRows: [[0]]
     })
-    const simulation = createSimulation('tile-capacity', city, {
-      count: 8,
+    const simulation = createSimulation('unlimited-tile-capacity', city, {
+      count: 24,
       initialUpdate: false
     })
     const occupiedSlots = simulation.occupiedSlots.filter((id) => id !== -1)
     const minCenter = NPC_CONFIG.size / 2
     const maxCenter = city.tileSize - NPC_CONFIG.size / 2
 
-    expect(simulation.tileCapacity).toBe(8)
-    expect(simulation.npcs).toHaveLength(8)
-    expect(occupiedSlots).toHaveLength(8)
+    expect(simulation.tileCapacity).toBe(9)
+    expect(simulation.npcs).toHaveLength(24)
+    expect(occupiedSlots).toHaveLength(0)
+    expect(simulation.occupiedSlotCounts[0]).toBe(24)
+    expect(simulation.npcs.every((npc) => npc.slot.index === -1)).toBe(true)
+    expect(simulation.npcs.every((npc) => npc.slot.id >= 0 && npc.slot.id < simulation.tileCapacity)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 0 && npc.tile.y === 0)).toBe(true)
     expect(simulation.npcs.every((npc) => (
       npc.position.x >= minCenter &&
@@ -202,6 +211,40 @@ describe('NPC simulation randomness', () => {
       npc.position.y >= minCenter &&
       npc.position.y <= maxCenter
     ))).toBe(true)
+    expect(simulation.graphics.drawnRects).toBe(NPC_CONFIG.maxVisiblePerTile * 2)
+
+    simulation.destroy()
+  })
+
+  it('allows movement into a normal tile that already exceeds visual capacity', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('over-capacity-move', city, {
+      count: 1,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    npc.position = { x: city.tileSize / 2, y: city.tileSize / 2 }
+    npc.tile = { x: 0, y: 0, index: 0 }
+    npc.slot = { id: 0, index: -1 }
+    npc.movement.target = null
+    simulation.occupiedSlotCounts.fill(0)
+    simulation.reservedSlotCounts.fill(0)
+    simulation.occupiedSlotCounts[0] = 1
+    simulation.occupiedSlotCounts[1] = simulation.tileCapacity + 4
+
+    simulation.update(1 / 60)
+
+    expect(npc.movement.target).toMatchObject({
+      tile: { x: 1, y: 0, index: 1 },
+      slot: { index: -1 }
+    })
+    expect(simulation.reservedSlotCounts[1]).toBe(1)
 
     simulation.destroy()
   })
@@ -329,7 +372,7 @@ describe('NPC simulation randomness', () => {
     expect(simulation.npcs.every((npc) => npc.present)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 1 && npc.tile.y === 1)).toBe(true)
     expect(simulation.occupiedSlots.filter((id) => id !== -1)).toHaveLength(0)
-    expect(simulation.occupiedSlotCounts.reduce((total, count) => total + count, 0)).toBe(0)
+    expect(simulation.occupiedSlotCounts.reduce((total, count) => total + count, 0)).toBe(4)
 
     simulation.destroy()
   })

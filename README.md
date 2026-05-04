@@ -20,6 +20,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Press `d` to toggle the debug dashboard in the top-right corner.
 - Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
 - Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
+- Use the dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
@@ -86,13 +87,13 @@ Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. P
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn slots, NPC speeds, and routing choices can repeat after a restart.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and routing choices can repeat after a restart.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
-Each walkable tile has eight NPC slots. Collision uses occupied and reserved slot grids, so up to eight NPCs can share one normal tile without stacking visually. Building entrance tiles act as unlimited-capacity holding points for NPCs entering or leaving buildings. Slot anchors use a compact grid inside normal tiles, and NPCs interpolate smoothly between slot positions.
+Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. The simulation keeps tile-level occupied and reserved counts for soft congestion-aware routing, and NPCs interpolate smoothly between anchor positions.
 
-The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed. The debug dashboard can pause, play, restart, change the seed, and speed up simulation time.
+The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed. The debug dashboard can pause, play, restart, change the seed, set the NPC count, and speed up simulation time.
 
 ## Debugging From The Console
 
@@ -126,6 +127,7 @@ window.citySim.play()
 window.citySim.setSeed('demo-seed')
 window.citySim.restart()
 window.citySim.setSpeed(4)
+window.citySim.setNpcCount(2500)
 ```
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.

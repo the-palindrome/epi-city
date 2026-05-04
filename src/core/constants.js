@@ -55,7 +55,8 @@ export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
 export const NPC_CONFIG = Object.freeze({
   count: 1000,
   zorder: 1,
-  tileCapacity: 8,
+  tileCapacity: 9,
+  maxVisiblePerTile: 9,
   slotSpacing: 11,
   color: 0xe5c748,
   size: 9,
@@ -86,6 +87,11 @@ export const SIMULATION_CONFIG = Object.freeze({
     min: 1,
     max: 16,
     step: 0.25
+  }),
+  npcCountRange: Object.freeze({
+    min: 100,
+    max: 10000,
+    step: 100
   })
 })
 

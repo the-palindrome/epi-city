@@ -76,7 +76,8 @@ async function main() {
     const simulationState = {
       seedEnabled: SIMULATION_CONFIG.seedEnabled,
       seed: SIMULATION_CONFIG.seed,
-      speed: SIMULATION_CONFIG.speed
+      speed: SIMULATION_CONFIG.speed,
+      npcCount: NPC_CONFIG.count
     }
     let npcSimulation = null
     const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
@@ -90,6 +91,7 @@ async function main() {
     function createConfiguredNpcSimulation() {
       return createNpcSimulation(city, entityLayer, {
         ...NPC_CONFIG,
+        count: simulationState.npcCount,
         clock: simulationClock,
         random: createNpcRandom()
       })
@@ -98,6 +100,17 @@ async function main() {
     function clampSimulationSpeed(speed) {
       const { min, max } = SIMULATION_CONFIG.speedRange
       const value = Number(speed)
+
+      if (!Number.isFinite(value)) {
+        return min
+      }
+
+      return Math.min(Math.max(value, min), max)
+    }
+
+    function clampNpcCount(count) {
+      const { min, max } = SIMULATION_CONFIG.npcCountRange
+      const value = Math.round(Number(count))
 
       if (!Number.isFinite(value)) {
         return min
@@ -131,6 +144,8 @@ async function main() {
       seed: simulationState.seed,
       speed: simulationState.speed,
       speedRange: SIMULATION_CONFIG.speedRange,
+      npcCount: simulationState.npcCount,
+      npcCountRange: SIMULATION_CONFIG.npcCountRange,
       onPlay: () => game.play(),
       onPause: () => game.pause(),
       onRestart: restartSimulation,
@@ -143,6 +158,11 @@ async function main() {
       onSpeedChange: (speed) => {
         simulationState.speed = speed
         game.setSpeed(speed)
+      },
+      onNpcCountChange: (count) => {
+        simulationState.npcCount = clampNpcCount(count)
+        dashboard.simulation.setNpcCount(simulationState.npcCount)
+        restartSimulation()
       }
     })
 
@@ -181,6 +201,12 @@ async function main() {
       dashboard.simulation.setSeedEnabled(simulationState.seedEnabled)
     }
 
+    function setNpcCount(count) {
+      simulationState.npcCount = clampNpcCount(count)
+      dashboard.simulation.setNpcCount(simulationState.npcCount)
+      restartSimulation()
+    }
+
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -208,6 +234,7 @@ async function main() {
       setSpeed: setSimulationSpeed,
       setSeed: setSimulationSeed,
       setSeedEnabled: setSimulationSeedEnabled,
+      setNpcCount,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       destroy
     }

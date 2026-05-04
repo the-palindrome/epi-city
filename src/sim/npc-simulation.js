@@ -14,10 +14,12 @@ export function createNpcSimulation(city, entityLayer, config) {
   const clock = config.clock || STATIC_CLOCK
   const occupiedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
   const reservedSlots = new Int32Array(city.tiles.length * config.tileCapacity)
-  const occupiedSlotCounts = new Uint16Array(city.tiles.length)
-  const reservedSlotCounts = new Uint16Array(city.tiles.length)
+  const occupiedSlotCounts = new Uint32Array(city.tiles.length)
+  const reservedSlotCounts = new Uint32Array(city.tiles.length)
+  const visibleTileCounts = new Uint8Array(city.tiles.length)
+  const visibleTileIndexes = []
   const slotOffsets = createNpcSlotOffsets(city, config)
-  const spawnSlots = collectNpcSpawnSlots(city, config.tileCapacity)
+  const spawnTiles = collectNpcSpawnTiles(city)
   const buildingsByType = collectBuildingsByType(city)
   const unlimitedCapacityTiles = collectBuildingEntranceTiles(city)
   const routePlanner = new NpcRoutePlanner(config)
@@ -50,15 +52,14 @@ export function createNpcSimulation(city, entityLayer, config) {
   for (let id = 0; id < config.count; id += 1) {
     const buildingAssignment = createNpcBuildingAssignment(buildingsByType, random)
     const timetable = createNpcTimetable(city, buildingAssignment, random, config)
-    const spawnState = createNpcSpawnState(city, spawnSlots, timetable, clock, random, config, slotOffsets)
+    const spawnState = createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets)
 
     if (!spawnState) {
       break
     }
 
     if (spawnState.present) {
-      occupiedSlots[spawnState.slot.index] = id
-      incrementSlotCount(occupiedSlotCounts, spawnState.slot.index, config.tileCapacity)
+      occupyNpcTile(spawnState.tile.index, context)
     }
 
     npcs.push(new NpcEntity({
@@ -104,7 +105,7 @@ export function createNpcSimulation(city, entityLayer, config) {
       return
     }
 
-    drawNpcs(graphics, npcs, config)
+    drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes)
   }
 
   render()
@@ -329,7 +330,7 @@ function createTimetableElement(id, building, startHour, endHour, city) {
   }
 }
 
-function createNpcSpawnState(city, spawnSlots, timetable, clock, random, config, slotOffsets) {
+function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets) {
   const activeElement = timetable.getActiveElement(clock.getTimeOfDayHours())
 
   if (activeElement) {
@@ -346,37 +347,35 @@ function createNpcSpawnState(city, spawnSlots, timetable, clock, random, config,
     }
   }
 
-  if (spawnSlots.length === 0) {
+  if (spawnTiles.length === 0) {
     return null
   }
 
-  const spawnSlotIndex = takeRandomArrayItem(spawnSlots, random)
-  const spawnSlot = npcSlotFromIndex(spawnSlotIndex, config.tileCapacity)
-  const tileIndex = spawnSlot.tileIndex
+  const spawnAnchor = random.int(spawnTiles.length * config.tileCapacity)
+  const tileIndex = spawnTiles[Math.floor(spawnAnchor / config.tileCapacity)]
+  const slot = spawnAnchor % config.tileCapacity
   const tileX = tileIndex % city.width
   const tileY = Math.floor(tileIndex / city.width)
 
   return {
     present: true,
-    position: tileSlotPosition(city, tileX, tileY, spawnSlot.slot, config, slotOffsets),
+    position: tileSlotPosition(city, tileX, tileY, slot, config, slotOffsets),
     tile: { x: tileX, y: tileY, index: tileIndex },
-    slot: { id: spawnSlot.slot, index: spawnSlotIndex },
+    slot: { id: slot, index: -1 },
     locationState: null
   }
 }
 
-function collectNpcSpawnSlots(city, tileCapacity) {
-  const slots = []
+function collectNpcSpawnTiles(city) {
+  const tiles = []
 
   for (let index = 0; index < city.tileWalkable.length; index += 1) {
     if (city.tileWalkable[index] && !city.tileCrosswalk[index]) {
-      for (let slot = 0; slot < tileCapacity; slot += 1) {
-        slots.push(npcSlotIndex(index, slot, tileCapacity))
-      }
+      tiles.push(index)
     }
   }
 
-  return slots
+  return tiles
 }
 
 function refreshNpcGoal(npc, timeOfDayHours, context) {
@@ -465,9 +464,9 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const maxStep = npc.movement.speed * deltaSeconds
 
   if (distance <= maxStep || distance === 0) {
-    releaseOccupiedNpcSlot(npc.slot.index, context)
-    releaseReservedNpcSlot(target.slot.index, context)
-    occupyNpcSlot(target.slot.index, npc.id, context)
+    releaseOccupiedNpcTile(npc.tile.index, context)
+    releaseReservedNpcTile(target.tile.index, context)
+    occupyNpcTile(target.tile.index, context)
 
     npc.position.x = target.position.x
     npc.position.y = target.position.y
@@ -617,7 +616,7 @@ function chooseRandomNextTile(npc, context) {
 }
 
 function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null) {
-  const { city, occupiedSlots, reservedSlots, occupiedSlotCounts, reservedSlotCounts, random, config } = context
+  const { city, random, config } = context
   const targetIndex = city.index(tileX, tileY)
   const canStep = typeof city.canStepIndex === 'function'
     ? city.canStepIndex(npc.tile.index, targetIndex, 'pedestrian')
@@ -629,26 +628,16 @@ function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null) {
 
   const targetSlot = findAvailableNpcSlot(
     targetIndex,
-    occupiedSlots,
-    reservedSlots,
-    occupiedSlotCounts,
-    reservedSlotCounts,
     random,
     config.tileCapacity,
     context.unlimitedCapacityTiles
   )
 
-  if (!targetSlot) {
-    return false
-  }
-
   const target = targetSlot.unlimited
     ? tileCenterPosition(city, tileX, tileY)
     : tileSlotPosition(city, tileX, tileY, targetSlot.slot, config, context.slotOffsets)
 
-  if (targetSlot.slotIndex >= 0) {
-    reserveNpcSlot(targetSlot.slotIndex, npc.id, context)
-  }
+  reserveNpcTile(targetIndex, context)
 
   npc.movement.target = {
     position: target,
@@ -671,26 +660,16 @@ function tryExitCurrentLocation(npc, context) {
   const location = npc.locationState.location
   const targetSlot = findAvailableNpcSlot(
     location.index,
-    context.occupiedSlots,
-    context.reservedSlots,
-    context.occupiedSlotCounts,
-    context.reservedSlotCounts,
     context.random,
     context.config.tileCapacity,
     context.unlimitedCapacityTiles
   )
 
-  if (!targetSlot) {
-    return false
-  }
-
   const position = targetSlot.unlimited
     ? tileCenterPosition(context.city, location.x, location.y)
     : tileSlotPosition(context.city, location.x, location.y, targetSlot.slot, context.config, context.slotOffsets)
 
-  if (targetSlot.slotIndex >= 0) {
-    occupyNpcSlot(targetSlot.slotIndex, npc.id, context)
-  }
+  occupyNpcTile(location.index, context)
 
   npc.present = true
   npc.locationState = null
@@ -725,99 +704,47 @@ function enterGoalLocation(npc, context) {
 }
 
 function releaseNpcSlot(npc, context) {
-  releaseOccupiedNpcSlot(npc.slot.index, context)
+  releaseOccupiedNpcTile(npc.tile.index, context)
 }
 
-function findAvailableNpcSlot(tileIndex, occupiedSlots, reservedSlots, occupiedSlotCounts, reservedSlotCounts, random, tileCapacity, unlimitedCapacityTiles) {
+function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
     return { slot: -1, slotIndex: -1, unlimited: true }
   }
 
-  if (occupiedSlotCounts[tileIndex] + reservedSlotCounts[tileIndex] >= tileCapacity) {
-    return null
-  }
-
-  const startSlot = random.int(tileCapacity)
-
-  for (let offset = 0; offset < tileCapacity; offset += 1) {
-    const slot = (startSlot + offset) % tileCapacity
-    const slotIndex = npcSlotIndex(tileIndex, slot, tileCapacity)
-
-    if (occupiedSlots[slotIndex] === -1 && reservedSlots[slotIndex] === -1) {
-      return { slot, slotIndex, unlimited: false }
-    }
-  }
-
-  return null
+  return { slot: random.int(tileCapacity), slotIndex: -1, unlimited: false }
 }
 
-function npcSlotIndex(tileIndex, slot, tileCapacity) {
-  return tileIndex * tileCapacity + slot
+function occupyNpcTile(tileIndex, context) {
+  incrementTileCount(context.occupiedSlotCounts, tileIndex)
 }
 
-function incrementSlotCount(counts, slotIndex, tileCapacity) {
-  if (slotIndex >= 0) {
-    counts[Math.floor(slotIndex / tileCapacity)] += 1
-  }
+function reserveNpcTile(tileIndex, context) {
+  incrementTileCount(context.reservedSlotCounts, tileIndex)
 }
 
-function decrementSlotCount(counts, slotIndex, tileCapacity) {
-  if (slotIndex >= 0) {
-    const tileIndex = Math.floor(slotIndex / tileCapacity)
-
-    if (counts[tileIndex] > 0) {
-      counts[tileIndex] -= 1
-    }
-  }
+function releaseOccupiedNpcTile(tileIndex, context) {
+  decrementTileCount(context.occupiedSlotCounts, tileIndex)
 }
 
-function occupyNpcSlot(slotIndex, npcId, context) {
-  if (slotIndex < 0) {
+function releaseReservedNpcTile(tileIndex, context) {
+  decrementTileCount(context.reservedSlotCounts, tileIndex)
+}
+
+function incrementTileCount(counts, tileIndex) {
+  if (tileIndex < 0) {
     return
   }
 
-  if (context.occupiedSlots[slotIndex] === -1) {
-    incrementSlotCount(context.occupiedSlotCounts, slotIndex, context.config.tileCapacity)
-  }
-
-  context.occupiedSlots[slotIndex] = npcId
+  counts[tileIndex] += 1
 }
 
-function reserveNpcSlot(slotIndex, npcId, context) {
-  if (slotIndex < 0) {
+function decrementTileCount(counts, tileIndex) {
+  if (tileIndex < 0 || counts[tileIndex] === 0) {
     return
   }
 
-  if (context.reservedSlots[slotIndex] === -1) {
-    incrementSlotCount(context.reservedSlotCounts, slotIndex, context.config.tileCapacity)
-  }
-
-  context.reservedSlots[slotIndex] = npcId
-}
-
-function releaseOccupiedNpcSlot(slotIndex, context) {
-  if (slotIndex < 0 || context.occupiedSlots[slotIndex] === -1) {
-    return
-  }
-
-  context.occupiedSlots[slotIndex] = -1
-  decrementSlotCount(context.occupiedSlotCounts, slotIndex, context.config.tileCapacity)
-}
-
-function releaseReservedNpcSlot(slotIndex, context) {
-  if (slotIndex < 0 || context.reservedSlots[slotIndex] === -1) {
-    return
-  }
-
-  context.reservedSlots[slotIndex] = -1
-  decrementSlotCount(context.reservedSlotCounts, slotIndex, context.config.tileCapacity)
-}
-
-function npcSlotFromIndex(slotIndex, tileCapacity) {
-  return {
-    tileIndex: Math.floor(slotIndex / tileCapacity),
-    slot: slotIndex % tileCapacity
-  }
+  counts[tileIndex] -= 1
 }
 
 function createNpcSlotOffsets(city, config) {
@@ -881,16 +808,61 @@ function tileCenterPosition(city, tileX, tileY) {
   }
 }
 
-function drawNpcs(graphics, npcs, config) {
+function drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes) {
   graphics.clear()
+  const visibleLimit = Math.min(
+    positiveIntegerOrDefault(config.maxVisiblePerTile, NPC_CONFIG.maxVisiblePerTile),
+    positiveIntegerOrDefault(config.tileCapacity, NPC_CONFIG.tileCapacity)
+  )
 
   for (const npc of npcs) {
     if (!npc.present) {
       continue
     }
 
+    if (!reserveVisibleNpcTile(tileIndexAtPosition(city, npc.position), visibleLimit, visibleTileCounts, visibleTileIndexes)) {
+      continue
+    }
+
     drawNpcBlob(graphics, npc.position.x, npc.position.y, config.size, config.color)
   }
+
+  for (const tileIndex of visibleTileIndexes) {
+    visibleTileCounts[tileIndex] = 0
+  }
+
+  visibleTileIndexes.length = 0
+}
+
+function tileIndexAtPosition(city, position) {
+  const tileX = Math.floor(position.x / city.tileSize)
+  const tileY = Math.floor(position.y / city.tileSize)
+
+  if (tileX < 0 || tileY < 0 || tileX >= city.width || tileY >= city.height) {
+    return -1
+  }
+
+  return tileY * city.width + tileX
+}
+
+function reserveVisibleNpcTile(tileIndex, visibleLimit, visibleTileCounts, visibleTileIndexes) {
+  if (tileIndex < 0) {
+    return true
+  }
+
+  const count = visibleTileCounts[tileIndex]
+
+  if (count >= visibleLimit) {
+    return false
+  }
+
+  if (count === 0) {
+    visibleTileIndexes.push(tileIndex)
+  }
+
+  visibleTileCounts[tileIndex] = count + 1
+
+  return true
 }
 
 function drawNpcBlob(graphics, x, y, size, color) {
@@ -899,16 +871,6 @@ function drawNpcBlob(graphics, x, y, size, color) {
 
   fillRect(graphics, px + 1, py, size - 2, size, color)
   fillRect(graphics, px, py + 2, size, size - 4, color)
-}
-
-function takeRandomArrayItem(items, random) {
-  const index = random.int(items.length)
-  const item = items[index]
-
-  items[index] = items[items.length - 1]
-  items.pop()
-
-  return item
 }
 
 function createEmptyRouteState() {
