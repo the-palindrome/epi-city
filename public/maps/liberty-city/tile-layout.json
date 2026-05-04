@@ -1871,7 +1871,7 @@
       },
       {
         "id": "building-0004",
-        "type": "residential",
+        "type": "hospital",
         "spans": [
           [
             7,
@@ -9485,7 +9485,7 @@
       },
       {
         "id": "building-0198",
-        "type": "hospital",
+        "type": "residential",
         "spans": [
           [
             97,
@@ -19646,7 +19646,7 @@
       },
       {
         "id": "building-0427",
-        "type": "hospital",
+        "type": "residential",
         "spans": [
           [
             227,
