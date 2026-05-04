@@ -1,0 +1,64 @@
+const HOURS_PER_DAY = 24
+const SECONDS_PER_HOUR = 3600
+
+export class SimulationClock {
+  constructor(options = {}) {
+    this.secondsPerSimulationHour = positiveNumberOrDefault(options.secondsPerSimulationHour, 60)
+    this.startHour = normalizeHour(numberOrDefault(options.startHour, 0))
+    this.elapsedSimulationSeconds = 0
+  }
+
+  update(deltaSeconds) {
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+      return
+    }
+
+    this.elapsedSimulationSeconds += deltaSeconds * SECONDS_PER_HOUR / this.secondsPerSimulationHour
+  }
+
+  reset() {
+    this.elapsedSimulationSeconds = 0
+  }
+
+  getElapsedSimulationSeconds() {
+    return this.elapsedSimulationSeconds
+  }
+
+  getTimeOfDayHours() {
+    return normalizeHour(this.startHour + this.elapsedSimulationSeconds / SECONDS_PER_HOUR)
+  }
+
+  getDayIndex() {
+    return Math.floor((this.startHour * SECONDS_PER_HOUR + this.elapsedSimulationSeconds) / (HOURS_PER_DAY * SECONDS_PER_HOUR))
+  }
+
+  getTimeOfDay() {
+    const totalMinutes = Math.floor(this.getTimeOfDayHours() * 60)
+    const hour = Math.floor(totalMinutes / 60) % HOURS_PER_DAY
+    const minute = totalMinutes % 60
+
+    return { hour, minute }
+  }
+
+  formatTimeOfDay() {
+    const { hour, minute } = this.getTimeOfDay()
+
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  }
+}
+
+function positiveNumberOrDefault(value, fallback) {
+  const number = Number(value)
+
+  return Number.isFinite(number) && number > 0 ? number : fallback
+}
+
+function numberOrDefault(value, fallback) {
+  const number = Number(value)
+
+  return Number.isFinite(number) ? number : fallback
+}
+
+function normalizeHour(hour) {
+  return ((hour % HOURS_PER_DAY) + HOURS_PER_DAY) % HOURS_PER_DAY
+}

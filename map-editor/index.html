@@ -916,6 +916,7 @@
           return {
             id,
             type: previous ? previous.type : DEFAULT_BUILDING_TYPE,
+            ...(previous && previous.entrance ? { entrance: { ...previous.entrance } } : {}),
             spans: spansForBuildingCells(component.cells)
           };
         });
@@ -991,7 +992,8 @@
             for (let offset = 0; offset < length; offset += 1) {
               byCell.set(tileKey(x + offset, y), {
                 id: building.id,
-                type: building.type
+                type: building.type,
+                entrance: building.entrance ? { ...building.entrance } : null
               });
             }
           }
@@ -1070,11 +1072,38 @@
               covered[index] = buildingIndex;
             }
           }
+
+          validateBuildingEntrance(building);
         }
+      }
+
+      function validateBuildingEntrance(building) {
+        if (building.entrance === undefined) {
+          return;
+        }
+
+        const entrance = building.entrance;
+
+        if (!entrance || typeof entrance !== 'object' || Array.isArray(entrance)) {
+          throw new Error(`Building "${building.id}" entrance must be an object with integer x and y.`);
+        }
+
+        if (!Number.isInteger(entrance.x) || !Number.isInteger(entrance.y) || !inGrid(entrance.x, entrance.y)) {
+          throw new Error(`Building "${building.id}" entrance must be inside the map grid.`);
+        }
+
+        if (!buildingSpansContainTile(building.spans, entrance.x, entrance.y)) {
+          throw new Error(`Building "${building.id}" entrance must be inside that building.`);
+        }
+      }
+
+      function buildingSpansContainTile(spans, tileX, tileY) {
+        return spans.some(([y, x, length]) => y === tileY && tileX >= x && tileX < x + length);
       }
 
       function pickPreviousBuildingMetadata(component, previousByCell, usedIds) {
         const counts = new Map();
+        const componentCells = new Set(component.cells.map(([x, y]) => tileKey(x, y)));
 
         for (const [x, y] of component.cells) {
           const previous = previousByCell.get(tileKey(x, y));
@@ -1086,6 +1115,7 @@
           const current = counts.get(previous.id) || {
             id: previous.id,
             type: previous.type,
+            entrance: previous.entrance,
             count: 0
           };
           current.count += 1;
@@ -1104,7 +1134,10 @@
           usedIds.add(best.id);
           return {
             id: best.id,
-            type: best.type
+            type: best.type,
+            entrance: best.entrance && componentCells.has(tileKey(best.entrance.x, best.entrance.y))
+              ? { ...best.entrance }
+              : null
           };
         }
 
@@ -1999,11 +2032,20 @@
         return {
           encoding: BUILDING_LAYOUT_ENCODING,
           defaultType: DEFAULT_BUILDING_TYPE,
-          items: state.map.buildings.items.map((building) => ({
-            id: building.id,
-            type: building.type,
-            spans: building.spans.map((span) => [...span])
-          }))
+          items: state.map.buildings.items.map((building) => {
+            const item = {
+              id: building.id,
+              type: building.type
+            };
+
+            if (building.entrance) {
+              item.entrance = { ...building.entrance };
+            }
+
+            item.spans = building.spans.map((span) => [...span]);
+
+            return item;
+          })
         };
       }
 

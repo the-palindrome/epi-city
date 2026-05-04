@@ -54,12 +54,48 @@ export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
 
 export const NPC_CONFIG = Object.freeze({
   count: 1000,
-  tileCapacity: 2,
+  zorder: 1,
+  tileCapacity: 9,
+  maxVisiblePerTile: 9,
   slotSpacing: 11,
   color: 0xe5c748,
   size: 9,
   minSpeed: 34,
-  maxSpeed: 58
+  maxSpeed: 58,
+  workStartHour: 9,
+  workEndHour: 17,
+  scheduleVariationHours: 0.75,
+  routePlanBudget: 24,
+  routeRetrySeconds: 1,
+  routeBlockedReplanSeconds: 2,
+  routeVariationChance: 0.35,
+  routeVariationSlack: 20
+})
+
+export const SIMULATION_CONFIG = Object.freeze({
+  seedEnabled: true,
+  seed: 'epi-city',
+  speed: 1,
+  dayNightOverlayEnabled: true,
+  clock: Object.freeze({
+    startHour: 8,
+    secondsPerSimulationHour: 60
+  }),
+  speedRange: Object.freeze({
+    min: 1,
+    max: 16,
+    step: 0.25
+  }),
+  npcCountRange: Object.freeze({
+    min: 100,
+    max: 10000,
+    step: 100
+  })
+})
+
+export const TILE_ZORDERS = Object.freeze({
+  default: 0,
+  building: 2
 })
 
 export const DASHBOARD_OVERLAYS = Object.freeze([

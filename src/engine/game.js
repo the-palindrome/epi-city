@@ -1,7 +1,12 @@
 export class Game {
-  constructor(app) {
+  constructor(app, options = {}) {
     this.app = app
     this.systems = []
+    this.fixedDeltaSeconds = options.fixedDeltaSeconds || 1 / 60
+    this.maxFixedSteps = options.maxFixedSteps || 240
+    this.accumulator = 0
+    this.paused = false
+    this.timeScale = 1
     this.loop = new GameLoop({
       update: (deltaSeconds) => this.update(deltaSeconds),
       render: () => this.render()
@@ -16,6 +21,16 @@ export class Game {
     this.systems.push(system)
   }
 
+  removeSystem(system) {
+    const index = this.systems.indexOf(system)
+
+    if (index === -1) {
+      return
+    }
+
+    this.systems.splice(index, 1)
+  }
+
   start() {
     this.loop.start()
   }
@@ -24,7 +39,61 @@ export class Game {
     this.loop.stop()
   }
 
+  play() {
+    this.paused = false
+    this.start()
+  }
+
+  pause() {
+    this.paused = true
+    this.accumulator = 0
+  }
+
+  togglePaused(force) {
+    const shouldPause = typeof force === 'boolean' ? force : !this.paused
+
+    if (shouldPause) {
+      this.pause()
+    } else {
+      this.play()
+    }
+  }
+
+  setSpeed(multiplier) {
+    const nextSpeed = Number(multiplier)
+
+    if (!Number.isFinite(nextSpeed) || nextSpeed <= 0) {
+      throw new Error('Simulation speed must be a positive number.')
+    }
+
+    this.timeScale = nextSpeed
+  }
+
   update(deltaSeconds) {
+    if (this.paused) {
+      return
+    }
+
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+      return
+    }
+
+    this.accumulator += deltaSeconds * this.timeScale
+
+    let stepCount = 0
+
+    while (this.accumulator >= this.fixedDeltaSeconds && stepCount < this.maxFixedSteps) {
+      this.updateSystems(this.fixedDeltaSeconds)
+      this.accumulator -= this.fixedDeltaSeconds
+      stepCount += 1
+    }
+
+    if (stepCount === this.maxFixedSteps && this.accumulator >= this.fixedDeltaSeconds) {
+      this.accumulator = 0
+    }
+  }
+
+  updateSystems(deltaSeconds) {
     for (const system of this.systems) {
       if (typeof system.update === 'function') {
         system.update(deltaSeconds)

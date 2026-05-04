@@ -14,10 +14,10 @@ Startup follows this sequence:
 4. `loadCityMap()` fetches the semantic tile layout, fetches the texture rows layout, validates both files, and returns normalized map data.
 5. `compileCityMap()` converts the normalized semantic rows and texture rows into typed arrays.
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
-7. `renderCity()` draws one sprite per map cell, grouped into 16x16 containers.
+7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds keyboard-controlled behavior overlays for movement debugging and caches overlay layers after their first build.
-10. `createNpcSimulation()` creates the NPC system, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, `update(dt)`, and `render()` each animation frame.
+9. `installDebugDashboard()` adds simulation controls, the clock display, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
+10. `SimulationClock` and `createNpcSimulation()` create the clock and NPC systems with the configured random source, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
 
@@ -65,7 +65,7 @@ Startup follows this sequence:
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
-The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a string `type`, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile.
+The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a string `type`, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint.
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
@@ -82,46 +82,71 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `tileTextureIds` | Numeric `Uint32Array` with one atlas-frame ID per cell. |
 | `tileWalkable`, `tileDrivable`, `tileParkable` | Numeric `Uint8Array` layers with generated gameplay behavior per cell. |
 | `tileCrosswalk` | Numeric `Uint8Array` layer marking cells controlled by the crosswalk signal. |
-| `buildings`, `tileBuildingIndexes` | Runtime building records and tile-to-building lookup data. |
+| `tileZOrders` | Numeric `Int16Array` layer with each tile's render order. Normal tiles use `0`; building tiles use `2`. |
+| `buildings`, `tileBuildingIndexes` | Runtime building records, including entrance coordinates, and tile-to-building lookup data. |
 | `legend` | Normalized symbol metadata keyed by map symbol. |
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, buildingId, buildingType }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType, buildingEntrance }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getBuildingId(x, y)`, `getBuilding(x, y)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
 | `isWalkable(x, y)`, `isDrivable(x, y)`, `isParkable(x, y)` | Checks generated tile behavior layers directly. |
 | `isCrosswalk(x, y)` | Checks whether a cell is a crosswalk tile. |
-| `getCrosswalkSignalState()`, `setCrosswalkSignalState(state)`, `updateCrosswalkSignals(dt)` | Reads, tests, and advances the shared crosswalk signal cycle. |
+| `getCrosswalkSignalState()`, `setCrosswalkSignalState(state)`, `resetCrosswalkSignals()`, `updateCrosswalkSignals(dt)` | Reads, tests, resets, and advances the shared crosswalk signal cycle. |
 | `isPassable(x, y, mode)` | Checks movement passability for `vehicle` or `pedestrian`. |
 | `canStep(fromX, fromY, toX, toY, mode)` | Checks a single movement step, including vehicle diagonal corner rules. |
+| `canStepIndex(fromIndex, toIndex, mode)` | Checks a single movement step by tile index for hot simulation loops. |
 | `nearestPassableTile(x, y, mode)` | Finds the closest tile usable by the movement mode. |
 | `findPath(start, end, mode)` | Runs on-demand A* and returns `{ x, y }` path points. |
+| `findCachedPath(start, end, mode)` | Uses a cached destination route field and returns `{ x, y }` path points. |
+| `findCachedPathIndexes(start, end, mode)` | Uses the same route field and returns tile indexes for NPC routing. |
+| `navigationCacheKey`, `getNavigationCacheStats()` | Exposes the compiled navigation signature and route-field cache counters for debugging. |
 
 The typed-array representation keeps simulation code numeric and predictable. JSON remains the authoring format; typed arrays are the runtime format.
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. Building entrance cells keep the `building` category, but `compileCityMap()` marks them walkable after validating the entrance metadata.
 
-The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow, NPCs already on a crosswalk can continue to another crosswalk tile or step off the crossing, but NPCs outside the crossing cannot begin entering it. During red, NPCs cannot step onto crosswalk tiles, though any NPC already on one can still step off to a non-crosswalk walkable tile.
+The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow or red, NPCs outside the crossing cannot begin entering it, but any NPC already on a crosswalk can continue moving through crosswalk tiles or step off to another walkable tile.
 
 The checked-in layout stores behavior as explicit legend properties instead of deriving movement masks from category names at runtime. This keeps map-editor corrections authoritative once a tile configuration is saved.
 
 A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagonal moves. The heuristic uses octile distance, which matches the movement model. Pedestrian movement exposes every adjacent `walkable` tile, including diagonal neighbors. Vehicle movement keeps stricter diagonal corner checks by requiring both adjacent cardinal cells to be drivable.
 
-`findPath()` currently runs on demand and reuses per-city scratch arrays for its open/closed/came-from/score state. If hundreds of NPCs request routes every frame, add route caching, hierarchical routing, or per-mode navigation graphs before tuning visual rendering.
+`compileCityMap()` precomputes movement masks and reverse movement masks for pedestrian signal states and vehicle movement. The runtime caches these typed-array navigation structures by a hash of the map's walkable, drivable, and crosswalk layers. When the map folder changes those semantic layers, the hash changes and the runtime rebuilds the navigation data for the new layout.
+
+`findPath()` runs on-demand A* with stamped typed arrays, so searches reuse scratch memory without clearing the whole map on each route. `findCachedPath()` builds a reverse route field for the current destination and movement state, caches the field with an LRU policy, and extracts future paths to that same destination by following next-hop indexes. This matches NPC commute patterns because many NPCs route to the same work or home entrances.
+
+NPC route extraction uses the same route-field distances for path variation. On each extracted step, the planner usually takes the shortest next hop, but `routeVariationChance` lets it choose among near-good steps whose scores stay within `routeVariationSlack`. Every candidate must still reduce distance to the destination, so variation changes route shape without allowing wandering loops.
+
+## Simulation Clock
+
+`Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
+
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes the NPC count as a slider plus exact number input, and includes a checkbox for the day-night overlay. Changing the NPC count restarts the NPC system with a clamped count from 100 to 10000; the default remains 1000.
+
+`SimulationClock` advances one simulated hour for every 60 game seconds. Since `Game` applies speed before fixed updates reach systems, `1x` speed makes one real minute equal one simulation hour, and higher speeds multiply that rate. Restarting the simulation resets the clock to the configured start hour.
 
 ## NPC Simulation
 
-`createNpcSimulation()` spawns 1000 pedestrian NPCs after the map renders. NPCs start on walkable tile slots, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs, and move smoothly from slot anchor to slot anchor.
+`createNpcSimulation()` creates 1000 pedestrian NPCs after the map renders. NPCs start inside their active timetable location when they have one, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs while outside, and move smoothly from slot anchor to slot anchor.
 
-NPCs are plain objects with the state the simulation needs:
+NPC entities expose the state the simulation needs:
 
 ```js
 {
   id,
+  zorder,
+  home,
+  work,
+  timetable,
+  goal,
+  present,
+  locationState,
+  routing,
   position: { x, y },
   tile: { x, y, index },
   slot: { id, index },
@@ -129,11 +154,13 @@ NPCs are plain objects with the state the simulation needs:
 }
 ```
 
-The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop.
+The simulation owns movement decisions and tile occupancy bookkeeping. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
 
-NPCs do not spawn directly on crosswalk tiles. Once spawned, random movement uses `city.canStep()` so crosswalk signal rules are enforced at the same boundary as other tile movement checks.
+The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn anchor selection, speed assignment, and route choices repeat when the simulation restarts with the same seed.
 
-Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved. Movement selection uses the city's non-allocating step checks instead of building a fresh neighbor array for each NPC decision.
+NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
+
+Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
 
 ## Texture Sets
 
@@ -163,21 +190,21 @@ The extraction script checks every map cell against the original image. Each `te
 
 ## Rendering Strategy
 
-The `world` container has separate `map`, `overlays`, and `actors` layers. Map sprites stay at the bottom, debug overlays render above the city, and NPC actors render on top.
+The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below NPCs while building overlays stay above building tiles.
 
-`renderCity()` groups sprites into 16x16 tile containers. Grouping keeps the display tree structured by map region while preserving per-cell source textures. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
+`renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
 
-Pixi automatic rendering is disabled during app initialization. The app-level `GameLoop` owns frame timing instead: it clamps delta time, calls each system's `update(deltaSeconds)`, calls each system's `render()`, then calls `app.render()` once. Static map rendering builds the map layer once at startup.
+Pixi automatic rendering is disabled during app initialization. The app-level `GameLoop` owns frame timing instead: it clamps delta time, calls each system's `update(deltaSeconds)`, calls each system's `render()`, then calls `app.render()` once. Static tile rendering builds the entity layer once at startup.
 
 The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in default runtime assets live in `public/maps/liberty-city` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
 
 ## Debug Dashboard
 
-Press `d` to toggle the top-right debug dashboard. The dashboard exposes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+Press `d` to toggle the top-right debug dashboard. The dashboard displays the simulation clock, exposes a day-night overlay checkbox, and includes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
 
 The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
 
-Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without mixing debug visuals into the map or actor layers.
+Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without covering NPCs.
 
 ## Map Editor
 
@@ -221,6 +248,16 @@ window.citySim.city.getTextureId(100, 100)
 window.citySim.city.nearestPassableTile(120, 140, 'pedestrian')
 window.citySim.city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
+window.citySim.simulationClock.formatTimeOfDay()
+window.citySim.pause()
+window.citySim.play()
+window.citySim.setSeed('demo-seed')
+window.citySim.restart()
+window.citySim.setSpeed(4)
+window.citySim.setDayNightOverlayEnabled(false)
+window.citySim.npcs[0].home
+window.citySim.npcs[0].work
+window.citySim.npcs[0].timetable.elements
 window.citySim.npcs[0].position
 window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()
@@ -230,5 +267,5 @@ window.citySim.dashboard.setOverlay('walkable', true)
 ## Near-Term Extension Points
 
 - Add focused tests around editor-side validators once the browser editor is split into modules.
-- Add route caching or navigation graphs before many NPCs request long paths frequently.
+- Add hierarchical routing if future maps become much larger than the current 256x256 Liberty City layout.
 - Add simulation metadata outside the base tile category when infection dynamics need population, occupancy, or district information.

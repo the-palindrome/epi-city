@@ -62,6 +62,34 @@ function createCrosswalkMap(overrides = {}) {
   }
 }
 
+function createOpenSidewalkMap(overrides = {}) {
+  return {
+    width: 3,
+    height: 3,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: []
+    },
+    rows: [
+      'sss',
+      'sss',
+      'sss'
+    ],
+    textureRows: [
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0]
+    ],
+    ...overrides
+  }
+}
+
 describe('city map validation and compile', () => {
   it('normalizes valid authoring JSON into the runtime city API', () => {
     const map = validateCityMap(createMap())
@@ -71,9 +99,16 @@ describe('city map validation and compile', () => {
     expect(city.getTileVariant(1, 1)).toMatchObject({
       category: 'building',
       textureId: 1,
+      zorder: 2,
       buildingId: 'building-0001',
       buildingType: 'residential'
     })
+    expect(city.getTileVariant(0, 0)).toMatchObject({
+      category: 'sidewalk',
+      zorder: 0
+    })
+    expect(city.tileZOrders[city.index(1, 1)]).toBe(2)
+    expect(city.tileZOrders[city.index(0, 0)]).toBe(0)
     expect(city.isWalkable(0, 0)).toBe(true)
     expect(city.isDrivable(0, 2)).toBe(true)
   })
@@ -92,22 +127,96 @@ describe('city map validation and compile', () => {
     expect(city.isCrosswalk(1, 0)).toBe(true)
   })
 
+  it('keeps building entrance metadata and makes the entrance tile walkable', () => {
+    const city = compileCityMap(validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultType: 'residential',
+        items: [
+          {
+            id: 'building-0001',
+            type: 'residential',
+            entrance: { x: 1, y: 1 },
+            spans: [[1, 1, 1]]
+          }
+        ]
+      }
+    })))
+
+    expect(city.getTile(1, 1)).toBe('building')
+    expect(city.getBuilding(1, 1)).toMatchObject({
+      id: 'building-0001',
+      entrance: { x: 1, y: 1 }
+    })
+    expect(city.getTileVariant(1, 1)).toMatchObject({
+      category: 'building',
+      walkable: true,
+      buildingEntrance: true
+    })
+    expect(city.tileWalkable[city.index(1, 1)]).toBe(1)
+    expect(city.isWalkable(1, 1)).toBe(true)
+  })
+
   it('gates pedestrian crosswalk entry by signal state while letting vehicles drive', () => {
     const city = compileCityMap(validateCityMap(createCrosswalkMap()))
 
     city.setCrosswalkSignalState('green')
     expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(true)
+    expect(city.canStepIndex(city.index(0, 0), city.index(1, 0), 'pedestrian')).toBe(true)
 
     city.setCrosswalkSignalState('yellow')
     expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(false)
+    expect(city.canStepIndex(city.index(0, 0), city.index(1, 0), 'pedestrian')).toBe(false)
     expect(city.canStep(1, 0, 2, 0, 'pedestrian')).toBe(true)
+    expect(city.canStepIndex(city.index(1, 0), city.index(2, 0), 'pedestrian')).toBe(true)
     expect(city.canStep(2, 0, 3, 0, 'pedestrian')).toBe(true)
 
     city.setCrosswalkSignalState('red')
     expect(city.canStep(0, 0, 1, 0, 'pedestrian')).toBe(false)
-    expect(city.canStep(1, 0, 2, 0, 'pedestrian')).toBe(false)
+    expect(city.canStepIndex(city.index(0, 0), city.index(1, 0), 'pedestrian')).toBe(false)
+    expect(city.canStep(1, 0, 2, 0, 'pedestrian')).toBe(true)
+    expect(city.canStepIndex(city.index(1, 0), city.index(2, 0), 'pedestrian')).toBe(true)
     expect(city.canStep(2, 0, 3, 0, 'pedestrian')).toBe(true)
     expect(city.canStep(1, 1, 1, 0, 'vehicle')).toBe(true)
+  })
+
+  it('keeps cached pedestrian paths aligned with crosswalk signal state', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap()))
+
+    city.setCrosswalkSignalState('red')
+    expect(city.findCachedPath({ x: 0, y: 0 }, { x: 3, y: 0 }, 'pedestrian')).toEqual([])
+
+    city.setCrosswalkSignalState('green')
+    expect(city.findCachedPath({ x: 0, y: 0 }, { x: 3, y: 0 }, 'pedestrian')).toEqual(
+      city.findPath({ x: 0, y: 0 }, { x: 3, y: 0 }, 'pedestrian')
+    )
+
+    const stats = city.getNavigationCacheStats()
+
+    expect(stats.routeFieldHits).toBeGreaterThanOrEqual(0)
+    expect(stats.routeFields).toBeGreaterThanOrEqual(2)
+  })
+
+  it('chooses among near-good cached route steps when variation is enabled', () => {
+    const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
+    const shortest = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')
+    const varied = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian', {
+      variation: {
+        random: {
+          next: () => 0,
+          int: (maxExclusive) => maxExclusive - 1
+        },
+        chance: 1,
+        slack: 20
+      }
+    })
+
+    expect(shortest).toContainEqual({ x: 1, y: 1 })
+    expect(varied).toEqual([
+      { x: 0, y: 1 },
+      { x: 1, y: 0 },
+      { x: 2, y: 1 }
+    ])
   })
 
   it('cycles crosswalk signals through red, green, and yellow phases', () => {
@@ -125,6 +234,19 @@ describe('city map validation and compile', () => {
     expect(city.getCrosswalkSignalState()).toBe('red')
   })
 
+  it('resets crosswalk signals to the initial red phase', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap()))
+
+    city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[0].duration + 1)
+    expect(city.getCrosswalkSignalState()).toBe('green')
+
+    city.resetCrosswalkSignals()
+    expect(city.getCrosswalkSignalState()).toBe('red')
+
+    city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[0].duration - 0.1)
+    expect(city.getCrosswalkSignalState()).toBe('red')
+  })
+
   it('rejects building metadata that does not cover building tiles', () => {
     expect(() => validateCityMap(createMap({
       buildings: {
@@ -133,6 +255,23 @@ describe('city map validation and compile', () => {
         items: []
       }
     }))).toThrow(/do not cover building tile 1,1/)
+  })
+
+  it('rejects a building entrance outside that building footprint', () => {
+    expect(() => validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultType: 'residential',
+        items: [
+          {
+            id: 'building-0001',
+            type: 'residential',
+            entrance: { x: 0, y: 0 },
+            spans: [[1, 1, 1]]
+          }
+        ]
+      }
+    }))).toThrow(/entrance must be inside that building/)
   })
 
   it('finds pedestrian paths around blocked cells while reusing path scratch state', () => {

@@ -5,10 +5,32 @@ import {
   DEFAULT_BUILDING_TYPE,
   DIRECTIONS,
   MOVEMENT_PROPERTY_BY_MODE,
-  TILE_NAMES
+  TILE_NAMES,
+  TILE_ZORDERS
 } from '../core/constants.js'
-import { clamp, indexOf, octileDistance, reconstructPath } from '../core/math.js'
-import { MinHeap } from '../core/min-heap.js'
+import { clamp, indexOf, octileDistance } from '../core/math.js'
+
+const FNV_OFFSET_BASIS = 0x811c9dc5
+const FNV_PRIME = 0x01000193
+const NAVIGATION_CACHE_LIMIT = 4
+const ROUTE_FIELD_CACHE_LIMIT = 384
+const ROUTE_FIELD_UNREACHABLE = 0xffffffff
+const DEFAULT_ROUTE_VARIATION_CHANCE = 0.35
+const DEFAULT_ROUTE_VARIATION_SLACK = 20
+const SIGNAL_STATE_KEYS = Object.freeze(['red', 'green', 'yellow'])
+const SIGNAL_STATE_INDEX = Object.freeze({
+  red: 0,
+  green: 1,
+  yellow: 2
+})
+const DIRECTION_DX = Object.freeze(DIRECTIONS.map((direction) => direction.dx))
+const DIRECTION_DY = Object.freeze(DIRECTIONS.map((direction) => direction.dy))
+const DIRECTION_COST = Object.freeze(DIRECTIONS.map((direction) => direction.cost))
+const OPPOSITE_DIRECTION = Object.freeze([1, 0, 3, 2, 7, 6, 5, 4])
+const DIRECTION_INDEX_BY_OFFSET = new Int8Array([7, 3, 5, 1, -1, 0, 6, 2, 4])
+const routeCandidateDirections = new Uint8Array(8)
+const routeCandidateScores = new Float64Array(8)
+const navigationCache = new Map()
 
 export async function loadCityMap(url, textureRowsUrl) {
   const data = await fetchJson(url, 'map')
@@ -242,9 +264,12 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
 
     validateBuildingComponentConnectivity(componentCells, width, height, building.id)
 
+    const entrance = normalizeBuildingEntrance(building, componentCells, width)
+
     return {
       id: building.id,
       type: building.type,
+      entrance,
       spans
     }
   })
@@ -267,6 +292,33 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
     encoding: buildings.encoding,
     defaultType: buildings.defaultType || DEFAULT_BUILDING_TYPE,
     items
+  }
+}
+
+function normalizeBuildingEntrance(building, componentCells, width) {
+  if (building.entrance === undefined) {
+    return null
+  }
+
+  const entrance = building.entrance
+
+  if (!entrance || typeof entrance !== 'object' || Array.isArray(entrance)) {
+    throw new Error(`Map JSON building "${building.id}" entrance must be an object with integer x and y.`)
+  }
+
+  if (!Number.isInteger(entrance.x) || !Number.isInteger(entrance.y)) {
+    throw new Error(`Map JSON building "${building.id}" entrance must include integer x and y.`)
+  }
+
+  const entranceIndex = indexOf(entrance.x, entrance.y, width)
+
+  if (!componentCells.includes(entranceIndex)) {
+    throw new Error(`Map JSON building "${building.id}" entrance must be inside that building.`)
+  }
+
+  return {
+    x: entrance.x,
+    y: entrance.y
   }
 }
 
@@ -347,6 +399,10 @@ function normalizeLegend(legend) {
   return entries
 }
 
+function tileZorderForCategory(category) {
+  return category === 'building' ? TILE_ZORDERS.building : TILE_ZORDERS.default
+}
+
 export function compileCityMap(data) {
   const width = data.width
   const height = data.height
@@ -358,6 +414,7 @@ export function compileCityMap(data) {
   const tileDrivable = new Uint8Array(width * height)
   const tileParkable = new Uint8Array(width * height)
   const tileCrosswalk = new Uint8Array(width * height)
+  const tileZOrders = new Int16Array(width * height)
   const tileLegendSymbols = new Array(width * height)
   const tileBuildingIndexes = new Int32Array(width * height)
   const pathScratch = createPathScratch(width * height)
@@ -384,6 +441,7 @@ export function compileCityMap(data) {
       tileDrivable[tileIndex] = entry.drivable ? 1 : 0
       tileParkable[tileIndex] = entry.parkable ? 1 : 0
       tileCrosswalk[tileIndex] = entry.category === 'crosswalk' ? 1 : 0
+      tileZOrders[tileIndex] = tileZorderForCategory(entry.category)
       tileLegendSymbols[tileIndex] = symbol
     }
   }
@@ -392,6 +450,7 @@ export function compileCityMap(data) {
     const runtimeBuilding = {
       id: building.id,
       type: building.type,
+      entrance: building.entrance ? { ...building.entrance } : null,
       spans: building.spans.map((span) => [...span])
     }
 
@@ -401,8 +460,13 @@ export function compileCityMap(data) {
       }
     }
 
+    if (runtimeBuilding.entrance) {
+      tileWalkable[indexOf(runtimeBuilding.entrance.x, runtimeBuilding.entrance.y, width)] = 1
+    }
+
     return runtimeBuilding
   })
+  const navigation = getNavigationData(width, height, tileWalkable, tileDrivable, tileCrosswalk)
 
   function inBounds(x, y) {
     return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < width && y < height
@@ -427,13 +491,25 @@ export function compileCityMap(data) {
     }
 
     const tileIndex = indexOf(x, y, width)
+    const legendEntry = legendEntries[tileLegendSymbols[tileIndex]]
     const building = getBuilding(x, y)
+    const buildingEntrance = Boolean(
+      building &&
+      building.entrance &&
+      building.entrance.x === x &&
+      building.entrance.y === y
+    )
 
     return {
-      ...legendEntries[tileLegendSymbols[tileIndex]],
+      category: legendEntry.category,
+      walkable: tileWalkable[tileIndex] === 1,
+      drivable: tileDrivable[tileIndex] === 1,
+      parkable: tileParkable[tileIndex] === 1,
       textureId: tileTextureIds[tileIndex],
+      zorder: tileZOrders[tileIndex],
       buildingId: building ? building.id : null,
-      buildingType: building ? building.type : null
+      buildingType: building ? building.type : null,
+      buildingEntrance
     }
   }
 
@@ -507,32 +583,68 @@ export function compileCityMap(data) {
   }
 
   function canStepWithProperty(fromX, fromY, toX, toY, property) {
-    if (!hasTileProperty(toX, toY, property)) {
+    if (!inBounds(fromX, fromY) || !inBounds(toX, toY)) {
       return false
-    }
-
-    if (property === 'walkable' && isCrosswalk(toX, toY)) {
-      const signalState = crosswalkSignals.getState()
-
-      if (signalState === 'green') {
-        return true
-      }
-
-      return signalState === 'yellow' && isCrosswalk(fromX, fromY)
     }
 
     const dx = toX - fromX
     const dy = toY - fromY
 
-    if (property !== 'walkable' && Math.abs(dx) === 1 && Math.abs(dy) === 1) {
-      return hasTileProperty(fromX + dx, fromY, property) && hasTileProperty(fromX, fromY + dy, property)
+    if (dx === 0 && dy === 0) {
+      return hasTileProperty(toX, toY, property)
     }
 
-    return true
+    if (dx < -1 || dx > 1 || dy < -1 || dy > 1) {
+      return false
+    }
+
+    const directionIndex = DIRECTION_INDEX_BY_OFFSET[(dy + 1) * 3 + dx + 1]
+
+    if (directionIndex === -1) {
+      return false
+    }
+
+    const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
+    return (stepMasks.outgoing[indexOf(fromX, fromY, width)] & (1 << directionIndex)) !== 0
   }
 
   function canStep(fromX, fromY, toX, toY, mode) {
     return canStepWithProperty(fromX, fromY, toX, toY, modeProperty(mode))
+  }
+
+  function canStepIndex(fromIndex, toIndex, mode) {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= tiles.length || toIndex >= tiles.length) {
+      return false
+    }
+
+    const property = modeProperty(mode)
+
+    if (fromIndex === toIndex) {
+      return tilePropertyLayers[property][toIndex] === 1
+    }
+
+    const fromX = fromIndex % width
+    const toX = toIndex % width
+    const dx = toX - fromX
+
+    if (dx < -1 || dx > 1) {
+      return false
+    }
+
+    const dy = Math.floor(toIndex / width) - Math.floor(fromIndex / width)
+
+    if (dy < -1 || dy > 1) {
+      return false
+    }
+
+    const directionIndex = DIRECTION_INDEX_BY_OFFSET[(dy + 1) * 3 + dx + 1]
+
+    if (directionIndex === -1) {
+      return false
+    }
+
+    const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
+    return (stepMasks.outgoing[fromIndex] & (1 << directionIndex)) !== 0
   }
 
   function nearestPassableTile(x, y, mode, maxRadius = Math.max(width, height)) {
@@ -580,59 +692,89 @@ export function compileCityMap(data) {
       return [startTile]
     }
 
-    const { open, closed, cameFrom, gScore } = pathScratch
+    const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
+    const searchRun = beginSearchRun(pathScratch)
+    const { open, closedRuns, cameFromRuns, scoreRuns, cameFrom, gScore } = pathScratch
 
     open.clear()
-    closed.fill(0)
-    cameFrom.fill(-1)
-    gScore.fill(Number.POSITIVE_INFINITY)
     gScore[startIndex] = 0
-    open.push({ index: startIndex, f: octileDistance(startTile.x, startTile.y, endTile.x, endTile.y) })
+    scoreRuns[startIndex] = searchRun
+    cameFrom[startIndex] = -1
+    cameFromRuns[startIndex] = searchRun
+    open.push(startIndex, octileDistance(startTile.x, startTile.y, endTile.x, endTile.y))
 
     while (open.length > 0) {
-      const current = open.pop()
+      const currentIndex = open.pop()
 
-      if (closed[current.index]) {
+      if (closedRuns[currentIndex] === searchRun) {
         continue
       }
 
-      if (current.index === endIndex) {
-        return reconstructPath(cameFrom, current.index, width)
+      if (currentIndex === endIndex) {
+        return reconstructStampedPath(cameFrom, cameFromRuns, currentIndex, width, searchRun)
       }
 
-      closed[current.index] = 1
+      closedRuns[currentIndex] = searchRun
 
-      const currentX = current.index % width
-      const currentY = Math.floor(current.index / width)
+      const currentX = currentIndex % width
+      const currentY = Math.floor(currentIndex / width)
+      let directionMask = stepMasks.outgoing[currentIndex]
 
-      for (const direction of DIRECTIONS) {
-        const nextX = currentX + direction.dx
-        const nextY = currentY + direction.dy
-
-        if (!canStepWithProperty(currentX, currentY, nextX, nextY, property)) {
+      for (let directionIndex = 0; directionMask !== 0; directionIndex += 1, directionMask >>>= 1) {
+        if ((directionMask & 1) === 0) {
           continue
         }
 
-        const nextIndex = indexOf(nextX, nextY, width)
+        const nextIndex = currentIndex + navigation.offsets[directionIndex]
 
-        if (closed[nextIndex]) {
+        if (closedRuns[nextIndex] === searchRun) {
           continue
         }
 
-        const tentativeScore = gScore[current.index] + direction.cost
+        const tentativeScore = gScore[currentIndex] + DIRECTION_COST[directionIndex]
 
-        if (tentativeScore < gScore[nextIndex]) {
-          cameFrom[nextIndex] = current.index
+        if (scoreRuns[nextIndex] !== searchRun || tentativeScore < gScore[nextIndex]) {
+          const nextX = currentX + DIRECTION_DX[directionIndex]
+          const nextY = currentY + DIRECTION_DY[directionIndex]
+
+          cameFrom[nextIndex] = currentIndex
+          cameFromRuns[nextIndex] = searchRun
           gScore[nextIndex] = tentativeScore
-          open.push({
-            index: nextIndex,
-            f: tentativeScore + octileDistance(nextX, nextY, endTile.x, endTile.y)
-          })
+          scoreRuns[nextIndex] = searchRun
+          open.push(nextIndex, tentativeScore + octileDistance(nextX, nextY, endTile.x, endTile.y))
         }
       }
     }
 
     return []
+  }
+
+  function findCachedPath(start, end, mode, options = null) {
+    const pathIndexes = findCachedPathIndexes(start, end, mode, options)
+
+    return indexesToPath(pathIndexes, width)
+  }
+
+  function findCachedPathIndexes(start, end, mode, options = null) {
+    const property = modeProperty(mode)
+    const startTile = nearestPassableTile(start.x, start.y, mode)
+    const endTile = nearestPassableTile(end.x, end.y, mode)
+
+    if (!startTile || !endTile) {
+      return []
+    }
+
+    const startIndex = indexOf(startTile.x, startTile.y, width)
+    const endIndex = indexOf(endTile.x, endTile.y, width)
+
+    if (startIndex === endIndex) {
+      return [startIndex]
+    }
+
+    const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
+    const field = navigation.routeFields.get(endIndex, stepMasks.cacheKey, stepMasks.incoming)
+
+    return reconstructRouteFieldPathIndexes(field, stepMasks, navigation.offsets, startIndex, endIndex, options)
   }
 
   return {
@@ -646,6 +788,7 @@ export function compileCityMap(data) {
     tileDrivable,
     tileParkable,
     tileCrosswalk,
+    tileZOrders,
     tileBuildingIndexes,
     legend: legendEntries,
     buildings,
@@ -658,16 +801,28 @@ export function compileCityMap(data) {
     getBuilding,
     inBounds,
     canStep,
+    canStepIndex,
     isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
     isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
     isParkable: (x, y) => hasTileProperty(x, y, 'parkable'),
     isCrosswalk,
     getCrosswalkSignalState: () => crosswalkSignals.getState(),
     setCrosswalkSignalState: (state) => crosswalkSignals.setState(state),
+    resetCrosswalkSignals: () => crosswalkSignals.reset(),
     updateCrosswalkSignals: (deltaSeconds) => crosswalkSignals.update(deltaSeconds),
     isPassable,
     nearestPassableTile,
-    findPath
+    findPath,
+    findCachedPath,
+    findCachedPathIndexes,
+    navigationCacheKey: navigation.cacheKey,
+    getNavigationCacheStats: () => ({
+      cacheKey: navigation.cacheKey,
+      routeFields: navigation.routeFields.size,
+      routeFieldHits: navigation.routeFields.hits,
+      routeFieldMisses: navigation.routeFields.misses,
+      routeFieldLimit: navigation.routeFields.limit
+    })
   }
 }
 
@@ -694,6 +849,11 @@ function createCrosswalkSignalController(phases) {
     elapsedSeconds = 0
   }
 
+  function reset() {
+    phaseIndex = 0
+    elapsedSeconds = 0
+  }
+
   function update(deltaSeconds) {
     if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
       return
@@ -710,16 +870,567 @@ function createCrosswalkSignalController(phases) {
   return {
     getState,
     setState,
+    reset,
     update
   }
 }
 
 function createPathScratch(length) {
   return {
-    open: new MinHeap((a, b) => a.f - b.f),
-    closed: new Uint8Array(length),
+    open: new IndexPriorityQueue(Math.min(Math.max(length, 16), 65536)),
+    closedRuns: new Uint32Array(length),
+    cameFromRuns: new Uint32Array(length),
+    scoreRuns: new Uint32Array(length),
     cameFrom: new Int32Array(length),
-    gScore: new Float64Array(length)
+    gScore: new Int32Array(length),
+    runId: 0
+  }
+}
+
+function beginSearchRun(scratch) {
+  scratch.runId += 1
+
+  if (scratch.runId >= 0xffffffff) {
+    scratch.closedRuns.fill(0)
+    scratch.cameFromRuns.fill(0)
+    scratch.scoreRuns.fill(0)
+    scratch.runId = 1
+  }
+
+  return scratch.runId
+}
+
+function getNavigationData(width, height, tileWalkable, tileDrivable, tileCrosswalk) {
+  const cacheKey = createNavigationCacheKey(width, height, tileWalkable, tileDrivable, tileCrosswalk)
+  const cached = navigationCache.get(cacheKey)
+
+  if (cached) {
+    navigationCache.delete(cacheKey)
+    navigationCache.set(cacheKey, cached)
+    return cached
+  }
+
+  const navigation = createNavigationData(cacheKey, width, height, tileWalkable, tileDrivable, tileCrosswalk)
+
+  navigationCache.set(cacheKey, navigation)
+
+  while (navigationCache.size > NAVIGATION_CACHE_LIMIT) {
+    navigationCache.delete(navigationCache.keys().next().value)
+  }
+
+  return navigation
+}
+
+function createNavigationData(cacheKey, width, height, tileWalkable, tileDrivable, tileCrosswalk) {
+  const length = width * height
+  const offsets = DIRECTIONS.map((direction) => direction.dy * width + direction.dx)
+  const pedestrian = {}
+
+  for (const signalState of SIGNAL_STATE_KEYS) {
+    pedestrian[signalState] = buildMovementMasks({
+      width,
+      height,
+      layer: tileWalkable,
+      tileCrosswalk,
+      property: 'walkable',
+      signalState,
+      offsets
+    })
+  }
+
+  return {
+    cacheKey,
+    offsets,
+    pedestrian,
+    vehicle: buildMovementMasks({
+      width,
+      height,
+      layer: tileDrivable,
+      tileCrosswalk,
+      property: 'drivable',
+      signalState: null,
+      offsets
+    }),
+    routeFields: createRouteFieldCache(length, offsets)
+  }
+}
+
+function buildMovementMasks({ width, height, layer, tileCrosswalk, property, signalState }) {
+  const length = width * height
+  const outgoing = new Uint8Array(length)
+  const incoming = new Uint8Array(length)
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const currentIndex = indexOf(x, y, width)
+      let mask = 0
+
+      for (let directionIndex = 0; directionIndex < DIRECTIONS.length; directionIndex += 1) {
+        const nextX = x + DIRECTION_DX[directionIndex]
+        const nextY = y + DIRECTION_DY[directionIndex]
+
+        if (nextX < 0 || nextY < 0 || nextX >= width || nextY >= height) {
+          continue
+        }
+
+        const nextIndex = indexOf(nextX, nextY, width)
+
+        if (!canUsePrecomputedStep({
+          currentIndex,
+          nextIndex,
+          directionIndex,
+          width,
+          layer,
+          tileCrosswalk,
+          property,
+          signalState
+        })) {
+          continue
+        }
+
+        mask |= 1 << directionIndex
+        incoming[nextIndex] |= 1 << OPPOSITE_DIRECTION[directionIndex]
+      }
+
+      outgoing[currentIndex] = mask
+    }
+  }
+
+  return {
+    outgoing,
+    incoming,
+    cacheKey: property === 'walkable' ? `walkable:${signalState}` : property
+  }
+}
+
+function canUsePrecomputedStep({ currentIndex, nextIndex, directionIndex, width, layer, tileCrosswalk, property, signalState }) {
+  if (layer[nextIndex] !== 1) {
+    return false
+  }
+
+  if (property === 'walkable') {
+    if (tileCrosswalk[nextIndex] !== 1) {
+      return true
+    }
+
+    if (tileCrosswalk[currentIndex] === 1) {
+      return true
+    }
+
+    if (signalState === 'green') {
+      return true
+    }
+
+    return false
+  }
+
+  if (Math.abs(DIRECTION_DX[directionIndex]) === 1 && Math.abs(DIRECTION_DY[directionIndex]) === 1) {
+    return layer[currentIndex + DIRECTION_DX[directionIndex]] === 1 &&
+      layer[currentIndex + (DIRECTION_DY[directionIndex] * width)] === 1
+  }
+
+  return true
+}
+
+function getStepMasksForProperty(navigation, property, signalState) {
+  if (property === 'walkable') {
+    const normalizedState = SIGNAL_STATE_INDEX[signalState] === undefined ? 'red' : signalState
+
+    return navigation.pedestrian[normalizedState]
+  }
+
+  if (property === 'drivable') {
+    return navigation.vehicle
+  }
+
+  throw new Error(`Unknown tile property "${property}".`)
+}
+
+function createRouteFieldCache(length, offsets) {
+  const fields = new Map()
+  const scratch = createPathScratch(length)
+  const cache = {
+    limit: ROUTE_FIELD_CACHE_LIMIT,
+    hits: 0,
+    misses: 0,
+    get size() {
+      return fields.size
+    },
+    get(endIndex, movementCacheKey, incomingMasks) {
+      const fieldKey = `${movementCacheKey}:${endIndex}`
+      const cached = fields.get(fieldKey)
+
+      if (cached) {
+        fields.delete(fieldKey)
+        fields.set(fieldKey, cached)
+        cache.hits += 1
+        return cached
+      }
+
+      const field = buildRouteField(endIndex, incomingMasks, scratch, offsets, length)
+
+      fields.set(fieldKey, field)
+      cache.misses += 1
+
+      while (fields.size > ROUTE_FIELD_CACHE_LIMIT) {
+        fields.delete(fields.keys().next().value)
+      }
+
+      return field
+    }
+  }
+
+  return cache
+}
+
+function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
+  const nextDirection = new Uint8Array(length)
+  const distance = new Uint32Array(length)
+  const runId = beginSearchRun(scratch)
+  const { open, closedRuns, scoreRuns, gScore } = scratch
+
+  nextDirection.fill(255)
+  distance.fill(ROUTE_FIELD_UNREACHABLE)
+  open.clear()
+  gScore[endIndex] = 0
+  scoreRuns[endIndex] = runId
+  nextDirection[endIndex] = 254
+  distance[endIndex] = 0
+  open.push(endIndex, 0)
+
+  while (open.length > 0) {
+    const currentIndex = open.pop()
+
+    if (closedRuns[currentIndex] === runId) {
+      continue
+    }
+
+    closedRuns[currentIndex] = runId
+
+    let directionMask = incomingMasks[currentIndex]
+
+    for (let directionIndex = 0; directionMask !== 0; directionIndex += 1, directionMask >>>= 1) {
+      if ((directionMask & 1) === 0) {
+        continue
+      }
+
+      const previousIndex = currentIndex + offsets[directionIndex]
+
+      if (closedRuns[previousIndex] === runId) {
+        continue
+      }
+
+      const tentativeScore = gScore[currentIndex] + DIRECTION_COST[directionIndex]
+
+      if (scoreRuns[previousIndex] !== runId || tentativeScore < gScore[previousIndex]) {
+        gScore[previousIndex] = tentativeScore
+        scoreRuns[previousIndex] = runId
+        nextDirection[previousIndex] = OPPOSITE_DIRECTION[directionIndex]
+        distance[previousIndex] = tentativeScore
+        open.push(previousIndex, tentativeScore)
+      }
+    }
+  }
+
+  return { nextDirection, distance }
+}
+
+function reconstructStampedPath(cameFrom, cameFromRuns, endIndex, width, runId) {
+  const indexes = []
+  let current = endIndex
+
+  while (current !== -1 && cameFromRuns[current] === runId) {
+    indexes.push(current)
+    current = cameFrom[current]
+  }
+
+  indexes.reverse()
+  return indexesToPath(indexes, width)
+}
+
+function reconstructRouteFieldPathIndexes(field, stepMasks, offsets, startIndex, endIndex, options) {
+  const { nextDirection, distance } = field
+
+  if (nextDirection[startIndex] === 255) {
+    return []
+  }
+
+  const indexes = [startIndex]
+  let current = startIndex
+  let guard = 0
+
+  while (current !== endIndex && guard < nextDirection.length) {
+    const directionIndex = chooseRouteFieldDirection(field, stepMasks, offsets, current, options)
+
+    if (directionIndex > 7) {
+      return []
+    }
+
+    current += offsets[directionIndex]
+    indexes.push(current)
+    guard += 1
+  }
+
+  return current === endIndex ? indexes : []
+}
+
+function chooseRouteFieldDirection(field, stepMasks, offsets, currentIndex, options) {
+  const { nextDirection, distance } = field
+  const fallbackDirection = nextDirection[currentIndex]
+  const variation = options && options.variation ? options.variation : null
+
+  if (!variation || fallbackDirection > 7) {
+    return fallbackDirection
+  }
+
+  const currentDistance = distance[currentIndex]
+
+  if (currentDistance === ROUTE_FIELD_UNREACHABLE) {
+    return fallbackDirection
+  }
+
+  const variationTriggered = shouldVaryRouteStep(variation)
+
+  if (!variationTriggered) {
+    return fallbackDirection
+  }
+
+  const variationSlack = variation ? nonNegativeNumberOrDefault(variation.slack, DEFAULT_ROUTE_VARIATION_SLACK) : 0
+  let directionMask = stepMasks.outgoing[currentIndex]
+  let bestDirection = fallbackDirection
+  let bestScore = Number.POSITIVE_INFINITY
+  let candidateCount = 0
+
+  for (let directionIndex = 0; directionMask !== 0; directionIndex += 1, directionMask >>>= 1) {
+    if ((directionMask & 1) === 0) {
+      continue
+    }
+
+    const nextIndex = currentIndex + offsets[directionIndex]
+    const nextDistance = distance[nextIndex]
+
+    if (nextDistance === ROUTE_FIELD_UNREACHABLE || nextDistance >= currentDistance) {
+      continue
+    }
+
+    const routeCost = DIRECTION_COST[directionIndex] + nextDistance
+
+    if (routeCost > currentDistance + variationSlack) {
+      continue
+    }
+
+    routeCandidateDirections[candidateCount] = directionIndex
+    routeCandidateScores[candidateCount] = routeCost
+    candidateCount += 1
+
+    if (routeCost < bestScore) {
+      bestScore = routeCost
+      bestDirection = directionIndex
+    }
+  }
+
+  if (bestScore !== Number.POSITIVE_INFINITY) {
+    return chooseNearGoodRouteFieldDirection(candidateCount, variationSlack, bestDirection, bestScore, variation)
+  }
+
+  return bestDirection
+}
+
+function shouldVaryRouteStep(variation) {
+  if (!variation || !variation.random || typeof variation.random.next !== 'function') {
+    return false
+  }
+
+  const chance = boundedNumberOrDefault(variation.chance, DEFAULT_ROUTE_VARIATION_CHANCE, 0, 1)
+
+  return chance > 0 && variation.random.next() < chance
+}
+
+function chooseNearGoodRouteFieldDirection(totalCandidates, scoreSlack, bestDirection, bestScore, variation) {
+  let nearGoodCount = 0
+
+  for (let index = 0; index < totalCandidates; index += 1) {
+    if (routeCandidateScores[index] <= bestScore + scoreSlack) {
+      nearGoodCount += 1
+    }
+  }
+
+  if (nearGoodCount <= 1) {
+    return bestDirection
+  }
+
+  let candidateIndex = randomInteger(variation.random, nearGoodCount)
+
+  for (let index = 0; index < totalCandidates; index += 1) {
+    if (routeCandidateScores[index] > bestScore + scoreSlack) {
+      continue
+    }
+
+    if (candidateIndex === 0) {
+      return routeCandidateDirections[index]
+    }
+
+    candidateIndex -= 1
+  }
+
+  return bestDirection
+}
+
+function nonNegativeNumberOrDefault(value, fallback) {
+  return Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+function boundedNumberOrDefault(value, fallback, min, max) {
+  return Number.isFinite(value) ? clamp(value, min, max) : fallback
+}
+
+function randomInteger(random, maxExclusive) {
+  if (typeof random.int === 'function') {
+    return random.int(maxExclusive)
+  }
+
+  return Math.floor(random.next() * maxExclusive)
+}
+
+function indexesToPath(indexes, width) {
+  const path = new Array(indexes.length)
+
+  for (let index = 0; index < indexes.length; index += 1) {
+    const tileIndex = indexes[index]
+
+    path[index] = {
+      x: tileIndex % width,
+      y: Math.floor(tileIndex / width)
+    }
+  }
+
+  return path
+}
+
+function createNavigationCacheKey(width, height, tileWalkable, tileDrivable, tileCrosswalk) {
+  let hash = FNV_OFFSET_BASIS
+
+  hash = hashNumber(hash, width)
+  hash = hashNumber(hash, height)
+  hash = hashBytes(hash, tileWalkable)
+  hash = hashBytes(hash, tileDrivable)
+  hash = hashBytes(hash, tileCrosswalk)
+
+  return `nav-v1:${width}x${height}:${hash >>> 0}`
+}
+
+function hashBytes(hash, bytes) {
+  for (let index = 0; index < bytes.length; index += 1) {
+    hash ^= bytes[index]
+    hash = Math.imul(hash, FNV_PRIME)
+  }
+
+  return hash >>> 0
+}
+
+function hashNumber(hash, value) {
+  let number = value >>> 0
+
+  for (let byteIndex = 0; byteIndex < 4; byteIndex += 1) {
+    hash ^= number & 0xff
+    hash = Math.imul(hash, FNV_PRIME)
+    number >>>= 8
+  }
+
+  return hash >>> 0
+}
+
+class IndexPriorityQueue {
+  constructor(initialCapacity) {
+    this.indexes = new Int32Array(initialCapacity)
+    this.priorities = new Int32Array(initialCapacity)
+    this.length = 0
+  }
+
+  clear() {
+    this.length = 0
+  }
+
+  push(index, priority) {
+    this.ensureCapacity(this.length + 1)
+
+    let cursor = this.length
+
+    this.length += 1
+
+    while (cursor > 0) {
+      const parent = (cursor - 1) >> 1
+
+      if (this.priorities[parent] <= priority) {
+        break
+      }
+
+      this.indexes[cursor] = this.indexes[parent]
+      this.priorities[cursor] = this.priorities[parent]
+      cursor = parent
+    }
+
+    this.indexes[cursor] = index
+    this.priorities[cursor] = priority
+  }
+
+  pop() {
+    const firstIndex = this.indexes[0]
+    const lastIndex = this.indexes[this.length - 1]
+    const lastPriority = this.priorities[this.length - 1]
+
+    this.length -= 1
+
+    if (this.length > 0) {
+      this.sinkRoot(lastIndex, lastPriority)
+    }
+
+    return firstIndex
+  }
+
+  sinkRoot(index, priority) {
+    let cursor = 0
+
+    while (true) {
+      const left = cursor * 2 + 1
+
+      if (left >= this.length) {
+        break
+      }
+
+      const right = left + 1
+      let child = left
+
+      if (right < this.length && this.priorities[right] < this.priorities[left]) {
+        child = right
+      }
+
+      if (this.priorities[child] >= priority) {
+        break
+      }
+
+      this.indexes[cursor] = this.indexes[child]
+      this.priorities[cursor] = this.priorities[child]
+      cursor = child
+    }
+
+    this.indexes[cursor] = index
+    this.priorities[cursor] = priority
+  }
+
+  ensureCapacity(size) {
+    if (size <= this.indexes.length) {
+      return
+    }
+
+    const nextCapacity = this.indexes.length * 2
+    const nextIndexes = new Int32Array(nextCapacity)
+    const nextPriorities = new Int32Array(nextCapacity)
+
+    nextIndexes.set(this.indexes)
+    nextPriorities.set(this.priorities)
+    this.indexes = nextIndexes
+    this.priorities = nextPriorities
   }
 }
 
