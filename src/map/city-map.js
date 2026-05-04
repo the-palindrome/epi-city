@@ -243,9 +243,12 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
 
     validateBuildingComponentConnectivity(componentCells, width, height, building.id)
 
+    const entrance = normalizeBuildingEntrance(building, componentCells, width)
+
     return {
       id: building.id,
       type: building.type,
+      entrance,
       spans
     }
   })
@@ -268,6 +271,33 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
     encoding: buildings.encoding,
     defaultType: buildings.defaultType || DEFAULT_BUILDING_TYPE,
     items
+  }
+}
+
+function normalizeBuildingEntrance(building, componentCells, width) {
+  if (building.entrance === undefined) {
+    return null
+  }
+
+  const entrance = building.entrance
+
+  if (!entrance || typeof entrance !== 'object' || Array.isArray(entrance)) {
+    throw new Error(`Map JSON building "${building.id}" entrance must be an object with integer x and y.`)
+  }
+
+  if (!Number.isInteger(entrance.x) || !Number.isInteger(entrance.y)) {
+    throw new Error(`Map JSON building "${building.id}" entrance must include integer x and y.`)
+  }
+
+  const entranceIndex = indexOf(entrance.x, entrance.y, width)
+
+  if (!componentCells.includes(entranceIndex)) {
+    throw new Error(`Map JSON building "${building.id}" entrance must be inside that building.`)
+  }
+
+  return {
+    x: entrance.x,
+    y: entrance.y
   }
 }
 
@@ -399,6 +429,7 @@ export function compileCityMap(data) {
     const runtimeBuilding = {
       id: building.id,
       type: building.type,
+      entrance: building.entrance ? { ...building.entrance } : null,
       spans: building.spans.map((span) => [...span])
     }
 
@@ -406,6 +437,10 @@ export function compileCityMap(data) {
       for (let offset = 0; offset < length; offset += 1) {
         tileBuildingIndexes[indexOf(x + offset, y, width)] = buildingIndex
       }
+    }
+
+    if (runtimeBuilding.entrance) {
+      tileWalkable[indexOf(runtimeBuilding.entrance.x, runtimeBuilding.entrance.y, width)] = 1
     }
 
     return runtimeBuilding
@@ -434,14 +469,25 @@ export function compileCityMap(data) {
     }
 
     const tileIndex = indexOf(x, y, width)
+    const legendEntry = legendEntries[tileLegendSymbols[tileIndex]]
     const building = getBuilding(x, y)
+    const buildingEntrance = Boolean(
+      building &&
+      building.entrance &&
+      building.entrance.x === x &&
+      building.entrance.y === y
+    )
 
     return {
-      ...legendEntries[tileLegendSymbols[tileIndex]],
+      category: legendEntry.category,
+      walkable: tileWalkable[tileIndex] === 1,
+      drivable: tileDrivable[tileIndex] === 1,
+      parkable: tileParkable[tileIndex] === 1,
       textureId: tileTextureIds[tileIndex],
       zorder: tileZOrders[tileIndex],
       buildingId: building ? building.id : null,
-      buildingType: building ? building.type : null
+      buildingType: building ? building.type : null,
+      buildingEntrance
     }
   }
 

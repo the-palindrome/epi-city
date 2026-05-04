@@ -84,6 +84,10 @@
       {
         "id": "building-0001",
         "type": "residential",
+        "entrance": {
+          "x": 1,
+          "y": 74
+        },
         "spans": [
           [
             0,
@@ -1405,6 +1409,10 @@
       {
         "id": "building-0002",
         "type": "residential",
+        "entrance": {
+          "x": 253,
+          "y": 30
+        },
         "spans": [
           [
             0,
@@ -1796,6 +1804,10 @@
       {
         "id": "building-0003",
         "type": "commercial",
+        "entrance": {
+          "x": 197,
+          "y": 7
+        },
         "spans": [
           [
             3,
@@ -1872,6 +1884,10 @@
       {
         "id": "building-0004",
         "type": "hospital",
+        "entrance": {
+          "x": 7,
+          "y": 20
+        },
         "spans": [
           [
             7,
@@ -1983,6 +1999,10 @@
       {
         "id": "building-0005",
         "type": "residential",
+        "entrance": {
+          "x": 43,
+          "y": 9
+        },
         "spans": [
           [
             7,
@@ -2039,6 +2059,10 @@
       {
         "id": "building-0006",
         "type": "residential",
+        "entrance": {
+          "x": 122,
+          "y": 11
+        },
         "spans": [
           [
             7,
@@ -2080,6 +2104,10 @@
       {
         "id": "building-0007",
         "type": "commercial",
+        "entrance": {
+          "x": 166,
+          "y": 7
+        },
         "spans": [
           [
             7,
@@ -2091,6 +2119,10 @@
       {
         "id": "building-0008",
         "type": "residential",
+        "entrance": {
+          "x": 26,
+          "y": 18
+        },
         "spans": [
           [
             8,
@@ -2197,6 +2229,10 @@
       {
         "id": "building-0009",
         "type": "residential",
+        "entrance": {
+          "x": 31,
+          "y": 10
+        },
         "spans": [
           [
             8,
@@ -2238,6 +2274,10 @@
       {
         "id": "building-0010",
         "type": "residential",
+        "entrance": {
+          "x": 53,
+          "y": 12
+        },
         "spans": [
           [
             8,
@@ -2294,6 +2334,10 @@
       {
         "id": "building-0011",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 9
+        },
         "spans": [
           [
             8,
@@ -2315,6 +2359,10 @@
       {
         "id": "building-0012",
         "type": "residential",
+        "entrance": {
+          "x": 68,
+          "y": 9
+        },
         "spans": [
           [
             8,
@@ -2336,6 +2384,10 @@
       {
         "id": "building-0013",
         "type": "commercial",
+        "entrance": {
+          "x": 71,
+          "y": 11
+        },
         "spans": [
           [
             8,
@@ -2377,6 +2429,10 @@
       {
         "id": "building-0014",
         "type": "residential",
+        "entrance": {
+          "x": 74,
+          "y": 9
+        },
         "spans": [
           [
             8,
@@ -2398,6 +2454,10 @@
       {
         "id": "building-0015",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 9
+        },
         "spans": [
           [
             8,
@@ -2419,6 +2479,10 @@
       {
         "id": "building-0016",
         "type": "residential",
+        "entrance": {
+          "x": 87,
+          "y": 9
+        },
         "spans": [
           [
             8,
@@ -2445,6 +2509,10 @@
       {
         "id": "building-0017",
         "type": "residential",
+        "entrance": {
+          "x": 100,
+          "y": 8
+        },
         "spans": [
           [
             8,
@@ -2491,6 +2559,10 @@
       {
         "id": "building-0018",
         "type": "residential",
+        "entrance": {
+          "x": 109,
+          "y": 10
+        },
         "spans": [
           [
             8,
@@ -2527,6 +2599,10 @@
       {
         "id": "building-0019",
         "type": "residential",
+        "entrance": {
+          "x": 114,
+          "y": 10
+        },
         "spans": [
           [
             8,
@@ -2563,6 +2639,10 @@
       {
         "id": "building-0020",
         "type": "residential",
+        "entrance": {
+          "x": 133,
+          "y": 9
+        },
         "spans": [
           [
             8,
@@ -2609,6 +2689,10 @@
       {
         "id": "building-0021",
         "type": "residential",
+        "entrance": {
+          "x": 159,
+          "y": 11
+        },
         "spans": [
           [
             8,
@@ -2645,6 +2729,10 @@
       {
         "id": "building-0022",
         "type": "commercial",
+        "entrance": {
+          "x": 223,
+          "y": 12
+        },
         "spans": [
           [
             8,
@@ -2701,6 +2789,10 @@
       {
         "id": "building-0023",
         "type": "commercial",
+        "entrance": {
+          "x": 231,
+          "y": 8
+        },
         "spans": [
           [
             8,
@@ -2727,6 +2819,10 @@
       {
         "id": "building-0024",
         "type": "residential",
+        "entrance": {
+          "x": 243,
+          "y": 9
+        },
         "spans": [
           [
             8,
@@ -2768,6 +2864,10 @@
       {
         "id": "building-0025",
         "type": "residential",
+        "entrance": {
+          "x": 215,
+          "y": 13
+        },
         "spans": [
           [
             9,
@@ -2819,6 +2919,10 @@
       {
         "id": "building-0026",
         "type": "residential",
+        "entrance": {
+          "x": 148,
+          "y": 14
+        },
         "spans": [
           [
             11,
@@ -2870,6 +2974,10 @@
       {
         "id": "building-0027",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 13
+        },
         "spans": [
           [
             12,
@@ -2891,6 +2999,10 @@
       {
         "id": "building-0028",
         "type": "residential",
+        "entrance": {
+          "x": 68,
+          "y": 13
+        },
         "spans": [
           [
             12,
@@ -2912,6 +3024,10 @@
       {
         "id": "building-0029",
         "type": "residential",
+        "entrance": {
+          "x": 74,
+          "y": 13
+        },
         "spans": [
           [
             12,
@@ -2933,6 +3049,10 @@
       {
         "id": "building-0030",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 13
+        },
         "spans": [
           [
             12,
@@ -2954,6 +3074,10 @@
       {
         "id": "building-0031",
         "type": "commercial",
+        "entrance": {
+          "x": 83,
+          "y": 14
+        },
         "spans": [
           [
             12,
@@ -2990,6 +3114,10 @@
       {
         "id": "building-0032",
         "type": "residential",
+        "entrance": {
+          "x": 91,
+          "y": 14
+        },
         "spans": [
           [
             12,
@@ -3026,6 +3154,10 @@
       {
         "id": "building-0033",
         "type": "commercial",
+        "entrance": {
+          "x": 186,
+          "y": 15
+        },
         "spans": [
           [
             13,
@@ -3047,6 +3179,10 @@
       {
         "id": "building-0034",
         "type": "residential",
+        "entrance": {
+          "x": 194,
+          "y": 13
+        },
         "spans": [
           [
             13,
@@ -3088,6 +3224,10 @@
       {
         "id": "building-0035",
         "type": "commercial",
+        "entrance": {
+          "x": 231,
+          "y": 17
+        },
         "spans": [
           [
             13,
@@ -3119,6 +3259,10 @@
       {
         "id": "building-0036",
         "type": "residential",
+        "entrance": {
+          "x": 99,
+          "y": 16
+        },
         "spans": [
           [
             14,
@@ -3165,6 +3309,10 @@
       {
         "id": "building-0037",
         "type": "commercial",
+        "entrance": {
+          "x": 160,
+          "y": 16
+        },
         "spans": [
           [
             15,
@@ -3186,6 +3334,10 @@
       {
         "id": "building-0038",
         "type": "residential",
+        "entrance": {
+          "x": 110,
+          "y": 19
+        },
         "spans": [
           [
             16,
@@ -3222,6 +3374,10 @@
       {
         "id": "building-0039",
         "type": "residential",
+        "entrance": {
+          "x": 114,
+          "y": 19
+        },
         "spans": [
           [
             16,
@@ -3258,6 +3414,10 @@
       {
         "id": "building-0040",
         "type": "residential",
+        "entrance": {
+          "x": 121,
+          "y": 18
+        },
         "spans": [
           [
             16,
@@ -3294,6 +3454,10 @@
       {
         "id": "building-0041",
         "type": "residential",
+        "entrance": {
+          "x": 155,
+          "y": 17
+        },
         "spans": [
           [
             17,
@@ -3320,6 +3484,10 @@
       {
         "id": "building-0042",
         "type": "commercial",
+        "entrance": {
+          "x": 239,
+          "y": 22
+        },
         "spans": [
           [
             17,
@@ -3376,6 +3544,10 @@
       {
         "id": "building-0043",
         "type": "commercial",
+        "entrance": {
+          "x": 246,
+          "y": 18
+        },
         "spans": [
           [
             17,
@@ -3402,6 +3574,10 @@
       {
         "id": "building-0044",
         "type": "residential",
+        "entrance": {
+          "x": 36,
+          "y": 22
+        },
         "spans": [
           [
             19,
@@ -3448,6 +3624,10 @@
       {
         "id": "building-0045",
         "type": "residential",
+        "entrance": {
+          "x": 45,
+          "y": 19
+        },
         "spans": [
           [
             19,
@@ -3469,6 +3649,10 @@
       {
         "id": "building-0046",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 20
+        },
         "spans": [
           [
             19,
@@ -3490,6 +3674,10 @@
       {
         "id": "building-0047",
         "type": "residential",
+        "entrance": {
+          "x": 68,
+          "y": 20
+        },
         "spans": [
           [
             19,
@@ -3511,6 +3699,10 @@
       {
         "id": "building-0048",
         "type": "residential",
+        "entrance": {
+          "x": 71,
+          "y": 22
+        },
         "spans": [
           [
             19,
@@ -3552,6 +3744,10 @@
       {
         "id": "building-0049",
         "type": "residential",
+        "entrance": {
+          "x": 74,
+          "y": 20
+        },
         "spans": [
           [
             19,
@@ -3573,6 +3769,10 @@
       {
         "id": "building-0050",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 20
+        },
         "spans": [
           [
             19,
@@ -3594,6 +3794,10 @@
       {
         "id": "building-0051",
         "type": "residential",
+        "entrance": {
+          "x": 133,
+          "y": 24
+        },
         "spans": [
           [
             19,
@@ -3640,6 +3844,10 @@
       {
         "id": "building-0052",
         "type": "commercial",
+        "entrance": {
+          "x": 212,
+          "y": 21
+        },
         "spans": [
           [
             19,
@@ -3666,6 +3874,10 @@
       {
         "id": "building-0053",
         "type": "residential",
+        "entrance": {
+          "x": 103,
+          "y": 20
+        },
         "spans": [
           [
             20,
@@ -3677,6 +3889,10 @@
       {
         "id": "building-0054",
         "type": "residential",
+        "entrance": {
+          "x": 192,
+          "y": 26
+        },
         "spans": [
           [
             20,
@@ -3753,6 +3969,10 @@
       {
         "id": "building-0055",
         "type": "residential",
+        "entrance": {
+          "x": 182,
+          "y": 25
+        },
         "spans": [
           [
             21,
@@ -3794,6 +4014,10 @@
       {
         "id": "building-0056",
         "type": "residential",
+        "entrance": {
+          "x": 53,
+          "y": 26
+        },
         "spans": [
           [
             22,
@@ -3850,6 +4074,10 @@
       {
         "id": "building-0057",
         "type": "residential",
+        "entrance": {
+          "x": 84,
+          "y": 26
+        },
         "spans": [
           [
             22,
@@ -3901,6 +4129,10 @@
       {
         "id": "building-0058",
         "type": "residential",
+        "entrance": {
+          "x": 93,
+          "y": 26
+        },
         "spans": [
           [
             22,
@@ -3972,6 +4204,10 @@
       {
         "id": "building-0059",
         "type": "commercial",
+        "entrance": {
+          "x": 226,
+          "y": 22
+        },
         "spans": [
           [
             22,
@@ -4003,6 +4239,10 @@
       {
         "id": "building-0060",
         "type": "residential",
+        "entrance": {
+          "x": 45,
+          "y": 23
+        },
         "spans": [
           [
             23,
@@ -4024,6 +4264,10 @@
       {
         "id": "building-0061",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 24
+        },
         "spans": [
           [
             23,
@@ -4045,6 +4289,10 @@
       {
         "id": "building-0062",
         "type": "commercial",
+        "entrance": {
+          "x": 68,
+          "y": 24
+        },
         "spans": [
           [
             23,
@@ -4066,6 +4314,10 @@
       {
         "id": "building-0063",
         "type": "residential",
+        "entrance": {
+          "x": 75,
+          "y": 24
+        },
         "spans": [
           [
             23,
@@ -4087,6 +4339,10 @@
       {
         "id": "building-0064",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 24
+        },
         "spans": [
           [
             23,
@@ -4108,6 +4364,10 @@
       {
         "id": "building-0065",
         "type": "residential",
+        "entrance": {
+          "x": 149,
+          "y": 23
+        },
         "spans": [
           [
             23,
@@ -4154,6 +4414,10 @@
       {
         "id": "building-0066",
         "type": "commercial",
+        "entrance": {
+          "x": 197,
+          "y": 24
+        },
         "spans": [
           [
             23,
@@ -4185,6 +4449,10 @@
       {
         "id": "building-0067",
         "type": "commercial",
+        "entrance": {
+          "x": 246,
+          "y": 24
+        },
         "spans": [
           [
             23,
@@ -4211,6 +4479,10 @@
       {
         "id": "building-0068",
         "type": "residential",
+        "entrance": {
+          "x": 104,
+          "y": 31
+        },
         "spans": [
           [
             24,
@@ -4287,6 +4559,10 @@
       {
         "id": "building-0069",
         "type": "residential",
+        "entrance": {
+          "x": 114,
+          "y": 33
+        },
         "spans": [
           [
             26,
@@ -4393,6 +4669,10 @@
       {
         "id": "building-0070",
         "type": "residential",
+        "entrance": {
+          "x": 45,
+          "y": 29
+        },
         "spans": [
           [
             27,
@@ -4414,6 +4694,10 @@
       {
         "id": "building-0071",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 29
+        },
         "spans": [
           [
             28,
@@ -4435,6 +4719,10 @@
       {
         "id": "building-0072",
         "type": "residential",
+        "entrance": {
+          "x": 68,
+          "y": 29
+        },
         "spans": [
           [
             28,
@@ -4456,6 +4744,10 @@
       {
         "id": "building-0073",
         "type": "residential",
+        "entrance": {
+          "x": 74,
+          "y": 36
+        },
         "spans": [
           [
             28,
@@ -4567,6 +4859,10 @@
       {
         "id": "building-0074",
         "type": "residential",
+        "entrance": {
+          "x": 75,
+          "y": 29
+        },
         "spans": [
           [
             28,
@@ -4588,6 +4884,10 @@
       {
         "id": "building-0075",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 29
+        },
         "spans": [
           [
             28,
@@ -4609,6 +4909,10 @@
       {
         "id": "building-0076",
         "type": "commercial",
+        "entrance": {
+          "x": 222,
+          "y": 35
+        },
         "spans": [
           [
             28,
@@ -4685,6 +4989,10 @@
       {
         "id": "building-0077",
         "type": "residential",
+        "entrance": {
+          "x": 28,
+          "y": 33
+        },
         "spans": [
           [
             29,
@@ -4716,6 +5024,10 @@
       {
         "id": "building-0078",
         "type": "residential",
+        "entrance": {
+          "x": 17,
+          "y": 36
+        },
         "spans": [
           [
             30,
@@ -4807,6 +5119,10 @@
       {
         "id": "building-0079",
         "type": "commercial",
+        "entrance": {
+          "x": 236,
+          "y": 32
+        },
         "spans": [
           [
             30,
@@ -4843,6 +5159,10 @@
       {
         "id": "building-0080",
         "type": "commercial",
+        "entrance": {
+          "x": 239,
+          "y": 32
+        },
         "spans": [
           [
             30,
@@ -4879,6 +5199,10 @@
       {
         "id": "building-0081",
         "type": "commercial",
+        "entrance": {
+          "x": 242,
+          "y": 32
+        },
         "spans": [
           [
             30,
@@ -4915,6 +5239,10 @@
       {
         "id": "building-0082",
         "type": "commercial",
+        "entrance": {
+          "x": 246,
+          "y": 32
+        },
         "spans": [
           [
             30,
@@ -4951,6 +5279,10 @@
       {
         "id": "building-0083",
         "type": "residential",
+        "entrance": {
+          "x": 36,
+          "y": 34
+        },
         "spans": [
           [
             31,
@@ -4997,6 +5329,10 @@
       {
         "id": "building-0084",
         "type": "commercial",
+        "entrance": {
+          "x": 139,
+          "y": 32
+        },
         "spans": [
           [
             31,
@@ -5038,6 +5374,10 @@
       {
         "id": "building-0085",
         "type": "commercial",
+        "entrance": {
+          "x": 175,
+          "y": 40
+        },
         "spans": [
           [
             31,
@@ -5104,6 +5444,10 @@
       {
         "id": "building-0086",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 33
+        },
         "spans": [
           [
             32,
@@ -5125,6 +5469,10 @@
       {
         "id": "building-0087",
         "type": "residential",
+        "entrance": {
+          "x": 68,
+          "y": 33
+        },
         "spans": [
           [
             32,
@@ -5146,6 +5494,10 @@
       {
         "id": "building-0088",
         "type": "residential",
+        "entrance": {
+          "x": 83,
+          "y": 37
+        },
         "spans": [
           [
             32,
@@ -5207,6 +5559,10 @@
       {
         "id": "building-0089",
         "type": "commercial",
+        "entrance": {
+          "x": 128,
+          "y": 38
+        },
         "spans": [
           [
             32,
@@ -5268,6 +5624,10 @@
       {
         "id": "building-0090",
         "type": "residential",
+        "entrance": {
+          "x": 179,
+          "y": 37
+        },
         "spans": [
           [
             32,
@@ -5329,6 +5689,10 @@
       {
         "id": "building-0091",
         "type": "residential",
+        "entrance": {
+          "x": 95,
+          "y": 35
+        },
         "spans": [
           [
             33,
@@ -5365,6 +5729,10 @@
       {
         "id": "building-0092",
         "type": "commercial",
+        "entrance": {
+          "x": 206,
+          "y": 38
+        },
         "spans": [
           [
             33,
@@ -5421,6 +5789,10 @@
       {
         "id": "building-0093",
         "type": "residential",
+        "entrance": {
+          "x": 42,
+          "y": 34
+        },
         "spans": [
           [
             34,
@@ -5447,6 +5819,10 @@
       {
         "id": "building-0094",
         "type": "residential",
+        "entrance": {
+          "x": 47,
+          "y": 34
+        },
         "spans": [
           [
             34,
@@ -5473,6 +5849,10 @@
       {
         "id": "building-0095",
         "type": "residential",
+        "entrance": {
+          "x": 53,
+          "y": 39
+        },
         "spans": [
           [
             36,
@@ -5514,6 +5894,10 @@
       {
         "id": "building-0096",
         "type": "residential",
+        "entrance": {
+          "x": 68,
+          "y": 40
+        },
         "spans": [
           [
             36,
@@ -5570,6 +5954,10 @@
       {
         "id": "building-0097",
         "type": "residential",
+        "entrance": {
+          "x": 190,
+          "y": 39
+        },
         "spans": [
           [
             36,
@@ -5611,6 +5999,10 @@
       {
         "id": "building-0098",
         "type": "residential",
+        "entrance": {
+          "x": 28,
+          "y": 37
+        },
         "spans": [
           [
             37,
@@ -5647,6 +6039,10 @@
       {
         "id": "building-0099",
         "type": "residential",
+        "entrance": {
+          "x": 93,
+          "y": 40
+        },
         "spans": [
           [
             38,
@@ -5678,6 +6074,10 @@
       {
         "id": "building-0100",
         "type": "residential",
+        "entrance": {
+          "x": 97,
+          "y": 40
+        },
         "spans": [
           [
             38,
@@ -5699,6 +6099,10 @@
       {
         "id": "building-0101",
         "type": "residential",
+        "entrance": {
+          "x": 112,
+          "y": 42
+        },
         "spans": [
           [
             38,
@@ -5730,6 +6134,10 @@
       {
         "id": "building-0102",
         "type": "commercial",
+        "entrance": {
+          "x": 163,
+          "y": 42
+        },
         "spans": [
           [
             38,
@@ -5766,6 +6174,10 @@
       {
         "id": "building-0103",
         "type": "residential",
+        "entrance": {
+          "x": 40,
+          "y": 42
+        },
         "spans": [
           [
             39,
@@ -5792,6 +6204,10 @@
       {
         "id": "building-0104",
         "type": "residential",
+        "entrance": {
+          "x": 46,
+          "y": 41
+        },
         "spans": [
           [
             39,
@@ -5818,6 +6234,10 @@
       {
         "id": "building-0105",
         "type": "commercial",
+        "entrance": {
+          "x": 214,
+          "y": 44
+        },
         "spans": [
           [
             40,
@@ -5869,6 +6289,10 @@
       {
         "id": "building-0106",
         "type": "commercial",
+        "entrance": {
+          "x": 225,
+          "y": 40
+        },
         "spans": [
           [
             40,
@@ -5920,6 +6344,10 @@
       {
         "id": "building-0107",
         "type": "commercial",
+        "entrance": {
+          "x": 235,
+          "y": 44
+        },
         "spans": [
           [
             40,
@@ -5971,6 +6399,10 @@
       {
         "id": "building-0108",
         "type": "commercial",
+        "entrance": {
+          "x": 243,
+          "y": 40
+        },
         "spans": [
           [
             40,
@@ -6002,6 +6434,10 @@
       {
         "id": "building-0109",
         "type": "commercial",
+        "entrance": {
+          "x": 243,
+          "y": 48
+        },
         "spans": [
           [
             44,
@@ -6033,6 +6469,10 @@
       {
         "id": "building-0110",
         "type": "commercial",
+        "entrance": {
+          "x": 88,
+          "y": 53
+        },
         "spans": [
           [
             48,
@@ -6099,6 +6539,10 @@
       {
         "id": "building-0111",
         "type": "residential",
+        "entrance": {
+          "x": 12,
+          "y": 49
+        },
         "spans": [
           [
             49,
@@ -6165,6 +6609,10 @@
       {
         "id": "building-0112",
         "type": "residential",
+        "entrance": {
+          "x": 26,
+          "y": 52
+        },
         "spans": [
           [
             49,
@@ -6211,6 +6659,10 @@
       {
         "id": "building-0113",
         "type": "commercial",
+        "entrance": {
+          "x": 35,
+          "y": 52
+        },
         "spans": [
           [
             49,
@@ -6252,6 +6704,10 @@
       {
         "id": "building-0114",
         "type": "residential",
+        "entrance": {
+          "x": 44,
+          "y": 50
+        },
         "spans": [
           [
             49,
@@ -6293,6 +6749,10 @@
       {
         "id": "building-0115",
         "type": "residential",
+        "entrance": {
+          "x": 53,
+          "y": 55
+        },
         "spans": [
           [
             49,
@@ -6364,6 +6824,10 @@
       {
         "id": "building-0116",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 52
+        },
         "spans": [
           [
             49,
@@ -6410,6 +6874,10 @@
       {
         "id": "building-0117",
         "type": "residential",
+        "entrance": {
+          "x": 74,
+          "y": 49
+        },
         "spans": [
           [
             49,
@@ -6431,6 +6899,10 @@
       {
         "id": "building-0118",
         "type": "residential",
+        "entrance": {
+          "x": 106,
+          "y": 53
+        },
         "spans": [
           [
             49,
@@ -6477,6 +6949,10 @@
       {
         "id": "building-0119",
         "type": "commercial",
+        "entrance": {
+          "x": 191,
+          "y": 52
+        },
         "spans": [
           [
             49,
@@ -6523,6 +6999,10 @@
       {
         "id": "building-0120",
         "type": "residential",
+        "entrance": {
+          "x": 206,
+          "y": 51
+        },
         "spans": [
           [
             49,
@@ -6564,6 +7044,10 @@
       {
         "id": "building-0121",
         "type": "residential",
+        "entrance": {
+          "x": 121,
+          "y": 51
+        },
         "spans": [
           [
             50,
@@ -6600,6 +7084,10 @@
       {
         "id": "building-0122",
         "type": "residential",
+        "entrance": {
+          "x": 150,
+          "y": 51
+        },
         "spans": [
           [
             50,
@@ -6616,6 +7104,10 @@
       {
         "id": "building-0123",
         "type": "commercial",
+        "entrance": {
+          "x": 158,
+          "y": 51
+        },
         "spans": [
           [
             50,
@@ -6632,6 +7124,10 @@
       {
         "id": "building-0124",
         "type": "residential",
+        "entrance": {
+          "x": 166,
+          "y": 51
+        },
         "spans": [
           [
             50,
@@ -6648,6 +7144,10 @@
       {
         "id": "building-0125",
         "type": "residential",
+        "entrance": {
+          "x": 177,
+          "y": 51
+        },
         "spans": [
           [
             50,
@@ -6664,6 +7164,10 @@
       {
         "id": "building-0126",
         "type": "commercial",
+        "entrance": {
+          "x": 184,
+          "y": 51
+        },
         "spans": [
           [
             50,
@@ -6680,6 +7184,10 @@
       {
         "id": "building-0127",
         "type": "residential",
+        "entrance": {
+          "x": 147,
+          "y": 55
+        },
         "spans": [
           [
             52,
@@ -6721,6 +7229,10 @@
       {
         "id": "building-0128",
         "type": "residential",
+        "entrance": {
+          "x": 43,
+          "y": 58
+        },
         "spans": [
           [
             55,
@@ -6762,6 +7274,10 @@
       {
         "id": "building-0129",
         "type": "residential",
+        "entrance": {
+          "x": 222,
+          "y": 58
+        },
         "spans": [
           [
             55,
@@ -6813,6 +7329,10 @@
       {
         "id": "building-0130",
         "type": "commercial",
+        "entrance": {
+          "x": 229,
+          "y": 57
+        },
         "spans": [
           [
             55,
@@ -6849,6 +7369,10 @@
       {
         "id": "building-0131",
         "type": "commercial",
+        "entrance": {
+          "x": 241,
+          "y": 60
+        },
         "spans": [
           [
             55,
@@ -6910,6 +7434,10 @@
       {
         "id": "building-0132",
         "type": "residential",
+        "entrance": {
+          "x": 115,
+          "y": 57
+        },
         "spans": [
           [
             57,
@@ -6931,6 +7459,10 @@
       {
         "id": "building-0133",
         "type": "commercial",
+        "entrance": {
+          "x": 208,
+          "y": 57
+        },
         "spans": [
           [
             57,
@@ -6967,6 +7499,10 @@
       {
         "id": "building-0134",
         "type": "residential",
+        "entrance": {
+          "x": 156,
+          "y": 58
+        },
         "spans": [
           [
             58,
@@ -6993,6 +7529,10 @@
       {
         "id": "building-0135",
         "type": "residential",
+        "entrance": {
+          "x": 162,
+          "y": 58
+        },
         "spans": [
           [
             58,
@@ -7019,6 +7559,10 @@
       {
         "id": "building-0136",
         "type": "commercial",
+        "entrance": {
+          "x": 169,
+          "y": 59
+        },
         "spans": [
           [
             58,
@@ -7045,6 +7589,10 @@
       {
         "id": "building-0137",
         "type": "residential",
+        "entrance": {
+          "x": 174,
+          "y": 58
+        },
         "spans": [
           [
             58,
@@ -7071,6 +7619,10 @@
       {
         "id": "building-0138",
         "type": "commercial",
+        "entrance": {
+          "x": 178,
+          "y": 58
+        },
         "spans": [
           [
             58,
@@ -7097,6 +7649,10 @@
       {
         "id": "building-0139",
         "type": "residential",
+        "entrance": {
+          "x": 106,
+          "y": 60
+        },
         "spans": [
           [
             59,
@@ -7118,6 +7674,10 @@
       {
         "id": "building-0140",
         "type": "residential",
+        "entrance": {
+          "x": 147,
+          "y": 61
+        },
         "spans": [
           [
             60,
@@ -7144,6 +7704,10 @@
       {
         "id": "building-0141",
         "type": "residential",
+        "entrance": {
+          "x": 11,
+          "y": 64
+        },
         "spans": [
           [
             61,
@@ -7190,6 +7754,10 @@
       {
         "id": "building-0142",
         "type": "residential",
+        "entrance": {
+          "x": 18,
+          "y": 65
+        },
         "spans": [
           [
             61,
@@ -7241,6 +7809,10 @@
       {
         "id": "building-0143",
         "type": "residential",
+        "entrance": {
+          "x": 31,
+          "y": 66
+        },
         "spans": [
           [
             61,
@@ -7287,6 +7859,10 @@
       {
         "id": "building-0144",
         "type": "commercial",
+        "entrance": {
+          "x": 87,
+          "y": 63
+        },
         "spans": [
           [
             61,
@@ -7308,6 +7884,10 @@
       {
         "id": "building-0145",
         "type": "residential",
+        "entrance": {
+          "x": 99,
+          "y": 66
+        },
         "spans": [
           [
             61,
@@ -7369,6 +7949,10 @@
       {
         "id": "building-0146",
         "type": "residential",
+        "entrance": {
+          "x": 111,
+          "y": 62
+        },
         "spans": [
           [
             61,
@@ -7395,6 +7979,10 @@
       {
         "id": "building-0147",
         "type": "residential",
+        "entrance": {
+          "x": 187,
+          "y": 65
+        },
         "spans": [
           [
             61,
@@ -7446,6 +8034,10 @@
       {
         "id": "building-0148",
         "type": "residential",
+        "entrance": {
+          "x": 68,
+          "y": 66
+        },
         "spans": [
           [
             62,
@@ -7497,6 +8089,10 @@
       {
         "id": "building-0149",
         "type": "residential",
+        "entrance": {
+          "x": 155,
+          "y": 65
+        },
         "spans": [
           [
             63,
@@ -7518,6 +8114,10 @@
       {
         "id": "building-0150",
         "type": "commercial",
+        "entrance": {
+          "x": 162,
+          "y": 65
+        },
         "spans": [
           [
             63,
@@ -7539,6 +8139,10 @@
       {
         "id": "building-0151",
         "type": "residential",
+        "entrance": {
+          "x": 143,
+          "y": 68
+        },
         "spans": [
           [
             64,
@@ -7575,6 +8179,10 @@
       {
         "id": "building-0152",
         "type": "commercial",
+        "entrance": {
+          "x": 195,
+          "y": 67
+        },
         "spans": [
           [
             64,
@@ -7616,6 +8224,10 @@
       {
         "id": "building-0153",
         "type": "residential",
+        "entrance": {
+          "x": 45,
+          "y": 66
+        },
         "spans": [
           [
             66,
@@ -7637,6 +8249,10 @@
       {
         "id": "building-0154",
         "type": "residential",
+        "entrance": {
+          "x": 55,
+          "y": 70
+        },
         "spans": [
           [
             66,
@@ -7713,6 +8329,10 @@
       {
         "id": "building-0155",
         "type": "commercial",
+        "entrance": {
+          "x": 103,
+          "y": 74
+        },
         "spans": [
           [
             66,
@@ -7799,6 +8419,10 @@
       {
         "id": "building-0156",
         "type": "commercial",
+        "entrance": {
+          "x": 169,
+          "y": 68
+        },
         "spans": [
           [
             66,
@@ -7835,6 +8459,10 @@
       {
         "id": "building-0157",
         "type": "residential",
+        "entrance": {
+          "x": 175,
+          "y": 66
+        },
         "spans": [
           [
             66,
@@ -7871,6 +8499,10 @@
       {
         "id": "building-0158",
         "type": "residential",
+        "entrance": {
+          "x": 88,
+          "y": 74
+        },
         "spans": [
           [
             68,
@@ -7937,6 +8569,10 @@
       {
         "id": "building-0159",
         "type": "residential",
+        "entrance": {
+          "x": 48,
+          "y": 75
+        },
         "spans": [
           [
             70,
@@ -7998,6 +8634,10 @@
       {
         "id": "building-0160",
         "type": "commercial",
+        "entrance": {
+          "x": 157,
+          "y": 70
+        },
         "spans": [
           [
             70,
@@ -8054,6 +8694,10 @@
       {
         "id": "building-0161",
         "type": "commercial",
+        "entrance": {
+          "x": 214,
+          "y": 73
+        },
         "spans": [
           [
             70,
@@ -8080,6 +8724,10 @@
       {
         "id": "building-0162",
         "type": "residential",
+        "entrance": {
+          "x": 72,
+          "y": 75
+        },
         "spans": [
           [
             71,
@@ -8131,6 +8779,10 @@
       {
         "id": "building-0163",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 75
+        },
         "spans": [
           [
             71,
@@ -8182,6 +8834,10 @@
       {
         "id": "building-0164",
         "type": "residential",
+        "entrance": {
+          "x": 139,
+          "y": 74
+        },
         "spans": [
           [
             71,
@@ -8208,6 +8864,10 @@
       {
         "id": "building-0165",
         "type": "residential",
+        "entrance": {
+          "x": 198,
+          "y": 75
+        },
         "spans": [
           [
             72,
@@ -8249,6 +8909,10 @@
       {
         "id": "building-0166",
         "type": "residential",
+        "entrance": {
+          "x": 13,
+          "y": 73
+        },
         "spans": [
           [
             73,
@@ -8290,6 +8954,10 @@
       {
         "id": "building-0167",
         "type": "commercial",
+        "entrance": {
+          "x": 30,
+          "y": 73
+        },
         "spans": [
           [
             73,
@@ -8331,6 +8999,10 @@
       {
         "id": "building-0168",
         "type": "residential",
+        "entrance": {
+          "x": 233,
+          "y": 73
+        },
         "spans": [
           [
             73,
@@ -8352,6 +9024,10 @@
       {
         "id": "building-0169",
         "type": "commercial",
+        "entrance": {
+          "x": 172,
+          "y": 76
+        },
         "spans": [
           [
             75,
@@ -8383,6 +9059,10 @@
       {
         "id": "building-0170",
         "type": "commercial",
+        "entrance": {
+          "x": 161,
+          "y": 79
+        },
         "spans": [
           [
             76,
@@ -8409,6 +9089,10 @@
       {
         "id": "building-0171",
         "type": "residential",
+        "entrance": {
+          "x": 196,
+          "y": 79
+        },
         "spans": [
           [
             77,
@@ -8430,6 +9114,10 @@
       {
         "id": "building-0172",
         "type": "residential",
+        "entrance": {
+          "x": 210,
+          "y": 79
+        },
         "spans": [
           [
             77,
@@ -8451,6 +9139,10 @@
       {
         "id": "building-0173",
         "type": "residential",
+        "entrance": {
+          "x": 215,
+          "y": 77
+        },
         "spans": [
           [
             77,
@@ -8472,6 +9164,10 @@
       {
         "id": "building-0174",
         "type": "residential",
+        "entrance": {
+          "x": 230,
+          "y": 81
+        },
         "spans": [
           [
             78,
@@ -8518,6 +9214,10 @@
       {
         "id": "building-0175",
         "type": "residential",
+        "entrance": {
+          "x": 134,
+          "y": 81
+        },
         "spans": [
           [
             79,
@@ -8554,6 +9254,10 @@
       {
         "id": "building-0176",
         "type": "residential",
+        "entrance": {
+          "x": 140,
+          "y": 79
+        },
         "spans": [
           [
             79,
@@ -8575,6 +9279,10 @@
       {
         "id": "building-0177",
         "type": "residential",
+        "entrance": {
+          "x": 145,
+          "y": 79
+        },
         "spans": [
           [
             79,
@@ -8596,6 +9304,10 @@
       {
         "id": "building-0178",
         "type": "residential",
+        "entrance": {
+          "x": 127,
+          "y": 87
+        },
         "spans": [
           [
             84,
@@ -8637,6 +9349,10 @@
       {
         "id": "building-0179",
         "type": "residential",
+        "entrance": {
+          "x": 12,
+          "y": 86
+        },
         "spans": [
           [
             86,
@@ -8668,6 +9384,10 @@
       {
         "id": "building-0180",
         "type": "commercial",
+        "entrance": {
+          "x": 29,
+          "y": 86
+        },
         "spans": [
           [
             86,
@@ -8694,6 +9414,10 @@
       {
         "id": "building-0181",
         "type": "residential",
+        "entrance": {
+          "x": 38,
+          "y": 90
+        },
         "spans": [
           [
             86,
@@ -8750,6 +9474,10 @@
       {
         "id": "building-0182",
         "type": "residential",
+        "entrance": {
+          "x": 53,
+          "y": 86
+        },
         "spans": [
           [
             86,
@@ -8806,6 +9534,10 @@
       {
         "id": "building-0183",
         "type": "residential",
+        "entrance": {
+          "x": 66,
+          "y": 91
+        },
         "spans": [
           [
             86,
@@ -8877,6 +9609,10 @@
       {
         "id": "building-0184",
         "type": "residential",
+        "entrance": {
+          "x": 74,
+          "y": 86
+        },
         "spans": [
           [
             86,
@@ -8918,6 +9654,10 @@
       {
         "id": "building-0185",
         "type": "commercial",
+        "entrance": {
+          "x": 134,
+          "y": 88
+        },
         "spans": [
           [
             86,
@@ -8954,6 +9694,10 @@
       {
         "id": "building-0186",
         "type": "commercial",
+        "entrance": {
+          "x": 165,
+          "y": 90
+        },
         "spans": [
           [
             86,
@@ -9015,6 +9759,10 @@
       {
         "id": "building-0187",
         "type": "residential",
+        "entrance": {
+          "x": 177,
+          "y": 86
+        },
         "spans": [
           [
             86,
@@ -9041,6 +9789,10 @@
       {
         "id": "building-0188",
         "type": "residential",
+        "entrance": {
+          "x": 184,
+          "y": 86
+        },
         "spans": [
           [
             86,
@@ -9067,6 +9819,10 @@
       {
         "id": "building-0189",
         "type": "residential",
+        "entrance": {
+          "x": 211,
+          "y": 88
+        },
         "spans": [
           [
             86,
@@ -9108,6 +9864,10 @@
       {
         "id": "building-0190",
         "type": "residential",
+        "entrance": {
+          "x": 220,
+          "y": 86
+        },
         "spans": [
           [
             86,
@@ -9134,6 +9894,10 @@
       {
         "id": "building-0191",
         "type": "residential",
+        "entrance": {
+          "x": 85,
+          "y": 91
+        },
         "spans": [
           [
             88,
@@ -9175,6 +9939,10 @@
       {
         "id": "building-0192",
         "type": "residential",
+        "entrance": {
+          "x": 26,
+          "y": 99
+        },
         "spans": [
           [
             91,
@@ -9276,6 +10044,10 @@
       {
         "id": "building-0193",
         "type": "residential",
+        "entrance": {
+          "x": 8,
+          "y": 93
+        },
         "spans": [
           [
             92,
@@ -9302,6 +10074,10 @@
       {
         "id": "building-0194",
         "type": "residential",
+        "entrance": {
+          "x": 15,
+          "y": 95
+        },
         "spans": [
           [
             92,
@@ -9338,6 +10114,10 @@
       {
         "id": "building-0195",
         "type": "commercial",
+        "entrance": {
+          "x": 124,
+          "y": 95
+        },
         "spans": [
           [
             92,
@@ -9394,6 +10174,10 @@
       {
         "id": "building-0196",
         "type": "residential",
+        "entrance": {
+          "x": 176,
+          "y": 94
+        },
         "spans": [
           [
             92,
@@ -9425,6 +10209,10 @@
       {
         "id": "building-0197",
         "type": "residential",
+        "entrance": {
+          "x": 239,
+          "y": 100
+        },
         "spans": [
           [
             93,
@@ -9486,6 +10274,10 @@
       {
         "id": "building-0198",
         "type": "residential",
+        "entrance": {
+          "x": 52,
+          "y": 98
+        },
         "spans": [
           [
             97,
@@ -9532,6 +10324,10 @@
       {
         "id": "building-0199",
         "type": "residential",
+        "entrance": {
+          "x": 58,
+          "y": 99
+        },
         "spans": [
           [
             97,
@@ -9568,6 +10364,10 @@
       {
         "id": "building-0200",
         "type": "residential",
+        "entrance": {
+          "x": 77,
+          "y": 99
+        },
         "spans": [
           [
             98,
@@ -9624,6 +10424,10 @@
       {
         "id": "building-0201",
         "type": "commercial",
+        "entrance": {
+          "x": 118,
+          "y": 101
+        },
         "spans": [
           [
             98,
@@ -9650,6 +10454,10 @@
       {
         "id": "building-0202",
         "type": "residential",
+        "entrance": {
+          "x": 16,
+          "y": 101
+        },
         "spans": [
           [
             99,
@@ -9686,6 +10494,10 @@
       {
         "id": "building-0203",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 102
+        },
         "spans": [
           [
             99,
@@ -9727,6 +10539,10 @@
       {
         "id": "building-0204",
         "type": "residential",
+        "entrance": {
+          "x": 169,
+          "y": 99
+        },
         "spans": [
           [
             99,
@@ -9763,6 +10579,10 @@
       {
         "id": "building-0205",
         "type": "residential",
+        "entrance": {
+          "x": 253,
+          "y": 203
+        },
         "spans": [
           [
             99,
@@ -10714,6 +11534,10 @@
       {
         "id": "building-0206",
         "type": "residential",
+        "entrance": {
+          "x": 9,
+          "y": 100
+        },
         "spans": [
           [
             100,
@@ -10735,6 +11559,10 @@
       {
         "id": "building-0207",
         "type": "residential",
+        "entrance": {
+          "x": 37,
+          "y": 100
+        },
         "spans": [
           [
             100,
@@ -10756,6 +11584,10 @@
       {
         "id": "building-0208",
         "type": "residential",
+        "entrance": {
+          "x": 44,
+          "y": 102
+        },
         "spans": [
           [
             100,
@@ -10787,6 +11619,10 @@
       {
         "id": "building-0209",
         "type": "commercial",
+        "entrance": {
+          "x": 114,
+          "y": 107
+        },
         "spans": [
           [
             101,
@@ -10848,6 +11684,10 @@
       {
         "id": "building-0210",
         "type": "residential",
+        "entrance": {
+          "x": 218,
+          "y": 108
+        },
         "spans": [
           [
             103,
@@ -10899,6 +11739,10 @@
       {
         "id": "building-0211",
         "type": "residential",
+        "entrance": {
+          "x": 37,
+          "y": 107
+        },
         "spans": [
           [
             104,
@@ -10930,6 +11774,10 @@
       {
         "id": "building-0212",
         "type": "residential",
+        "entrance": {
+          "x": 8,
+          "y": 106
+        },
         "spans": [
           [
             105,
@@ -10956,6 +11804,10 @@
       {
         "id": "building-0213",
         "type": "residential",
+        "entrance": {
+          "x": 165,
+          "y": 107
+        },
         "spans": [
           [
             105,
@@ -10992,6 +11844,10 @@
       {
         "id": "building-0214",
         "type": "residential",
+        "entrance": {
+          "x": 205,
+          "y": 108
+        },
         "spans": [
           [
             105,
@@ -11058,6 +11914,10 @@
       {
         "id": "building-0215",
         "type": "commercial",
+        "entrance": {
+          "x": 235,
+          "y": 107
+        },
         "spans": [
           [
             105,
@@ -11109,6 +11969,10 @@
       {
         "id": "building-0216",
         "type": "commercial",
+        "entrance": {
+          "x": 51,
+          "y": 108
+        },
         "spans": [
           [
             107,
@@ -11135,6 +11999,10 @@
       {
         "id": "building-0217",
         "type": "residential",
+        "entrance": {
+          "x": 58,
+          "y": 109
+        },
         "spans": [
           [
             107,
@@ -11161,6 +12029,10 @@
       {
         "id": "building-0218",
         "type": "residential",
+        "entrance": {
+          "x": 18,
+          "y": 122
+        },
         "spans": [
           [
             109,
@@ -11277,6 +12149,10 @@
       {
         "id": "building-0219",
         "type": "residential",
+        "entrance": {
+          "x": 44,
+          "y": 109
+        },
         "spans": [
           [
             109,
@@ -11308,6 +12184,10 @@
       {
         "id": "building-0220",
         "type": "residential",
+        "entrance": {
+          "x": 65,
+          "y": 112
+        },
         "spans": [
           [
             110,
@@ -11344,6 +12224,10 @@
       {
         "id": "building-0221",
         "type": "residential",
+        "entrance": {
+          "x": 197,
+          "y": 117
+        },
         "spans": [
           [
             110,
@@ -11425,6 +12309,10 @@
       {
         "id": "building-0222",
         "type": "commercial",
+        "entrance": {
+          "x": 9,
+          "y": 113
+        },
         "spans": [
           [
             111,
@@ -11446,6 +12334,10 @@
       {
         "id": "building-0223",
         "type": "residential",
+        "entrance": {
+          "x": 30,
+          "y": 119
+        },
         "spans": [
           [
             111,
@@ -11507,6 +12399,10 @@
       {
         "id": "building-0224",
         "type": "residential",
+        "entrance": {
+          "x": 33,
+          "y": 112
+        },
         "spans": [
           [
             112,
@@ -11533,6 +12429,10 @@
       {
         "id": "building-0225",
         "type": "commercial",
+        "entrance": {
+          "x": 155,
+          "y": 115
+        },
         "spans": [
           [
             112,
@@ -11579,6 +12479,10 @@
       {
         "id": "building-0226",
         "type": "residential",
+        "entrance": {
+          "x": 163,
+          "y": 112
+        },
         "spans": [
           [
             112,
@@ -11610,6 +12514,10 @@
       {
         "id": "building-0227",
         "type": "residential",
+        "entrance": {
+          "x": 203,
+          "y": 112
+        },
         "spans": [
           [
             112,
@@ -11636,6 +12544,10 @@
       {
         "id": "building-0228",
         "type": "commercial",
+        "entrance": {
+          "x": 104,
+          "y": 116
+        },
         "spans": [
           [
             114,
@@ -11667,6 +12579,10 @@
       {
         "id": "building-0229",
         "type": "residential",
+        "entrance": {
+          "x": 42,
+          "y": 118
+        },
         "spans": [
           [
             115,
@@ -11708,6 +12624,10 @@
       {
         "id": "building-0230",
         "type": "residential",
+        "entrance": {
+          "x": 51,
+          "y": 119
+        },
         "spans": [
           [
             117,
@@ -11744,6 +12664,10 @@
       {
         "id": "building-0231",
         "type": "residential",
+        "entrance": {
+          "x": 62,
+          "y": 120
+        },
         "spans": [
           [
             117,
@@ -11790,6 +12714,10 @@
       {
         "id": "building-0232",
         "type": "residential",
+        "entrance": {
+          "x": 8,
+          "y": 120
+        },
         "spans": [
           [
             118,
@@ -11821,6 +12749,10 @@
       {
         "id": "building-0233",
         "type": "residential",
+        "entrance": {
+          "x": 112,
+          "y": 120
+        },
         "spans": [
           [
             118,
@@ -11857,6 +12789,10 @@
       {
         "id": "building-0234",
         "type": "residential",
+        "entrance": {
+          "x": 221,
+          "y": 118
+        },
         "spans": [
           [
             118,
@@ -11883,6 +12819,10 @@
       {
         "id": "building-0235",
         "type": "residential",
+        "entrance": {
+          "x": 232,
+          "y": 122
+        },
         "spans": [
           [
             118,
@@ -11934,6 +12874,10 @@
       {
         "id": "building-0236",
         "type": "residential",
+        "entrance": {
+          "x": 240,
+          "y": 124
+        },
         "spans": [
           [
             118,
@@ -12000,6 +12944,10 @@
       {
         "id": "building-0237",
         "type": "commercial",
+        "entrance": {
+          "x": 104,
+          "y": 122
+        },
         "spans": [
           [
             120,
@@ -12031,6 +12979,10 @@
       {
         "id": "building-0238",
         "type": "commercial",
+        "entrance": {
+          "x": 202,
+          "y": 122
+        },
         "spans": [
           [
             120,
@@ -12067,6 +13019,10 @@
       {
         "id": "building-0239",
         "type": "residential",
+        "entrance": {
+          "x": 206,
+          "y": 123
+        },
         "spans": [
           [
             120,
@@ -12108,6 +13064,10 @@
       {
         "id": "building-0240",
         "type": "commercial",
+        "entrance": {
+          "x": 211,
+          "y": 122
+        },
         "spans": [
           [
             120,
@@ -12144,6 +13104,10 @@
       {
         "id": "building-0241",
         "type": "residential",
+        "entrance": {
+          "x": 100,
+          "y": 125
+        },
         "spans": [
           [
             121,
@@ -12190,6 +13154,10 @@
       {
         "id": "building-0242",
         "type": "commercial",
+        "entrance": {
+          "x": 146,
+          "y": 122
+        },
         "spans": [
           [
             122,
@@ -12216,6 +13184,10 @@
       {
         "id": "building-0243",
         "type": "residential",
+        "entrance": {
+          "x": 152,
+          "y": 122
+        },
         "spans": [
           [
             122,
@@ -12242,6 +13214,10 @@
       {
         "id": "building-0244",
         "type": "residential",
+        "entrance": {
+          "x": 189,
+          "y": 124
+        },
         "spans": [
           [
             122,
@@ -12263,6 +13239,10 @@
       {
         "id": "building-0245",
         "type": "commercial",
+        "entrance": {
+          "x": 95,
+          "y": 126
+        },
         "spans": [
           [
             123,
@@ -12299,6 +13279,10 @@
       {
         "id": "building-0246",
         "type": "residential",
+        "entrance": {
+          "x": 183,
+          "y": 126
+        },
         "spans": [
           [
             123,
@@ -12340,6 +13324,10 @@
       {
         "id": "building-0247",
         "type": "commercial",
+        "entrance": {
+          "x": 26,
+          "y": 127
+        },
         "spans": [
           [
             124,
@@ -12381,6 +13369,10 @@
       {
         "id": "building-0248",
         "type": "residential",
+        "entrance": {
+          "x": 40,
+          "y": 126
+        },
         "spans": [
           [
             124,
@@ -12432,6 +13424,10 @@
       {
         "id": "building-0249",
         "type": "residential",
+        "entrance": {
+          "x": 223,
+          "y": 128
+        },
         "spans": [
           [
             124,
@@ -12463,6 +13459,10 @@
       {
         "id": "building-0250",
         "type": "residential",
+        "entrance": {
+          "x": 55,
+          "y": 127
+        },
         "spans": [
           [
             127,
@@ -12494,6 +13494,10 @@
       {
         "id": "building-0251",
         "type": "residential",
+        "entrance": {
+          "x": 145,
+          "y": 131
+        },
         "spans": [
           [
             127,
@@ -12545,6 +13549,10 @@
       {
         "id": "building-0252",
         "type": "commercial",
+        "entrance": {
+          "x": 193,
+          "y": 128
+        },
         "spans": [
           [
             128,
@@ -12591,6 +13599,10 @@
       {
         "id": "building-0253",
         "type": "residential",
+        "entrance": {
+          "x": 206,
+          "y": 132
+        },
         "spans": [
           [
             128,
@@ -12637,6 +13649,10 @@
       {
         "id": "building-0254",
         "type": "residential",
+        "entrance": {
+          "x": 179,
+          "y": 132
+        },
         "spans": [
           [
             129,
@@ -12678,6 +13694,10 @@
       {
         "id": "building-0255",
         "type": "residential",
+        "entrance": {
+          "x": 202,
+          "y": 132
+        },
         "spans": [
           [
             129,
@@ -12719,6 +13739,10 @@
       {
         "id": "building-0256",
         "type": "residential",
+        "entrance": {
+          "x": 211,
+          "y": 132
+        },
         "spans": [
           [
             129,
@@ -12760,6 +13784,10 @@
       {
         "id": "building-0257",
         "type": "commercial",
+        "entrance": {
+          "x": 237,
+          "y": 132
+        },
         "spans": [
           [
             129,
@@ -12801,6 +13829,10 @@
       {
         "id": "building-0258",
         "type": "residential",
+        "entrance": {
+          "x": 246,
+          "y": 133
+        },
         "spans": [
           [
             129,
@@ -12857,6 +13889,10 @@
       {
         "id": "building-0259",
         "type": "residential",
+        "entrance": {
+          "x": 82,
+          "y": 133
+        },
         "spans": [
           [
             130,
@@ -12908,6 +13944,10 @@
       {
         "id": "building-0260",
         "type": "residential",
+        "entrance": {
+          "x": 51,
+          "y": 135
+        },
         "spans": [
           [
             131,
@@ -12964,6 +14004,10 @@
       {
         "id": "building-0261",
         "type": "commercial",
+        "entrance": {
+          "x": 135,
+          "y": 135
+        },
         "spans": [
           [
             132,
@@ -13015,6 +14059,10 @@
       {
         "id": "building-0262",
         "type": "residential",
+        "entrance": {
+          "x": 225,
+          "y": 135
+        },
         "spans": [
           [
             132,
@@ -13051,6 +14099,10 @@
       {
         "id": "building-0263",
         "type": "commercial",
+        "entrance": {
+          "x": 14,
+          "y": 137
+        },
         "spans": [
           [
             137,
@@ -13067,6 +14119,10 @@
       {
         "id": "building-0264",
         "type": "residential",
+        "entrance": {
+          "x": 31,
+          "y": 145
+        },
         "spans": [
           [
             137,
@@ -13128,6 +14184,10 @@
       {
         "id": "building-0265",
         "type": "commercial",
+        "entrance": {
+          "x": 228,
+          "y": 138
+        },
         "spans": [
           [
             137,
@@ -13154,6 +14214,10 @@
       {
         "id": "building-0266",
         "type": "residential",
+        "entrance": {
+          "x": 85,
+          "y": 141
+        },
         "spans": [
           [
             138,
@@ -13200,6 +14264,10 @@
       {
         "id": "building-0267",
         "type": "commercial",
+        "entrance": {
+          "x": 169,
+          "y": 144
+        },
         "spans": [
           [
             139,
@@ -13236,6 +14304,10 @@
       {
         "id": "building-0268",
         "type": "residential",
+        "entrance": {
+          "x": 14,
+          "y": 142
+        },
         "spans": [
           [
             140,
@@ -13257,6 +14329,10 @@
       {
         "id": "building-0269",
         "type": "commercial",
+        "entrance": {
+          "x": 96,
+          "y": 140
+        },
         "spans": [
           [
             140,
@@ -13293,6 +14369,10 @@
       {
         "id": "building-0270",
         "type": "residential",
+        "entrance": {
+          "x": 176,
+          "y": 140
+        },
         "spans": [
           [
             140,
@@ -13329,6 +14409,10 @@
       {
         "id": "building-0271",
         "type": "commercial",
+        "entrance": {
+          "x": 187,
+          "y": 145
+        },
         "spans": [
           [
             140,
@@ -13400,6 +14484,10 @@
       {
         "id": "building-0272",
         "type": "residential",
+        "entrance": {
+          "x": 205,
+          "y": 145
+        },
         "spans": [
           [
             140,
@@ -13436,6 +14524,10 @@
       {
         "id": "building-0273",
         "type": "residential",
+        "entrance": {
+          "x": 218,
+          "y": 143
+        },
         "spans": [
           [
             140,
@@ -13472,6 +14564,10 @@
       {
         "id": "building-0274",
         "type": "commercial",
+        "entrance": {
+          "x": 236,
+          "y": 140
+        },
         "spans": [
           [
             140,
@@ -13508,6 +14604,10 @@
       {
         "id": "building-0275",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 144
+        },
         "spans": [
           [
             142,
@@ -13529,6 +14629,10 @@
       {
         "id": "building-0276",
         "type": "residential",
+        "entrance": {
+          "x": 119,
+          "y": 142
+        },
         "spans": [
           [
             142,
@@ -13575,6 +14679,10 @@
       {
         "id": "building-0277",
         "type": "commercial",
+        "entrance": {
+          "x": 230,
+          "y": 145
+        },
         "spans": [
           [
             142,
@@ -13601,6 +14709,10 @@
       {
         "id": "building-0278",
         "type": "residential",
+        "entrance": {
+          "x": 243,
+          "y": 143
+        },
         "spans": [
           [
             143,
@@ -13622,6 +14734,10 @@
       {
         "id": "building-0279",
         "type": "residential",
+        "entrance": {
+          "x": 17,
+          "y": 152
+        },
         "spans": [
           [
             147,
@@ -13698,6 +14814,10 @@
       {
         "id": "building-0280",
         "type": "commercial",
+        "entrance": {
+          "x": 84,
+          "y": 154
+        },
         "spans": [
           [
             154,
@@ -13734,6 +14854,10 @@
       {
         "id": "building-0281",
         "type": "residential",
+        "entrance": {
+          "x": 97,
+          "y": 157
+        },
         "spans": [
           [
             154,
@@ -13775,6 +14899,10 @@
       {
         "id": "building-0282",
         "type": "commercial",
+        "entrance": {
+          "x": 106,
+          "y": 157
+        },
         "spans": [
           [
             154,
@@ -13811,6 +14939,10 @@
       {
         "id": "building-0283",
         "type": "commercial",
+        "entrance": {
+          "x": 117,
+          "y": 154
+        },
         "spans": [
           [
             154,
@@ -13847,6 +14979,10 @@
       {
         "id": "building-0284",
         "type": "residential",
+        "entrance": {
+          "x": 130,
+          "y": 154
+        },
         "spans": [
           [
             154,
@@ -13858,6 +14994,10 @@
       {
         "id": "building-0285",
         "type": "residential",
+        "entrance": {
+          "x": 174,
+          "y": 156
+        },
         "spans": [
           [
             154,
@@ -13904,6 +15044,10 @@
       {
         "id": "building-0286",
         "type": "residential",
+        "entrance": {
+          "x": 186,
+          "y": 157
+        },
         "spans": [
           [
             154,
@@ -13955,6 +15099,10 @@
       {
         "id": "building-0287",
         "type": "residential",
+        "entrance": {
+          "x": 197,
+          "y": 158
+        },
         "spans": [
           [
             154,
@@ -14011,6 +15159,10 @@
       {
         "id": "building-0288",
         "type": "residential",
+        "entrance": {
+          "x": 209,
+          "y": 154
+        },
         "spans": [
           [
             154,
@@ -14047,6 +15199,10 @@
       {
         "id": "building-0289",
         "type": "commercial",
+        "entrance": {
+          "x": 222,
+          "y": 159
+        },
         "spans": [
           [
             154,
@@ -14088,6 +15244,10 @@
       {
         "id": "building-0290",
         "type": "residential",
+        "entrance": {
+          "x": 228,
+          "y": 154
+        },
         "spans": [
           [
             154,
@@ -14124,6 +15284,10 @@
       {
         "id": "building-0291",
         "type": "residential",
+        "entrance": {
+          "x": 234,
+          "y": 154
+        },
         "spans": [
           [
             154,
@@ -14160,6 +15324,10 @@
       {
         "id": "building-0292",
         "type": "residential",
+        "entrance": {
+          "x": 245,
+          "y": 154
+        },
         "spans": [
           [
             154,
@@ -14196,6 +15364,10 @@
       {
         "id": "building-0293",
         "type": "residential",
+        "entrance": {
+          "x": 58,
+          "y": 162
+        },
         "spans": [
           [
             155,
@@ -14252,6 +15424,10 @@
       {
         "id": "building-0294",
         "type": "residential",
+        "entrance": {
+          "x": 71,
+          "y": 164
+        },
         "spans": [
           [
             155,
@@ -14343,6 +15519,10 @@
       {
         "id": "building-0295",
         "type": "residential",
+        "entrance": {
+          "x": 161,
+          "y": 158
+        },
         "spans": [
           [
             155,
@@ -14384,6 +15564,10 @@
       {
         "id": "building-0297",
         "type": "residential",
+        "entrance": {
+          "x": 241,
+          "y": 159
+        },
         "spans": [
           [
             157,
@@ -14405,6 +15589,10 @@
       {
         "id": "building-0298",
         "type": "residential",
+        "entrance": {
+          "x": 22,
+          "y": 163
+        },
         "spans": [
           [
             159,
@@ -14456,6 +15644,10 @@
       {
         "id": "building-0299",
         "type": "residential",
+        "entrance": {
+          "x": 51,
+          "y": 164
+        },
         "spans": [
           [
             160,
@@ -14487,6 +15679,10 @@
       {
         "id": "building-0300",
         "type": "residential",
+        "entrance": {
+          "x": 153,
+          "y": 164
+        },
         "spans": [
           [
             161,
@@ -14528,6 +15724,10 @@
       {
         "id": "building-0301",
         "type": "residential",
+        "entrance": {
+          "x": 10,
+          "y": 162
+        },
         "spans": [
           [
             162,
@@ -14549,6 +15749,10 @@
       {
         "id": "building-0302",
         "type": "commercial",
+        "entrance": {
+          "x": 12,
+          "y": 172
+        },
         "spans": [
           [
             162,
@@ -14630,6 +15834,10 @@
       {
         "id": "building-0304",
         "type": "commercial",
+        "entrance": {
+          "x": 99,
+          "y": 165
+        },
         "spans": [
           [
             162,
@@ -14671,6 +15879,10 @@
       {
         "id": "building-0305",
         "type": "residential",
+        "entrance": {
+          "x": 104,
+          "y": 165
+        },
         "spans": [
           [
             162,
@@ -14717,6 +15929,10 @@
       {
         "id": "building-0306",
         "type": "residential",
+        "entrance": {
+          "x": 220,
+          "y": 166
+        },
         "spans": [
           [
             162,
@@ -14763,6 +15979,10 @@
       {
         "id": "building-0307",
         "type": "residential",
+        "entrance": {
+          "x": 203,
+          "y": 165
+        },
         "spans": [
           [
             163,
@@ -14809,6 +16029,10 @@
       {
         "id": "building-0308",
         "type": "commercial",
+        "entrance": {
+          "x": 230,
+          "y": 165
+        },
         "spans": [
           [
             163,
@@ -14870,6 +16094,10 @@
       {
         "id": "building-0309",
         "type": "residential",
+        "entrance": {
+          "x": 162,
+          "y": 175
+        },
         "spans": [
           [
             164,
@@ -14981,6 +16209,10 @@
       {
         "id": "building-0310",
         "type": "residential",
+        "entrance": {
+          "x": 166,
+          "y": 164
+        },
         "spans": [
           [
             164,
@@ -15017,6 +16249,10 @@
       {
         "id": "building-0311",
         "type": "commercial",
+        "entrance": {
+          "x": 178,
+          "y": 169
+        },
         "spans": [
           [
             164,
@@ -15078,6 +16314,10 @@
       {
         "id": "building-0312",
         "type": "commercial",
+        "entrance": {
+          "x": 186,
+          "y": 164
+        },
         "spans": [
           [
             164,
@@ -15114,6 +16354,10 @@
       {
         "id": "building-0313",
         "type": "residential",
+        "entrance": {
+          "x": 194,
+          "y": 166
+        },
         "spans": [
           [
             164,
@@ -15150,6 +16394,10 @@
       {
         "id": "building-0314",
         "type": "residential",
+        "entrance": {
+          "x": 211,
+          "y": 166
+        },
         "spans": [
           [
             164,
@@ -15186,6 +16434,10 @@
       {
         "id": "building-0315",
         "type": "residential",
+        "entrance": {
+          "x": 240,
+          "y": 166
+        },
         "spans": [
           [
             164,
@@ -15222,6 +16474,10 @@
       {
         "id": "building-0316",
         "type": "commercial",
+        "entrance": {
+          "x": 248,
+          "y": 166
+        },
         "spans": [
           [
             164,
@@ -15258,6 +16514,10 @@
       {
         "id": "building-0317",
         "type": "residential",
+        "entrance": {
+          "x": 149,
+          "y": 172
+        },
         "spans": [
           [
             166,
@@ -15334,6 +16594,10 @@
       {
         "id": "building-0318",
         "type": "commercial",
+        "entrance": {
+          "x": 47,
+          "y": 170
+        },
         "spans": [
           [
             168,
@@ -15370,6 +16634,10 @@
       {
         "id": "building-0319",
         "type": "residential",
+        "entrance": {
+          "x": 21,
+          "y": 172
+        },
         "spans": [
           [
             169,
@@ -15426,6 +16694,10 @@
       {
         "id": "building-0320",
         "type": "commercial",
+        "entrance": {
+          "x": 58,
+          "y": 171
+        },
         "spans": [
           [
             171,
@@ -15457,6 +16729,10 @@
       {
         "id": "building-0321",
         "type": "commercial",
+        "entrance": {
+          "x": 70,
+          "y": 172
+        },
         "spans": [
           [
             171,
@@ -15498,6 +16774,10 @@
       {
         "id": "building-0322",
         "type": "commercial",
+        "entrance": {
+          "x": 83,
+          "y": 171
+        },
         "spans": [
           [
             171,
@@ -15529,6 +16809,10 @@
       {
         "id": "building-0324",
         "type": "commercial",
+        "entrance": {
+          "x": 94,
+          "y": 176
+        },
         "spans": [
           [
             172,
@@ -15585,6 +16869,10 @@
       {
         "id": "building-0325",
         "type": "residential",
+        "entrance": {
+          "x": 178,
+          "y": 175
+        },
         "spans": [
           [
             175,
@@ -15631,6 +16919,10 @@
       {
         "id": "building-0326",
         "type": "commercial",
+        "entrance": {
+          "x": 47,
+          "y": 178
+        },
         "spans": [
           [
             176,
@@ -15667,6 +16959,10 @@
       {
         "id": "building-0327",
         "type": "hospital",
+        "entrance": {
+          "x": 191,
+          "y": 179
+        },
         "spans": [
           [
             176,
@@ -15768,6 +17064,10 @@
       {
         "id": "building-0328",
         "type": "residential",
+        "entrance": {
+          "x": 208,
+          "y": 176
+        },
         "spans": [
           [
             176,
@@ -15804,6 +17104,10 @@
       {
         "id": "building-0329",
         "type": "commercial",
+        "entrance": {
+          "x": 221,
+          "y": 176
+        },
         "spans": [
           [
             176,
@@ -15830,6 +17134,10 @@
       {
         "id": "building-0330",
         "type": "residential",
+        "entrance": {
+          "x": 234,
+          "y": 176
+        },
         "spans": [
           [
             176,
@@ -15851,6 +17159,10 @@
       {
         "id": "building-0331",
         "type": "commercial",
+        "entrance": {
+          "x": 244,
+          "y": 176
+        },
         "spans": [
           [
             176,
@@ -15872,6 +17184,10 @@
       {
         "id": "building-0332",
         "type": "residential",
+        "entrance": {
+          "x": 13,
+          "y": 183
+        },
         "spans": [
           [
             177,
@@ -15913,6 +17229,10 @@
       {
         "id": "building-0333",
         "type": "commercial",
+        "entrance": {
+          "x": 58,
+          "y": 180
+        },
         "spans": [
           [
             180,
@@ -15944,6 +17264,10 @@
       {
         "id": "building-0334",
         "type": "commercial",
+        "entrance": {
+          "x": 70,
+          "y": 180
+        },
         "spans": [
           [
             180,
@@ -15975,6 +17299,10 @@
       {
         "id": "building-0335",
         "type": "commercial",
+        "entrance": {
+          "x": 83,
+          "y": 181
+        },
         "spans": [
           [
             180,
@@ -16016,6 +17344,10 @@
       {
         "id": "building-0336",
         "type": "residential",
+        "entrance": {
+          "x": 174,
+          "y": 184
+        },
         "spans": [
           [
             180,
@@ -16072,6 +17404,10 @@
       {
         "id": "building-0337",
         "type": "residential",
+        "entrance": {
+          "x": 150,
+          "y": 181
+        },
         "spans": [
           [
             181,
@@ -16103,6 +17439,10 @@
       {
         "id": "building-0338",
         "type": "residential",
+        "entrance": {
+          "x": 221,
+          "y": 184
+        },
         "spans": [
           [
             181,
@@ -16129,6 +17469,10 @@
       {
         "id": "building-0339",
         "type": "residential",
+        "entrance": {
+          "x": 229,
+          "y": 188
+        },
         "spans": [
           [
             182,
@@ -16225,6 +17569,10 @@
       {
         "id": "building-0340",
         "type": "residential",
+        "entrance": {
+          "x": 131,
+          "y": 186
+        },
         "spans": [
           [
             183,
@@ -16251,6 +17599,10 @@
       {
         "id": "building-0341",
         "type": "commercial",
+        "entrance": {
+          "x": 136,
+          "y": 186
+        },
         "spans": [
           [
             183,
@@ -16277,6 +17629,10 @@
       {
         "id": "building-0342",
         "type": "residential",
+        "entrance": {
+          "x": 207,
+          "y": 183
+        },
         "spans": [
           [
             183,
@@ -16298,6 +17654,10 @@
       {
         "id": "building-0343",
         "type": "residential",
+        "entrance": {
+          "x": 238,
+          "y": 185
+        },
         "spans": [
           [
             183,
@@ -16334,6 +17694,10 @@
       {
         "id": "building-0344",
         "type": "residential",
+        "entrance": {
+          "x": 246,
+          "y": 185
+        },
         "spans": [
           [
             183,
@@ -16370,6 +17734,10 @@
       {
         "id": "building-0345",
         "type": "residential",
+        "entrance": {
+          "x": 17,
+          "y": 188
+        },
         "spans": [
           [
             184,
@@ -16431,6 +17799,10 @@
       {
         "id": "building-0346",
         "type": "commercial",
+        "entrance": {
+          "x": 43,
+          "y": 188
+        },
         "spans": [
           [
             184,
@@ -16462,6 +17834,10 @@
       {
         "id": "building-0347",
         "type": "residential",
+        "entrance": {
+          "x": 161,
+          "y": 186
+        },
         "spans": [
           [
             186,
@@ -16523,6 +17899,10 @@
       {
         "id": "building-0348",
         "type": "residential",
+        "entrance": {
+          "x": 127,
+          "y": 192
+        },
         "spans": [
           [
             187,
@@ -16589,6 +17969,10 @@
       {
         "id": "building-0349",
         "type": "residential",
+        "entrance": {
+          "x": 182,
+          "y": 189
+        },
         "spans": [
           [
             187,
@@ -16625,6 +18009,10 @@
       {
         "id": "building-0350",
         "type": "residential",
+        "entrance": {
+          "x": 211,
+          "y": 191
+        },
         "spans": [
           [
             187,
@@ -16681,6 +18069,10 @@
       {
         "id": "building-0351",
         "type": "residential",
+        "entrance": {
+          "x": 8,
+          "y": 192
+        },
         "spans": [
           [
             189,
@@ -16727,6 +18119,10 @@
       {
         "id": "building-0352",
         "type": "commercial",
+        "entrance": {
+          "x": 57,
+          "y": 189
+        },
         "spans": [
           [
             189,
@@ -16763,6 +18159,10 @@
       {
         "id": "building-0353",
         "type": "commercial",
+        "entrance": {
+          "x": 70,
+          "y": 189
+        },
         "spans": [
           [
             189,
@@ -16799,6 +18199,10 @@
       {
         "id": "building-0354",
         "type": "commercial",
+        "entrance": {
+          "x": 83,
+          "y": 189
+        },
         "spans": [
           [
             189,
@@ -16835,6 +18239,10 @@
       {
         "id": "building-0355",
         "type": "residential",
+        "entrance": {
+          "x": 99,
+          "y": 189
+        },
         "spans": [
           [
             189,
@@ -16846,6 +18254,10 @@
       {
         "id": "building-0356",
         "type": "residential",
+        "entrance": {
+          "x": 101,
+          "y": 189
+        },
         "spans": [
           [
             189,
@@ -16857,6 +18269,10 @@
       {
         "id": "building-0357",
         "type": "commercial",
+        "entrance": {
+          "x": 145,
+          "y": 191
+        },
         "spans": [
           [
             189,
@@ -16883,6 +18299,10 @@
       {
         "id": "building-0358",
         "type": "commercial",
+        "entrance": {
+          "x": 219,
+          "y": 192
+        },
         "spans": [
           [
             189,
@@ -16939,6 +18359,10 @@
       {
         "id": "building-0359",
         "type": "commercial",
+        "entrance": {
+          "x": 37,
+          "y": 196
+        },
         "spans": [
           [
             191,
@@ -16990,6 +18414,10 @@
       {
         "id": "building-0360",
         "type": "residential",
+        "entrance": {
+          "x": 99,
+          "y": 191
+        },
         "spans": [
           [
             191,
@@ -17001,6 +18429,10 @@
       {
         "id": "building-0361",
         "type": "residential",
+        "entrance": {
+          "x": 134,
+          "y": 191
+        },
         "spans": [
           [
             191,
@@ -17037,6 +18469,10 @@
       {
         "id": "building-0362",
         "type": "residential",
+        "entrance": {
+          "x": 171,
+          "y": 193
+        },
         "spans": [
           [
             191,
@@ -17073,6 +18509,10 @@
       {
         "id": "building-0363",
         "type": "residential",
+        "entrance": {
+          "x": 191,
+          "y": 191
+        },
         "spans": [
           [
             191,
@@ -17109,6 +18549,10 @@
       {
         "id": "building-0364",
         "type": "residential",
+        "entrance": {
+          "x": 203,
+          "y": 191
+        },
         "spans": [
           [
             191,
@@ -17145,6 +18589,10 @@
       {
         "id": "building-0365",
         "type": "residential",
+        "entrance": {
+          "x": 153,
+          "y": 196
+        },
         "spans": [
           [
             193,
@@ -17171,6 +18619,10 @@
       {
         "id": "building-0366",
         "type": "residential",
+        "entrance": {
+          "x": 241,
+          "y": 195
+        },
         "spans": [
           [
             193,
@@ -17212,6 +18664,10 @@
       {
         "id": "building-0367",
         "type": "residential",
+        "entrance": {
+          "x": 99,
+          "y": 194
+        },
         "spans": [
           [
             194,
@@ -17223,6 +18679,10 @@
       {
         "id": "building-0368",
         "type": "residential",
+        "entrance": {
+          "x": 101,
+          "y": 194
+        },
         "spans": [
           [
             194,
@@ -17234,6 +18694,10 @@
       {
         "id": "building-0369",
         "type": "residential",
+        "entrance": {
+          "x": 182,
+          "y": 196
+        },
         "spans": [
           [
             194,
@@ -17255,6 +18719,10 @@
       {
         "id": "building-0370",
         "type": "commercial",
+        "entrance": {
+          "x": 118,
+          "y": 198
+        },
         "spans": [
           [
             195,
@@ -17301,6 +18769,10 @@
       {
         "id": "building-0371",
         "type": "commercial",
+        "entrance": {
+          "x": 46,
+          "y": 198
+        },
         "spans": [
           [
             198,
@@ -17337,6 +18809,10 @@
       {
         "id": "building-0372",
         "type": "residential",
+        "entrance": {
+          "x": 94,
+          "y": 200
+        },
         "spans": [
           [
             198,
@@ -17368,6 +18844,10 @@
       {
         "id": "building-0373",
         "type": "commercial",
+        "entrance": {
+          "x": 55,
+          "y": 199
+        },
         "spans": [
           [
             199,
@@ -17399,6 +18879,10 @@
       {
         "id": "building-0374",
         "type": "commercial",
+        "entrance": {
+          "x": 68,
+          "y": 204
+        },
         "spans": [
           [
             199,
@@ -17435,6 +18919,10 @@
       {
         "id": "building-0375",
         "type": "commercial",
+        "entrance": {
+          "x": 83,
+          "y": 199
+        },
         "spans": [
           [
             199,
@@ -17466,6 +18954,10 @@
       {
         "id": "building-0376",
         "type": "commercial",
+        "entrance": {
+          "x": 37,
+          "y": 205
+        },
         "spans": [
           [
             201,
@@ -17517,6 +19009,10 @@
       {
         "id": "building-0377",
         "type": "residential",
+        "entrance": {
+          "x": 11,
+          "y": 206
+        },
         "spans": [
           [
             202,
@@ -17573,6 +19069,10 @@
       {
         "id": "building-0378",
         "type": "residential",
+        "entrance": {
+          "x": 164,
+          "y": 212
+        },
         "spans": [
           [
             202,
@@ -17684,6 +19184,10 @@
       {
         "id": "building-0379",
         "type": "residential",
+        "entrance": {
+          "x": 126,
+          "y": 209
+        },
         "spans": [
           [
             203,
@@ -17770,6 +19274,10 @@
       {
         "id": "building-0380",
         "type": "residential",
+        "entrance": {
+          "x": 143,
+          "y": 208
+        },
         "spans": [
           [
             203,
@@ -17816,6 +19324,10 @@
       {
         "id": "building-0381",
         "type": "residential",
+        "entrance": {
+          "x": 152,
+          "y": 203
+        },
         "spans": [
           [
             203,
@@ -17852,6 +19364,10 @@
       {
         "id": "building-0382",
         "type": "residential",
+        "entrance": {
+          "x": 175,
+          "y": 207
+        },
         "spans": [
           [
             203,
@@ -17888,6 +19404,10 @@
       {
         "id": "building-0383",
         "type": "residential",
+        "entrance": {
+          "x": 190,
+          "y": 208
+        },
         "spans": [
           [
             203,
@@ -17969,6 +19489,10 @@
       {
         "id": "building-0384",
         "type": "residential",
+        "entrance": {
+          "x": 208,
+          "y": 205
+        },
         "spans": [
           [
             203,
@@ -17995,6 +19519,10 @@
       {
         "id": "building-0385",
         "type": "commercial",
+        "entrance": {
+          "x": 220,
+          "y": 203
+        },
         "spans": [
           [
             203,
@@ -18021,6 +19549,10 @@
       {
         "id": "building-0386",
         "type": "residential",
+        "entrance": {
+          "x": 228,
+          "y": 211
+        },
         "spans": [
           [
             203,
@@ -18092,6 +19624,10 @@
       {
         "id": "building-0387",
         "type": "residential",
+        "entrance": {
+          "x": 246,
+          "y": 210
+        },
         "spans": [
           [
             203,
@@ -18163,6 +19699,10 @@
       {
         "id": "building-0388",
         "type": "residential",
+        "entrance": {
+          "x": 118,
+          "y": 212
+        },
         "spans": [
           [
             206,
@@ -18249,6 +19789,10 @@
       {
         "id": "building-0389",
         "type": "commercial",
+        "entrance": {
+          "x": 48,
+          "y": 208
+        },
         "spans": [
           [
             208,
@@ -18305,6 +19849,10 @@
       {
         "id": "building-0390",
         "type": "residential",
+        "entrance": {
+          "x": 210,
+          "y": 211
+        },
         "spans": [
           [
             208,
@@ -18351,6 +19899,10 @@
       {
         "id": "building-0391",
         "type": "residential",
+        "entrance": {
+          "x": 220,
+          "y": 208
+        },
         "spans": [
           [
             208,
@@ -18372,6 +19924,10 @@
       {
         "id": "building-0392",
         "type": "commercial",
+        "entrance": {
+          "x": 69,
+          "y": 210
+        },
         "spans": [
           [
             210,
@@ -18438,6 +19994,10 @@
       {
         "id": "building-0393",
         "type": "commercial",
+        "entrance": {
+          "x": 87,
+          "y": 213
+        },
         "spans": [
           [
             210,
@@ -18479,6 +20039,10 @@
       {
         "id": "building-0394",
         "type": "residential",
+        "entrance": {
+          "x": 171,
+          "y": 212
+        },
         "spans": [
           [
             210,
@@ -18515,6 +20079,10 @@
       {
         "id": "building-0395",
         "type": "commercial",
+        "entrance": {
+          "x": 182,
+          "y": 210
+        },
         "spans": [
           [
             210,
@@ -18551,6 +20119,10 @@
       {
         "id": "building-0396",
         "type": "residential",
+        "entrance": {
+          "x": 202,
+          "y": 210
+        },
         "spans": [
           [
             210,
@@ -18587,6 +20159,10 @@
       {
         "id": "building-0397",
         "type": "residential",
+        "entrance": {
+          "x": 7,
+          "y": 213
+        },
         "spans": [
           [
             211,
@@ -18618,6 +20194,10 @@
       {
         "id": "building-0398",
         "type": "commercial",
+        "entrance": {
+          "x": 33,
+          "y": 214
+        },
         "spans": [
           [
             211,
@@ -18664,6 +20244,10 @@
       {
         "id": "building-0399",
         "type": "commercial",
+        "entrance": {
+          "x": 137,
+          "y": 218
+        },
         "spans": [
           [
             212,
@@ -18725,6 +20309,10 @@
       {
         "id": "building-0400",
         "type": "residential",
+        "entrance": {
+          "x": 143,
+          "y": 212
+        },
         "spans": [
           [
             212,
@@ -18751,6 +20339,10 @@
       {
         "id": "building-0401",
         "type": "residential",
+        "entrance": {
+          "x": 152,
+          "y": 212
+        },
         "spans": [
           [
             212,
@@ -18782,6 +20374,10 @@
       {
         "id": "building-0402",
         "type": "residential",
+        "entrance": {
+          "x": 220,
+          "y": 215
+        },
         "spans": [
           [
             212,
@@ -18813,6 +20409,10 @@
       {
         "id": "building-0403",
         "type": "residential",
+        "entrance": {
+          "x": 107,
+          "y": 219
+        },
         "spans": [
           [
             216,
@@ -18859,6 +20459,10 @@
       {
         "id": "building-0404",
         "type": "residential",
+        "entrance": {
+          "x": 145,
+          "y": 219
+        },
         "spans": [
           [
             217,
@@ -18895,6 +20499,10 @@
       {
         "id": "building-0405",
         "type": "commercial",
+        "entrance": {
+          "x": 60,
+          "y": 221
+        },
         "spans": [
           [
             218,
@@ -18936,6 +20544,10 @@
       {
         "id": "building-0406",
         "type": "commercial",
+        "entrance": {
+          "x": 150,
+          "y": 220
+        },
         "spans": [
           [
             218,
@@ -18967,6 +20579,10 @@
       {
         "id": "building-0407",
         "type": "residential",
+        "entrance": {
+          "x": 191,
+          "y": 219
+        },
         "spans": [
           [
             219,
@@ -18993,6 +20609,10 @@
       {
         "id": "building-0408",
         "type": "commercial",
+        "entrance": {
+          "x": 124,
+          "y": 224
+        },
         "spans": [
           [
             220,
@@ -19039,6 +20659,10 @@
       {
         "id": "building-0409",
         "type": "commercial",
+        "entrance": {
+          "x": 173,
+          "y": 220
+        },
         "spans": [
           [
             220,
@@ -19060,6 +20684,10 @@
       {
         "id": "building-0410",
         "type": "residential",
+        "entrance": {
+          "x": 178,
+          "y": 220
+        },
         "spans": [
           [
             220,
@@ -19081,6 +20709,10 @@
       {
         "id": "building-0411",
         "type": "residential",
+        "entrance": {
+          "x": 183,
+          "y": 220
+        },
         "spans": [
           [
             220,
@@ -19102,6 +20734,10 @@
       {
         "id": "building-0412",
         "type": "residential",
+        "entrance": {
+          "x": 202,
+          "y": 220
+        },
         "spans": [
           [
             220,
@@ -19133,6 +20769,10 @@
       {
         "id": "building-0413",
         "type": "residential",
+        "entrance": {
+          "x": 210,
+          "y": 222
+        },
         "spans": [
           [
             220,
@@ -19164,6 +20804,10 @@
       {
         "id": "building-0414",
         "type": "residential",
+        "entrance": {
+          "x": 222,
+          "y": 220
+        },
         "spans": [
           [
             220,
@@ -19195,6 +20839,10 @@
       {
         "id": "building-0415",
         "type": "residential",
+        "entrance": {
+          "x": 233,
+          "y": 223
+        },
         "spans": [
           [
             220,
@@ -19241,6 +20889,10 @@
       {
         "id": "building-0416",
         "type": "residential",
+        "entrance": {
+          "x": 244,
+          "y": 221
+        },
         "spans": [
           [
             220,
@@ -19277,6 +20929,10 @@
       {
         "id": "building-0417",
         "type": "residential",
+        "entrance": {
+          "x": 115,
+          "y": 221
+        },
         "spans": [
           [
             221,
@@ -19308,6 +20964,10 @@
       {
         "id": "building-0418",
         "type": "residential",
+        "entrance": {
+          "x": 207,
+          "y": 223
+        },
         "spans": [
           [
             223,
@@ -19324,6 +20984,10 @@
       {
         "id": "building-0419",
         "type": "commercial",
+        "entrance": {
+          "x": 40,
+          "y": 227
+        },
         "spans": [
           [
             224,
@@ -19365,6 +21029,10 @@
       {
         "id": "building-0420",
         "type": "commercial",
+        "entrance": {
+          "x": 48,
+          "y": 224
+        },
         "spans": [
           [
             224,
@@ -19391,6 +21059,10 @@
       {
         "id": "building-0421",
         "type": "commercial",
+        "entrance": {
+          "x": 181,
+          "y": 227
+        },
         "spans": [
           [
             224,
@@ -19442,6 +21114,10 @@
       {
         "id": "building-0422",
         "type": "residential",
+        "entrance": {
+          "x": 98,
+          "y": 233
+        },
         "spans": [
           [
             225,
@@ -19528,6 +21204,10 @@
       {
         "id": "building-0423",
         "type": "residential",
+        "entrance": {
+          "x": 244,
+          "y": 228
+        },
         "spans": [
           [
             225,
@@ -19554,6 +21234,10 @@
       {
         "id": "building-0424",
         "type": "residential",
+        "entrance": {
+          "x": 202,
+          "y": 230
+        },
         "spans": [
           [
             226,
@@ -19585,6 +21269,10 @@
       {
         "id": "building-0425",
         "type": "residential",
+        "entrance": {
+          "x": 113,
+          "y": 230
+        },
         "spans": [
           [
             227,
@@ -19626,6 +21314,10 @@
       {
         "id": "building-0426",
         "type": "residential",
+        "entrance": {
+          "x": 137,
+          "y": 227
+        },
         "spans": [
           [
             227,
@@ -19647,6 +21339,10 @@
       {
         "id": "building-0427",
         "type": "residential",
+        "entrance": {
+          "x": 149,
+          "y": 232
+        },
         "spans": [
           [
             227,
@@ -19763,6 +21459,10 @@
       {
         "id": "building-0428",
         "type": "residential",
+        "entrance": {
+          "x": 161,
+          "y": 227
+        },
         "spans": [
           [
             227,
@@ -19799,6 +21499,10 @@
       {
         "id": "building-0429",
         "type": "residential",
+        "entrance": {
+          "x": 173,
+          "y": 227
+        },
         "spans": [
           [
             227,
@@ -19825,6 +21529,10 @@
       {
         "id": "building-0430",
         "type": "residential",
+        "entrance": {
+          "x": 189,
+          "y": 229
+        },
         "spans": [
           [
             227,
@@ -19851,6 +21559,10 @@
       {
         "id": "building-0431",
         "type": "commercial",
+        "entrance": {
+          "x": 193,
+          "y": 227
+        },
         "spans": [
           [
             227,
@@ -19877,6 +21589,10 @@
       {
         "id": "building-0432",
         "type": "residential",
+        "entrance": {
+          "x": 223,
+          "y": 228
+        },
         "spans": [
           [
             228,
@@ -19938,6 +21654,10 @@
       {
         "id": "building-0433",
         "type": "residential",
+        "entrance": {
+          "x": 82,
+          "y": 232
+        },
         "spans": [
           [
             229,
@@ -19974,6 +21694,10 @@
       {
         "id": "building-0434",
         "type": "residential",
+        "entrance": {
+          "x": 232,
+          "y": 231
+        },
         "spans": [
           [
             229,
@@ -20010,6 +21734,10 @@
       {
         "id": "building-0435",
         "type": "residential",
+        "entrance": {
+          "x": 140,
+          "y": 232
+        },
         "spans": [
           [
             231,
@@ -20036,6 +21764,10 @@
       {
         "id": "building-0436",
         "type": "residential",
+        "entrance": {
+          "x": 242,
+          "y": 231
+        },
         "spans": [
           [
             231,
@@ -20062,6 +21794,10 @@
       {
         "id": "building-0437",
         "type": "commercial",
+        "entrance": {
+          "x": 126,
+          "y": 235
+        },
         "spans": [
           [
             232,
@@ -20103,6 +21839,10 @@
       {
         "id": "building-0438",
         "type": "residential",
+        "entrance": {
+          "x": 156,
+          "y": 243
+        },
         "spans": [
           [
             234,
@@ -20199,6 +21939,10 @@
       {
         "id": "building-0439",
         "type": "residential",
+        "entrance": {
+          "x": 73,
+          "y": 237
+        },
         "spans": [
           [
             235,
@@ -20230,6 +21974,10 @@
       {
         "id": "building-0440",
         "type": "residential",
+        "entrance": {
+          "x": 173,
+          "y": 235
+        },
         "spans": [
           [
             235,
@@ -20256,6 +22004,10 @@
       {
         "id": "building-0441",
         "type": "residential",
+        "entrance": {
+          "x": 182,
+          "y": 236
+        },
         "spans": [
           [
             235,
@@ -20302,6 +22054,10 @@
       {
         "id": "building-0442",
         "type": "commercial",
+        "entrance": {
+          "x": 191,
+          "y": 239
+        },
         "spans": [
           [
             235,
@@ -20353,6 +22109,10 @@
       {
         "id": "building-0443",
         "type": "residential",
+        "entrance": {
+          "x": 202,
+          "y": 235
+        },
         "spans": [
           [
             235,
@@ -20389,6 +22149,10 @@
       {
         "id": "building-0444",
         "type": "residential",
+        "entrance": {
+          "x": 210,
+          "y": 242
+        },
         "spans": [
           [
             235,
@@ -20460,6 +22224,10 @@
       {
         "id": "building-0445",
         "type": "residential",
+        "entrance": {
+          "x": 137,
+          "y": 238
+        },
         "spans": [
           [
             236,
@@ -20481,6 +22249,10 @@
       {
         "id": "building-0446",
         "type": "residential",
+        "entrance": {
+          "x": 103,
+          "y": 242
+        },
         "spans": [
           [
             237,
@@ -20577,6 +22349,10 @@
       {
         "id": "building-0447",
         "type": "residential",
+        "entrance": {
+          "x": 78,
+          "y": 240
+        },
         "spans": [
           [
             238,
@@ -20608,6 +22384,10 @@
       {
         "id": "building-0448",
         "type": "residential",
+        "entrance": {
+          "x": 86,
+          "y": 240
+        },
         "spans": [
           [
             238,
@@ -20639,6 +22419,10 @@
       {
         "id": "building-0449",
         "type": "residential",
+        "entrance": {
+          "x": 115,
+          "y": 238
+        },
         "spans": [
           [
             238,
@@ -20680,6 +22464,10 @@
       {
         "id": "building-0450",
         "type": "residential",
+        "entrance": {
+          "x": 218,
+          "y": 244
+        },
         "spans": [
           [
             238,
@@ -20746,6 +22534,10 @@
       {
         "id": "building-0451",
         "type": "residential",
+        "entrance": {
+          "x": 227,
+          "y": 239
+        },
         "spans": [
           [
             239,
@@ -20767,6 +22559,10 @@
       {
         "id": "building-0452",
         "type": "residential",
+        "entrance": {
+          "x": 242,
+          "y": 247
+        },
         "spans": [
           [
             239,
@@ -20818,6 +22614,10 @@
       {
         "id": "building-0453",
         "type": "residential",
+        "entrance": {
+          "x": 66,
+          "y": 242
+        },
         "spans": [
           [
             240,
@@ -20849,6 +22649,10 @@
       {
         "id": "building-0454",
         "type": "commercial",
+        "entrance": {
+          "x": 171,
+          "y": 241
+        },
         "spans": [
           [
             240,
@@ -20875,6 +22679,10 @@
       {
         "id": "building-0455",
         "type": "residential",
+        "entrance": {
+          "x": 115,
+          "y": 247
+        },
         "spans": [
           [
             243,
@@ -20911,6 +22719,10 @@
       {
         "id": "building-0456",
         "type": "commercial",
+        "entrance": {
+          "x": 140,
+          "y": 245
+        },
         "spans": [
           [
             243,
@@ -20942,6 +22754,10 @@
       {
         "id": "building-0457",
         "type": "residential",
+        "entrance": {
+          "x": 230,
+          "y": 247
+        },
         "spans": [
           [
             243,
@@ -20973,6 +22789,10 @@
       {
         "id": "building-0458",
         "type": "residential",
+        "entrance": {
+          "x": 77,
+          "y": 249
+        },
         "spans": [
           [
             244,
@@ -21014,6 +22834,10 @@
       {
         "id": "building-0459",
         "type": "residential",
+        "entrance": {
+          "x": 57,
+          "y": 248
+        },
         "spans": [
           [
             245,
@@ -21050,6 +22874,10 @@
       {
         "id": "building-0460",
         "type": "commercial",
+        "entrance": {
+          "x": 172,
+          "y": 247
+        },
         "spans": [
           [
             245,
@@ -21071,6 +22899,10 @@
       {
         "id": "building-0461",
         "type": "residential",
+        "entrance": {
+          "x": 177,
+          "y": 245
+        },
         "spans": [
           [
             245,
@@ -21092,6 +22924,10 @@
       {
         "id": "building-0462",
         "type": "commercial",
+        "entrance": {
+          "x": 182,
+          "y": 245
+        },
         "spans": [
           [
             245,
@@ -21113,6 +22949,10 @@
       {
         "id": "building-0463",
         "type": "commercial",
+        "entrance": {
+          "x": 187,
+          "y": 245
+        },
         "spans": [
           [
             245,
@@ -21134,6 +22974,10 @@
       {
         "id": "building-0464",
         "type": "residential",
+        "entrance": {
+          "x": 192,
+          "y": 247
+        },
         "spans": [
           [
             245,
@@ -21155,6 +22999,10 @@
       {
         "id": "building-0465",
         "type": "residential",
+        "entrance": {
+          "x": 197,
+          "y": 245
+        },
         "spans": [
           [
             245,
@@ -21176,6 +23024,10 @@
       {
         "id": "building-0466",
         "type": "residential",
+        "entrance": {
+          "x": 203,
+          "y": 245
+        },
         "spans": [
           [
             245,

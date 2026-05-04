@@ -99,6 +99,36 @@ describe('city map validation and compile', () => {
     expect(city.isCrosswalk(1, 0)).toBe(true)
   })
 
+  it('keeps building entrance metadata and makes the entrance tile walkable', () => {
+    const city = compileCityMap(validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultType: 'residential',
+        items: [
+          {
+            id: 'building-0001',
+            type: 'residential',
+            entrance: { x: 1, y: 1 },
+            spans: [[1, 1, 1]]
+          }
+        ]
+      }
+    })))
+
+    expect(city.getTile(1, 1)).toBe('building')
+    expect(city.getBuilding(1, 1)).toMatchObject({
+      id: 'building-0001',
+      entrance: { x: 1, y: 1 }
+    })
+    expect(city.getTileVariant(1, 1)).toMatchObject({
+      category: 'building',
+      walkable: true,
+      buildingEntrance: true
+    })
+    expect(city.tileWalkable[city.index(1, 1)]).toBe(1)
+    expect(city.isWalkable(1, 1)).toBe(true)
+  })
+
   it('gates pedestrian crosswalk entry by signal state while letting vehicles drive', () => {
     const city = compileCityMap(validateCityMap(createCrosswalkMap()))
 
@@ -153,6 +183,23 @@ describe('city map validation and compile', () => {
         items: []
       }
     }))).toThrow(/do not cover building tile 1,1/)
+  })
+
+  it('rejects a building entrance outside that building footprint', () => {
+    expect(() => validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultType: 'residential',
+        items: [
+          {
+            id: 'building-0001',
+            type: 'residential',
+            entrance: { x: 0, y: 0 },
+            spans: [[1, 1, 1]]
+          }
+        ]
+      }
+    }))).toThrow(/entrance must be inside that building/)
   })
 
   it('finds pedestrian paths around blocked cells while reusing path scratch state', () => {

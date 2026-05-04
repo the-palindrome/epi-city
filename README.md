@@ -60,6 +60,7 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
       {
         "id": "building-0001",
         "type": "residential",
+        "entrance": { "x": 1, "y": 0 },
         "spans": [[0, 0, 3]]
       }
     ]
@@ -77,11 +78,11 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id` and `type`.
+The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `type`, and optional `entrance` coordinate on the building footprint.
 
 ## Movement Rules
 
-Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Crosswalks are both walkable and drivable, and their pedestrian signal cycles through `red`, `green`, and `yellow`; NPCs enter only on green, can continue across on yellow, and do not enter on red. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Crosswalks are both walkable and drivable, and their pedestrian signal cycles through `red`, `green`, and `yellow`; NPCs enter only on green, can continue across on yellow, and do not enter on red. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
 
 ## NPC Prototype
 

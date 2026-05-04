@@ -174,6 +174,7 @@ The editor saves semantic tile configuration JSON in this format:
       {
         "id": "building-0001",
         "type": "residential",
+        "entrance": { "x": 1, "y": 0 },
         "spans": [[0, 0, 3]]
       }
     ]

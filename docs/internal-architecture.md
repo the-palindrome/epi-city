@@ -65,7 +65,7 @@ Startup follows this sequence:
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
-The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a string `type`, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile.
+The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a string `type`, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint.
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
@@ -83,12 +83,12 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `tileWalkable`, `tileDrivable`, `tileParkable` | Numeric `Uint8Array` layers with generated gameplay behavior per cell. |
 | `tileCrosswalk` | Numeric `Uint8Array` layer marking cells controlled by the crosswalk signal. |
 | `tileZOrders` | Numeric `Int16Array` layer with each tile's render order. Normal tiles use `0`; building tiles use `2`. |
-| `buildings`, `tileBuildingIndexes` | Runtime building records and tile-to-building lookup data. |
+| `buildings`, `tileBuildingIndexes` | Runtime building records, including entrance coordinates, and tile-to-building lookup data. |
 | `legend` | Normalized symbol metadata keyed by map symbol. |
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType, buildingEntrance }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getBuildingId(x, y)`, `getBuilding(x, y)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
@@ -104,7 +104,7 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, buildings, and obstacles are blocked.
+Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. Building entrance cells keep the `building` category, but `compileCityMap()` marks them walkable after validating the entrance metadata.
 
 The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow, NPCs already on a crosswalk can continue to another crosswalk tile or step off the crossing, but NPCs outside the crossing cannot begin entering it. During red, NPCs cannot step onto crosswalk tiles, though any NPC already on one can still step off to a non-crosswalk walkable tile.
 
