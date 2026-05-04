@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { NPC_CONFIG } from '../core/constants.js'
 import { createSeededRandom } from '../core/random.js'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
 import { createNpcSimulation } from './npc-simulation.js'
@@ -76,6 +77,35 @@ function createCityWithBuildingTypes() {
   })
 }
 
+function createCityWithSharedBuildings() {
+  return createCity({
+    width: 5,
+    height: 3,
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: [
+        { id: 'home-1', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work-1', type: 'commercial', entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] }
+      ]
+    },
+    rows: [
+      'sssss',
+      'sbsbs',
+      'sssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0]
+    ]
+  })
+}
+
 function createActorLayer() {
   return {
     eventMode: 'auto',
@@ -91,20 +121,38 @@ function createActorLayer() {
   }
 }
 
-function createSimulation(seed, city = createCity()) {
+function createMutableClock(hour) {
+  return {
+    hour,
+    getTimeOfDayHours() {
+      return this.hour
+    }
+  }
+}
+
+function createSimulation(seed, city = createCity(), options = {}) {
   const simulation = createNpcSimulation(city, createActorLayer(), {
-    count: 8,
+    count: options.count || 8,
     zorder: 1,
-    tileCapacity: 2,
-    slotSpacing: 11,
+    tileCapacity: options.tileCapacity ?? NPC_CONFIG.tileCapacity,
+    slotSpacing: NPC_CONFIG.slotSpacing,
     color: 0xe5c748,
-    size: 9,
+    size: NPC_CONFIG.size,
     minSpeed: 34,
     maxSpeed: 58,
+    workStartHour: 9,
+    workEndHour: 17,
+    scheduleVariationHours: options.scheduleVariationHours ?? 0.75,
+    routePlanBudget: options.routePlanBudget || 24,
+    routeRetrySeconds: 1,
+    routeBlockedReplanSeconds: 2,
+    clock: options.clock,
     random: createSeededRandom(seed)
   })
 
-  simulation.update(1 / 60)
+  if (options.initialUpdate !== false) {
+    simulation.update(1 / 60)
+  }
 
   return simulation
 }
@@ -129,6 +177,35 @@ function snapshot(simulation) {
 }
 
 describe('NPC simulation randomness', () => {
+  it('allows eight NPCs to occupy one normal walkable tile', () => {
+    const city = createCity({
+      width: 1,
+      height: 1,
+      rows: ['s'],
+      textureRows: [[0]]
+    })
+    const simulation = createSimulation('tile-capacity', city, {
+      count: 8,
+      initialUpdate: false
+    })
+    const occupiedSlots = simulation.occupiedSlots.filter((id) => id !== -1)
+    const minCenter = NPC_CONFIG.size / 2
+    const maxCenter = city.tileSize - NPC_CONFIG.size / 2
+
+    expect(simulation.tileCapacity).toBe(8)
+    expect(simulation.npcs).toHaveLength(8)
+    expect(occupiedSlots).toHaveLength(8)
+    expect(simulation.npcs.every((npc) => npc.tile.x === 0 && npc.tile.y === 0)).toBe(true)
+    expect(simulation.npcs.every((npc) => (
+      npc.position.x >= minCenter &&
+      npc.position.x <= maxCenter &&
+      npc.position.y >= minCenter &&
+      npc.position.y <= maxCenter
+    ))).toBe(true)
+
+    simulation.destroy()
+  })
+
   it('assigns NPC entities and their graphics layer to zorder 1', () => {
     const simulation = createSimulation('zorder')
 
@@ -153,6 +230,110 @@ describe('NPC simulation randomness', () => {
 
     simulation.destroy()
     repeated.destroy()
+  })
+
+  it('creates timetable elements that target home and work entrances', () => {
+    const city = createCityWithBuildingTypes()
+    const simulation = createSimulation('timetable', city, {
+      count: 1,
+      scheduleVariationHours: 0,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const home = city.buildings.find((building) => building.id === npc.home)
+    const work = city.buildings.find((building) => building.id === npc.work)
+    const homeElement = npc.timetable.elements.find((element) => element.id === 'home')
+    const workElement = npc.timetable.elements.find((element) => element.id === 'work')
+
+    expect(homeElement).toMatchObject({
+      buildingId: npc.home,
+      location: { x: home.entrance.x, y: home.entrance.y }
+    })
+    expect(workElement).toMatchObject({
+      buildingId: npc.work,
+      location: { x: work.entrance.x, y: work.entrance.y },
+      startHour: 9,
+      endHour: 17
+    })
+
+    simulation.destroy()
+  })
+
+  it('routes from home to the work entrance when the work timetable becomes active', () => {
+    const city = createCityWithBuildingTypes()
+    const clock = createMutableClock(8)
+    const simulation = createSimulation('route-to-work', city, {
+      count: 1,
+      clock,
+      scheduleVariationHours: 0,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    expect(npc.present).toBe(false)
+    expect(npc.locationState.buildingId).toBe(npc.home)
+
+    clock.hour = 10
+    simulation.update(1 / 60)
+
+    expect(npc.present).toBe(true)
+    expect(npc.goal).toMatchObject({ id: 'work', buildingId: npc.work })
+    expect(npc.routing.destination).toMatchObject(npc.goal.location)
+    expect(npc.routing.path.at(-1)).toMatchObject({
+      x: npc.goal.location.x,
+      y: npc.goal.location.y
+    })
+
+    simulation.destroy()
+  })
+
+  it('enters the work building after reaching the routed entrance', () => {
+    const city = createCityWithBuildingTypes()
+    const clock = createMutableClock(8)
+    const simulation = createSimulation('arrive-work', city, {
+      count: 1,
+      clock,
+      scheduleVariationHours: 0,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    clock.hour = 10
+
+    for (let step = 0; step < 420 && npc.locationState?.buildingId !== npc.work; step += 1) {
+      simulation.update(1 / 60)
+    }
+
+    expect(npc.present).toBe(false)
+    expect(npc.locationState).toMatchObject({
+      timetableElementId: 'work',
+      buildingId: npc.work,
+      location: npc.goal.location
+    })
+
+    simulation.destroy()
+  })
+
+  it('treats building entrance tiles as unlimited capacity while NPCs enter and exit buildings', () => {
+    const city = createCityWithSharedBuildings()
+    const clock = createMutableClock(8)
+    const simulation = createSimulation('shared-entrances', city, {
+      count: 4,
+      clock,
+      scheduleVariationHours: 0,
+      initialUpdate: false
+    })
+
+    expect(simulation.npcs.every((npc) => npc.present === false && npc.locationState.buildingId === 'home-1')).toBe(true)
+
+    clock.hour = 10
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs.every((npc) => npc.present)).toBe(true)
+    expect(simulation.npcs.every((npc) => npc.tile.x === 1 && npc.tile.y === 1)).toBe(true)
+    expect(simulation.occupiedSlots.filter((id) => id !== -1)).toHaveLength(0)
+
+    simulation.destroy()
   })
 
   it('recreates the same spawn and first movement state with the same seed', () => {

@@ -17,7 +17,7 @@ Startup follows this sequence:
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
 9. `installDebugDashboard()` adds simulation controls, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
-10. `createNpcSimulation()` creates the NPC system with the configured random source, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
+10. `SimulationClock` and `createNpcSimulation()` create the clock and NPC systems with the configured random source, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
 
@@ -118,13 +118,15 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
 
-The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so NPC movement and crosswalk signals advance together.
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, and crosswalk signals advance together.
+
+`SimulationClock` advances one simulated hour for every 60 game seconds. Since `Game` applies speed before fixed updates reach systems, `1x` speed makes one real minute equal one simulation hour, and higher speeds multiply that rate. Restarting the simulation resets the clock to the configured start hour.
 
 ## NPC Simulation
 
-`createNpcSimulation()` spawns 1000 pedestrian NPCs after the map renders. NPCs start on walkable tile slots, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs, and move smoothly from slot anchor to slot anchor.
+`createNpcSimulation()` creates 1000 pedestrian NPCs after the map renders. NPCs start inside their active timetable location when they have one, render into one Pixi `Graphics` layer as small `#e5c748` pixel blobs while outside, and move smoothly from slot anchor to slot anchor.
 
-NPCs are plain objects with the state the simulation needs:
+NPC entities expose the state the simulation needs:
 
 ```js
 {
@@ -132,6 +134,11 @@ NPCs are plain objects with the state the simulation needs:
   zorder,
   home,
   work,
+  timetable,
+  goal,
+  present,
+  locationState,
+  routing,
   position: { x, y },
   tile: { x, y, index },
   slot: { id, index },
@@ -141,11 +148,11 @@ NPCs are plain objects with the state the simulation needs:
 
 The simulation owns movement decisions and slot bookkeeping. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
 
-The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings. The default app state enables the `epi-city` seed, which makes home/work assignment, spawn slot selection, speed assignment, neighbor choice, and target-slot choice repeat when the simulation restarts with the same seed.
+The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn slot selection, speed assignment, and route choices repeat when the simulation restarts with the same seed.
 
-NPCs do not spawn directly on crosswalk tiles. Once spawned, random movement uses `city.canStep()` so crosswalk signal rules are enforced at the same boundary as other tile movement checks.
+NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not force every NPC to run A* in one frame.
 
-Each walkable tile currently has two side-by-side NPC slots. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move when the target tile is walkable and at least one slot is both unoccupied and unreserved. Movement selection uses the city's non-allocating step checks instead of building a fresh neighbor array for each NPC decision.
+Each normal walkable tile currently has eight NPC slots arranged as a compact grid inside the tile. Collision uses two `Int32Array` grids indexed as `tileIndex * tileCapacity + slot`. `occupiedSlots` stores each NPC's current slot, and `reservedSlots` stores destination slots for NPCs already in motion. An NPC can only start a move into a normal target tile when at least one slot is both unoccupied and unreserved. Building entrance tiles are unlimited-capacity holding points, so many NPCs can enter, wait inside, or leave the same building without blocking the doorway.
 
 ## Texture Sets
 
@@ -233,6 +240,7 @@ window.citySim.city.getTextureId(100, 100)
 window.citySim.city.nearestPassableTile(120, 140, 'pedestrian')
 window.citySim.city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
+window.citySim.simulationClock.formatTimeOfDay()
 window.citySim.pause()
 window.citySim.play()
 window.citySim.setSeed('demo-seed')
@@ -240,6 +248,7 @@ window.citySim.restart()
 window.citySim.setSpeed(4)
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
+window.citySim.npcs[0].timetable.elements
 window.citySim.npcs[0].position
 window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()

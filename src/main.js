@@ -19,6 +19,7 @@ import {
 } from './map/city-map.js'
 import { installDebugDashboard } from './debug/dashboard.js'
 import { createNpcSimulation } from './sim/npc-simulation.js'
+import { SimulationClock } from './sim/simulation-clock.js'
 import { renderCity } from './render/city-renderer.js'
 import {
   clearPixiContainer,
@@ -78,6 +79,7 @@ async function main() {
       speed: SIMULATION_CONFIG.speed
     }
     let npcSimulation = null
+    const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
 
     function createNpcRandom() {
       return simulationState.seedEnabled
@@ -88,6 +90,7 @@ async function main() {
     function createConfiguredNpcSimulation() {
       return createNpcSimulation(city, entityLayer, {
         ...NPC_CONFIG,
+        clock: simulationClock,
         random: createNpcRandom()
       })
     }
@@ -110,6 +113,7 @@ async function main() {
       }
 
       city.resetCrosswalkSignals()
+      simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
       game.addSystem(npcSimulation)
 
@@ -143,6 +147,7 @@ async function main() {
     })
 
     game.setSpeed(simulationState.speed)
+    game.addSystem(simulationClock)
     game.addSystem({ update: (deltaSeconds) => city.updateCrosswalkSignals(deltaSeconds) })
     npcSimulation = createConfiguredNpcSimulation()
     game.addSystem(npcSimulation)
@@ -189,6 +194,7 @@ async function main() {
       camera,
       city,
       dashboard,
+      simulationClock,
       gameLoop: game.loop,
       game,
       npcSimulation,

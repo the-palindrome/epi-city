@@ -86,13 +86,13 @@ Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. P
 
 ## NPC Prototype
 
-The app spawns 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs, and choose random neighboring walkable tiles. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, spawn slots, NPC speeds, and movement choices can repeat after a restart.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn slots, NPC speeds, and routing choices can repeat after a restart.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
-Each walkable tile has two NPC slots. Collision uses occupied and reserved slot grids, so up to two NPCs can share one tile without stacking visually. Slot anchors sit side by side inside the tile, and NPCs interpolate smoothly between slot positions.
+Each walkable tile has eight NPC slots. Collision uses occupied and reserved slot grids, so up to eight NPCs can share one normal tile without stacking visually. Building entrance tiles act as unlimited-capacity holding points for NPCs entering or leaving buildings. Slot anchors use a compact grid inside normal tiles, and NPCs interpolate smoothly between slot positions.
 
-The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The debug dashboard can pause, play, restart, change the seed, and speed up simulation time.
+The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed. The debug dashboard can pause, play, restart, change the seed, and speed up simulation time.
 
 ## Debugging From The Console
 
@@ -115,9 +115,11 @@ city.resetCrosswalkSignals()
 city.isPassable(10, 10, 'vehicle')
 city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
+window.citySim.simulationClock.formatTimeOfDay()
 window.citySim.npcs.length
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
+window.citySim.npcs[0].timetable.elements
 window.citySim.npcs[0].position
 window.citySim.pause()
 window.citySim.play()

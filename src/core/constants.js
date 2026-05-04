@@ -55,18 +55,28 @@ export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
 export const NPC_CONFIG = Object.freeze({
   count: 1000,
   zorder: 1,
-  tileCapacity: 2,
+  tileCapacity: 8,
   slotSpacing: 11,
   color: 0xe5c748,
   size: 9,
   minSpeed: 34,
-  maxSpeed: 58
+  maxSpeed: 58,
+  workStartHour: 9,
+  workEndHour: 17,
+  scheduleVariationHours: 0.75,
+  routePlanBudget: 24,
+  routeRetrySeconds: 1,
+  routeBlockedReplanSeconds: 2
 })
 
 export const SIMULATION_CONFIG = Object.freeze({
   seedEnabled: true,
   seed: 'epi-city',
   speed: 1,
+  clock: Object.freeze({
+    startHour: 8,
+    secondsPerSimulationHour: 60
+  }),
   speedRange: Object.freeze({
     min: 1,
     max: 16,
