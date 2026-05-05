@@ -256,6 +256,7 @@ function buildCarTrafficNetwork(city) {
   const edgeTo = new Int32Array(edgeCount)
   const edgeCosts = new Int32Array(edgeCount)
   const incomingCounts = new Int32Array(nodeCount)
+  const outgoingCounts = new Int32Array(nodeCount)
 
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
     const edge = edges[edgeIndex]
@@ -266,20 +267,27 @@ function buildCarTrafficNetwork(city) {
     edgeTo[edgeIndex] = toIndex
     edgeCosts[edgeIndex] = edgeBaseCost(edge)
     incomingCounts[toIndex] += 1
+    outgoingCounts[fromIndex] += 1
   }
 
   const incomingOffsets = new Int32Array(nodeCount + 1)
+  const outgoingOffsets = new Int32Array(nodeCount + 1)
 
   for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
     incomingOffsets[nodeIndex + 1] = incomingOffsets[nodeIndex] + incomingCounts[nodeIndex]
+    outgoingOffsets[nodeIndex + 1] = outgoingOffsets[nodeIndex] + outgoingCounts[nodeIndex]
   }
 
   const incomingCursors = new Int32Array(incomingOffsets)
+  const outgoingCursors = new Int32Array(outgoingOffsets)
   const incomingEdges = new Int32Array(edgeCount)
+  const outgoingEdges = new Int32Array(edgeCount)
 
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
     incomingEdges[incomingCursors[edgeTo[edgeIndex]]] = edgeIndex
     incomingCursors[edgeTo[edgeIndex]] += 1
+    outgoingEdges[outgoingCursors[edgeFrom[edgeIndex]]] = edgeIndex
+    outgoingCursors[edgeFrom[edgeIndex]] += 1
   }
 
   return {
@@ -296,6 +304,8 @@ function buildCarTrafficNetwork(city) {
     edgeCosts,
     incomingOffsets,
     incomingEdges,
+    outgoingOffsets,
+    outgoingEdges,
     tileToNodeIndex,
     nearestNodeByTile: buildNearestLaneNodeByTile(city, tileToNodeIndex)
   }
@@ -1246,7 +1256,8 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
   car.route = {
     edges: route,
     cursor: 0,
-    currentNode: startNode
+    currentNode: startNode,
+    destinationNode: endNode
   }
   car.movement = null
   car.trafficSignalReservation = null
@@ -1339,6 +1350,10 @@ function startNextDrivingEdge(car, context) {
   if (clearanceTiles &&
       (!context.parking.canOccupy(clearanceTiles, car.id) ||
        !context.trafficReservations.canOccupy(clearanceTiles, car.id))) {
+    if (deferBlockedLaneChange(car, context, edgeIndex)) {
+      return startNextDrivingEdge(car, context)
+    }
+
     return false
   }
 
@@ -1362,6 +1377,92 @@ function startNextDrivingEdge(car, context) {
     duration: edgeDuration(edge, context.config)
   }
   return true
+}
+
+function deferBlockedLaneChange(car, context, blockedEdgeIndex) {
+  const blockedEdge = context.network.edges[blockedEdgeIndex]
+
+  if (blockedEdge?.type !== 'lane-change' || !car.route) {
+    return false
+  }
+
+  const currentNode = context.network.edgeFrom[blockedEdgeIndex]
+  const destinationNode = routeDestinationNode(car.route, context.network)
+
+  if (!Number.isInteger(currentNode) ||
+      !Number.isInteger(destinationNode) ||
+      currentNode < 0 ||
+      destinationNode < 0 ||
+      currentNode >= context.network.nodeCount ||
+      destinationNode >= context.network.nodeCount) {
+    return false
+  }
+
+  let bestEdges = null
+  let bestCost = Infinity
+
+  // A blocked generated lane change is treated like a missed merge gap: keep
+  // moving forward in the current lane and re-plan from the next lane node.
+  for (let cursor = context.network.outgoingOffsets[currentNode]; cursor < context.network.outgoingOffsets[currentNode + 1]; cursor += 1) {
+    const edgeIndex = context.network.outgoingEdges[cursor]
+    const edge = context.network.edges[edgeIndex]
+
+    if (edgeIndex === blockedEdgeIndex ||
+        edge.type === 'lane-change' ||
+        edge.direction !== blockedEdge.direction) {
+      continue
+    }
+
+    const toNode = context.network.edgeTo[edgeIndex]
+    const tail = toNode === destinationNode
+      ? []
+      : context.router.findRoute(toNode, destinationNode)
+
+    if (toNode !== destinationNode && tail.length === 0) {
+      continue
+    }
+
+    const cost = context.network.edgeCosts[edgeIndex] + routeCost(tail, context.network)
+
+    if (cost < bestCost) {
+      bestCost = cost
+      bestEdges = [edgeIndex, ...tail]
+    }
+  }
+
+  if (!bestEdges) {
+    return false
+  }
+
+  car.route = {
+    ...car.route,
+    edges: bestEdges,
+    cursor: 0,
+    currentNode,
+    destinationNode
+  }
+
+  return true
+}
+
+function routeDestinationNode(route, network) {
+  if (Number.isInteger(route.destinationNode)) {
+    return route.destinationNode
+  }
+
+  const lastEdgeIndex = route.edges?.[route.edges.length - 1]
+
+  return Number.isInteger(lastEdgeIndex) ? network.edgeTo[lastEdgeIndex] : -1
+}
+
+function routeCost(edgeIndexes, network) {
+  let cost = 0
+
+  for (const edgeIndex of edgeIndexes) {
+    cost += network.edgeCosts[edgeIndex]
+  }
+
+  return cost
 }
 
 function parkCarAtDestination(car, context) {

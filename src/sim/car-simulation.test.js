@@ -858,4 +858,51 @@ describe('generated lane-change maneuver routing', () => {
 
     expect(sharpSwitches).toEqual([])
   })
+
+  it('defers a blocked generated lane change by moving forward in the current lane', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const network = simulation.router.network
+    const nodeIndexes = new Map(network.laneGraph.nodes.map((node, index) => [node.id, index]))
+    const startNode = nodeIndexes.get('upper-0')
+    const destinationNode = nodeIndexes.get('lower-5')
+    const laneChangeEdgeIndex = network.edges.findIndex((edge) => edge.id === 'generated-lane-change-upper-0-lower-3')
+    const forwardEdgeIndex = network.edges.findIndex((edge) => edge.id === 'upper-0-1')
+    const tail = simulation.router.findRoute(nodeIndexes.get('lower-3'), destinationNode)
+    const car = {
+      id: 1,
+      owners: [],
+      state: 'driving',
+      route: {
+        edges: [laneChangeEdgeIndex, ...tail],
+        cursor: 0,
+        currentNode: startNode,
+        destinationNode
+      },
+      movement: null,
+      trafficSignalReservation: null,
+      lengthTiles: 2,
+      occupiedTiles: [],
+      direction: { dx: 1, dy: 0 }
+    }
+    const blocker = { id: 2, occupiedTiles: [] }
+
+    expect(laneChangeEdgeIndex).toBeGreaterThanOrEqual(0)
+    expect(forwardEdgeIndex).toBeGreaterThanOrEqual(0)
+    expect(isGeneratedLaneChangeEdge(network.edges[laneChangeEdgeIndex])).toBe(true)
+
+    simulation.cars.push(car)
+    simulation.parking.occupyTiles(car, [city.index(0, 0)])
+    simulation.parking.occupyTiles(blocker, [city.index(1, 1)])
+    simulation.update(0.01)
+
+    expect(car.movement?.edgeIndex).toBe(forwardEdgeIndex)
+    expect(car.route.destinationNode).toBe(destinationNode)
+
+    simulation.destroy()
+  })
 })
