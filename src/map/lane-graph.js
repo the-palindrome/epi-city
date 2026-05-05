@@ -141,8 +141,8 @@ export function normalizeLaneGraphLayout(laneGraph, mapData, legendEntries) {
   const normalizedNodes = laneGraph.nodes.map((node, index) => normalizeLaneNode(node, index, nodeIds, nodeTiles, mapData, legendEntries))
   const nodesById = new Map(normalizedNodes.map((node) => [node.id, node]))
   const edgeIds = new Set()
-  const uniqueEdges = uniqueDirectedLaneEdges(laneGraph.edges)
-  const normalizedEdges = uniqueEdges.map((edge, index) => normalizeLaneEdge(edge, index, edgeIds, nodesById, mapData))
+  const edgeKeys = new Set()
+  const normalizedEdges = laneGraph.edges.map((edge, index) => normalizeLaneEdge(edge, index, edgeIds, edgeKeys, nodesById, mapData))
   const trafficSignals = normalizeTrafficSignalLayout(laneGraph.trafficSignals, normalizedNodes, normalizedEdges)
 
   return {
@@ -206,7 +206,7 @@ function normalizeLaneNode(node, index, nodeIds, nodeTiles, mapData, legendEntri
   }
 }
 
-function normalizeLaneEdge(edge, index, edgeIds, nodesById, mapData) {
+function normalizeLaneEdge(edge, index, edgeIds, edgeKeys, nodesById, mapData) {
   if (!edge || typeof edge !== 'object' || Array.isArray(edge)) {
     throw new Error('Lane graph edge ' + index + ' must be an object.')
   }
@@ -232,6 +232,14 @@ function normalizeLaneEdge(edge, index, edgeIds, nodesById, mapData) {
   if (!toNode) {
     throw new Error('Lane graph edge "' + edge.id + '" references unknown to node "' + edge.to + '".')
   }
+
+  const edgeKey = edge.from + '->' + edge.to
+
+  if (edgeKeys.has(edgeKey)) {
+    throw new Error('Lane graph edge "' + edge.id + '" duplicates directed edge "' + edgeKey + '".')
+  }
+
+  edgeKeys.add(edgeKey)
 
   const type = edge.type
 
@@ -298,31 +306,6 @@ function normalizeLaneEdge(edge, index, edgeIds, nodesById, mapData) {
     speedLimit,
     path
   }
-}
-
-function uniqueDirectedLaneEdges(edges) {
-  const seen = new Set()
-  const uniqueEdges = []
-
-  for (const edge of edges) {
-    if (!edge || typeof edge !== 'object' || Array.isArray(edge) ||
-        typeof edge.from !== 'string' ||
-        typeof edge.to !== 'string') {
-      uniqueEdges.push(edge)
-      continue
-    }
-
-    const edgeKey = edge.from + '->' + edge.to
-
-    if (seen.has(edgeKey)) {
-      continue
-    }
-
-    seen.add(edgeKey)
-    uniqueEdges.push(edge)
-  }
-
-  return uniqueEdges
 }
 
 function createEmptyTrafficSignalLayout() {

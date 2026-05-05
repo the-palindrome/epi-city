@@ -55,7 +55,6 @@ async function main() {
       resolution: window.devicePixelRatio || 1
     })
 
-    app.stop()
     document.body.appendChild(app.canvas)
 
     const world = new PIXI.Container()
@@ -185,11 +184,6 @@ async function main() {
       game.addSystem(carSimulation)
       game.addSystem(npcSimulation)
 
-      if (window.citySim) {
-        window.citySim.npcSimulation = npcSimulation
-        window.citySim.carSimulation = carSimulation
-      }
-
       game.render()
     }
 
@@ -302,7 +296,6 @@ async function main() {
       game.destroy()
       dashboard.destroy()
       cameraControls.destroy()
-      pathSelection.destroy()
       clearPixiContainer(entityLayer)
       app.destroy({ removeView: true }, { children: true })
       delete window.citySim
@@ -317,8 +310,12 @@ async function main() {
       pathSelection,
       gameLoop: game.loop,
       game,
-      npcSimulation,
-      carSimulation,
+      get npcSimulation() {
+        return npcSimulation
+      },
+      get carSimulation() {
+        return carSimulation
+      },
       simulationState,
       get npcs() {
         return npcSimulation.npcs

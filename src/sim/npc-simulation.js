@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js'
 import { NPC_CONFIG } from '../core/constants.js'
 import { createSystemRandom } from '../core/random.js'
+import { hourInRange, normalizeHour } from '../core/time.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
 const STATIC_CLOCK = Object.freeze({
@@ -537,7 +538,7 @@ function followRoute(npc, deltaSeconds, context) {
     return
   }
 
-  const nextIndex = nextRouteTileIndex(npc, context.city)
+  const nextIndex = nextRouteTileIndex(npc)
 
   if (nextIndex === -1) {
     context.routePlanner.request(npc)
@@ -564,17 +565,17 @@ function followRoute(npc, deltaSeconds, context) {
   }
 }
 
-function nextRouteTileIndex(npc, city) {
+function nextRouteTileIndex(npc) {
   while (
     npc.routing.path &&
     npc.routing.cursor < npc.routing.path.length &&
-    routeTileIndex(npc.routing.path, npc.routing.cursor, city) === npc.tile.index
+    npc.routing.path[npc.routing.cursor] === npc.tile.index
   ) {
     npc.routing.cursor += 1
   }
 
   return npc.routing.path && npc.routing.path[npc.routing.cursor] !== undefined
-    ? routeTileIndex(npc.routing.path, npc.routing.cursor, city)
+    ? npc.routing.path[npc.routing.cursor]
     : -1
 }
 
@@ -593,19 +594,7 @@ function areNeighborTileIndexes(city, fromIndex, toIndex) {
 }
 
 function planRouteForNpc(npc, context) {
-  let path
-
-  if (typeof context.city.findCachedPathIndexesByIndex === 'function') {
-    path = context.city.findCachedPathIndexesByIndex(npc.tile.index, npc.goal.location.index, 'pedestrian')
-  } else {
-    const start = { x: npc.tile.x, y: npc.tile.y }
-    const end = { x: npc.goal.location.x, y: npc.goal.location.y }
-    path = typeof context.city.findCachedPathIndexes === 'function'
-      ? context.city.findCachedPathIndexes(start, end, 'pedestrian')
-      : typeof context.city.findCachedPath === 'function'
-        ? context.city.findCachedPath(start, end, 'pedestrian')
-        : context.city.findPath(start, end, 'pedestrian')
-  }
+  const path = context.city.findCachedPathIndexesByIndex(npc.tile.index, npc.goal.location.index, 'pedestrian')
 
   if (path.length === 0) {
     npc.routing.path = null
@@ -615,16 +604,10 @@ function planRouteForNpc(npc, context) {
   }
 
   npc.routing.path = path
-  npc.routing.cursor = routeTileIndex(path, 0, context.city) === npc.tile.index ? 1 : 0
+  npc.routing.cursor = path[0] === npc.tile.index ? 1 : 0
   npc.routing.destination = { ...npc.goal.location }
   npc.routing.retrySeconds = 0
   npc.routing.blockedSeconds = 0
-}
-
-function routeTileIndex(route, cursor, city) {
-  const tile = route[cursor]
-
-  return typeof tile === 'number' ? tile : city.index(tile.x, tile.y)
 }
 
 function tryStartMoveToIndex(npc, targetIndex, context, routeCursor = null) {
@@ -636,13 +619,8 @@ function tryStartMoveToIndex(npc, targetIndex, context, routeCursor = null) {
 function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null, knownTargetIndex = null) {
   const { city, random, config } = context
   const targetIndex = knownTargetIndex ?? city.index(tileX, tileY)
-  const canStep = typeof city.canStepPedestrianIndex === 'function'
-    ? city.canStepPedestrianIndex(npc.tile.index, targetIndex)
-    : typeof city.canStepIndex === 'function'
-    ? city.canStepIndex(npc.tile.index, targetIndex, 'pedestrian')
-    : city.canStep(npc.tile.x, npc.tile.y, tileX, tileY, 'pedestrian')
 
-  if (!canStep) {
+  if (!city.canStepPedestrianIndex(npc.tile.index, targetIndex)) {
     return false
   }
 
@@ -861,22 +839,6 @@ function createEmptyRouteState() {
     retrySeconds: 0,
     blockedSeconds: 0
   }
-}
-
-function hourInRange(hour, startHour, endHour) {
-  if (startHour === endHour) {
-    return true
-  }
-
-  if (startHour < endHour) {
-    return hour >= startHour && hour < endHour
-  }
-
-  return hour >= startHour || hour < endHour
-}
-
-function normalizeHour(hour) {
-  return ((hour % 24) + 24) % 24
 }
 
 function finiteNumberOrDefault(value, fallback) {

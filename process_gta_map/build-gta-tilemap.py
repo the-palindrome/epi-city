@@ -12,9 +12,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import shutil
-from collections import Counter, defaultdict, deque
+from collections import Counter, deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -522,48 +521,6 @@ def cell_bounds(x: int, y: int, image_width: int, image_height: int, grid_size: 
     return x0, y0, max(x0 + 1, x1), max(y0 + 1, y1)
 
 
-def crop_tile(source: Image.Image, x: int, y: int, grid_size: int, texture_size: int) -> Image.Image:
-    x0, y0, x1, y1 = cell_bounds(x, y, source.width, source.height, grid_size)
-    return source.crop((x0, y0, x1, y1)).resize((texture_size, texture_size), Image.Resampling.LANCZOS)
-
-
-def tile_feature(source: Image.Image, x: int, y: int, grid_size: int) -> np.ndarray:
-    x0, y0, x1, y1 = cell_bounds(x, y, source.width, source.height, grid_size)
-    crop = np.asarray(source.crop((x0, y0, x1, y1)).resize((4, 4), Image.Resampling.BOX), dtype=np.float32) / 255.0
-    return crop.reshape(-1)
-
-
-def kmeans(features: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
-    if k <= 1 or len(features) <= 1:
-        return np.zeros(len(features), dtype=np.int32), features[[0]]
-    k = min(k, len(features))
-    centers = [features[0]]
-    distances = np.full(len(features), np.inf, dtype=np.float32)
-    for _ in range(1, k):
-        distances = np.minimum(distances, np.sum((features - centers[-1]) ** 2, axis=1))
-        centers.append(features[int(np.argmax(distances))])
-    centers = np.asarray(centers, dtype=np.float32)
-    labels = np.zeros(len(features), dtype=np.int32)
-    for _ in range(8):
-        dists = np.sum((features[:, None, :] - centers[None, :, :]) ** 2, axis=2)
-        labels = np.argmin(dists, axis=1)
-        for index in range(k):
-            members = features[labels == index]
-            if len(members):
-                centers[index] = np.mean(members, axis=0)
-    return labels, centers
-
-
-def variant_count(category: str, variant: str, count: int) -> int:
-    if count < 24:
-        return 1
-    if category in {"road", "sidewalk", "building", "water"} and count >= 900:
-        return 3
-    if count >= 260:
-        return 2
-    return 1
-
-
 def symbol_stream() -> Iterable[str]:
     yield from SAFE_SYMBOLS
 
@@ -649,11 +606,6 @@ def verify_decomposition(source: Image.Image, grid_size: int, texture_rows: list
 
             if source_crop.size != frame_crop.size or source_crop.tobytes() != frame_crop.tobytes():
                 raise RuntimeError(f"Texture mismatch at tile {x},{y}: expected source bounds {source_bounds}, got frame {frame_bounds}")
-
-
-def write_json(path: Path, data: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def write_compact_json(path: Path, data: object) -> None:

@@ -1,6 +1,8 @@
 import * as PIXI from 'pixi.js'
 import { CAR_CONFIG } from '../core/constants.js'
+import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
+import { hourInRange } from '../core/time.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
 const STATIC_CLOCK = Object.freeze({
@@ -69,7 +71,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   const random = resolvedConfig.random || createSystemRandom()
   const clock = resolvedConfig.clock || STATIC_CLOCK
   const network = getCarTrafficNetwork(city)
-  const router = createCarRoutePlanner(city, resolvedConfig, network)
+  const router = createCarRoutePlanner(city, network)
   const parking = createParkingManager(city, network, resolvedConfig)
   const trafficReservations = createTrafficSignalReservationManager(city)
   const residentialBuildings = collectBuildings(city, 'residential')
@@ -164,16 +166,19 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   }
 }
 
-export function createCarRoutePlanner(city, config = {}, network = getCarTrafficNetwork(city)) {
-  const routeFields = new Map()
+export class CarRoutePlanner {
+  constructor(network) {
+    this.network = network
+    this.routeFields = new Map()
+  }
 
-  function findRoute(startNodeIndex, endNodeIndex) {
+  findRoute(startNodeIndex, endNodeIndex) {
     if (!Number.isInteger(startNodeIndex) ||
         !Number.isInteger(endNodeIndex) ||
         startNodeIndex < 0 ||
         endNodeIndex < 0 ||
-        startNodeIndex >= network.nodeCount ||
-        endNodeIndex >= network.nodeCount) {
+        startNodeIndex >= this.network.nodeCount ||
+        endNodeIndex >= this.network.nodeCount) {
       return []
     }
 
@@ -181,40 +186,41 @@ export function createCarRoutePlanner(city, config = {}, network = getCarTraffic
       return []
     }
 
-    const field = getRouteField(endNodeIndex)
-    return extractLaneRoute(field, startNodeIndex, endNodeIndex, network)
+    const field = this.getRouteField(endNodeIndex)
+    return extractLaneRoute(field, startNodeIndex, endNodeIndex, this.network)
   }
 
-  function getRouteField(endNodeIndex) {
-    const cached = routeFields.get(endNodeIndex)
+  getRouteField(endNodeIndex) {
+    const cached = this.routeFields.get(endNodeIndex)
 
     if (cached) {
-      routeFields.delete(endNodeIndex)
-      routeFields.set(endNodeIndex, cached)
+      this.routeFields.delete(endNodeIndex)
+      this.routeFields.set(endNodeIndex, cached)
       return cached
     }
 
-    const field = buildLaneRouteField(network, endNodeIndex)
+    const field = buildLaneRouteField(this.network, endNodeIndex)
 
-    routeFields.set(endNodeIndex, field)
+    this.routeFields.set(endNodeIndex, field)
 
-    while (routeFields.size > 256) {
-      routeFields.delete(routeFields.keys().next().value)
+    while (this.routeFields.size > 256) {
+      this.routeFields.delete(this.routeFields.keys().next().value)
     }
 
     return field
   }
 
-  return {
-    findRoute,
-    network,
-    clearRouteCache() {
-      routeFields.clear()
-    },
-    getRouteCacheStats() {
-      return { fields: routeFields.size }
-    }
+  clearRouteCache() {
+    this.routeFields.clear()
   }
+
+  getRouteCacheStats() {
+    return { fields: this.routeFields.size }
+  }
+}
+
+export function createCarRoutePlanner(city, network = getCarTrafficNetwork(city)) {
+  return new CarRoutePlanner(network)
 }
 
 export function getCarTrafficNetwork(city) {
@@ -1788,114 +1794,10 @@ function takeRandomItem(items, random) {
   return items[random.int(items.length)]
 }
 
-function hourInRange(hour, start, end) {
-  const normalized = ((hour % 24) + 24) % 24
-
-  if (start === end) {
-    return true
-  }
-
-  if (start < end) {
-    return normalized >= start && normalized < end
-  }
-
-  return normalized >= start || normalized < end
-}
-
 function positiveIntegerOrDefault(value, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback
 }
 
 function positiveNumberOrDefault(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback
-}
-
-class IndexPriorityQueue {
-  constructor(initialCapacity) {
-    this.indexes = new Int32Array(initialCapacity)
-    this.priorities = new Int32Array(initialCapacity)
-    this.length = 0
-  }
-
-  push(index, priority) {
-    this.ensureCapacity(this.length + 1)
-
-    let cursor = this.length
-
-    this.length += 1
-
-    while (cursor > 0) {
-      const parent = (cursor - 1) >> 1
-
-      if (this.priorities[parent] <= priority) {
-        break
-      }
-
-      this.indexes[cursor] = this.indexes[parent]
-      this.priorities[cursor] = this.priorities[parent]
-      cursor = parent
-    }
-
-    this.indexes[cursor] = index
-    this.priorities[cursor] = priority
-  }
-
-  pop() {
-    const first = this.indexes[0]
-    const lastIndex = this.indexes[this.length - 1]
-    const lastPriority = this.priorities[this.length - 1]
-
-    this.length -= 1
-
-    if (this.length > 0) {
-      this.sinkRoot(lastIndex, lastPriority)
-    }
-
-    return first
-  }
-
-  sinkRoot(index, priority) {
-    let cursor = 0
-
-    while (true) {
-      const left = cursor * 2 + 1
-
-      if (left >= this.length) {
-        break
-      }
-
-      const right = left + 1
-      let child = left
-
-      if (right < this.length && this.priorities[right] < this.priorities[left]) {
-        child = right
-      }
-
-      if (this.priorities[child] >= priority) {
-        break
-      }
-
-      this.indexes[cursor] = this.indexes[child]
-      this.priorities[cursor] = this.priorities[child]
-      cursor = child
-    }
-
-    this.indexes[cursor] = index
-    this.priorities[cursor] = priority
-  }
-
-  ensureCapacity(size) {
-    if (size <= this.indexes.length) {
-      return
-    }
-
-    const nextCapacity = this.indexes.length * 2
-    const nextIndexes = new Int32Array(nextCapacity)
-    const nextPriorities = new Int32Array(nextCapacity)
-
-    nextIndexes.set(this.indexes)
-    nextPriorities.set(this.priorities)
-    this.indexes = nextIndexes
-    this.priorities = nextPriorities
-  }
 }

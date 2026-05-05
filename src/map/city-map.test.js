@@ -217,7 +217,7 @@ describe('city map validation and compile', () => {
     expect(city.laneGraph.edges[0].worldPath[1]).toEqual([48, 80])
   })
 
-  it('normalizes duplicate directed lane graph edges', () => {
+  it('rejects duplicate directed lane graph edges', () => {
     const laneGraph = {
       encoding: 'directed-lanes-v1',
       drivingSide: 'right',
@@ -247,13 +247,8 @@ describe('city map validation and compile', () => {
         }
       ]
     }
-    const map = validateCityMap(createMap({ laneGraph }))
-    const city = compileCityMap(map)
 
-    expect(map.laneGraph.edges).toHaveLength(1)
-    expect(map.laneGraph.edges[0].id).toBe('edge-a-b')
-    expect(city.laneGraph.edges).toHaveLength(1)
-    expect(city.laneGraph.getOutgoingEdges('lane-a')).toHaveLength(1)
+    expect(() => validateCityMap(createMap({ laneGraph }))).toThrow(/duplicates directed edge/)
   })
 
   it('rejects lane graphs with missing edge node references', () => {
