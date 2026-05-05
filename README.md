@@ -17,7 +17,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `d` to toggle the debug dashboard in the top-right corner.
+- Press `Space` to play or pause the simulation, and press `d` to toggle the debug dashboard in the top-right corner.
 - Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
 - Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
 - Use the dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.

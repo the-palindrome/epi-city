@@ -80,12 +80,20 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
       return
     }
 
-    if (event.key.toLowerCase() !== 'd' || isEditableTarget(event.target)) {
+    const key = typeof event.key === 'string' ? event.key.toLowerCase() : ''
+
+    if (key === 'd' && !isEditableTarget(event.target)) {
+      event.preventDefault()
+      toggleDashboard()
+      return
+    }
+
+    if (!isSpaceHotkey(event) || isInteractiveTarget(event.target)) {
       return
     }
 
     event.preventDefault()
-    toggleDashboard()
+    simulation.togglePlayback()
   }
 
   document.addEventListener('keydown', onKeyDown)
@@ -184,15 +192,9 @@ function createSimulationControls(options) {
   section.appendChild(carCountField.label)
   section.appendChild(dayNightToggle.label)
 
-  playButton.addEventListener('click', () => {
-    callbacks.onPlay()
-    setPaused(false)
-  })
+  playButton.addEventListener('click', play)
 
-  pauseButton.addEventListener('click', () => {
-    callbacks.onPause()
-    setPaused(true)
-  })
+  pauseButton.addEventListener('click', pause)
 
   restartButton.addEventListener('click', () => {
     callbacks.onRestart()
@@ -245,6 +247,24 @@ function createSimulationControls(options) {
     setDayNightOverlayEnabled(dayNightToggle.input.checked)
     callbacks.onDayNightOverlayChange(state.dayNightOverlayEnabled)
   })
+
+  function play() {
+    callbacks.onPlay()
+    setPaused(false)
+  }
+
+  function pause() {
+    callbacks.onPause()
+    setPaused(true)
+  }
+
+  function togglePlayback() {
+    if (state.paused) {
+      play()
+    } else {
+      pause()
+    }
+  }
 
   function setPaused(paused) {
     state.paused = Boolean(paused)
@@ -308,7 +328,8 @@ function createSimulationControls(options) {
     setSpeed,
     setNpcCount,
     setCarCount,
-    setDayNightOverlayEnabled
+    setDayNightOverlayEnabled,
+    togglePlayback
   }
 }
 
@@ -570,6 +591,18 @@ function isEditableTarget(target) {
   }
 
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+}
+
+function isInteractiveTarget(target) {
+  if (!target || !target.tagName) {
+    return false
+  }
+
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+}
+
+function isSpaceHotkey(event) {
+  return event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar'
 }
 
 function noop() {}

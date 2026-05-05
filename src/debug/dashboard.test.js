@@ -75,17 +75,25 @@ class FakeElement {
 
 function createDashboardDocument() {
   const dashboard = new FakeElement('div')
+  const eventListeners = {}
 
   return {
     dashboard,
+    eventListeners,
     createElement(tagName) {
       return new FakeElement(tagName)
     },
     getElementById(id) {
       return id === 'debug-dashboard' ? dashboard : null
     },
-    addEventListener() {},
-    removeEventListener() {}
+    addEventListener(type, listener) {
+      eventListeners[type] = listener
+    },
+    removeEventListener(type, listener) {
+      if (eventListeners[type] === listener) {
+        delete eventListeners[type]
+      }
+    }
   }
 }
 
@@ -145,6 +153,23 @@ function findByDataset(root, key) {
   }
 
   return null
+}
+
+function createKeydownEvent(overrides = {}) {
+  return {
+    key: ' ',
+    code: 'Space',
+    defaultPrevented: false,
+    repeat: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    target: null,
+    preventDefault() {
+      this.defaultPrevented = true
+    },
+    ...overrides
+  }
 }
 
 describe('debug dashboard overlays', () => {
@@ -303,6 +328,66 @@ describe('debug dashboard overlays', () => {
     dashboard.simulation.setDayNightOverlayEnabled(true)
 
     expect(dayNightToggle.checked).toBe(true)
+
+    dashboard.destroy()
+  })
+
+  it('toggles simulation playback with the Space hotkey', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      paused: false,
+      onPlay() {
+        changes.push('play')
+      },
+      onPause() {
+        changes.push('pause')
+      }
+    })
+    const keydown = globalThis.document.eventListeners.keydown
+
+    const pauseEvent = createKeydownEvent()
+    keydown(pauseEvent)
+
+    expect(pauseEvent.defaultPrevented).toBe(true)
+    expect(dashboard.simulation.state.paused).toBe(true)
+    expect(changes).toEqual(['pause'])
+
+    const playEvent = createKeydownEvent()
+    keydown(playEvent)
+
+    expect(playEvent.defaultPrevented).toBe(true)
+    expect(dashboard.simulation.state.paused).toBe(false)
+    expect(changes).toEqual(['pause', 'play'])
+
+    dashboard.destroy()
+    expect(globalThis.document.eventListeners.keydown).toBeUndefined()
+  })
+
+  it('does not use Space as a playback hotkey inside dashboard controls', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      onPlay() {
+        changes.push('play')
+      },
+      onPause() {
+        changes.push('pause')
+      }
+    })
+    const keydown = globalThis.document.eventListeners.keydown
+    const seedInput = findByDataset(dashboard.element, 'simulationSeed')
+    const playButton = findByDataset(dashboard.element, 'simulationAction')
+
+    const inputEvent = createKeydownEvent({ target: seedInput })
+    keydown(inputEvent)
+
+    expect(inputEvent.defaultPrevented).toBe(false)
+
+    const buttonEvent = createKeydownEvent({ target: playButton })
+    keydown(buttonEvent)
+
+    expect(buttonEvent.defaultPrevented).toBe(false)
+    expect(dashboard.simulation.state.paused).toBe(false)
+    expect(changes).toEqual([])
 
     dashboard.destroy()
   })
