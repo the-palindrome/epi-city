@@ -248,7 +248,7 @@ function buildCarTrafficNetwork(city) {
 
   const edges = [
     ...laneGraph.edges,
-    ...buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex, nodeIndexById)
+    ...buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex)
   ]
   const edgeCount = edges.length
   const authoredEdgeCount = laneGraph.edges.length
@@ -311,9 +311,8 @@ function buildCarTrafficNetwork(city) {
   }
 }
 
-function buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex, nodeIndexById) {
+function buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex) {
   const edges = []
-  const strongComponentByNode = buildAuthoredStrongComponents(laneGraph, nodeIndexById)
 
   for (let nodeIndex = 0; nodeIndex < laneGraph.nodes.length; nodeIndex += 1) {
     const fromNode = laneGraph.nodes[nodeIndex]
@@ -324,153 +323,11 @@ function buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex, nodeInd
     }
 
     for (const lateral of laneChangeLateralOffsets(heading)) {
-      const edge = firstValidLaneChangeEdge(city, laneGraph, tileToNodeIndex, strongComponentByNode, fromNode, nodeIndex, heading, lateral)
-
-      if (edge) {
-        edges.push(edge)
-      }
+      edges.push(...validLaneChangeEdges(city, laneGraph, tileToNodeIndex, fromNode, nodeIndex, heading, lateral))
     }
   }
 
   return edges
-}
-
-function buildAuthoredStrongComponents(laneGraph, nodeIndexById) {
-  const nodeCount = laneGraph.nodes.length
-  const edgeFromIndexes = []
-  const edgeToIndexes = []
-  const outgoingCounts = new Int32Array(nodeCount)
-  const incomingCounts = new Int32Array(nodeCount)
-
-  for (const edge of laneGraph.edges) {
-    const fromIndex = nodeIndexById.get(edge.from)
-    const toIndex = nodeIndexById.get(edge.to)
-
-    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) {
-      continue
-    }
-
-    edgeFromIndexes.push(fromIndex)
-    edgeToIndexes.push(toIndex)
-    outgoingCounts[fromIndex] += 1
-    incomingCounts[toIndex] += 1
-  }
-
-  const outgoingOffsets = prefixOffsets(outgoingCounts)
-  const incomingOffsets = prefixOffsets(incomingCounts)
-  const outgoingCursors = new Int32Array(outgoingOffsets)
-  const incomingCursors = new Int32Array(incomingOffsets)
-  const outgoingTargets = new Int32Array(edgeFromIndexes.length)
-  const incomingTargets = new Int32Array(edgeFromIndexes.length)
-
-  for (let edgeIndex = 0; edgeIndex < edgeFromIndexes.length; edgeIndex += 1) {
-    const fromIndex = edgeFromIndexes[edgeIndex]
-    const toIndex = edgeToIndexes[edgeIndex]
-
-    outgoingTargets[outgoingCursors[fromIndex]] = toIndex
-    outgoingCursors[fromIndex] += 1
-    incomingTargets[incomingCursors[toIndex]] = fromIndex
-    incomingCursors[toIndex] += 1
-  }
-
-  const visitOrder = authoredGraphVisitOrder(nodeCount, outgoingOffsets, outgoingTargets)
-  const componentByNode = new Int32Array(nodeCount)
-  const stack = new Int32Array(nodeCount)
-  let componentIndex = 0
-
-  componentByNode.fill(-1)
-
-  for (let orderIndex = visitOrder.length - 1; orderIndex >= 0; orderIndex -= 1) {
-    const startNode = visitOrder[orderIndex]
-
-    if (componentByNode[startNode] !== -1) {
-      continue
-    }
-
-    let stackLength = 1
-    stack[0] = startNode
-    componentByNode[startNode] = componentIndex
-
-    while (stackLength > 0) {
-      stackLength -= 1
-      const nodeIndex = stack[stackLength]
-
-      for (let cursor = incomingOffsets[nodeIndex]; cursor < incomingOffsets[nodeIndex + 1]; cursor += 1) {
-        const nextNode = incomingTargets[cursor]
-
-        if (componentByNode[nextNode] !== -1) {
-          continue
-        }
-
-        componentByNode[nextNode] = componentIndex
-        stack[stackLength] = nextNode
-        stackLength += 1
-      }
-    }
-
-    componentIndex += 1
-  }
-
-  return componentByNode
-}
-
-function prefixOffsets(counts) {
-  const offsets = new Int32Array(counts.length + 1)
-
-  for (let index = 0; index < counts.length; index += 1) {
-    offsets[index + 1] = offsets[index] + counts[index]
-  }
-
-  return offsets
-}
-
-function authoredGraphVisitOrder(nodeCount, outgoingOffsets, outgoingTargets) {
-  const visited = new Uint8Array(nodeCount)
-  const nodeStack = new Int32Array(nodeCount)
-  const cursorStack = new Int32Array(nodeCount)
-  const order = []
-
-  for (let startNode = 0; startNode < nodeCount; startNode += 1) {
-    if (visited[startNode]) {
-      continue
-    }
-
-    let stackTop = 0
-    nodeStack[0] = startNode
-    cursorStack[0] = outgoingOffsets[startNode]
-    visited[startNode] = 1
-
-    while (stackTop >= 0) {
-      const nodeIndex = nodeStack[stackTop]
-      const endCursor = outgoingOffsets[nodeIndex + 1]
-      let cursor = cursorStack[stackTop]
-      let advanced = false
-
-      while (cursor < endCursor) {
-        const nextNode = outgoingTargets[cursor]
-        cursor += 1
-
-        if (visited[nextNode]) {
-          continue
-        }
-
-        cursorStack[stackTop] = cursor
-        stackTop += 1
-        nodeStack[stackTop] = nextNode
-        cursorStack[stackTop] = outgoingOffsets[nextNode]
-        visited[nextNode] = 1
-        advanced = true
-        break
-      }
-
-      if (!advanced) {
-        order.push(nodeIndex)
-        stackTop -= 1
-      }
-    }
-  }
-
-  return order
 }
 
 function laneChangeLateralOffsets(heading) {
@@ -480,7 +337,9 @@ function laneChangeLateralOffsets(heading) {
   ]
 }
 
-function firstValidLaneChangeEdge(city, laneGraph, tileToNodeIndex, strongComponentByNode, fromNode, fromNodeIndex, heading, lateral) {
+function validLaneChangeEdges(city, laneGraph, tileToNodeIndex, fromNode, fromNodeIndex, heading, lateral) {
+  const edges = []
+
   for (let forwardTiles = LANE_CHANGE_MIN_FORWARD_TILES; forwardTiles <= LANE_CHANGE_MAX_FORWARD_TILES; forwardTiles += 1) {
     const targetX = fromNode.tile.x + heading.dx * forwardTiles + lateral.dx
     const targetY = fromNode.tile.y + heading.dy * forwardTiles + lateral.dy
@@ -499,7 +358,6 @@ function firstValidLaneChangeEdge(city, laneGraph, tileToNodeIndex, strongCompon
     const toNode = laneGraph.nodes[toNodeIndex]
 
     if (toNode.direction !== fromNode.direction ||
-        strongComponentByNode[toNodeIndex] === strongComponentByNode[fromNodeIndex] ||
         city.tileCrosswalk[targetIndex] === 1) {
       continue
     }
@@ -514,7 +372,7 @@ function firstValidLaneChangeEdge(city, laneGraph, tileToNodeIndex, strongCompon
     const length = measureTilePolyline(path)
     const worldPath = path.map(([x, y]) => Object.freeze([x * city.tileSize, y * city.tileSize]))
 
-    return Object.freeze({
+    edges.push(Object.freeze({
       id: `generated-lane-change-${fromNode.id}-${toNode.id}`,
       from: fromNode.id,
       to: toNode.id,
@@ -533,10 +391,10 @@ function firstValidLaneChangeEdge(city, laneGraph, tileToNodeIndex, strongCompon
       length,
       worldLength: length * city.tileSize,
       sweptTiles: Object.freeze(sweptTiles)
-    })
+    }))
   }
 
-  return null
+  return edges
 }
 
 function laneChangeSweptTiles(city, tileToNodeIndex, fromTile, toTile) {

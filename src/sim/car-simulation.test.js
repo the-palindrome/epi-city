@@ -363,6 +363,32 @@ function createParallelLaneGraph({ bottomDirection = 'east' } = {}) {
   }
 }
 
+function createSameComponentLaneChangeLoopGraph() {
+  const nodes = []
+  const edges = []
+
+  for (let x = 0; x < 6; x += 1) {
+    nodes.push({ id: `upper-${x}`, x: x + 0.5, y: 0.5, tile: { x, y: 0 }, direction: 'east' })
+    nodes.push({ id: `lower-${x}`, x: x + 0.5, y: 1.5, tile: { x, y: 1 }, direction: 'east' })
+  }
+
+  for (let x = 0; x < 5; x += 1) {
+    edges.push(createLaneEdge(`upper-${x}-${x + 1}`, `upper-${x}`, `upper-${x + 1}`, 'east', x, 0, x + 1, 0))
+    edges.push(createLaneEdge(`lower-${x + 1}-${x}`, `lower-${x + 1}`, `lower-${x}`, 'west', x + 1, 1, x, 1))
+  }
+
+  edges.push(createLaneEdge('upper-5-lower-5', 'upper-5', 'lower-5', 'south', 5, 0, 5, 1, { type: 'turn', turn: 'merge' }))
+  edges.push(createLaneEdge('lower-0-upper-0', 'lower-0', 'upper-0', 'north', 0, 1, 0, 0, { type: 'turn', turn: 'merge' }))
+
+  return {
+    encoding: 'directed-lanes-v1',
+    drivingSide: 'right',
+    coordinateSpace: 'tile',
+    nodes,
+    edges
+  }
+}
+
 function createLaneEdge(id, from, to, direction, fromX, fromY, toX, toY, options = {}) {
   return {
     id,
@@ -831,6 +857,24 @@ describe('generated lane-change maneuver routing', () => {
     expect(routeEdgesResult.length).toBeGreaterThan(0)
     expect(routeEdgesResult.some((edge) => isGeneratedLaneChangeEdge(edge))).toBe(true)
     expect(planner.network.generatedLaneChangeEdgeCount).toBeGreaterThan(0)
+  })
+
+  it('chooses the lowest-distance generated lane change instead of the earliest maneuver', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const planner = createCarRoutePlanner(city)
+
+    expect(routeEdgeIds(planner, 'upper-0', 'lower-5')).toEqual(['generated-lane-change-upper-0-lower-5'])
+  })
+
+  it('uses same-component lane changes when they make the route shorter', () => {
+    const city = createGeneratedLaneChangeCity(createSameComponentLaneChangeLoopGraph())
+    const planner = createCarRoutePlanner(city)
+
+    expect(routeEdgeIds(planner, 'upper-0', 'lower-1')).toEqual([
+      'generated-lane-change-upper-0-lower-3',
+      'lower-3-2',
+      'lower-2-1'
+    ])
   })
 
   it('does not generate lane changes between lanes facing opposite directions', () => {
