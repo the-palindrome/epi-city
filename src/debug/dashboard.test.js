@@ -75,17 +75,25 @@ class FakeElement {
 
 function createDashboardDocument() {
   const dashboard = new FakeElement('div')
+  const eventListeners = {}
 
   return {
     dashboard,
+    eventListeners,
     createElement(tagName) {
       return new FakeElement(tagName)
     },
     getElementById(id) {
       return id === 'debug-dashboard' ? dashboard : null
     },
-    addEventListener() {},
-    removeEventListener() {}
+    addEventListener(type, listener) {
+      eventListeners[type] = listener
+    },
+    removeEventListener(type, listener) {
+      if (eventListeners[type] === listener) {
+        delete eventListeners[type]
+      }
+    }
   }
 }
 
@@ -145,6 +153,23 @@ function findByDataset(root, key) {
   }
 
   return null
+}
+
+function createKeydownEvent(overrides = {}) {
+  return {
+    key: ' ',
+    code: 'Space',
+    defaultPrevented: false,
+    repeat: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    target: null,
+    preventDefault() {
+      this.defaultPrevented = true
+    },
+    ...overrides
+  }
 }
 
 describe('debug dashboard overlays', () => {
@@ -220,6 +245,49 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
+  it('updates car count from the slider and exact number input', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      carCount: 100,
+      carCountRange: { min: 0, max: 2000, step: 10 },
+      onCarCountChange(count) {
+        changes.push(count)
+      }
+    })
+    const slider = findByDataset(dashboard.element, 'simulationCarCountSlider')
+    const input = findByDataset(dashboard.element, 'simulationCarCount')
+
+    expect(slider.min).toBe('0')
+    expect(slider.max).toBe('2000')
+    expect(slider.value).toBe('100')
+    expect(input.value).toBe('100')
+
+    slider.value = '250'
+    slider.eventListeners.input()
+
+    expect(dashboard.simulation.state.carCount).toBe(250)
+    expect(input.value).toBe('250')
+
+    slider.eventListeners.change()
+
+    expect(changes).toEqual([250])
+
+    input.value = '999'
+    input.eventListeners.change()
+
+    expect(dashboard.simulation.state.carCount).toBe(999)
+    expect(slider.value).toBe('999')
+    expect(changes).toEqual([250, 999])
+
+    input.value = '5000'
+    input.eventListeners.change()
+
+    expect(dashboard.simulation.state.carCount).toBe(2000)
+    expect(changes).toEqual([250, 999, 2000])
+
+    dashboard.destroy()
+  })
+
   it('shows the simulation clock and toggles the day-night overlay control', () => {
     const changes = []
     const clock = {
@@ -260,6 +328,66 @@ describe('debug dashboard overlays', () => {
     dashboard.simulation.setDayNightOverlayEnabled(true)
 
     expect(dayNightToggle.checked).toBe(true)
+
+    dashboard.destroy()
+  })
+
+  it('toggles simulation playback with the Space hotkey', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      paused: false,
+      onPlay() {
+        changes.push('play')
+      },
+      onPause() {
+        changes.push('pause')
+      }
+    })
+    const keydown = globalThis.document.eventListeners.keydown
+
+    const pauseEvent = createKeydownEvent()
+    keydown(pauseEvent)
+
+    expect(pauseEvent.defaultPrevented).toBe(true)
+    expect(dashboard.simulation.state.paused).toBe(true)
+    expect(changes).toEqual(['pause'])
+
+    const playEvent = createKeydownEvent()
+    keydown(playEvent)
+
+    expect(playEvent.defaultPrevented).toBe(true)
+    expect(dashboard.simulation.state.paused).toBe(false)
+    expect(changes).toEqual(['pause', 'play'])
+
+    dashboard.destroy()
+    expect(globalThis.document.eventListeners.keydown).toBeUndefined()
+  })
+
+  it('does not use Space as a playback hotkey inside dashboard controls', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      onPlay() {
+        changes.push('play')
+      },
+      onPause() {
+        changes.push('pause')
+      }
+    })
+    const keydown = globalThis.document.eventListeners.keydown
+    const seedInput = findByDataset(dashboard.element, 'simulationSeed')
+    const playButton = findByDataset(dashboard.element, 'simulationAction')
+
+    const inputEvent = createKeydownEvent({ target: seedInput })
+    keydown(inputEvent)
+
+    expect(inputEvent.defaultPrevented).toBe(false)
+
+    const buttonEvent = createKeydownEvent({ target: playButton })
+    keydown(buttonEvent)
+
+    expect(buttonEvent.defaultPrevented).toBe(false)
+    expect(dashboard.simulation.state.paused).toBe(false)
+    expect(changes).toEqual([])
 
     dashboard.destroy()
   })

@@ -49,16 +49,6 @@ export class Game {
     this.accumulator = 0
   }
 
-  togglePaused(force) {
-    const shouldPause = typeof force === 'boolean' ? force : !this.paused
-
-    if (shouldPause) {
-      this.pause()
-    } else {
-      this.play()
-    }
-  }
-
   setSpeed(multiplier) {
     const nextSpeed = Number(multiplier)
 
@@ -132,8 +122,6 @@ class GameLoop {
     this.running = false
     this.frameRequestId = null
     this.lastFrameTime = null
-    this.lastDeltaSeconds = 0
-    this.frameCount = 0
     this.tick = this.tick.bind(this)
   }
 
@@ -159,15 +147,13 @@ class GameLoop {
   getDeltaTime(frameTime) {
     if (this.lastFrameTime === null) {
       this.lastFrameTime = frameTime
-      this.lastDeltaSeconds = 0
       return 0
     }
 
     const rawDeltaSeconds = Math.max(0, (frameTime - this.lastFrameTime) / 1000)
 
     this.lastFrameTime = frameTime
-    this.lastDeltaSeconds = Math.min(rawDeltaSeconds, this.maxDeltaSeconds)
-    return this.lastDeltaSeconds
+    return Math.min(rawDeltaSeconds, this.maxDeltaSeconds)
   }
 
   tick(frameTime) {
@@ -179,7 +165,6 @@ class GameLoop {
 
     this.update(deltaSeconds)
     this.render()
-    this.frameCount += 1
     this.frameRequestId = requestAnimationFrame(this.tick)
   }
 }

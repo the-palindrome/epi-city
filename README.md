@@ -17,17 +17,18 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `d` to toggle the debug dashboard in the top-right corner.
+- Press `Space` to play or pause the simulation, and press `d` to toggle the debug dashboard in the top-right corner.
 - Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
 - Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
 - Use the dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
+- Use the dashboard car control to restart the simulation with the selected number of cars. The default is 500.
 - The dashboard shows the simulated day/time and can toggle the darker day-night overlay.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
 
 - `index.html` is the app shell and loads the Vite module entrypoint.
-- `src/` contains the runtime modules: map validation/compilation, Pixi rendering, camera controls, game loop, debug dashboard, and NPC simulation.
+- `src/` contains the runtime modules: map validation/compilation, Pixi rendering, camera controls, game loop, debug dashboard, NPC simulation, and car simulation.
 - `public/maps/liberty-city/tile-layout.json` contains the default static Liberty City semantic tile layout.
 - `public/maps/liberty-city/texture-layout.json` contains one atlas-frame texture ID per map cell.
 - `public/maps/liberty-city/manifest.json` describes the Liberty City atlas frames used by the default texture set.
@@ -84,17 +85,23 @@ The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `pa
 
 ## Movement Rules
 
-Vehicles use tiles marked `drivable`. Pedestrians use tiles marked `walkable`. Parking logic can use tiles marked `parkable`. Crosswalks are both walkable and drivable, and their pedestrian signal cycles through `red`, `green`, and `yellow`; NPCs enter only on green, but NPCs already on a crosswalk can keep moving or step off at any signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
+Vehicles use the directed lane graph when it exists and park on tiles marked `parkable`. Pedestrians use tiles marked `walkable`. Crosswalks are both walkable and drivable, and their shared signal cycles through `red`, `green`, and `yellow`; NPCs and cars enter only on green, but entities already on a crosswalk can keep moving or step off at any signal. Vehicle traffic signals are generated from lane graph intersections and can be overridden from the map editor. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and routing choices can repeat after a restart.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, and NPC speeds can repeat after a restart. Route extraction is deterministic.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
 Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. NPCs interpolate smoothly between anchor positions.
 
 The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed. The debug dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time.
+
+## Car Prototype
+
+The app creates 500 cars by default. Cars have one or two real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
+
+Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
 
 ## Debugging From The Console
 
@@ -119,8 +126,11 @@ city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
 window.citySim.simulationClock.formatTimeOfDay()
 window.citySim.npcs.length
+window.citySim.cars.length
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
+window.citySim.cars[0].owners
+window.citySim.cars[0].parkedAt
 window.citySim.npcs[0].timetable.elements
 window.citySim.npcs[0].position
 window.citySim.pause()
@@ -129,6 +139,7 @@ window.citySim.setSeed('demo-seed')
 window.citySim.restart()
 window.citySim.setSpeed(4)
 window.citySim.setNpcCount(2500)
+window.citySim.setCarCount(250)
 window.citySim.setDayNightOverlayEnabled(false)
 ```
 
@@ -176,3 +187,7 @@ Preview the production build with:
 ```bash
 npm run preview
 ```
+
+### Lane Graph Traffic Metadata
+
+Car traffic can use optional manually authored `laneGraph` metadata in each map `tile-layout.json`. The map editor's lane graph layer builds directed segments by clicking road or crosswalk tiles in travel order; each tile owns one centered node, and each saved edge connects neighboring road or crosswalk tiles. Duplicate directed edges are rejected during validation. Intersections are detected from lane graph topology and receive generated traffic light phases; the editor can save `laneGraph.trafficSignals.overrides` to disable a generated signal or adjust its phase offset. Runtime code rejects legacy generated metadata, lane offsets, layered lane fields, and connector edges before compiling the graph into `LaneGraph`, `LaneNode`, and `LaneEdge` objects for efficient vehicle simulation.

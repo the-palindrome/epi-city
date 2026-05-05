@@ -213,7 +213,7 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
-  it('allows movement into a normal tile without tile capacity bookkeeping', () => {
+  it('keeps goal-less NPCs idle instead of choosing random path tiles', () => {
     const city = createCity({
       width: 2,
       height: 1,
@@ -233,10 +233,8 @@ describe('NPC simulation randomness', () => {
 
     simulation.update(1 / 60)
 
-    expect(npc.movement.target).toMatchObject({
-      tile: { x: 1, y: 0, index: 1 },
-      slot: { index: -1 }
-    })
+    expect(npc.movement.target).toBeNull()
+    expect(npc.tile).toMatchObject({ x: 0, y: 0, index: 0 })
 
     simulation.destroy()
   })
@@ -314,7 +312,31 @@ describe('NPC simulation randomness', () => {
     expect(npc.present).toBe(true)
     expect(npc.goal).toMatchObject({ id: 'work', buildingId: npc.work })
     expect(npc.routing.destination).toMatchObject(npc.goal.location)
-    expect(npc.routing.path.at(-1)).toBe(city.index(npc.goal.location.x, npc.goal.location.y))
+    expect(npc.routing.destinationIndex).toBe(city.index(npc.goal.location.x, npc.goal.location.y))
+    expect(npc.routing.routeField).toBeTruthy()
+
+    simulation.destroy()
+  })
+
+  it('waits inside the origin building while a car commute is pending', () => {
+    const city = createCityWithBuildingTypes()
+    const clock = createMutableClock(8)
+    const simulation = createSimulation('wait-for-car', city, {
+      count: 1,
+      clock,
+      scheduleVariationHours: 0,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    npc.waitingForCar = true
+    clock.hour = 10
+    simulation.update(1 / 60)
+
+    expect(npc.goal).toMatchObject({ id: 'work', buildingId: npc.work })
+    expect(npc.present).toBe(false)
+    expect(npc.locationState).toMatchObject({ buildingId: npc.home })
+    expect(npc.routing.routeField).toBeNull()
 
     simulation.destroy()
   })
@@ -378,7 +400,7 @@ describe('NPC simulation randomness', () => {
     second.destroy()
   })
 
-  it('changes spawn or movement state when the seed changes', () => {
+  it('changes spawn or speed state when the seed changes', () => {
     const first = createSimulation('repeatable')
     const second = createSimulation('different')
 

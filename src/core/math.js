@@ -15,22 +15,6 @@ export function octileDistance(ax, ay, bx, by) {
   return diagonal * 14 + straight * 10
 }
 
-export function reconstructPath(cameFrom, endIndex, width) {
-  const path = []
-  let current = endIndex
-
-  while (current !== -1) {
-    path.push({
-      x: current % width,
-      y: Math.floor(current / width)
-    })
-    current = cameFrom[current]
-  }
-
-  path.reverse()
-  return path
-}
-
 export function canvasPoint(canvas, event) {
   const bounds = canvas.getBoundingClientRect()
 

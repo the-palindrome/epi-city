@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js'
-import { DIRECTIONS, NPC_CONFIG } from '../core/constants.js'
+import { NPC_CONFIG } from '../core/constants.js'
 import { createSystemRandom } from '../core/random.js'
+import { hourInRange, normalizeHour } from '../core/time.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
 const STATIC_CLOCK = Object.freeze({
@@ -133,6 +134,10 @@ class NpcEntity {
       target: null
     }
     this.routing = createEmptyRouteState()
+    this.vehicleTrip = null
+    this.waitingForCar = false
+    this.carId = null
+    this.commuteByCar = false
   }
 
   getActiveTimetableElement(timeOfDayHours) {
@@ -166,6 +171,51 @@ class NpcEntity {
       this.tile.x === this.goal.location.x &&
       this.tile.y === this.goal.location.y
     )
+  }
+
+  startVehicleTrip({ carId, destinationKind, destinationBuildingId }) {
+    this.vehicleTrip = {
+      carId,
+      destinationKind,
+      destinationBuildingId
+    }
+    this.waitingForCar = false
+    this.present = false
+    this.locationState = null
+    this.movement.target = null
+    this.routing = createEmptyRouteState()
+  }
+
+  finishVehicleTrip(city, destinationKind, building) {
+    if (!building || !building.entrance) {
+      this.vehicleTrip = null
+      return
+    }
+
+    const location = {
+      x: building.entrance.x,
+      y: building.entrance.y,
+      index: city.index(building.entrance.x, building.entrance.y)
+    }
+
+    this.vehicleTrip = null
+    this.waitingForCar = false
+    this.present = false
+    this.locationState = {
+      timetableElementId: destinationKind,
+      buildingId: building.id,
+      location
+    }
+    this.goal = {
+      id: destinationKind,
+      buildingId: building.id,
+      location: { ...location }
+    }
+    this.position = tileCenterPosition(city, location.x, location.y)
+    this.tile = { ...location }
+    this.slot = { id: -1, index: -1 }
+    this.movement.target = null
+    this.routing = createEmptyRouteState()
   }
 }
 
@@ -361,6 +411,10 @@ function collectNpcSpawnTiles(city) {
 }
 
 function refreshNpcGoal(npc, timeOfDayHours, context) {
+  if (npc.vehicleTrip) {
+    return
+  }
+
   const activeElement = npc.getActiveTimetableElement(timeOfDayHours)
 
   if (!activeElement) {
@@ -381,6 +435,10 @@ function refreshNpcGoal(npc, timeOfDayHours, context) {
 }
 
 function prepareNpcForRouting(npc, deltaSeconds, context) {
+  if (npc.vehicleTrip || npc.waitingForCar) {
+    return
+  }
+
   if (!npc.goal) {
     return
   }
@@ -410,12 +468,16 @@ function prepareNpcForRouting(npc, deltaSeconds, context) {
     return
   }
 
-  if (!npc.routing.path && npc.routing.retrySeconds === 0) {
+  if (!npc.routing.routeField && npc.routing.retrySeconds === 0) {
     context.routePlanner.request(npc)
   }
 }
 
 function updateNpcMovement(npc, deltaSeconds, context) {
+  if (npc.vehicleTrip || npc.waitingForCar) {
+    return
+  }
+
   if (!npc.present) {
     return
   }
@@ -432,20 +494,14 @@ function updateNpcMovement(npc, deltaSeconds, context) {
 
   if (npc.goal) {
     followRoute(npc, deltaSeconds, context)
-    return
   }
-
-  chooseRandomNextTile(npc, context)
 }
 
 function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const target = npc.movement.target
-  const dx = target.position.x - npc.position.x
-  const dy = target.position.y - npc.position.y
-  const distance = Math.hypot(dx, dy)
   const maxStep = npc.movement.speed * deltaSeconds
 
-  if (distance <= maxStep || distance === 0) {
+  if (target.remainingDistance <= maxStep || target.remainingDistance === 0) {
     npc.position.x = target.position.x
     npc.position.y = target.position.y
     npc.tile.x = target.tile.x
@@ -453,17 +509,13 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
     npc.tile.index = target.tile.index
     npc.slot.id = target.slot.id
     npc.slot.index = target.slot.index
-    if (Number.isInteger(target.routeCursor) && npc.routing.cursor <= target.routeCursor) {
-      npc.routing.cursor = target.routeCursor + 1
-    }
-
     npc.movement.target = null
     return
   }
 
-  const ratio = maxStep / distance
-  npc.position.x += dx * ratio
-  npc.position.y += dy * ratio
+  npc.position.x += target.directionX * maxStep
+  npc.position.y += target.directionY * maxStep
+  target.remainingDistance -= maxStep
 }
 
 function followRoute(npc, deltaSeconds, context) {
@@ -472,27 +524,25 @@ function followRoute(npc, deltaSeconds, context) {
     return
   }
 
-  const route = npc.routing.path
-
-  if (!route || npc.routing.cursor >= route.length) {
+  if (!npc.routing.routeField) {
     context.routePlanner.request(npc)
     return
   }
 
-  const nextTile = nextRouteTile(npc, context.city)
+  const nextIndex = nextRouteTileIndex(npc, context)
 
-  if (!nextTile) {
+  if (nextIndex === -1) {
     context.routePlanner.request(npc)
     return
   }
 
-  if (Math.abs(nextTile.x - npc.tile.x) > 1 || Math.abs(nextTile.y - npc.tile.y) > 1) {
-    npc.routing.path = null
+  if (!areNeighborTileIndexes(context.city, npc.tile.index, nextIndex)) {
+    npc.routing.routeField = null
     context.routePlanner.request(npc)
     return
   }
 
-  if (tryStartMoveToTile(npc, nextTile.x, nextTile.y, context, npc.routing.cursor)) {
+  if (tryStartMoveToIndex(npc, nextIndex, context)) {
     npc.routing.blockedSeconds = 0
     return
   }
@@ -501,98 +551,67 @@ function followRoute(npc, deltaSeconds, context) {
 
   if (npc.routing.blockedSeconds >= finiteNumberOrDefault(context.config.routeBlockedReplanSeconds, NPC_CONFIG.routeBlockedReplanSeconds)) {
     npc.routing.blockedSeconds = 0
-    npc.routing.path = null
+    npc.routing.routeField = null
     context.routePlanner.request(npc)
   }
 }
 
-function nextRouteTile(npc, city) {
-  while (
-    npc.routing.path &&
-    npc.routing.cursor < npc.routing.path.length &&
-    routeTileIndex(npc.routing.path, npc.routing.cursor, city) === npc.tile.index
-  ) {
-    npc.routing.cursor += 1
+function nextRouteTileIndex(npc, context) {
+  return routeFieldNextIndex(npc.routing.routeField, npc.tile.index)
+}
+
+function areNeighborTileIndexes(city, fromIndex, toIndex) {
+  const fromX = fromIndex % city.width
+  const toX = toIndex % city.width
+  const dx = toX - fromX
+
+  if (dx < -1 || dx > 1) {
+    return false
   }
 
-  return npc.routing.path && npc.routing.path[npc.routing.cursor] !== undefined
-    ? routeTileAt(npc.routing.path, npc.routing.cursor, city)
-    : null
+  const dy = Math.floor(toIndex / city.width) - Math.floor(fromIndex / city.width)
+
+  return dy >= -1 && dy <= 1
 }
 
 function planRouteForNpc(npc, context) {
-  const start = { x: npc.tile.x, y: npc.tile.y }
-  const end = { x: npc.goal.location.x, y: npc.goal.location.y }
-  const routeOptions = {
-    variation: {
-      random: context.random,
-      chance: finiteNumberOrDefault(context.config.routeVariationChance, NPC_CONFIG.routeVariationChance),
-      slack: finiteNumberOrDefault(context.config.routeVariationSlack, NPC_CONFIG.routeVariationSlack)
-    }
-  }
-  const path = typeof context.city.findCachedPathIndexes === 'function'
-    ? context.city.findCachedPathIndexes(start, end, 'pedestrian', routeOptions)
-    : typeof context.city.findCachedPath === 'function'
-      ? context.city.findCachedPath(start, end, 'pedestrian', routeOptions)
-      : context.city.findPath(start, end, 'pedestrian')
+  const routeField = context.city.getCachedRouteFieldByIndex(npc.goal.location.index, 'pedestrian')
+  const nextIndex = routeFieldNextIndex(routeField, npc.tile.index)
 
-  if (path.length === 0) {
-    npc.routing.path = null
-    npc.routing.cursor = 0
+  if (!routeField || (npc.tile.index !== npc.goal.location.index && nextIndex === -1)) {
+    npc.routing.routeField = null
     npc.routing.retrySeconds = finiteNumberOrDefault(context.config.routeRetrySeconds, NPC_CONFIG.routeRetrySeconds)
     return
   }
 
-  npc.routing.path = path
-  npc.routing.cursor = routeTileIndex(path, 0, context.city) === npc.tile.index ? 1 : 0
+  npc.routing.routeField = routeField
   npc.routing.destination = { ...npc.goal.location }
+  npc.routing.destinationIndex = npc.goal.location.index
   npc.routing.retrySeconds = 0
   npc.routing.blockedSeconds = 0
 }
 
-function routeTileIndex(route, cursor, city) {
-  const tile = route[cursor]
-
-  return typeof tile === 'number' ? tile : city.index(tile.x, tile.y)
-}
-
-function routeTileAt(route, cursor, city) {
-  const tile = route[cursor]
-
-  if (typeof tile !== 'number') {
-    return tile
+function routeFieldNextIndex(field, fromIndex) {
+  if (!field || fromIndex === field.endIndex) {
+    return -1
   }
 
-  return {
-    x: tile % city.width,
-    y: Math.floor(tile / city.width),
-    index: tile
-  }
+  const directionIndex = field.nextDirection[fromIndex]
+
+  return directionIndex <= 7 ? fromIndex + field.offsets[directionIndex] : -1
 }
 
-function chooseRandomNextTile(npc, context) {
-  const { random } = context
-  const start = random.int(DIRECTIONS.length)
-
-  for (let offset = 0; offset < DIRECTIONS.length; offset += 1) {
-    const direction = DIRECTIONS[(start + offset) % DIRECTIONS.length]
-    const candidateX = npc.tile.x + direction.dx
-    const candidateY = npc.tile.y + direction.dy
-
-    if (tryStartMoveToTile(npc, candidateX, candidateY, context)) {
-      return
-    }
-  }
+function tryStartMoveToIndex(npc, targetIndex, context) {
+  const tileX = targetIndex % context.city.width
+  const tileY = Math.floor(targetIndex / context.city.width)
+  return tryStartMoveToTile(npc, tileX, tileY, context, targetIndex)
 }
 
-function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null) {
+function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null) {
   const { city, random, config } = context
-  const targetIndex = city.index(tileX, tileY)
-  const canStep = typeof city.canStepIndex === 'function'
-    ? city.canStepIndex(npc.tile.index, targetIndex, 'pedestrian')
-    : city.canStep(npc.tile.x, npc.tile.y, tileX, tileY, 'pedestrian')
+  const targetIndex = knownTargetIndex ?? city.index(tileX, tileY)
 
-  if (!canStep) {
+  if (!city.canStepPedestrianIndex(npc.tile.index, targetIndex)) {
     return false
   }
 
@@ -606,9 +625,15 @@ function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null) {
   const target = targetSlot.unlimited
     ? tileCenterPosition(city, tileX, tileY)
     : tileSlotPosition(city, tileX, tileY, targetSlot.slot, config, context.slotOffsets)
+  const dx = target.x - npc.position.x
+  const dy = target.y - npc.position.y
+  const distance = Math.hypot(dx, dy)
 
   npc.movement.target = {
     position: target,
+    directionX: distance === 0 ? 0 : dx / distance,
+    directionY: distance === 0 ? 0 : dy / distance,
+    remainingDistance: distance,
     tile: {
       x: tileX,
       y: tileY,
@@ -617,8 +642,7 @@ function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null) {
     slot: {
       id: targetSlot.slot,
       index: targetSlot.slotIndex
-    },
-    routeCursor
+    }
   }
 
   return true
@@ -804,29 +828,13 @@ function drawNpcBlob(graphics, x, y, size, color) {
 
 function createEmptyRouteState() {
   return {
-    path: null,
-    cursor: 0,
+    routeField: null,
     destination: null,
+    destinationIndex: -1,
     queued: false,
     retrySeconds: 0,
     blockedSeconds: 0
   }
-}
-
-function hourInRange(hour, startHour, endHour) {
-  if (startHour === endHour) {
-    return true
-  }
-
-  if (startHour < endHour) {
-    return hour >= startHour && hour < endHour
-  }
-
-  return hour >= startHour || hour < endHour
-}
-
-function normalizeHour(hour) {
-  return ((hour % 24) + 24) % 24
 }
 
 function finiteNumberOrDefault(value, fallback) {

@@ -1,4 +1,5 @@
-const HOURS_PER_DAY = 24
+import { HOURS_PER_DAY, normalizeHour } from '../core/time.js'
+
 const SECONDS_PER_HOUR = 3600
 
 export class SimulationClock {
@@ -57,8 +58,4 @@ function numberOrDefault(value, fallback) {
   const number = Number(value)
 
   return Number.isFinite(number) ? number : fallback
-}
-
-function normalizeHour(hour) {
-  return ((hour % HOURS_PER_DAY) + HOURS_PER_DAY) % HOURS_PER_DAY
 }

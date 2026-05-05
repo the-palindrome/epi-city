@@ -8,15 +8,15 @@ import {
   TILE_NAMES,
   TILE_ZORDERS
 } from '../core/constants.js'
+import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { clamp, indexOf, octileDistance } from '../core/math.js'
+import { compileLaneGraphLayout, normalizeLaneGraphLayout } from './lane-graph.js'
 
 const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
 const NAVIGATION_CACHE_LIMIT = 4
-const ROUTE_FIELD_CACHE_LIMIT = 384
-const ROUTE_FIELD_UNREACHABLE = 0xffffffff
-const DEFAULT_ROUTE_VARIATION_CHANCE = 0.35
-const DEFAULT_ROUTE_VARIATION_SLACK = 20
+const ROUTE_FIELD_CACHE_LIMIT = 512
+const ROUTE_PATH_CACHE_LIMIT = 4096
 const SIGNAL_STATE_KEYS = Object.freeze(['red', 'green', 'yellow'])
 const SIGNAL_STATE_INDEX = Object.freeze({
   red: 0,
@@ -28,8 +28,6 @@ const DIRECTION_DY = Object.freeze(DIRECTIONS.map((direction) => direction.dy))
 const DIRECTION_COST = Object.freeze(DIRECTIONS.map((direction) => direction.cost))
 const OPPOSITE_DIRECTION = Object.freeze([1, 0, 3, 2, 7, 6, 5, 4])
 const DIRECTION_INDEX_BY_OFFSET = new Int8Array([7, 3, 5, 1, -1, 0, 6, 2, 4])
-const routeCandidateDirections = new Uint8Array(8)
-const routeCandidateScores = new Float64Array(8)
 const navigationCache = new Map()
 
 export async function loadCityMap(url, textureRowsUrl) {
@@ -118,6 +116,7 @@ export function validateCityMap(data) {
   }
 
   const buildings = normalizeBuildingsLayout(data.buildings, data, legendEntries)
+  const laneGraph = normalizeLaneGraphLayout(data.laneGraph, data, legendEntries)
 
   if (data.textureRows !== undefined) {
     validateTextureRowsLayout(data, data)
@@ -126,7 +125,8 @@ export function validateCityMap(data) {
   return {
     ...data,
     legend: legendEntries,
-    buildings
+    buildings,
+    laneGraph
   }
 }
 
@@ -419,6 +419,8 @@ export function compileCityMap(data) {
   const tileBuildingIndexes = new Int32Array(width * height)
   const pathScratch = createPathScratch(width * height)
   const crosswalkSignals = createCrosswalkSignalController(CROSSWALK_SIGNAL_PHASES)
+  const laneGraph = compileLaneGraphLayout(data.laneGraph, tileSize)
+  const trafficSignals = createTrafficSignalController(laneGraph.trafficSignals)
 
   tileBuildingIndexes.fill(-1)
 
@@ -617,8 +619,18 @@ export function compileCityMap(data) {
       return false
     }
 
-    const property = modeProperty(mode)
+    return canStepIndexWithProperty(fromIndex, toIndex, modeProperty(mode))
+  }
 
+  function canStepPedestrianIndex(fromIndex, toIndex) {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= tiles.length || toIndex >= tiles.length) {
+      return false
+    }
+
+    return canStepIndexWithProperty(fromIndex, toIndex, 'walkable')
+  }
+
+  function canStepIndexWithProperty(fromIndex, toIndex, property) {
     if (fromIndex === toIndex) {
       return tilePropertyLayers[property][toIndex] === 1
     }
@@ -749,14 +761,13 @@ export function compileCityMap(data) {
     return []
   }
 
-  function findCachedPath(start, end, mode, options = null) {
-    const pathIndexes = findCachedPathIndexes(start, end, mode, options)
+  function findCachedPath(start, end, mode) {
+    const pathIndexes = findCachedPathIndexes(start, end, mode)
 
     return indexesToPath(pathIndexes, width)
   }
 
-  function findCachedPathIndexes(start, end, mode, options = null) {
-    const property = modeProperty(mode)
+  function findCachedPathIndexes(start, end, mode) {
     const startTile = nearestPassableTile(start.x, start.y, mode)
     const endTile = nearestPassableTile(end.x, end.y, mode)
 
@@ -767,6 +778,24 @@ export function compileCityMap(data) {
     const startIndex = indexOf(startTile.x, startTile.y, width)
     const endIndex = indexOf(endTile.x, endTile.y, width)
 
+    return findCachedPathIndexesByIndex(startIndex, endIndex, mode)
+  }
+
+  function findCachedPathIndexesByIndex(startIndex, endIndex, mode) {
+    const property = modeProperty(mode)
+
+    if (!Number.isInteger(startIndex) || !Number.isInteger(endIndex) ||
+        startIndex < 0 || endIndex < 0 ||
+        startIndex >= tiles.length || endIndex >= tiles.length) {
+      return []
+    }
+
+    const layer = tilePropertyLayers[property]
+
+    if (layer[startIndex] !== 1 || layer[endIndex] !== 1) {
+      return []
+    }
+
     if (startIndex === endIndex) {
       return [startIndex]
     }
@@ -774,7 +803,41 @@ export function compileCityMap(data) {
     const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
     const field = navigation.routeFields.get(endIndex, stepMasks.cacheKey, stepMasks.incoming)
 
-    return reconstructRouteFieldPathIndexes(field, stepMasks, navigation.offsets, startIndex, endIndex, options)
+    return reconstructRouteFieldPathIndexes(field, navigation.offsets, startIndex, endIndex)
+  }
+
+  function getCachedRouteFieldByIndex(endIndex, mode) {
+    const property = modeProperty(mode)
+
+    if (!Number.isInteger(endIndex) || endIndex < 0 || endIndex >= tiles.length) {
+      return null
+    }
+
+    const layer = tilePropertyLayers[property]
+
+    if (layer[endIndex] !== 1) {
+      return null
+    }
+
+    const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
+    const field = navigation.routeFields.get(endIndex, stepMasks.cacheKey, stepMasks.incoming)
+
+    return {
+      endIndex,
+      movementCacheKey: stepMasks.cacheKey,
+      nextDirection: field.nextDirection,
+      offsets: navigation.offsets
+    }
+  }
+
+  function getRouteFieldNextIndex(field, fromIndex) {
+    if (!field || fromIndex === field.endIndex) {
+      return -1
+    }
+
+    const directionIndex = field.nextDirection[fromIndex]
+
+    return directionIndex <= 7 ? fromIndex + field.offsets[directionIndex] : -1
   }
 
   return {
@@ -792,6 +855,8 @@ export function compileCityMap(data) {
     tileBuildingIndexes,
     legend: legendEntries,
     buildings,
+    laneGraph,
+    trafficSignals: trafficSignals.layout,
     index: (x, y) => indexOf(x, y, width),
     getTile,
     getTileId,
@@ -802,6 +867,7 @@ export function compileCityMap(data) {
     inBounds,
     canStep,
     canStepIndex,
+    canStepPedestrianIndex,
     isWalkable: (x, y) => hasTileProperty(x, y, 'walkable'),
     isDrivable: (x, y) => hasTileProperty(x, y, 'drivable'),
     isParkable: (x, y) => hasTileProperty(x, y, 'parkable'),
@@ -810,11 +876,19 @@ export function compileCityMap(data) {
     setCrosswalkSignalState: (state) => crosswalkSignals.setState(state),
     resetCrosswalkSignals: () => crosswalkSignals.reset(),
     updateCrosswalkSignals: (deltaSeconds) => crosswalkSignals.update(deltaSeconds),
+    getTrafficSignalState: (id) => trafficSignals.getState(id),
+    getTrafficSignalForEdge: (edgeId) => trafficSignals.getSignalForEdge(edgeId),
+    canEnterTrafficSignal: (edge) => trafficSignals.canEnterEdge(edge),
+    resetTrafficSignals: () => trafficSignals.reset(),
+    updateTrafficSignals: (deltaSeconds) => trafficSignals.update(deltaSeconds),
     isPassable,
     nearestPassableTile,
     findPath,
     findCachedPath,
     findCachedPathIndexes,
+    findCachedPathIndexesByIndex,
+    getCachedRouteFieldByIndex,
+    getRouteFieldNextIndex,
     navigationCacheKey: navigation.cacheKey,
     getNavigationCacheStats: () => ({
       cacheKey: navigation.cacheKey,
@@ -824,6 +898,124 @@ export function compileCityMap(data) {
       routeFieldLimit: navigation.routeFields.limit
     })
   }
+}
+
+function createTrafficSignalController(layout) {
+  const groups = layout?.groups || []
+  const edgeSignalIndexesById = new Map()
+  let elapsedSeconds = 0
+
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+    for (const entryEdge of groups[groupIndex].entryEdges) {
+      edgeSignalIndexesById.set(entryEdge.edgeId, groupIndex)
+    }
+  }
+
+  function currentPhase(group) {
+    if (!group || !group.enabled || group.phases.length === 0) {
+      return null
+    }
+
+    const cycleDuration = group.cycleDuration
+    let phaseTime = (elapsedSeconds + group.phaseOffset) % cycleDuration
+
+    for (const phase of group.phases) {
+      if (phaseTime < phase.duration) {
+        return phase
+      }
+
+      phaseTime -= phase.duration
+    }
+
+    return group.phases[group.phases.length - 1]
+  }
+
+  function getState(id) {
+    const group = groups.find((candidate) => candidate.id === id)
+    const phase = currentPhase(group)
+
+    if (!group || !group.enabled || !phase) {
+      return {
+        id,
+        enabled: false,
+        movement: 'all',
+        state: 'green'
+      }
+    }
+
+    return {
+      id: group.id,
+      enabled: true,
+      movement: phase.movement,
+      state: phase.state
+    }
+  }
+
+  function getSignalForEdge(edgeId) {
+    const groupIndex = edgeSignalIndexesById.get(edgeId)
+
+    if (groupIndex === undefined) {
+      return null
+    }
+
+    return groups[groupIndex]
+  }
+
+  function canEnterEdge(edge) {
+    if (!edge || typeof edge.id !== 'string') {
+      return true
+    }
+
+    const group = getSignalForEdge(edge.id)
+
+    if (!group || !group.enabled) {
+      return true
+    }
+
+    const phase = currentPhase(group)
+
+    return Boolean(
+      phase &&
+      phase.state === 'green' &&
+      (phase.movement === 'all' || phase.movement === trafficSignalMovementForDirection(edge.direction))
+    )
+  }
+
+  function reset() {
+    elapsedSeconds = 0
+  }
+
+  function update(deltaSeconds) {
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+      return
+    }
+
+    elapsedSeconds += deltaSeconds
+  }
+
+  return {
+    layout: Object.freeze({
+      encoding: layout?.encoding,
+      groups
+    }),
+    getState,
+    getSignalForEdge,
+    canEnterEdge,
+    reset,
+    update
+  }
+}
+
+function trafficSignalMovementForDirection(direction) {
+  if (direction === 'north' || direction === 'south') {
+    return 'north-south'
+  }
+
+  if (direction === 'east' || direction === 'west') {
+    return 'east-west'
+  }
+
+  return null
 }
 
 function createCrosswalkSignalController(phases) {
@@ -1085,17 +1277,14 @@ function createRouteFieldCache(length, offsets) {
 
 function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
   const nextDirection = new Uint8Array(length)
-  const distance = new Uint32Array(length)
   const runId = beginSearchRun(scratch)
   const { open, closedRuns, scoreRuns, gScore } = scratch
 
   nextDirection.fill(255)
-  distance.fill(ROUTE_FIELD_UNREACHABLE)
   open.clear()
   gScore[endIndex] = 0
   scoreRuns[endIndex] = runId
   nextDirection[endIndex] = 254
-  distance[endIndex] = 0
   open.push(endIndex, 0)
 
   while (open.length > 0) {
@@ -1126,13 +1315,15 @@ function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
         gScore[previousIndex] = tentativeScore
         scoreRuns[previousIndex] = runId
         nextDirection[previousIndex] = OPPOSITE_DIRECTION[directionIndex]
-        distance[previousIndex] = tentativeScore
         open.push(previousIndex, tentativeScore)
       }
     }
   }
 
-  return { nextDirection, distance }
+  return {
+    nextDirection,
+    pathsByStart: new Map()
+  }
 }
 
 function reconstructStampedPath(cameFrom, cameFromRuns, endIndex, width, runId) {
@@ -1148,11 +1339,19 @@ function reconstructStampedPath(cameFrom, cameFromRuns, endIndex, width, runId) 
   return indexesToPath(indexes, width)
 }
 
-function reconstructRouteFieldPathIndexes(field, stepMasks, offsets, startIndex, endIndex, options) {
-  const { nextDirection, distance } = field
+function reconstructRouteFieldPathIndexes(field, offsets, startIndex, endIndex) {
+  const { nextDirection } = field
 
   if (nextDirection[startIndex] === 255) {
     return []
+  }
+
+  const cachedPath = field.pathsByStart.get(startIndex)
+
+  if (cachedPath) {
+    field.pathsByStart.delete(startIndex)
+    field.pathsByStart.set(startIndex, cachedPath)
+    return cachedPath
   }
 
   const indexes = [startIndex]
@@ -1160,7 +1359,7 @@ function reconstructRouteFieldPathIndexes(field, stepMasks, offsets, startIndex,
   let guard = 0
 
   while (current !== endIndex && guard < nextDirection.length) {
-    const directionIndex = chooseRouteFieldDirection(field, stepMasks, offsets, current, options)
+    const directionIndex = nextDirection[current]
 
     if (directionIndex > 7) {
       return []
@@ -1171,125 +1370,20 @@ function reconstructRouteFieldPathIndexes(field, stepMasks, offsets, startIndex,
     guard += 1
   }
 
-  return current === endIndex ? indexes : []
+  if (current !== endIndex) {
+    return []
+  }
+
+  cacheRouteFieldPath(field, startIndex, indexes)
+  return indexes
 }
 
-function chooseRouteFieldDirection(field, stepMasks, offsets, currentIndex, options) {
-  const { nextDirection, distance } = field
-  const fallbackDirection = nextDirection[currentIndex]
-  const variation = options && options.variation ? options.variation : null
+function cacheRouteFieldPath(field, startIndex, indexes) {
+  field.pathsByStart.set(startIndex, indexes)
 
-  if (!variation || fallbackDirection > 7) {
-    return fallbackDirection
+  while (field.pathsByStart.size > ROUTE_PATH_CACHE_LIMIT) {
+    field.pathsByStart.delete(field.pathsByStart.keys().next().value)
   }
-
-  const currentDistance = distance[currentIndex]
-
-  if (currentDistance === ROUTE_FIELD_UNREACHABLE) {
-    return fallbackDirection
-  }
-
-  const variationTriggered = shouldVaryRouteStep(variation)
-
-  if (!variationTriggered) {
-    return fallbackDirection
-  }
-
-  const variationSlack = variation ? nonNegativeNumberOrDefault(variation.slack, DEFAULT_ROUTE_VARIATION_SLACK) : 0
-  let directionMask = stepMasks.outgoing[currentIndex]
-  let bestDirection = fallbackDirection
-  let bestScore = Number.POSITIVE_INFINITY
-  let candidateCount = 0
-
-  for (let directionIndex = 0; directionMask !== 0; directionIndex += 1, directionMask >>>= 1) {
-    if ((directionMask & 1) === 0) {
-      continue
-    }
-
-    const nextIndex = currentIndex + offsets[directionIndex]
-    const nextDistance = distance[nextIndex]
-
-    if (nextDistance === ROUTE_FIELD_UNREACHABLE || nextDistance >= currentDistance) {
-      continue
-    }
-
-    const routeCost = DIRECTION_COST[directionIndex] + nextDistance
-
-    if (routeCost > currentDistance + variationSlack) {
-      continue
-    }
-
-    routeCandidateDirections[candidateCount] = directionIndex
-    routeCandidateScores[candidateCount] = routeCost
-    candidateCount += 1
-
-    if (routeCost < bestScore) {
-      bestScore = routeCost
-      bestDirection = directionIndex
-    }
-  }
-
-  if (bestScore !== Number.POSITIVE_INFINITY) {
-    return chooseNearGoodRouteFieldDirection(candidateCount, variationSlack, bestDirection, bestScore, variation)
-  }
-
-  return bestDirection
-}
-
-function shouldVaryRouteStep(variation) {
-  if (!variation || !variation.random || typeof variation.random.next !== 'function') {
-    return false
-  }
-
-  const chance = boundedNumberOrDefault(variation.chance, DEFAULT_ROUTE_VARIATION_CHANCE, 0, 1)
-
-  return chance > 0 && variation.random.next() < chance
-}
-
-function chooseNearGoodRouteFieldDirection(totalCandidates, scoreSlack, bestDirection, bestScore, variation) {
-  let nearGoodCount = 0
-
-  for (let index = 0; index < totalCandidates; index += 1) {
-    if (routeCandidateScores[index] <= bestScore + scoreSlack) {
-      nearGoodCount += 1
-    }
-  }
-
-  if (nearGoodCount <= 1) {
-    return bestDirection
-  }
-
-  let candidateIndex = randomInteger(variation.random, nearGoodCount)
-
-  for (let index = 0; index < totalCandidates; index += 1) {
-    if (routeCandidateScores[index] > bestScore + scoreSlack) {
-      continue
-    }
-
-    if (candidateIndex === 0) {
-      return routeCandidateDirections[index]
-    }
-
-    candidateIndex -= 1
-  }
-
-  return bestDirection
-}
-
-function nonNegativeNumberOrDefault(value, fallback) {
-  return Number.isFinite(value) && value >= 0 ? value : fallback
-}
-
-function boundedNumberOrDefault(value, fallback, min, max) {
-  return Number.isFinite(value) ? clamp(value, min, max) : fallback
-}
-
-function randomInteger(random, maxExclusive) {
-  if (typeof random.int === 'function') {
-    return random.int(maxExclusive)
-  }
-
-  return Math.floor(random.next() * maxExclusive)
 }
 
 function indexesToPath(indexes, width) {
@@ -1338,100 +1432,6 @@ function hashNumber(hash, value) {
   }
 
   return hash >>> 0
-}
-
-class IndexPriorityQueue {
-  constructor(initialCapacity) {
-    this.indexes = new Int32Array(initialCapacity)
-    this.priorities = new Int32Array(initialCapacity)
-    this.length = 0
-  }
-
-  clear() {
-    this.length = 0
-  }
-
-  push(index, priority) {
-    this.ensureCapacity(this.length + 1)
-
-    let cursor = this.length
-
-    this.length += 1
-
-    while (cursor > 0) {
-      const parent = (cursor - 1) >> 1
-
-      if (this.priorities[parent] <= priority) {
-        break
-      }
-
-      this.indexes[cursor] = this.indexes[parent]
-      this.priorities[cursor] = this.priorities[parent]
-      cursor = parent
-    }
-
-    this.indexes[cursor] = index
-    this.priorities[cursor] = priority
-  }
-
-  pop() {
-    const firstIndex = this.indexes[0]
-    const lastIndex = this.indexes[this.length - 1]
-    const lastPriority = this.priorities[this.length - 1]
-
-    this.length -= 1
-
-    if (this.length > 0) {
-      this.sinkRoot(lastIndex, lastPriority)
-    }
-
-    return firstIndex
-  }
-
-  sinkRoot(index, priority) {
-    let cursor = 0
-
-    while (true) {
-      const left = cursor * 2 + 1
-
-      if (left >= this.length) {
-        break
-      }
-
-      const right = left + 1
-      let child = left
-
-      if (right < this.length && this.priorities[right] < this.priorities[left]) {
-        child = right
-      }
-
-      if (this.priorities[child] >= priority) {
-        break
-      }
-
-      this.indexes[cursor] = this.indexes[child]
-      this.priorities[cursor] = this.priorities[child]
-      cursor = child
-    }
-
-    this.indexes[cursor] = index
-    this.priorities[cursor] = priority
-  }
-
-  ensureCapacity(size) {
-    if (size <= this.indexes.length) {
-      return
-    }
-
-    const nextCapacity = this.indexes.length * 2
-    const nextIndexes = new Int32Array(nextCapacity)
-    const nextPriorities = new Int32Array(nextCapacity)
-
-    nextIndexes.set(this.indexes)
-    nextPriorities.set(this.priorities)
-    this.indexes = nextIndexes
-    this.priorities = nextPriorities
-  }
 }
 
 export function validateCityTextureBindings(city, textureSet) {
