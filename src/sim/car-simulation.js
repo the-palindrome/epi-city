@@ -21,6 +21,12 @@ const DIRECTION_OFFSET = Object.freeze({
   north: Object.freeze({ dx: 0, dy: -1 })
 })
 
+const LANE_CHANGE_MIN_FORWARD_TILES = 3
+const LANE_CHANGE_MAX_FORWARD_TILES = 6
+const LANE_CHANGE_LATERAL_TILES = 1
+const LANE_CHANGE_CURVE_SAMPLES = 9
+const LANE_CHANGE_SPEED_LIMIT = 18
+
 const networkCache = new WeakMap()
 
 export function createCarSimulation(city, entityLayer, config = {}) {
@@ -187,12 +193,7 @@ export function getCarTrafficNetwork(city) {
 function buildCarTrafficNetwork(city) {
   const laneGraph = city.laneGraph
   const nodeCount = laneGraph.nodes.length
-  const edgeCount = laneGraph.edges.length
   const nodeTileIndexes = new Int32Array(nodeCount)
-  const edgeFrom = new Int32Array(edgeCount)
-  const edgeTo = new Int32Array(edgeCount)
-  const edgeCosts = new Int32Array(edgeCount)
-  const incomingCounts = new Int32Array(nodeCount)
   const nodeIndexById = new Map()
   const tileToNodeIndex = new Int32Array(city.tiles.length)
 
@@ -207,10 +208,21 @@ function buildCarTrafficNetwork(city) {
     tileToNodeIndex[tileIndex] = nodeIndex
   }
 
+  const edges = [
+    ...laneGraph.edges,
+    ...buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex, nodeIndexById)
+  ]
+  const edgeCount = edges.length
+  const authoredEdgeCount = laneGraph.edges.length
+  const edgeFrom = new Int32Array(edgeCount)
+  const edgeTo = new Int32Array(edgeCount)
+  const edgeCosts = new Int32Array(edgeCount)
+  const incomingCounts = new Int32Array(nodeCount)
+
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
-    const edge = laneGraph.edges[edgeIndex]
-    const fromIndex = nodeIndexById.get(edge.from)
-    const toIndex = nodeIndexById.get(edge.to)
+    const edge = edges[edgeIndex]
+    const fromIndex = edge.fromNodeIndex ?? nodeIndexById.get(edge.from)
+    const toIndex = edge.toNodeIndex ?? nodeIndexById.get(edge.to)
 
     edgeFrom[edgeIndex] = fromIndex
     edgeTo[edgeIndex] = toIndex
@@ -237,6 +249,9 @@ function buildCarTrafficNetwork(city) {
     laneGraph,
     nodeCount,
     edgeCount,
+    authoredEdgeCount,
+    generatedLaneChangeEdgeCount: edgeCount - authoredEdgeCount,
+    edges: Object.freeze(edges),
     nodeTileIndexes,
     edgeFrom,
     edgeTo,
@@ -246,6 +261,285 @@ function buildCarTrafficNetwork(city) {
     tileToNodeIndex,
     nearestNodeByTile: buildNearestLaneNodeByTile(city, tileToNodeIndex)
   }
+}
+
+function buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex, nodeIndexById) {
+  const edges = []
+  const strongComponentByNode = buildAuthoredStrongComponents(laneGraph, nodeIndexById)
+
+  for (let nodeIndex = 0; nodeIndex < laneGraph.nodes.length; nodeIndex += 1) {
+    const fromNode = laneGraph.nodes[nodeIndex]
+    const heading = DIRECTION_OFFSET[fromNode.direction]
+
+    if (!heading || city.tileCrosswalk[city.index(fromNode.tile.x, fromNode.tile.y)] === 1) {
+      continue
+    }
+
+    for (const lateral of laneChangeLateralOffsets(heading)) {
+      const edge = firstValidLaneChangeEdge(city, laneGraph, tileToNodeIndex, strongComponentByNode, fromNode, nodeIndex, heading, lateral)
+
+      if (edge) {
+        edges.push(edge)
+      }
+    }
+  }
+
+  return edges
+}
+
+function buildAuthoredStrongComponents(laneGraph, nodeIndexById) {
+  const nodeCount = laneGraph.nodes.length
+  const edgeFromIndexes = []
+  const edgeToIndexes = []
+  const outgoingCounts = new Int32Array(nodeCount)
+  const incomingCounts = new Int32Array(nodeCount)
+
+  for (const edge of laneGraph.edges) {
+    const fromIndex = nodeIndexById.get(edge.from)
+    const toIndex = nodeIndexById.get(edge.to)
+
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) {
+      continue
+    }
+
+    edgeFromIndexes.push(fromIndex)
+    edgeToIndexes.push(toIndex)
+    outgoingCounts[fromIndex] += 1
+    incomingCounts[toIndex] += 1
+  }
+
+  const outgoingOffsets = prefixOffsets(outgoingCounts)
+  const incomingOffsets = prefixOffsets(incomingCounts)
+  const outgoingCursors = new Int32Array(outgoingOffsets)
+  const incomingCursors = new Int32Array(incomingOffsets)
+  const outgoingTargets = new Int32Array(edgeFromIndexes.length)
+  const incomingTargets = new Int32Array(edgeFromIndexes.length)
+
+  for (let edgeIndex = 0; edgeIndex < edgeFromIndexes.length; edgeIndex += 1) {
+    const fromIndex = edgeFromIndexes[edgeIndex]
+    const toIndex = edgeToIndexes[edgeIndex]
+
+    outgoingTargets[outgoingCursors[fromIndex]] = toIndex
+    outgoingCursors[fromIndex] += 1
+    incomingTargets[incomingCursors[toIndex]] = fromIndex
+    incomingCursors[toIndex] += 1
+  }
+
+  const visitOrder = authoredGraphVisitOrder(nodeCount, outgoingOffsets, outgoingTargets)
+  const componentByNode = new Int32Array(nodeCount)
+  const stack = new Int32Array(nodeCount)
+  let componentIndex = 0
+
+  componentByNode.fill(-1)
+
+  for (let orderIndex = visitOrder.length - 1; orderIndex >= 0; orderIndex -= 1) {
+    const startNode = visitOrder[orderIndex]
+
+    if (componentByNode[startNode] !== -1) {
+      continue
+    }
+
+    let stackLength = 1
+    stack[0] = startNode
+    componentByNode[startNode] = componentIndex
+
+    while (stackLength > 0) {
+      stackLength -= 1
+      const nodeIndex = stack[stackLength]
+
+      for (let cursor = incomingOffsets[nodeIndex]; cursor < incomingOffsets[nodeIndex + 1]; cursor += 1) {
+        const nextNode = incomingTargets[cursor]
+
+        if (componentByNode[nextNode] !== -1) {
+          continue
+        }
+
+        componentByNode[nextNode] = componentIndex
+        stack[stackLength] = nextNode
+        stackLength += 1
+      }
+    }
+
+    componentIndex += 1
+  }
+
+  return componentByNode
+}
+
+function prefixOffsets(counts) {
+  const offsets = new Int32Array(counts.length + 1)
+
+  for (let index = 0; index < counts.length; index += 1) {
+    offsets[index + 1] = offsets[index] + counts[index]
+  }
+
+  return offsets
+}
+
+function authoredGraphVisitOrder(nodeCount, outgoingOffsets, outgoingTargets) {
+  const visited = new Uint8Array(nodeCount)
+  const nodeStack = new Int32Array(nodeCount)
+  const cursorStack = new Int32Array(nodeCount)
+  const order = []
+
+  for (let startNode = 0; startNode < nodeCount; startNode += 1) {
+    if (visited[startNode]) {
+      continue
+    }
+
+    let stackTop = 0
+    nodeStack[0] = startNode
+    cursorStack[0] = outgoingOffsets[startNode]
+    visited[startNode] = 1
+
+    while (stackTop >= 0) {
+      const nodeIndex = nodeStack[stackTop]
+      const endCursor = outgoingOffsets[nodeIndex + 1]
+      let cursor = cursorStack[stackTop]
+      let advanced = false
+
+      while (cursor < endCursor) {
+        const nextNode = outgoingTargets[cursor]
+        cursor += 1
+
+        if (visited[nextNode]) {
+          continue
+        }
+
+        cursorStack[stackTop] = cursor
+        stackTop += 1
+        nodeStack[stackTop] = nextNode
+        cursorStack[stackTop] = outgoingOffsets[nextNode]
+        visited[nextNode] = 1
+        advanced = true
+        break
+      }
+
+      if (!advanced) {
+        order.push(nodeIndex)
+        stackTop -= 1
+      }
+    }
+  }
+
+  return order
+}
+
+function laneChangeLateralOffsets(heading) {
+  return [
+    Object.freeze({ dx: heading.dy * LANE_CHANGE_LATERAL_TILES, dy: -heading.dx * LANE_CHANGE_LATERAL_TILES, side: 'left' }),
+    Object.freeze({ dx: -heading.dy * LANE_CHANGE_LATERAL_TILES, dy: heading.dx * LANE_CHANGE_LATERAL_TILES, side: 'right' })
+  ]
+}
+
+function firstValidLaneChangeEdge(city, laneGraph, tileToNodeIndex, strongComponentByNode, fromNode, fromNodeIndex, heading, lateral) {
+  for (let forwardTiles = LANE_CHANGE_MIN_FORWARD_TILES; forwardTiles <= LANE_CHANGE_MAX_FORWARD_TILES; forwardTiles += 1) {
+    const targetX = fromNode.tile.x + heading.dx * forwardTiles + lateral.dx
+    const targetY = fromNode.tile.y + heading.dy * forwardTiles + lateral.dy
+
+    if (targetX < 0 || targetY < 0 || targetX >= city.width || targetY >= city.height) {
+      continue
+    }
+
+    const targetIndex = city.index(targetX, targetY)
+    const toNodeIndex = tileToNodeIndex[targetIndex]
+
+    if (toNodeIndex === -1) {
+      continue
+    }
+
+    const toNode = laneGraph.nodes[toNodeIndex]
+
+    if (toNode.direction !== fromNode.direction ||
+        strongComponentByNode[toNodeIndex] === strongComponentByNode[fromNodeIndex] ||
+        city.tileCrosswalk[targetIndex] === 1) {
+      continue
+    }
+
+    const sweptTiles = laneChangeSweptTiles(city, tileToNodeIndex, fromNode.tile, toNode.tile)
+
+    if (!sweptTiles) {
+      continue
+    }
+
+    const path = smoothLaneChangePath(fromNode, toNode, heading, forwardTiles)
+    const length = measureTilePolyline(path)
+    const worldPath = path.map(([x, y]) => Object.freeze([x * city.tileSize, y * city.tileSize]))
+
+    return Object.freeze({
+      id: `generated-lane-change-${fromNode.id}-${toNode.id}`,
+      from: fromNode.id,
+      to: toNode.id,
+      fromNode,
+      toNode,
+      fromNodeIndex,
+      toNodeIndex,
+      type: 'lane-change',
+      direction: fromNode.direction,
+      turn: null,
+      speedLimit: LANE_CHANGE_SPEED_LIMIT,
+      lateral: lateral.side,
+      forwardTiles,
+      path: Object.freeze(path.map((point) => Object.freeze(point))),
+      worldPath: Object.freeze(worldPath),
+      length,
+      worldLength: length * city.tileSize,
+      sweptTiles: Object.freeze(sweptTiles)
+    })
+  }
+
+  return null
+}
+
+function laneChangeSweptTiles(city, tileToNodeIndex, fromTile, toTile) {
+  const minX = Math.min(fromTile.x, toTile.x)
+  const maxX = Math.max(fromTile.x, toTile.x)
+  const minY = Math.min(fromTile.y, toTile.y)
+  const maxY = Math.max(fromTile.y, toTile.y)
+  const tiles = []
+
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      const tileIndex = city.index(x, y)
+
+      if (!isLaneChangeDrivableTile(city, tileToNodeIndex, tileIndex)) {
+        return null
+      }
+
+      tiles.push(tileIndex)
+    }
+  }
+
+  return tiles
+}
+
+function isLaneChangeDrivableTile(city, tileToNodeIndex, tileIndex) {
+  return city.tileCrosswalk[tileIndex] !== 1 && (city.tileDrivable[tileIndex] === 1 || tileToNodeIndex[tileIndex] !== -1)
+}
+
+function smoothLaneChangePath(fromNode, toNode, heading, forwardTiles) {
+  const controlDistance = Math.max(1, forwardTiles * 0.55)
+  const start = [fromNode.x, fromNode.y]
+  const controlA = [fromNode.x + heading.dx * controlDistance, fromNode.y + heading.dy * controlDistance]
+  const controlB = [toNode.x - heading.dx * controlDistance, toNode.y - heading.dy * controlDistance]
+  const end = [toNode.x, toNode.y]
+  const path = []
+
+  for (let sample = 0; sample < LANE_CHANGE_CURVE_SAMPLES; sample += 1) {
+    path.push(cubicBezierPoint(start, controlA, controlB, end, sample / (LANE_CHANGE_CURVE_SAMPLES - 1)))
+  }
+
+  return path
+}
+
+function cubicBezierPoint(a, b, c, d, t) {
+  const mt = 1 - t
+  const mt2 = mt * mt
+  const t2 = t * t
+  const x = mt2 * mt * a[0] + 3 * mt2 * t * b[0] + 3 * mt * t2 * c[0] + t2 * t * d[0]
+  const y = mt2 * mt * a[1] + 3 * mt2 * t * b[1] + 3 * mt * t2 * c[1] + t2 * t * d[1]
+
+  return [x, y]
 }
 
 function buildNearestLaneNodeByTile(city, tileToNodeIndex) {
@@ -376,6 +670,16 @@ function extractLaneRoute(field, startNodeIndex, endNodeIndex, network) {
 
 function edgeBaseCost(edge) {
   return Math.max(1, Math.round(edge.length * 1000))
+}
+
+function measureTilePolyline(path) {
+  let length = 0
+
+  for (let index = 1; index < path.length; index += 1) {
+    length += Math.hypot(path[index][0] - path[index - 1][0], path[index][1] - path[index - 1][1])
+  }
+
+  return length
 }
 
 function createParkingManager(city, network, config) {
@@ -798,14 +1102,6 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
     return false
   }
 
-  const startFootprint = drivingFootprint(context.city, context.network, startNode, laneDirection(context.network, route[0]), car.lengthTiles)
-
-  if (!context.parking.canOccupy(startFootprint, car.id)) {
-    context.parking.releaseParkingReservation(destinationParking.tileIndexes, car.id)
-    return false
-  }
-
-  context.parking.occupyTiles(car, startFootprint)
   car.state = 'driving'
   car.destinationParkingSpot = destinationParking
   car.destinationKind = destinationKind
@@ -848,13 +1144,13 @@ function updateDrivingCar(car, deltaSeconds, context) {
 
     movement.elapsed += step
     remaining -= step
-    car.position = interpolate(movement.from, movement.to, movement.elapsed / movement.duration)
+    car.position = edgePositionAt(movement.edge, movement.elapsed / movement.duration)
 
     if (movement.elapsed < movement.duration) {
       return
     }
 
-    car.position = movement.to
+    car.position = edgePositionAt(movement.edge, 1)
     car.route.currentNode = movement.toNodeIndex
     car.movement = null
   }
@@ -867,12 +1163,17 @@ function startNextDrivingEdge(car, context) {
   }
 
   const edgeIndex = car.route.edges[car.route.cursor]
-  const edge = context.network.laneGraph.edges[edgeIndex]
+  const edge = context.network.edges[edgeIndex]
   const toNodeIndex = context.network.edgeTo[edgeIndex]
   const fromNodeIndex = context.network.edgeFrom[edgeIndex]
-  const nextFootprint = drivingFootprint(context.city, context.network, toNodeIndex, edge.direction, car.lengthTiles)
+  const nextFootprint = edgeDrivingFootprint(context.city, context.network, edge, toNodeIndex, car.lengthTiles)
+  const clearanceTiles = edgeClearanceTiles(edge)
 
   if (isBlockedByCrosswalkSignal(context.city, context.network, fromNodeIndex, toNodeIndex)) {
+    return false
+  }
+
+  if (clearanceTiles && !context.parking.canOccupy(clearanceTiles, car.id)) {
     return false
   }
 
@@ -885,9 +1186,8 @@ function startNextDrivingEdge(car, context) {
   car.route.cursor += 1
   car.movement = {
     edgeIndex,
+    edge,
     toNodeIndex,
-    from: laneNodePosition(context.network, fromNodeIndex),
-    to: laneNodePosition(context.network, toNodeIndex),
     elapsed: 0,
     duration: edgeDuration(edge, context.config)
   }
@@ -958,8 +1258,14 @@ function drivingFootprint(city, network, nodeIndex, directionName, lengthTiles) 
   return tiles.length > 0 ? tiles : [network.nodeTileIndexes[nodeIndex]]
 }
 
-function laneDirection(network, edgeIndex) {
-  return network.laneGraph.edges[edgeIndex].direction
+function edgeDrivingFootprint(city, network, edge, toNodeIndex, lengthTiles) {
+  return drivingFootprint(city, network, toNodeIndex, edge.direction, lengthTiles)
+}
+
+function edgeClearanceTiles(edge) {
+  return edge.type === 'lane-change' && edge.sweptTiles && edge.sweptTiles.length > 0
+    ? edge.sweptTiles
+    : null
 }
 
 function laneNodePosition(network, nodeIndex) {
@@ -988,6 +1294,46 @@ function interpolate(from, to, ratio) {
     x: from.x + (to.x - from.x) * ratio,
     y: from.y + (to.y - from.y) * ratio
   }
+}
+
+function edgePositionAt(edge, ratio) {
+  const path = edge.worldPath
+
+  if (!path || path.length === 0) {
+    return { x: 0, y: 0 }
+  }
+
+  if (ratio <= 0 || path.length === 1) {
+    return { x: path[0][0], y: path[0][1] }
+  }
+
+  if (ratio >= 1) {
+    const end = path[path.length - 1]
+    return { x: end[0], y: end[1] }
+  }
+
+  const targetDistance = edge.worldLength * ratio
+  let walkedDistance = 0
+
+  for (let index = 1; index < path.length; index += 1) {
+    const from = path[index - 1]
+    const to = path[index]
+    const segmentLength = Math.hypot(to[0] - from[0], to[1] - from[1])
+
+    if (walkedDistance + segmentLength >= targetDistance) {
+      const segmentRatio = segmentLength === 0 ? 0 : (targetDistance - walkedDistance) / segmentLength
+      return interpolate(
+        { x: from[0], y: from[1] },
+        { x: to[0], y: to[1] },
+        segmentRatio
+      )
+    }
+
+    walkedDistance += segmentLength
+  }
+
+  const end = path[path.length - 1]
+  return { x: end[0], y: end[1] }
 }
 
 function drawCars(graphics, cars, city, config) {

@@ -113,6 +113,85 @@ function createTrafficCity() {
   }))
 }
 
+function createFirstEdgeCrosswalkCity() {
+  return compileCityMap(validateCityMap({
+    width: 7,
+    height: 5,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      p: { category: 'sidewalk', walkable: true, drivable: false, parkable: true },
+      r: { category: 'road', walkable: false, drivable: true, parkable: false },
+      c: { category: 'crosswalk', walkable: true, drivable: true, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: [
+        { id: 'home', type: 'residential', entrance: { x: 2, y: 1 }, spans: [[1, 2, 1]] },
+        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+      ]
+    },
+    rows: [
+      'sssssss',
+      'ssbssbs',
+      'ppppppp',
+      'rrrcrrr',
+      'sssssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 1, 0, 0, 1, 0],
+      [0, 0, 0, 0, 0, 0, 0],
+      [2, 2, 2, 3, 2, 2, 2],
+      [0, 0, 0, 0, 0, 0, 0]
+    ],
+    laneGraph: createLineLaneGraph(7, 3)
+  }))
+}
+
+function createLaneChangeTrafficCity() {
+  return compileCityMap(validateCityMap({
+    width: 8,
+    height: 6,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      p: { category: 'sidewalk', walkable: true, drivable: false, parkable: true },
+      r: { category: 'road', walkable: false, drivable: true, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: [
+        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work', type: 'commercial', entrance: { x: 6, y: 5 }, spans: [[5, 6, 1]] }
+      ]
+    },
+    rows: [
+      'ssssssss',
+      'sbssssss',
+      'pprrrrrr',
+      'rrrrrrss',
+      'ssssppss',
+      'ssssssbs'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 1, 0, 0, 0, 0, 0, 0],
+      [0, 0, 2, 2, 2, 2, 2, 2],
+      [2, 2, 2, 2, 2, 2, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 1, 0]
+    ],
+    laneGraph: createLaneChangeTrafficLaneGraph()
+  }))
+}
+
 function createLineLaneGraph(width, y) {
   const nodes = []
   const edges = []
@@ -135,6 +214,57 @@ function createLineLaneGraph(width, y) {
   }
 }
 
+function createGeneratedLaneChangeCity(laneGraph) {
+  return compileCityMap(validateCityMap({
+    width: 6,
+    height: 3,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      r: { category: 'road', walkable: false, drivable: true, parkable: false }
+    },
+    rows: [
+      'rrrrrr',
+      'rrrrrr',
+      'rrrrrr'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0]
+    ],
+    laneGraph
+  }))
+}
+
+function createParallelLaneGraph({ bottomDirection = 'east' } = {}) {
+  const nodes = []
+  const edges = []
+
+  for (let x = 0; x < 6; x += 1) {
+    nodes.push({ id: `upper-${x}`, x: x + 0.5, y: 0.5, tile: { x, y: 0 }, direction: 'east' })
+    nodes.push({ id: `lower-${x}`, x: x + 0.5, y: 1.5, tile: { x, y: 1 }, direction: bottomDirection })
+  }
+
+  for (let x = 0; x < 5; x += 1) {
+    edges.push(createLaneEdge(`upper-${x}-${x + 1}`, `upper-${x}`, `upper-${x + 1}`, 'east', x, 0, x + 1, 0))
+
+    if (bottomDirection === 'east') {
+      edges.push(createLaneEdge(`lower-${x}-${x + 1}`, `lower-${x}`, `lower-${x + 1}`, 'east', x, 1, x + 1, 1))
+    } else {
+      edges.push(createLaneEdge(`lower-${x + 1}-${x}`, `lower-${x + 1}`, `lower-${x}`, 'west', x + 1, 1, x, 1))
+    }
+  }
+
+  return {
+    encoding: 'directed-lanes-v1',
+    drivingSide: 'right',
+    coordinateSpace: 'tile',
+    nodes,
+    edges
+  }
+}
+
 function createLaneEdge(id, from, to, direction, fromX, fromY, toX, toY, options = {}) {
   return {
     id,
@@ -146,6 +276,58 @@ function createLaneEdge(id, from, to, direction, fromX, fromY, toX, toY, options
     speedLimit: options.speedLimit || 28,
     path: [[fromX + 0.5, fromY + 0.5], [toX + 0.5, toY + 0.5]]
   }
+}
+
+function createLaneChangeTrafficLaneGraph() {
+  const nodes = []
+  const edges = []
+
+  for (let x = 2; x < 8; x += 1) {
+    nodes.push({ id: `upper-${x}`, x: x + 0.5, y: 2.5, tile: { x, y: 2 }, direction: 'east' })
+  }
+
+  for (let x = 0; x < 6; x += 1) {
+    nodes.push({ id: `lower-${x}`, x: x + 0.5, y: 3.5, tile: { x, y: 3 }, direction: 'east' })
+  }
+
+  for (let x = 2; x < 7; x += 1) {
+    edges.push(createLaneEdge(`upper-${x}-${x + 1}`, `upper-${x}`, `upper-${x + 1}`, 'east', x, 2, x + 1, 2))
+  }
+
+  for (let x = 0; x < 5; x += 1) {
+    edges.push(createLaneEdge(`lower-${x}-${x + 1}`, `lower-${x}`, `lower-${x + 1}`, 'east', x, 3, x + 1, 3))
+  }
+
+  return {
+    encoding: 'directed-lanes-v1',
+    drivingSide: 'right',
+    coordinateSpace: 'tile',
+    nodes,
+    edges
+  }
+}
+
+function routeEdgeIds(planner, startNodeId, endNodeId) {
+  const nodeIndexes = new Map(planner.network.laneGraph.nodes.map((node, index) => [node.id, index]))
+  const route = planner.findRoute(nodeIndexes.get(startNodeId), nodeIndexes.get(endNodeId))
+
+  return route.map((edgeIndex) => planner.network.edges[edgeIndex].id)
+}
+
+function routeEdges(planner, startNodeId, endNodeId) {
+  const nodeIndexes = new Map(planner.network.laneGraph.nodes.map((node, index) => [node.id, index]))
+  const route = planner.findRoute(nodeIndexes.get(startNodeId), nodeIndexes.get(endNodeId))
+
+  return route.map((edgeIndex) => planner.network.edges[edgeIndex])
+}
+
+function isGeneratedLaneChangeEdge(edge) {
+  return edge !== null && edge !== undefined && (
+    edge.type === 'lane-change' ||
+    edge.turn === 'lane-change' ||
+    edge.generated === 'lane-change' ||
+    edge.id.includes('lane-change')
+  )
 }
 
 describe('car simulation', () => {
@@ -290,6 +472,63 @@ describe('car simulation', () => {
     simulation.destroy()
   })
 
+  it('does not occupy a red first crosswalk edge before movement starts', () => {
+    const city = createFirstEdgeCrosswalkCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock: createClock(8.5),
+      random: createSeededRandom('first-crosswalk'),
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 10,
+      speedLimitScale: 1
+    })
+    const car = simulation.cars[0]
+    const crosswalkIndex = city.index(3, 3)
+
+    city.setCrosswalkSignalState('red')
+    simulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.movement).toBeNull()
+    expect(car.occupiedTiles).not.toContain(crosswalkIndex)
+    expect(car.occupiedTiles.every((tileIndex) => city.tileParkable[tileIndex] === 1)).toBe(true)
+
+    city.setCrosswalkSignalState('green')
+    simulation.update(0.1)
+
+    expect(car.movement).not.toBeNull()
+    expect(car.occupiedTiles).toContain(crosswalkIndex)
+
+    simulation.destroy()
+  })
+
+  it('keeps the car footprint to its body length during generated lane changes', () => {
+    const city = createLaneChangeTrafficCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock: createClock(8.5),
+      random: createSeededRandom('lane-change-drive'),
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 10,
+      speedLimitScale: 1
+    })
+    const car = simulation.cars[0]
+
+    simulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.movement?.edge.type).toBe('lane-change')
+    expect(car.movement.edge.sweptTiles.length).toBeGreaterThan(car.lengthTiles)
+    expect(car.occupiedTiles).toHaveLength(car.lengthTiles)
+    expect(new Set(car.occupiedTiles).size).toBe(car.lengthTiles)
+
+    simulation.destroy()
+  })
+
   it('chooses the shortest lane route even when it includes a merge edge', () => {
     const city = compileCityMap(validateCityMap({
       width: 2,
@@ -334,8 +573,46 @@ describe('car simulation', () => {
     const planner = createCarRoutePlanner(city)
     const nodeIndexes = new Map(planner.network.laneGraph.nodes.map((node, index) => [node.id, index]))
     const route = planner.findRoute(nodeIndexes.get('a'), nodeIndexes.get('d'))
-    const routeIds = route.map((edgeIndex) => planner.network.laneGraph.edges[edgeIndex].id)
+    const routeIds = route.map((edgeIndex) => planner.network.edges[edgeIndex].id)
 
     expect(routeIds).toEqual(['a-b', 'b-d'])
+  })
+})
+
+describe('generated lane-change maneuver routing', () => {
+  it('routes between nearby parallel lane components using generated lane-change edges', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const planner = createCarRoutePlanner(city)
+    const routeEdgesResult = routeEdges(planner, 'upper-0', 'lower-5')
+
+    expect(routeEdgesResult.length).toBeGreaterThan(0)
+    expect(routeEdgesResult.some((edge) => isGeneratedLaneChangeEdge(edge))).toBe(true)
+    expect(planner.network.generatedLaneChangeEdgeCount).toBeGreaterThan(0)
+  })
+
+  it('does not generate lane changes between lanes facing opposite directions', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph({ bottomDirection: 'west' }))
+    const planner = createCarRoutePlanner(city)
+    const laneChangeEdges = planner.network.edges.filter(isGeneratedLaneChangeEdge)
+
+    expect(laneChangeEdges).toHaveLength(0)
+    expect(routeEdgeIds(planner, 'upper-0', 'lower-0')).toEqual([])
+  })
+
+  it('does not generate one-tile lateral switches between parallel lanes', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const planner = createCarRoutePlanner(city)
+    const sharpSwitches = planner.network.edges.filter((edge) => {
+      if (!isGeneratedLaneChangeEdge(edge)) {
+        return false
+      }
+
+      const from = edge.fromNode.tile
+      const to = edge.toNode.tile
+
+      return Math.abs(from.x - to.x) === 0 && Math.abs(from.y - to.y) === 1
+    })
+
+    expect(sharpSwitches).toEqual([])
   })
 })

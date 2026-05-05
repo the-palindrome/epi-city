@@ -101,7 +101,7 @@ The runtime uses a single browser animation loop with the game-development shape
 
 The app creates 500 cars by default. Cars have one or two real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
 
-Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
+Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. At runtime, the car network also generates smooth lane-change maneuver edges between distinct authored directed components when two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
 
 ## Debugging From The Console
 
