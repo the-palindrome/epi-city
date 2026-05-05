@@ -13,6 +13,7 @@ import {
   createCamera,
   installCameraControls
 } from './input/camera.js'
+import { createEntityPathSelection } from './input/entity-path-selection.js'
 import {
   compileCityMap,
   loadCityMap,
@@ -89,6 +90,15 @@ async function main() {
     const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
     const dayNightOverlay = createDayNightOverlay(city, entityLayer, simulationClock, {
       enabled: simulationState.dayNightOverlayEnabled
+    })
+    const pathSelection = createEntityPathSelection({
+      app,
+      camera,
+      city,
+      entityLayer,
+      getNpcSimulation: () => npcSimulation,
+      getCarSimulation: () => carSimulation,
+      requestRender: () => game.render()
     })
 
     function createNpcRandom() {
@@ -168,6 +178,7 @@ async function main() {
 
       city.resetCrosswalkSignals()
       city.resetTrafficSignals()
+      pathSelection.clearSelection()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
       carSimulation = createConfiguredCarSimulation()
@@ -238,6 +249,7 @@ async function main() {
     carSimulation = createConfiguredCarSimulation()
     game.addSystem(carSimulation)
     game.addSystem(npcSimulation)
+    game.addSystem(pathSelection)
     game.start()
 
     function playSimulation() {
@@ -290,6 +302,7 @@ async function main() {
       game.destroy()
       dashboard.destroy()
       cameraControls.destroy()
+      pathSelection.destroy()
       clearPixiContainer(entityLayer)
       app.destroy({ removeView: true }, { children: true })
       delete window.citySim
@@ -301,6 +314,7 @@ async function main() {
       dashboard,
       simulationClock,
       dayNightOverlay,
+      pathSelection,
       gameLoop: game.loop,
       game,
       npcSimulation,
