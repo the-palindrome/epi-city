@@ -220,6 +220,49 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
+  it('updates car count from the slider and exact number input', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      carCount: 100,
+      carCountRange: { min: 0, max: 2000, step: 10 },
+      onCarCountChange(count) {
+        changes.push(count)
+      }
+    })
+    const slider = findByDataset(dashboard.element, 'simulationCarCountSlider')
+    const input = findByDataset(dashboard.element, 'simulationCarCount')
+
+    expect(slider.min).toBe('0')
+    expect(slider.max).toBe('2000')
+    expect(slider.value).toBe('100')
+    expect(input.value).toBe('100')
+
+    slider.value = '250'
+    slider.eventListeners.input()
+
+    expect(dashboard.simulation.state.carCount).toBe(250)
+    expect(input.value).toBe('250')
+
+    slider.eventListeners.change()
+
+    expect(changes).toEqual([250])
+
+    input.value = '999'
+    input.eventListeners.change()
+
+    expect(dashboard.simulation.state.carCount).toBe(999)
+    expect(slider.value).toBe('999')
+    expect(changes).toEqual([250, 999])
+
+    input.value = '5000'
+    input.eventListeners.change()
+
+    expect(dashboard.simulation.state.carCount).toBe(2000)
+    expect(changes).toEqual([250, 999, 2000])
+
+    dashboard.destroy()
+  })
+
   it('shows the simulation clock and toggles the day-night overlay control', () => {
     const changes = []
     const clock = {

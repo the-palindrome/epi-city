@@ -70,6 +70,26 @@ export const NPC_CONFIG = Object.freeze({
   routeBlockedReplanSeconds: 2
 })
 
+export const CAR_CONFIG = Object.freeze({
+  count: 500,
+  zorder: 1,
+  colorPalette: Object.freeze([0x3f6fd8, 0xd94a48, 0xf1d15c, 0x55b86b, 0xd8dce6, 0x22272e]),
+  twoTileChance: 0.82,
+  maxOwners: 2,
+  twoOwnerChance: 0.35,
+  commuteChance: 0.65,
+  workDepartureHour: 8,
+  workDepartureEndHour: 10,
+  homeDepartureHour: 17,
+  homeDepartureEndHour: 20,
+  maxSpeed: 96,
+  speedLimitScale: 2.5,
+  parkingSearchRadius: 64,
+  bodyWidth: 12,
+  roadBodyLength: 24,
+  parkedRoadOffset: 0.24
+})
+
 export const SIMULATION_CONFIG = Object.freeze({
   seedEnabled: true,
   seed: 'epi-city',
@@ -88,6 +108,11 @@ export const SIMULATION_CONFIG = Object.freeze({
     min: 100,
     max: 10000,
     step: 100
+  }),
+  carCountRange: Object.freeze({
+    min: 0,
+    max: 2000,
+    step: 10
   })
 })
 

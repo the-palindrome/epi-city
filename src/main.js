@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js'
 import {
+  CAR_CONFIG,
   DEFAULT_CITY_MAP_PATHS,
   NPC_CONFIG,
   SIMULATION_CONFIG
@@ -18,6 +19,7 @@ import {
   validateCityTextureBindings
 } from './map/city-map.js'
 import { installDebugDashboard } from './debug/dashboard.js'
+import { createCarSimulation } from './sim/car-simulation.js'
 import { createNpcSimulation } from './sim/npc-simulation.js'
 import { SimulationClock } from './sim/simulation-clock.js'
 import { renderCity } from './render/city-renderer.js'
@@ -79,9 +81,11 @@ async function main() {
       seed: SIMULATION_CONFIG.seed,
       speed: SIMULATION_CONFIG.speed,
       npcCount: NPC_CONFIG.count,
+      carCount: CAR_CONFIG.count,
       dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled
     }
     let npcSimulation = null
+    let carSimulation = null
     const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
     const dayNightOverlay = createDayNightOverlay(city, entityLayer, simulationClock, {
       enabled: simulationState.dayNightOverlayEnabled
@@ -93,12 +97,28 @@ async function main() {
         : createSystemRandom()
     }
 
+    function createCarRandom() {
+      return simulationState.seedEnabled
+        ? createSeededRandom(`${simulationState.seed}:cars`)
+        : createSystemRandom()
+    }
+
     function createConfiguredNpcSimulation() {
       return createNpcSimulation(city, entityLayer, {
         ...NPC_CONFIG,
         count: simulationState.npcCount,
         clock: simulationClock,
         random: createNpcRandom()
+      })
+    }
+
+    function createConfiguredCarSimulation() {
+      return createCarSimulation(city, entityLayer, {
+        ...CAR_CONFIG,
+        count: simulationState.carCount,
+        clock: simulationClock,
+        random: createCarRandom(),
+        npcs: npcSimulation ? npcSimulation.npcs : []
       })
     }
 
@@ -124,19 +144,38 @@ async function main() {
       return Math.min(Math.max(value, min), max)
     }
 
+    function clampCarCount(count) {
+      const { min, max } = SIMULATION_CONFIG.carCountRange
+      const value = Math.round(Number(count))
+
+      if (!Number.isFinite(value)) {
+        return min
+      }
+
+      return Math.min(Math.max(value, min), max)
+    }
+
     function restartSimulation() {
       if (npcSimulation) {
         game.removeSystem(npcSimulation)
         npcSimulation.destroy()
       }
 
+      if (carSimulation) {
+        game.removeSystem(carSimulation)
+        carSimulation.destroy()
+      }
+
       city.resetCrosswalkSignals()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
+      carSimulation = createConfiguredCarSimulation()
+      game.addSystem(carSimulation)
       game.addSystem(npcSimulation)
 
       if (window.citySim) {
         window.citySim.npcSimulation = npcSimulation
+        window.citySim.carSimulation = carSimulation
       }
 
       game.render()
@@ -151,6 +190,8 @@ async function main() {
       speedRange: SIMULATION_CONFIG.speedRange,
       npcCount: simulationState.npcCount,
       npcCountRange: SIMULATION_CONFIG.npcCountRange,
+      carCount: simulationState.carCount,
+      carCountRange: SIMULATION_CONFIG.carCountRange,
       clock: simulationClock,
       dayNightOverlayEnabled: simulationState.dayNightOverlayEnabled,
       onPlay: () => game.play(),
@@ -171,6 +212,11 @@ async function main() {
         dashboard.simulation.setNpcCount(simulationState.npcCount)
         restartSimulation()
       },
+      onCarCountChange: (count) => {
+        simulationState.carCount = clampCarCount(count)
+        dashboard.simulation.setCarCount(simulationState.carCount)
+        restartSimulation()
+      },
       onDayNightOverlayChange: (enabled) => {
         simulationState.dayNightOverlayEnabled = Boolean(enabled)
         dayNightOverlay.setEnabled(simulationState.dayNightOverlayEnabled)
@@ -183,6 +229,8 @@ async function main() {
     game.addSystem(dayNightOverlay)
     game.addSystem({ render: () => dashboard.render() })
     npcSimulation = createConfiguredNpcSimulation()
+    carSimulation = createConfiguredCarSimulation()
+    game.addSystem(carSimulation)
     game.addSystem(npcSimulation)
     game.start()
 
@@ -220,6 +268,12 @@ async function main() {
       restartSimulation()
     }
 
+    function setCarCount(count) {
+      simulationState.carCount = clampCarCount(count)
+      dashboard.simulation.setCarCount(simulationState.carCount)
+      restartSimulation()
+    }
+
     function setDayNightOverlayEnabled(enabled) {
       simulationState.dayNightOverlayEnabled = Boolean(enabled)
       dayNightOverlay.setEnabled(simulationState.dayNightOverlayEnabled)
@@ -244,9 +298,13 @@ async function main() {
       gameLoop: game.loop,
       game,
       npcSimulation,
+      carSimulation,
       simulationState,
       get npcs() {
         return npcSimulation.npcs
+      },
+      get cars() {
+        return carSimulation.cars
       },
       play: playSimulation,
       pause: pauseSimulation,
@@ -255,6 +313,7 @@ async function main() {
       setSeed: setSimulationSeed,
       setSeedEnabled: setSimulationSeedEnabled,
       setNpcCount,
+      setCarCount,
       setDayNightOverlayEnabled,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       destroy

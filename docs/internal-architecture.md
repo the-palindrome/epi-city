@@ -17,7 +17,7 @@ Startup follows this sequence:
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
 9. `installDebugDashboard()` adds simulation controls, the clock display, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
-10. `SimulationClock` and `createNpcSimulation()` create the clock and NPC systems with the configured random source, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
+10. `SimulationClock`, `createNpcSimulation()`, and `createCarSimulation()` create the clock and entity systems with their configured random sources, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
 
@@ -109,7 +109,7 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Vehicles use `drivable` tiles. Pedestrians use `walkable` tiles. Parking systems can use `parkable` tiles. Crosswalks are both `walkable` and `drivable`, but pedestrian movement through them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. Building entrance cells keep the `building` category, but `compileCityMap()` marks them walkable after validating the entrance metadata.
+Movement uses generated behavior layers. Pedestrians use `walkable` tiles, while cars prefer the authored lane graph and use `drivable`/`crosswalk` tiles for occupancy checks. Parking systems use `parkable` tiles. Crosswalks are both pedestrian and vehicle crossing points, but entering them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. Building entrance cells keep the `building` category, but `compileCityMap()` marks them walkable after validating the entrance metadata.
 
 The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow or red, NPCs outside the crossing cannot begin entering it, but any NPC already on a crosswalk can continue moving through crosswalk tiles or step off to another walkable tile.
 
@@ -125,7 +125,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
 
-The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes the NPC count as a slider plus exact number input, and includes a checkbox for the day-night overlay. Changing the NPC count restarts the NPC system with a clamped count from 100 to 10000; the default remains 1000.
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, car movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes NPC and car counts as sliders plus exact number inputs, and includes a checkbox for the day-night overlay. Changing either entity count restarts the population systems with clamped counts; the NPC default remains 1000, and the car default is 500.
 
 `SimulationClock` advances one simulated hour for every 60 game seconds. Since `Game` applies speed before fixed updates reach systems, `1x` speed makes one real minute equal one simulation hour, and higher speeds multiply that rate. Restarting the simulation resets the clock to the configured start hour.
 
@@ -161,6 +161,16 @@ NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor 
 
 Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
 
+## Car Simulation
+
+`createCarSimulation()` builds cars after the map renders. Each car receives one or two real NPC owner records, and all owners for one car share the same residential home building. A commuting owner waits inside the origin building while the car is pending, rides hidden inside the car, and is dropped into the destination building when the car parks. If a car is used to reach work, the same car remains parked near work until the evening return window sends it home.
+
+Cars park on `tileParkable` cells near the relevant building entrance. The parking manager uses typed `Int32Array` occupancy and reservation layers so each occupied tile belongs to at most one car. Two-tile cars are the common case, with some three-tile cars. Parked rendering shifts the car body toward the nearest road or lane tile.
+
+Moving cars use the authored `city.laneGraph`. The runtime compiles that graph into compact arrays for node tile indexes, directed edge endpoints, reverse adjacency, edge costs, tile-to-node lookup, and nearest lane node by tile. This precomputed network is cached by the compiled lane graph object, so loading a changed map folder produces a new lane graph object and recomputes the car traffic structures.
+
+Car routing follows the same destination-field idea as pedestrian routing. `createCarRoutePlanner()` builds reverse Dijkstra route fields keyed by destination lane node, stores the next edge for each reachable start node, and caches exact extracted routes by start node. Edge cost uses lane distance only, so cars choose the shortest lane route even if it includes authored merge or lane-change edges. Speed limits affect movement duration after routing. Cars only enter crosswalk lane nodes while the shared signal is green, but cars already on a crosswalk can continue out at any signal.
+
 ## Texture Sets
 
 A texture set lives inside its map package under `public/maps/<map-name>`. The current `liberty-city` manifest stores one source atlas and a list of deduplicated source frames:
@@ -189,7 +199,7 @@ The extraction script checks every map cell against the original image. Each `te
 
 ## Rendering Strategy
 
-The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below NPCs while building overlays stay above building tiles.
+The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC and car graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below entities while building overlays stay above building tiles.
 
 `renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
 
@@ -253,7 +263,10 @@ window.citySim.play()
 window.citySim.setSeed('demo-seed')
 window.citySim.restart()
 window.citySim.setSpeed(4)
+window.citySim.setCarCount(250)
 window.citySim.setDayNightOverlayEnabled(false)
+window.citySim.cars[0].owners
+window.citySim.cars[0].parkedAt
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
 window.citySim.npcs[0].timetable.elements

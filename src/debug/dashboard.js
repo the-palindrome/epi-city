@@ -141,6 +141,7 @@ function createSimulationControls(options) {
     seed: options.seed || '',
     speed: options.speed || 1,
     npcCount: normalizeNpcCount(options.npcCount ?? 1000, options.npcCountRange),
+    carCount: normalizeCarCount(options.carCount ?? 500, options.carCountRange),
     dayNightOverlayEnabled: options.dayNightOverlayEnabled !== false
   }
   const callbacks = {
@@ -151,10 +152,12 @@ function createSimulationControls(options) {
     onSeedChange: options.onSeedChange || noop,
     onSpeedChange: options.onSpeedChange || noop,
     onNpcCountChange: options.onNpcCountChange || noop,
+    onCarCountChange: options.onCarCountChange || noop,
     onDayNightOverlayChange: options.onDayNightOverlayChange || noop
   }
   const speedRange = normalizeSpeedRange(options.speedRange)
   const npcCountRange = normalizeNpcCountRange(options.npcCountRange)
+  const carCountRange = normalizeCarCountRange(options.carCountRange)
   const section = createDashboardSection('Simulation')
   const actions = document.createElement('div')
   const playButton = createDashboardButton('Play', 'play')
@@ -165,6 +168,7 @@ function createSimulationControls(options) {
   const seedField = createSeedField(state.seed)
   const speedField = createSpeedField(state.speed, speedRange)
   const npcCountField = createNpcCountField(state.npcCount, npcCountRange)
+  const carCountField = createCarCountField(state.carCount, carCountRange)
   const dayNightToggle = createDayNightToggle(state.dayNightOverlayEnabled)
 
   actions.className = 'dashboard-actions'
@@ -177,6 +181,7 @@ function createSimulationControls(options) {
   section.appendChild(seedField.label)
   section.appendChild(speedField.label)
   section.appendChild(npcCountField.label)
+  section.appendChild(carCountField.label)
   section.appendChild(dayNightToggle.label)
 
   playButton.addEventListener('click', () => {
@@ -223,6 +228,19 @@ function createSimulationControls(options) {
     callbacks.onNpcCountChange(state.npcCount)
   })
 
+  carCountField.slider.addEventListener('input', () => {
+    setCarCount(carCountField.slider.value)
+  })
+
+  carCountField.slider.addEventListener('change', () => {
+    callbacks.onCarCountChange(state.carCount)
+  })
+
+  carCountField.input.addEventListener('change', () => {
+    setCarCount(carCountField.input.value)
+    callbacks.onCarCountChange(state.carCount)
+  })
+
   dayNightToggle.input.addEventListener('change', () => {
     setDayNightOverlayEnabled(dayNightToggle.input.checked)
     callbacks.onDayNightOverlayChange(state.dayNightOverlayEnabled)
@@ -256,6 +274,12 @@ function createSimulationControls(options) {
     npcCountField.input.value = String(state.npcCount)
   }
 
+  function setCarCount(count) {
+    state.carCount = normalizeCarCount(count, carCountRange)
+    carCountField.slider.value = String(state.carCount)
+    carCountField.input.value = String(state.carCount)
+  }
+
   function setDayNightOverlayEnabled(enabled) {
     state.dayNightOverlayEnabled = Boolean(enabled)
     dayNightToggle.input.checked = state.dayNightOverlayEnabled
@@ -270,6 +294,7 @@ function createSimulationControls(options) {
   setSeed(state.seed)
   setSpeed(state.speed)
   setNpcCount(state.npcCount)
+  setCarCount(state.carCount)
   setDayNightOverlayEnabled(state.dayNightOverlayEnabled)
   render()
 
@@ -282,6 +307,7 @@ function createSimulationControls(options) {
     setSeed,
     setSpeed,
     setNpcCount,
+    setCarCount,
     setDayNightOverlayEnabled
   }
 }
@@ -372,27 +398,51 @@ function createSpeedField(speed, speedRange) {
 }
 
 function createNpcCountField(count, countRange) {
+  return createCountField({
+    labelText: 'NPCs',
+    className: 'dashboard-npc-count-field',
+    sliderDataset: 'simulationNpcCountSlider',
+    inputDataset: 'simulationNpcCount',
+    count,
+    countRange,
+    normalize: normalizeNpcCount
+  })
+}
+
+function createCarCountField(count, countRange) {
+  return createCountField({
+    labelText: 'cars',
+    className: 'dashboard-car-count-field',
+    sliderDataset: 'simulationCarCountSlider',
+    inputDataset: 'simulationCarCount',
+    count,
+    countRange,
+    normalize: normalizeCarCount
+  })
+}
+
+function createCountField({ labelText, className, sliderDataset, inputDataset, count, countRange, normalize }) {
   const label = document.createElement('label')
   const text = document.createElement('span')
   const controls = document.createElement('div')
   const slider = document.createElement('input')
   const input = document.createElement('input')
 
-  label.className = 'dashboard-field dashboard-npc-count-field'
-  text.textContent = 'NPCs'
+  label.className = `dashboard-field ${className}`
+  text.textContent = labelText
   controls.className = 'dashboard-paired-inputs'
   slider.type = 'range'
   slider.min = String(countRange.min)
   slider.max = String(countRange.max)
   slider.step = String(countRange.step)
-  slider.value = String(normalizeNpcCount(count, countRange))
-  slider.dataset.simulationNpcCountSlider = 'true'
+  slider.value = String(normalize(count, countRange))
+  slider.dataset[sliderDataset] = 'true'
   input.type = 'number'
   input.min = String(countRange.min)
   input.max = String(countRange.max)
   input.step = '1'
-  input.value = String(normalizeNpcCount(count, countRange))
-  input.dataset.simulationNpcCount = 'true'
+  input.value = String(normalize(count, countRange))
+  input.dataset[inputDataset] = 'true'
   controls.appendChild(slider)
   controls.appendChild(input)
   label.appendChild(text)
@@ -431,6 +481,14 @@ function normalizeSpeedRange(range) {
 }
 
 function normalizeNpcCountRange(range) {
+  return normalizeIntegerRange(range, { min: 100, max: 10000, step: 100 })
+}
+
+function normalizeCarCountRange(range) {
+  return normalizeIntegerRange(range, { min: 0, max: 2000, step: 10 })
+}
+
+function normalizeIntegerRange(range, fallback) {
   const min = Number(range && range.min)
   const max = Number(range && range.max)
   const step = Number(range && range.step)
@@ -439,11 +497,22 @@ function normalizeNpcCountRange(range) {
     return { min, max, step }
   }
 
-  return { min: 100, max: 10000, step: 100 }
+  return fallback
 }
 
 function normalizeNpcCount(count, range) {
   const countRange = normalizeNpcCountRange(range)
+  const value = Math.round(Number(count))
+
+  if (!Number.isFinite(value)) {
+    return countRange.min
+  }
+
+  return Math.min(Math.max(value, countRange.min), countRange.max)
+}
+
+function normalizeCarCount(count, range) {
+  const countRange = normalizeCarCountRange(range)
   const value = Math.round(Number(count))
 
   if (!Number.isFinite(value)) {

@@ -133,6 +133,10 @@ class NpcEntity {
       target: null
     }
     this.routing = createEmptyRouteState()
+    this.vehicleTrip = null
+    this.waitingForCar = false
+    this.carId = null
+    this.commuteByCar = false
   }
 
   getActiveTimetableElement(timeOfDayHours) {
@@ -166,6 +170,51 @@ class NpcEntity {
       this.tile.x === this.goal.location.x &&
       this.tile.y === this.goal.location.y
     )
+  }
+
+  startVehicleTrip({ carId, destinationKind, destinationBuildingId }) {
+    this.vehicleTrip = {
+      carId,
+      destinationKind,
+      destinationBuildingId
+    }
+    this.waitingForCar = false
+    this.present = false
+    this.locationState = null
+    this.movement.target = null
+    this.routing = createEmptyRouteState()
+  }
+
+  finishVehicleTrip(city, destinationKind, building) {
+    if (!building || !building.entrance) {
+      this.vehicleTrip = null
+      return
+    }
+
+    const location = {
+      x: building.entrance.x,
+      y: building.entrance.y,
+      index: city.index(building.entrance.x, building.entrance.y)
+    }
+
+    this.vehicleTrip = null
+    this.waitingForCar = false
+    this.present = false
+    this.locationState = {
+      timetableElementId: destinationKind,
+      buildingId: building.id,
+      location
+    }
+    this.goal = {
+      id: destinationKind,
+      buildingId: building.id,
+      location: { ...location }
+    }
+    this.position = tileCenterPosition(city, location.x, location.y)
+    this.tile = { ...location }
+    this.slot = { id: -1, index: -1 }
+    this.movement.target = null
+    this.routing = createEmptyRouteState()
   }
 }
 
@@ -361,6 +410,10 @@ function collectNpcSpawnTiles(city) {
 }
 
 function refreshNpcGoal(npc, timeOfDayHours, context) {
+  if (npc.vehicleTrip) {
+    return
+  }
+
   const activeElement = npc.getActiveTimetableElement(timeOfDayHours)
 
   if (!activeElement) {
@@ -381,6 +434,10 @@ function refreshNpcGoal(npc, timeOfDayHours, context) {
 }
 
 function prepareNpcForRouting(npc, deltaSeconds, context) {
+  if (npc.vehicleTrip || npc.waitingForCar) {
+    return
+  }
+
   if (!npc.goal) {
     return
   }
@@ -416,6 +473,10 @@ function prepareNpcForRouting(npc, deltaSeconds, context) {
 }
 
 function updateNpcMovement(npc, deltaSeconds, context) {
+  if (npc.vehicleTrip || npc.waitingForCar) {
+    return
+  }
+
   if (!npc.present) {
     return
   }

@@ -317,6 +317,29 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
+  it('waits inside the origin building while a car commute is pending', () => {
+    const city = createCityWithBuildingTypes()
+    const clock = createMutableClock(8)
+    const simulation = createSimulation('wait-for-car', city, {
+      count: 1,
+      clock,
+      scheduleVariationHours: 0,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    npc.waitingForCar = true
+    clock.hour = 10
+    simulation.update(1 / 60)
+
+    expect(npc.goal).toMatchObject({ id: 'work', buildingId: npc.work })
+    expect(npc.present).toBe(false)
+    expect(npc.locationState).toMatchObject({ buildingId: npc.home })
+    expect(npc.routing.path).toBeNull()
+
+    simulation.destroy()
+  })
+
   it('enters the work building after reaching the routed entrance', () => {
     const city = createCityWithBuildingTypes()
     const clock = createMutableClock(8)
