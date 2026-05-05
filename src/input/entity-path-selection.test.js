@@ -17,7 +17,11 @@ function createCity() {
     width: 10,
     height: 10,
     tileSize: 32,
-    index: (x, y) => y * 10 + x
+    tiles: new Uint8Array(100),
+    index: (x, y) => y * 10 + x,
+    getRouteFieldNextIndex(field, fromIndex) {
+      return field.nextByIndex.get(fromIndex) ?? -1
+    }
   }
 }
 
@@ -53,6 +57,7 @@ describe('entity path selection', () => {
     const npc = {
       present: true,
       position: { x: 16, y: 16 },
+      tile: { x: 0, y: 0, index: city.index(0, 0) },
       movement: {
         target: {
           position: { x: 48, y: 16 },
@@ -60,12 +65,12 @@ describe('entity path selection', () => {
         }
       },
       routing: {
-        cursor: 1,
-        path: [
-          city.index(0, 0),
-          city.index(1, 0),
-          city.index(2, 0)
-        ]
+        routeField: {
+          nextByIndex: new Map([
+            [city.index(0, 0), city.index(1, 0)],
+            [city.index(1, 0), city.index(2, 0)]
+          ])
+        }
       }
     }
 

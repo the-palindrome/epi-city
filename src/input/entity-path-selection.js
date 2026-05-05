@@ -165,20 +165,13 @@ export function npcPathPoints(city, npc) {
   }
 
   const points = [{ x: npc.position.x, y: npc.position.y }]
-  const route = npc.routing?.path
-  let cursor = npc.routing?.cursor || 0
 
   if (npc.movement?.target) {
     pushUniquePoint(points, npc.movement.target.position)
-    cursor = Number.isInteger(npc.movement.target.routeCursor)
-      ? npc.movement.target.routeCursor + 1
-      : cursor
   }
 
-  if (route) {
-    for (let index = cursor; index < route.length; index += 1) {
-      pushUniquePoint(points, routePoint(city, route[index]))
-    }
+  if (npc.routing?.routeField) {
+    appendRouteFieldPoints(points, city, npc)
   }
 
   return points
@@ -248,6 +241,23 @@ function routePoint(city, value) {
   return {
     x: (x + 0.5) * city.tileSize,
     y: (y + 0.5) * city.tileSize
+  }
+}
+
+function appendRouteFieldPoints(points, city, npc) {
+  let current = npc.tile.index
+  let guard = 0
+
+  while (guard < city.tiles.length) {
+    const next = city.getRouteFieldNextIndex(npc.routing.routeField, current)
+
+    if (next === -1) {
+      break
+    }
+
+    pushUniquePoint(points, routePoint(city, next))
+    current = next
+    guard += 1
   }
 }
 

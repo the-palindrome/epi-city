@@ -312,7 +312,8 @@ describe('NPC simulation randomness', () => {
     expect(npc.present).toBe(true)
     expect(npc.goal).toMatchObject({ id: 'work', buildingId: npc.work })
     expect(npc.routing.destination).toMatchObject(npc.goal.location)
-    expect(npc.routing.path.at(-1)).toBe(city.index(npc.goal.location.x, npc.goal.location.y))
+    expect(npc.routing.destinationIndex).toBe(city.index(npc.goal.location.x, npc.goal.location.y))
+    expect(npc.routing.routeField).toBeTruthy()
 
     simulation.destroy()
   })
@@ -335,7 +336,7 @@ describe('NPC simulation randomness', () => {
     expect(npc.goal).toMatchObject({ id: 'work', buildingId: npc.work })
     expect(npc.present).toBe(false)
     expect(npc.locationState).toMatchObject({ buildingId: npc.home })
-    expect(npc.routing.path).toBeNull()
+    expect(npc.routing.routeField).toBeNull()
 
     simulation.destroy()
   })

@@ -806,6 +806,40 @@ export function compileCityMap(data) {
     return reconstructRouteFieldPathIndexes(field, navigation.offsets, startIndex, endIndex)
   }
 
+  function getCachedRouteFieldByIndex(endIndex, mode) {
+    const property = modeProperty(mode)
+
+    if (!Number.isInteger(endIndex) || endIndex < 0 || endIndex >= tiles.length) {
+      return null
+    }
+
+    const layer = tilePropertyLayers[property]
+
+    if (layer[endIndex] !== 1) {
+      return null
+    }
+
+    const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
+    const field = navigation.routeFields.get(endIndex, stepMasks.cacheKey, stepMasks.incoming)
+
+    return {
+      endIndex,
+      movementCacheKey: stepMasks.cacheKey,
+      nextDirection: field.nextDirection,
+      offsets: navigation.offsets
+    }
+  }
+
+  function getRouteFieldNextIndex(field, fromIndex) {
+    if (!field || fromIndex === field.endIndex) {
+      return -1
+    }
+
+    const directionIndex = field.nextDirection[fromIndex]
+
+    return directionIndex <= 7 ? fromIndex + field.offsets[directionIndex] : -1
+  }
+
   return {
     width,
     height,
@@ -853,6 +887,8 @@ export function compileCityMap(data) {
     findCachedPath,
     findCachedPathIndexes,
     findCachedPathIndexesByIndex,
+    getCachedRouteFieldByIndex,
+    getRouteFieldNextIndex,
     navigationCacheKey: navigation.cacheKey,
     getNavigationCacheStats: () => ({
       cacheKey: navigation.cacheKey,

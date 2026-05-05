@@ -91,4 +91,88 @@ describe('car simulation performance', () => {
     expect(cachedRouteLength).toBe(uncachedRouteLength)
     expect(speedup).toBeGreaterThanOrEqual(10)
   }, 30000)
+
+  it('looks up precomputed edge footprints at least 10x faster than rebuilding them', () => {
+    const city = loadLibertyCity()
+    const planner = createCarRoutePlanner(city)
+    const network = planner.network
+    const edgeIndexes = []
+
+    for (let edgeIndex = 0; edgeIndex < network.edgeCount && edgeIndexes.length < 2000; edgeIndex += 1) {
+      edgeIndexes.push(edgeIndex)
+    }
+
+    expect(edgeIndexes.length).toBeGreaterThanOrEqual(1000)
+
+    const repetitions = 50
+    let dynamicTotal = 0
+    const dynamicMs = measure(() => {
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        for (const edgeIndex of edgeIndexes) {
+          dynamicTotal += dynamicDrivingFootprint(city, network, edgeIndex, 2).length
+        }
+      }
+    })
+
+    const footprints = network.edgeFootprintsByLength.get(2)
+    let precomputedTotal = 0
+    const precomputedMs = measure(() => {
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        for (const edgeIndex of edgeIndexes) {
+          precomputedTotal += footprints[edgeIndex].length
+        }
+      }
+    })
+    const speedup = dynamicMs / Math.max(precomputedMs, 0.001)
+
+    expect(precomputedTotal).toBe(dynamicTotal)
+    expect(speedup).toBeGreaterThanOrEqual(10)
+  }, 30000)
 })
+
+function dynamicDrivingFootprint(city, network, edgeIndex, lengthTiles) {
+  const edge = network.edges[edgeIndex]
+  const nodeIndex = network.edgeTo[edgeIndex]
+  const node = network.laneGraph.nodes[nodeIndex]
+  const offset = directionOffset(edge.direction)
+  const tiles = []
+
+  for (let index = 0; index < lengthTiles; index += 1) {
+    const x = node.tile.x - offset.dx * index
+    const y = node.tile.y - offset.dy * index
+
+    if (x < 0 || y < 0 || x >= city.width || y >= city.height) {
+      break
+    }
+
+    const tileIndex = city.index(x, y)
+
+    if (city.tileDrivable[tileIndex] !== 1 && city.tileCrosswalk[tileIndex] !== 1 && network.tileToNodeIndex[tileIndex] === -1) {
+      break
+    }
+
+    tiles.push(tileIndex)
+  }
+
+  return tiles.length > 0 ? tiles : [network.nodeTileIndexes[nodeIndex]]
+}
+
+function directionOffset(direction) {
+  if (direction === 'east') {
+    return { dx: 1, dy: 0 }
+  }
+
+  if (direction === 'west') {
+    return { dx: -1, dy: 0 }
+  }
+
+  if (direction === 'south') {
+    return { dx: 0, dy: 1 }
+  }
+
+  if (direction === 'north') {
+    return { dx: 0, dy: -1 }
+  }
+
+  return { dx: 0, dy: 0 }
+}

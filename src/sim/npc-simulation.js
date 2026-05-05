@@ -468,7 +468,7 @@ function prepareNpcForRouting(npc, deltaSeconds, context) {
     return
   }
 
-  if (!npc.routing.path && npc.routing.retrySeconds === 0) {
+  if (!npc.routing.routeField && npc.routing.retrySeconds === 0) {
     context.routePlanner.request(npc)
   }
 }
@@ -499,12 +499,9 @@ function updateNpcMovement(npc, deltaSeconds, context) {
 
 function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const target = npc.movement.target
-  const dx = target.position.x - npc.position.x
-  const dy = target.position.y - npc.position.y
-  const distance = Math.hypot(dx, dy)
   const maxStep = npc.movement.speed * deltaSeconds
 
-  if (distance <= maxStep || distance === 0) {
+  if (target.remainingDistance <= maxStep || target.remainingDistance === 0) {
     npc.position.x = target.position.x
     npc.position.y = target.position.y
     npc.tile.x = target.tile.x
@@ -512,17 +509,13 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
     npc.tile.index = target.tile.index
     npc.slot.id = target.slot.id
     npc.slot.index = target.slot.index
-    if (Number.isInteger(target.routeCursor) && npc.routing.cursor <= target.routeCursor) {
-      npc.routing.cursor = target.routeCursor + 1
-    }
-
     npc.movement.target = null
     return
   }
 
-  const ratio = maxStep / distance
-  npc.position.x += dx * ratio
-  npc.position.y += dy * ratio
+  npc.position.x += target.directionX * maxStep
+  npc.position.y += target.directionY * maxStep
+  target.remainingDistance -= maxStep
 }
 
 function followRoute(npc, deltaSeconds, context) {
@@ -531,14 +524,12 @@ function followRoute(npc, deltaSeconds, context) {
     return
   }
 
-  const route = npc.routing.path
-
-  if (!route || npc.routing.cursor >= route.length) {
+  if (!npc.routing.routeField) {
     context.routePlanner.request(npc)
     return
   }
 
-  const nextIndex = nextRouteTileIndex(npc)
+  const nextIndex = nextRouteTileIndex(npc, context)
 
   if (nextIndex === -1) {
     context.routePlanner.request(npc)
@@ -546,12 +537,12 @@ function followRoute(npc, deltaSeconds, context) {
   }
 
   if (!areNeighborTileIndexes(context.city, npc.tile.index, nextIndex)) {
-    npc.routing.path = null
+    npc.routing.routeField = null
     context.routePlanner.request(npc)
     return
   }
 
-  if (tryStartMoveToIndex(npc, nextIndex, context, npc.routing.cursor)) {
+  if (tryStartMoveToIndex(npc, nextIndex, context)) {
     npc.routing.blockedSeconds = 0
     return
   }
@@ -560,23 +551,13 @@ function followRoute(npc, deltaSeconds, context) {
 
   if (npc.routing.blockedSeconds >= finiteNumberOrDefault(context.config.routeBlockedReplanSeconds, NPC_CONFIG.routeBlockedReplanSeconds)) {
     npc.routing.blockedSeconds = 0
-    npc.routing.path = null
+    npc.routing.routeField = null
     context.routePlanner.request(npc)
   }
 }
 
-function nextRouteTileIndex(npc) {
-  while (
-    npc.routing.path &&
-    npc.routing.cursor < npc.routing.path.length &&
-    npc.routing.path[npc.routing.cursor] === npc.tile.index
-  ) {
-    npc.routing.cursor += 1
-  }
-
-  return npc.routing.path && npc.routing.path[npc.routing.cursor] !== undefined
-    ? npc.routing.path[npc.routing.cursor]
-    : -1
+function nextRouteTileIndex(npc, context) {
+  return routeFieldNextIndex(npc.routing.routeField, npc.tile.index)
 }
 
 function areNeighborTileIndexes(city, fromIndex, toIndex) {
@@ -594,29 +575,39 @@ function areNeighborTileIndexes(city, fromIndex, toIndex) {
 }
 
 function planRouteForNpc(npc, context) {
-  const path = context.city.findCachedPathIndexesByIndex(npc.tile.index, npc.goal.location.index, 'pedestrian')
+  const routeField = context.city.getCachedRouteFieldByIndex(npc.goal.location.index, 'pedestrian')
+  const nextIndex = routeFieldNextIndex(routeField, npc.tile.index)
 
-  if (path.length === 0) {
-    npc.routing.path = null
-    npc.routing.cursor = 0
+  if (!routeField || (npc.tile.index !== npc.goal.location.index && nextIndex === -1)) {
+    npc.routing.routeField = null
     npc.routing.retrySeconds = finiteNumberOrDefault(context.config.routeRetrySeconds, NPC_CONFIG.routeRetrySeconds)
     return
   }
 
-  npc.routing.path = path
-  npc.routing.cursor = path[0] === npc.tile.index ? 1 : 0
+  npc.routing.routeField = routeField
   npc.routing.destination = { ...npc.goal.location }
+  npc.routing.destinationIndex = npc.goal.location.index
   npc.routing.retrySeconds = 0
   npc.routing.blockedSeconds = 0
 }
 
-function tryStartMoveToIndex(npc, targetIndex, context, routeCursor = null) {
-  const tileX = targetIndex % context.city.width
-  const tileY = Math.floor(targetIndex / context.city.width)
-  return tryStartMoveToTile(npc, tileX, tileY, context, routeCursor, targetIndex)
+function routeFieldNextIndex(field, fromIndex) {
+  if (!field || fromIndex === field.endIndex) {
+    return -1
+  }
+
+  const directionIndex = field.nextDirection[fromIndex]
+
+  return directionIndex <= 7 ? fromIndex + field.offsets[directionIndex] : -1
 }
 
-function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null, knownTargetIndex = null) {
+function tryStartMoveToIndex(npc, targetIndex, context) {
+  const tileX = targetIndex % context.city.width
+  const tileY = Math.floor(targetIndex / context.city.width)
+  return tryStartMoveToTile(npc, tileX, tileY, context, targetIndex)
+}
+
+function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null) {
   const { city, random, config } = context
   const targetIndex = knownTargetIndex ?? city.index(tileX, tileY)
 
@@ -634,9 +625,15 @@ function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null, know
   const target = targetSlot.unlimited
     ? tileCenterPosition(city, tileX, tileY)
     : tileSlotPosition(city, tileX, tileY, targetSlot.slot, config, context.slotOffsets)
+  const dx = target.x - npc.position.x
+  const dy = target.y - npc.position.y
+  const distance = Math.hypot(dx, dy)
 
   npc.movement.target = {
     position: target,
+    directionX: distance === 0 ? 0 : dx / distance,
+    directionY: distance === 0 ? 0 : dy / distance,
+    remainingDistance: distance,
     tile: {
       x: tileX,
       y: tileY,
@@ -645,8 +642,7 @@ function tryStartMoveToTile(npc, tileX, tileY, context, routeCursor = null, know
     slot: {
       id: targetSlot.slot,
       index: targetSlot.slotIndex
-    },
-    routeCursor
+    }
   }
 
   return true
@@ -832,9 +828,9 @@ function drawNpcBlob(graphics, x, y, size, color) {
 
 function createEmptyRouteState() {
   return {
-    path: null,
-    cursor: 0,
+    routeField: null,
     destination: null,
+    destinationIndex: -1,
     queued: false,
     retrySeconds: 0,
     blockedSeconds: 0

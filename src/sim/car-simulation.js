@@ -89,6 +89,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     trafficReservations,
     cars,
     buildingsById,
+    yieldIndex: null,
     config: resolvedConfig
   }
   let destroyed = false
@@ -128,11 +129,15 @@ export function createCarSimulation(city, entityLayer, config = {}) {
       }
     }
 
+    context.yieldIndex = createTrafficYieldIndex(context)
+
     for (const car of cars) {
       if (car.state === 'driving') {
         updateDrivingCar(car, safeDelta, context)
       }
     }
+
+    context.yieldIndex = null
   }
 
   function render() {
@@ -296,7 +301,7 @@ function buildCarTrafficNetwork(city) {
     outgoingCursors[edgeFrom[edgeIndex]] += 1
   }
 
-  return {
+  const network = {
     city,
     laneGraph,
     nodeCount,
@@ -313,8 +318,15 @@ function buildCarTrafficNetwork(city) {
     outgoingOffsets,
     outgoingEdges,
     tileToNodeIndex,
-    nearestNodeByTile: buildNearestLaneNodeByTile(city, tileToNodeIndex)
+    nearestNodeByTile: buildNearestLaneNodeByTile(city, tileToNodeIndex),
+    edgeGeometry: edges.map(createEdgeGeometry),
+    edgeFootprintsByLength: new Map()
   }
+
+  precomputeEdgeFootprints(city, network, 2)
+  precomputeEdgeFootprints(city, network, 3)
+
+  return network
 }
 
 function buildGeneratedLaneChangeEdges(city, laneGraph, tileToNodeIndex) {
@@ -638,17 +650,24 @@ function createParkingManager(city, network, config) {
       return candidates
     }
 
-    for (let tileIndex = 0; tileIndex < city.tileParkable.length; tileIndex += 1) {
-      if (city.tileParkable[tileIndex] !== 1) {
-        continue
-      }
+    const minX = Math.max(0, entrance.x - radius)
+    const maxX = Math.min(city.width - 1, entrance.x + radius)
+    const minY = Math.max(0, entrance.y - radius)
+    const maxY = Math.min(city.height - 1, entrance.y + radius)
 
-      const x = tileIndex % city.width
-      const y = Math.floor(tileIndex / city.width)
-      const distance = Math.abs(x - entrance.x) + Math.abs(y - entrance.y)
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const tileIndex = city.index(x, y)
 
-      if (distance <= radius) {
-        candidates.push(tileIndex)
+        if (city.tileParkable[tileIndex] !== 1) {
+          continue
+        }
+
+        const distance = Math.abs(x - entrance.x) + Math.abs(y - entrance.y)
+
+        if (distance <= radius) {
+          candidates.push(tileIndex)
+        }
       }
     }
 
@@ -1155,15 +1174,19 @@ function updateDrivingCar(car, deltaSeconds, context) {
     const movement = car.movement
     const step = Math.min(remaining, movement.duration - movement.elapsed)
 
+    if (!car.position) {
+      car.position = { x: 0, y: 0 }
+    }
+
     movement.elapsed += step
     remaining -= step
-    car.position = edgePositionAt(movement.edge, movement.elapsed / movement.duration)
+    setCarPositionAt(car.position, movement.geometry, movement.elapsed / movement.duration)
 
     if (movement.elapsed < movement.duration) {
       return
     }
 
-    car.position = edgePositionAt(movement.edge, 1)
+    setCarPositionAt(car.position, movement.geometry, 1)
     car.route.currentNode = movement.toNodeIndex
     context.trafficReservations.releaseIfClear(car)
     car.movement = null
@@ -1180,7 +1203,7 @@ function startNextDrivingEdge(car, context) {
   const edge = context.network.edges[edgeIndex]
   const toNodeIndex = context.network.edgeTo[edgeIndex]
   const fromNodeIndex = context.network.edgeFrom[edgeIndex]
-  const nextFootprint = edgeDrivingFootprint(context.city, context.network, edge, toNodeIndex, car.lengthTiles)
+  const nextFootprint = edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles)
   const clearanceTiles = edgeClearanceTiles(edge)
   const trafficSignalGroup = activeTrafficSignalGroup(context.city, edge)
 
@@ -1199,7 +1222,7 @@ function startNextDrivingEdge(car, context) {
     return false
   }
 
-  const rightHandMovement = createRightHandMovement(car, context)
+  const rightHandMovement = getRightHandMovementForCar(car, context)
 
   if (rightHandMovement && shouldYieldByRightHandRule(car, rightHandMovement, context)) {
     return false
@@ -1236,6 +1259,7 @@ function startNextDrivingEdge(car, context) {
   car.movement = {
     edgeIndex,
     edge,
+    geometry: context.network.edgeGeometry[edgeIndex],
     toNodeIndex,
     elapsed: 0,
     duration: edgeDuration(edge, context.config)
@@ -1414,7 +1438,7 @@ function createRightHandMovement(car, context) {
     const toNodeIndex = context.network.edgeTo[edgeIndex]
     const toTileIndex = context.network.nodeTileIndexes[toNodeIndex]
 
-    appendUniqueTileIndexes(tileIndexes, edgeDrivingFootprint(context.city, context.network, edge, toNodeIndex, car.lengthTiles))
+    appendUniqueTileIndexes(tileIndexes, edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles))
 
     if (edge.direction !== startDirection) {
       sawDirectionChange = true
@@ -1452,6 +1476,7 @@ function createRightHandMovement(car, context) {
   const turn = explicitTurn || classifyTurn(startDirection, lastDirection)
 
   return {
+    edgeIndex: startEdgeIndex,
     edge: startEdge,
     fromNodeIndex: context.network.edgeFrom[startEdgeIndex],
     toNodeIndex: context.network.edgeTo[startEdgeIndex],
@@ -1463,8 +1488,57 @@ function createRightHandMovement(car, context) {
   }
 }
 
+function createTrafficYieldIndex(context) {
+  const movementByCarId = new Map()
+  const bySignalGroupId = new Map()
+  const byTileIndex = new Map()
+
+  for (const car of context.cars) {
+    if (car.state !== 'driving' || car.movement || !car.route || car.route.cursor >= car.route.edges.length) {
+      continue
+    }
+
+    const movement = createRightHandMovement(car, context)
+
+    if (!movement) {
+      continue
+    }
+
+    movementByCarId.set(car.id, movement)
+
+    if (movement.signalGroupId) {
+      appendIndexedCar(bySignalGroupId, movement.signalGroupId, car)
+    }
+
+    for (const tileIndex of movement.tileIndexes) {
+      appendIndexedCar(byTileIndex, tileIndex, car)
+    }
+  }
+
+  return {
+    movementByCarId,
+    bySignalGroupId,
+    byTileIndex
+  }
+}
+
+function appendIndexedCar(index, key, car) {
+  let cars = index.get(key)
+
+  if (!cars) {
+    cars = []
+    index.set(key, cars)
+  }
+
+  cars.push(car)
+}
+
+function getRightHandMovementForCar(car, context) {
+  return context.yieldIndex?.movementByCarId.get(car.id) || createRightHandMovement(car, context)
+}
+
 function shouldYieldByRightHandRule(car, movement, context) {
-  for (const other of context.cars) {
+  for (const other of rightHandCandidates(movement, context)) {
     if (other === car ||
         other.state !== 'driving' ||
         other.movement ||
@@ -1473,7 +1547,7 @@ function shouldYieldByRightHandRule(car, movement, context) {
       continue
     }
 
-    const otherMovement = createRightHandMovement(other, context)
+    const otherMovement = getRightHandMovementForCar(other, context)
 
     if (!otherMovement ||
         !rightHandMovementsConflict(movement, otherMovement) ||
@@ -1489,9 +1563,45 @@ function shouldYieldByRightHandRule(car, movement, context) {
   return false
 }
 
+function rightHandCandidates(movement, context) {
+  const yieldIndex = context.yieldIndex
+
+  if (!yieldIndex) {
+    return context.cars
+  }
+
+  const candidates = []
+  const seen = new Set()
+
+  if (movement.signalGroupId) {
+    appendRightHandCandidates(candidates, seen, yieldIndex.bySignalGroupId.get(movement.signalGroupId))
+  }
+
+  for (const tileIndex of movement.tileIndexes) {
+    appendRightHandCandidates(candidates, seen, yieldIndex.byTileIndex.get(tileIndex))
+  }
+
+  return candidates
+}
+
+function appendRightHandCandidates(candidates, seen, cars) {
+  if (!cars) {
+    return
+  }
+
+  for (const car of cars) {
+    if (seen.has(car.id)) {
+      continue
+    }
+
+    seen.add(car.id)
+    candidates.push(car)
+  }
+}
+
 function rightHandCandidateCanEnter(car, movement, context) {
   const edge = movement.edge
-  const nextFootprint = edgeDrivingFootprint(context.city, context.network, edge, movement.toNodeIndex, car.lengthTiles)
+  const nextFootprint = edgeDrivingFootprint(context.network, movement.edgeIndex, car.lengthTiles)
   const clearanceTiles = edgeClearanceTiles(edge)
   const trafficSignalGroup = activeTrafficSignalGroup(context.city, edge)
 
@@ -1527,9 +1637,15 @@ function rightHandMovementsConflict(a, b) {
     return true
   }
 
-  const bTiles = new Set(b.tileIndexes)
+  for (const aTileIndex of a.tileIndexes) {
+    for (const bTileIndex of b.tileIndexes) {
+      if (aTileIndex === bTileIndex) {
+        return true
+      }
+    }
+  }
 
-  return a.tileIndexes.some((tileIndex) => bTiles.has(tileIndex))
+  return false
 }
 
 function rightHandMovementMustYield(car, movement, other, otherMovement) {
@@ -1627,7 +1743,7 @@ function exitClearanceTilesForTrafficSignal(car, context, group) {
 
     hasExitedSignal = true
     outsideNodeCount += 1
-    appendUniqueTileIndexes(clearanceTiles, edgeDrivingFootprint(context.city, context.network, edge, toNodeIndex, car.lengthTiles))
+    appendUniqueTileIndexes(clearanceTiles, edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles))
 
     if (outsideNodeCount >= requiredOutsideNodes) {
       return clearanceTiles
@@ -1676,8 +1792,14 @@ function drivingFootprint(city, network, nodeIndex, directionName, lengthTiles) 
   return tiles.length > 0 ? tiles : [network.nodeTileIndexes[nodeIndex]]
 }
 
-function edgeDrivingFootprint(city, network, edge, toNodeIndex, lengthTiles) {
-  return drivingFootprint(city, network, toNodeIndex, edge.direction, lengthTiles)
+function edgeDrivingFootprint(network, edgeIndex, lengthTiles) {
+  let footprints = network.edgeFootprintsByLength.get(lengthTiles)
+
+  if (!footprints) {
+    footprints = precomputeEdgeFootprints(network.city, network, lengthTiles)
+  }
+
+  return footprints[edgeIndex]
 }
 
 function edgeClearanceTiles(edge) {
@@ -1707,51 +1829,111 @@ function edgeDuration(edge, config) {
   return Math.max(0.05, edge.worldLength / speedLimit)
 }
 
-function interpolate(from, to, ratio) {
-  return {
-    x: from.x + (to.x - from.x) * ratio,
-    y: from.y + (to.y - from.y) * ratio
-  }
-}
-
-function edgePositionAt(edge, ratio) {
+function createEdgeGeometry(edge) {
   const path = edge.worldPath
 
   if (!path || path.length === 0) {
-    return { x: 0, y: 0 }
+    return { point: true, x: 0, y: 0 }
   }
 
-  if (ratio <= 0 || path.length === 1) {
-    return { x: path[0][0], y: path[0][1] }
+  if (path.length === 1) {
+    return { point: true, x: path[0][0], y: path[0][1] }
   }
 
-  if (ratio >= 1) {
-    const end = path[path.length - 1]
-    return { x: end[0], y: end[1] }
+  if (path.length === 2) {
+    return {
+      straight: true,
+      x0: path[0][0],
+      y0: path[0][1],
+      x1: path[1][0],
+      y1: path[1][1]
+    }
   }
 
-  const targetDistance = edge.worldLength * ratio
-  let walkedDistance = 0
+  const cumulative = new Float32Array(path.length)
+  let distance = 0
 
   for (let index = 1; index < path.length; index += 1) {
     const from = path[index - 1]
     const to = path[index]
-    const segmentLength = Math.hypot(to[0] - from[0], to[1] - from[1])
 
-    if (walkedDistance + segmentLength >= targetDistance) {
-      const segmentRatio = segmentLength === 0 ? 0 : (targetDistance - walkedDistance) / segmentLength
-      return interpolate(
-        { x: from[0], y: from[1] },
-        { x: to[0], y: to[1] },
-        segmentRatio
-      )
-    }
-
-    walkedDistance += segmentLength
+    distance += Math.hypot(to[0] - from[0], to[1] - from[1])
+    cumulative[index] = distance
   }
 
-  const end = path[path.length - 1]
-  return { x: end[0], y: end[1] }
+  return { path, cumulative, distance }
+}
+
+function setCarPositionAt(position, geometry, ratio) {
+  if (geometry.point) {
+    position.x = geometry.x
+    position.y = geometry.y
+    return
+  }
+
+  if (ratio <= 0) {
+    if (geometry.straight) {
+      position.x = geometry.x0
+      position.y = geometry.y0
+    } else {
+      position.x = geometry.path[0][0]
+      position.y = geometry.path[0][1]
+    }
+    return
+  }
+
+  if (ratio >= 1) {
+    if (geometry.straight) {
+      position.x = geometry.x1
+      position.y = geometry.y1
+    } else {
+      const end = geometry.path[geometry.path.length - 1]
+      position.x = end[0]
+      position.y = end[1]
+    }
+    return
+  }
+
+  if (geometry.straight) {
+    position.x = geometry.x0 + (geometry.x1 - geometry.x0) * ratio
+    position.y = geometry.y0 + (geometry.y1 - geometry.y0) * ratio
+    return
+  }
+
+  const targetDistance = geometry.distance * ratio
+  const cumulative = geometry.cumulative
+
+  for (let index = 1; index < cumulative.length; index += 1) {
+    if (cumulative[index] >= targetDistance) {
+      const from = geometry.path[index - 1]
+      const to = geometry.path[index]
+      const previousDistance = cumulative[index - 1]
+      const segmentDistance = cumulative[index] - previousDistance
+      const segmentRatio = segmentDistance === 0 ? 0 : (targetDistance - previousDistance) / segmentDistance
+
+      position.x = from[0] + (to[0] - from[0]) * segmentRatio
+      position.y = from[1] + (to[1] - from[1]) * segmentRatio
+      return
+    }
+  }
+
+  const end = geometry.path[geometry.path.length - 1]
+  position.x = end[0]
+  position.y = end[1]
+}
+
+function precomputeEdgeFootprints(city, network, lengthTiles) {
+  const footprints = new Array(network.edgeCount)
+
+  for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
+    const edge = network.edges[edgeIndex]
+    const toNodeIndex = network.edgeTo[edgeIndex]
+
+    footprints[edgeIndex] = drivingFootprint(city, network, toNodeIndex, edge.direction, lengthTiles)
+  }
+
+  network.edgeFootprintsByLength.set(lengthTiles, footprints)
+  return footprints
 }
 
 function drawCars(graphics, cars, city, config) {

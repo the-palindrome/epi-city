@@ -457,6 +457,24 @@ describe('city map validation and compile', () => {
     expect(second).toEqual(first)
   })
 
+  it('exposes cached route fields for allocation-free next-hop movement', () => {
+    const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
+    const startIndex = city.index(0, 1)
+    const targetIndex = city.index(2, 1)
+    const field = city.getCachedRouteFieldByIndex(targetIndex, 'pedestrian')
+    const route = [startIndex]
+    let current = startIndex
+
+    for (let guard = 0; guard < city.tiles.length && current !== targetIndex; guard += 1) {
+      current = city.getRouteFieldNextIndex(field, current)
+      route.push(current)
+    }
+
+    expect(route.at(-1)).toBe(targetIndex)
+    expect(route).toEqual(city.findCachedPathIndexesByIndex(startIndex, targetIndex, 'pedestrian'))
+    expect(city.getRouteFieldNextIndex(field, targetIndex)).toBe(-1)
+  })
+
   it('cycles crosswalk signals through red, green, and yellow phases', () => {
     const city = compileCityMap(validateCityMap(createCrosswalkMap()))
 
