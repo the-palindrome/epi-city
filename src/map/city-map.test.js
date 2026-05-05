@@ -90,6 +90,73 @@ function createOpenSidewalkMap(overrides = {}) {
   }
 }
 
+function createSignalMap(laneGraphOverrides = {}) {
+  return {
+    width: 5,
+    height: 5,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      r: { category: 'road', walkable: false, drivable: true, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: []
+    },
+    rows: [
+      'rrrrr',
+      'rrrrr',
+      'rrrrr',
+      'rrrrr',
+      'rrrrr'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0]
+    ],
+    laneGraph: createSignalLaneGraph(laneGraphOverrides)
+  }
+}
+
+function createSignalLaneGraph(overrides = {}) {
+  return {
+    encoding: 'directed-lanes-v1',
+    drivingSide: 'right',
+    coordinateSpace: 'tile',
+    nodes: [
+      { id: 'west', x: 1.5, y: 2.5, tile: { x: 1, y: 2 }, direction: 'east' },
+      { id: 'center', x: 2.5, y: 2.5, tile: { x: 2, y: 2 }, direction: 'east' },
+      { id: 'east', x: 3.5, y: 2.5, tile: { x: 3, y: 2 }, direction: 'east' },
+      { id: 'north', x: 2.5, y: 1.5, tile: { x: 2, y: 1 }, direction: 'south' },
+      { id: 'south', x: 2.5, y: 3.5, tile: { x: 2, y: 3 }, direction: 'south' }
+    ],
+    edges: [
+      createLaneEdge('west-center', 'west', 'center', 'east', 1, 2, 2, 2),
+      createLaneEdge('center-east', 'center', 'east', 'east', 2, 2, 3, 2),
+      createLaneEdge('north-center', 'north', 'center', 'south', 2, 1, 2, 2),
+      createLaneEdge('center-south', 'center', 'south', 'south', 2, 2, 2, 3)
+    ],
+    ...overrides
+  }
+}
+
+function createLaneEdge(id, from, to, direction, fromX, fromY, toX, toY, options = {}) {
+  return {
+    id,
+    from,
+    to,
+    type: options.type || 'lane',
+    direction,
+    turn: options.turn,
+    speedLimit: options.speedLimit || 28,
+    path: [[fromX + 0.5, fromY + 0.5], [toX + 0.5, toY + 0.5]]
+  }
+}
+
 describe('city map validation and compile', () => {
   it('normalizes valid authoring JSON into the runtime city API', () => {
     const map = validateCityMap(createMap())
@@ -408,6 +475,73 @@ describe('city map validation and compile', () => {
 
     city.updateCrosswalkSignals(CROSSWALK_SIGNAL_PHASES[2].duration)
     expect(city.getCrosswalkSignalState()).toBe('red')
+  })
+
+  it('auto-generates traffic signal phases from lane graph intersections', () => {
+    const city = compileCityMap(validateCityMap(createSignalMap({
+      trafficSignals: {
+        encoding: 'traffic-signals-v1',
+        overrides: [
+          { id: 'traffic-signal-2-2', tile: { x: 2, y: 2 }, phaseOffset: 0 }
+        ]
+      }
+    })))
+
+    expect(city.trafficSignals.groups).toHaveLength(1)
+    expect(city.trafficSignals.groups[0]).toMatchObject({
+      id: 'traffic-signal-2-2',
+      tile: { x: 2, y: 2 },
+      overridden: true
+    })
+    expect(city.getTrafficSignalForEdge('west-center').id).toBe('traffic-signal-2-2')
+    expect(city.canEnterTrafficSignal(city.laneGraph.getEdge('north-center'))).toBe(true)
+    expect(city.canEnterTrafficSignal(city.laneGraph.getEdge('west-center'))).toBe(false)
+
+    city.updateTrafficSignals(9)
+
+    expect(city.canEnterTrafficSignal(city.laneGraph.getEdge('west-center'))).toBe(true)
+    expect(city.canEnterTrafficSignal(city.laneGraph.getEdge('north-center'))).toBe(false)
+  })
+
+  it('supports disabling auto-generated traffic signals with overrides', () => {
+    const city = compileCityMap(validateCityMap(createSignalMap({
+      trafficSignals: {
+        encoding: 'traffic-signals-v1',
+        overrides: [
+          { id: 'traffic-signal-2-2', tile: { x: 2, y: 2 }, enabled: false }
+        ]
+      }
+    })))
+
+    expect(city.getTrafficSignalState('traffic-signal-2-2')).toMatchObject({
+      enabled: false
+    })
+    expect(city.canEnterTrafficSignal(city.laneGraph.getEdge('west-center'))).toBe(true)
+  })
+
+  it('rejects malformed traffic signal overrides', () => {
+    expect(() => validateCityMap(createSignalMap({
+      trafficSignals: {
+        encoding: 'traffic-signals-v1',
+        overrides: [
+          {
+            id: 'traffic-signal-2-2',
+            phases: [
+              { movement: 'east-west', state: 'green', duration: 0 }
+            ]
+          }
+        ]
+      }
+    }))).toThrow(/duration must be positive/)
+
+    expect(() => validateCityMap(createSignalMap({
+      trafficSignals: {
+        encoding: 'traffic-signals-v1',
+        overrides: [
+          { id: 'traffic-signal-9-9' }
+        ]
+      }
+    }))).toThrow(/does not match/)
   })
 
   it('resets crosswalk signals to the initial red phase', () => {

@@ -273,6 +273,7 @@
       const BUILDING_TYPES = Object.freeze(['residential', 'commercial', 'hospital']);
       const BEHAVIOR_LABELS = Object.freeze(['walkable', 'parkable', 'drivable']);
       const LANE_GRAPH_ENCODING = 'directed-lanes-v1';
+      const TRAFFIC_SIGNAL_ENCODING = 'traffic-signals-v1';
       const LANE_GRAPH_DIRECTIONS = Object.freeze(['north', 'east', 'south', 'west']);
       const LANE_GRAPH_DIRECTION_OFFSETS = Object.freeze({
         north: { dx: 0, dy: -1 },
@@ -285,9 +286,21 @@
       const LANE_GRAPH_LEFT_TURNS = Object.freeze({ north: 'west', west: 'south', south: 'east', east: 'north' });
       const LANE_GRAPH_EDGE_TYPES = Object.freeze(['lane', 'turn']);
       const LANE_GRAPH_TURN_TYPES = Object.freeze(['left', 'right', 'straight', 'u-turn', 'merge']);
+      const TRAFFIC_SIGNAL_MOVEMENTS = Object.freeze(['north-south', 'east-west', 'all']);
+      const TRAFFIC_SIGNAL_STATES = Object.freeze(['green', 'yellow', 'red']);
+      const DEFAULT_TRAFFIC_SIGNAL_PHASES = Object.freeze([
+        Object.freeze({ movement: 'north-south', state: 'green', duration: 6 }),
+        Object.freeze({ movement: 'north-south', state: 'yellow', duration: 2 }),
+        Object.freeze({ movement: 'all', state: 'red', duration: 1 }),
+        Object.freeze({ movement: 'east-west', state: 'green', duration: 6 }),
+        Object.freeze({ movement: 'east-west', state: 'yellow', duration: 2 }),
+        Object.freeze({ movement: 'all', state: 'red', duration: 1 })
+      ]);
       const LANE_GRAPH_TOOLS = Object.freeze([
         { value: 'segment', label: 'draw segment', color: '#4fb7d8' },
         { value: 'new-segment', label: 'new segment', color: '#f2cc47' },
+        { value: 'toggle-signal', label: 'toggle signal', color: '#7be36f' },
+        { value: 'signal-offset', label: 'offset signal', color: '#b78cff' },
         { value: 'delete', label: 'delete tile', color: '#d94a48' },
         { value: 'clear', label: 'clear graph', color: '#ffffff' }
       ]);
@@ -297,7 +310,10 @@
         node: '#ffffff',
         selected: '#ff6f91',
         activeTile: '#ff6f91',
-        preview: '#2bd36f'
+        preview: '#2bd36f',
+        signal: '#7be36f',
+        signalDisabled: '#d94a48',
+        signalOverride: '#b78cff'
       });
       const EMPTY_LABEL_VALUE = null;
       const TYPE_COLORS = Object.freeze({
@@ -489,7 +505,15 @@
           drivingSide: 'right',
           coordinateSpace: 'tile',
           nodes: [],
-          edges: []
+          edges: [],
+          trafficSignals: createEmptyTrafficSignalLayout()
+        };
+      }
+
+      function createEmptyTrafficSignalLayout() {
+        return {
+          encoding: TRAFFIC_SIGNAL_ENCODING,
+          overrides: []
         };
       }
 
@@ -506,6 +530,11 @@
         };
 
         validateLaneGraph(normalizedGraph);
+        const graphForSignals = {
+          ...normalizedGraph,
+          nodes: normalizedGraph.nodes.map((node) => ({ ...node, tile: { ...node.tile } })),
+          edges: normalizedGraph.edges.map((edge) => ({ ...edge }))
+        };
 
         return {
           encoding: LANE_GRAPH_ENCODING,
@@ -518,7 +547,8 @@
           edges: normalizedGraph.edges.map((edge) => ({
             ...edge,
             path: edge.path.map((point) => [...point])
-          }))
+          })),
+          trafficSignals: normalizeTrafficSignalsLayout(normalizedGraph.trafficSignals, graphForSignals)
         };
       }
 
@@ -545,18 +575,144 @@
         return uniqueEdges;
       }
 
+      function normalizeTrafficSignalsLayout(trafficSignals, graph) {
+        if (trafficSignals === undefined || trafficSignals === null) {
+          return createEmptyTrafficSignalLayout();
+        }
+
+        if (!trafficSignals || typeof trafficSignals !== 'object' || Array.isArray(trafficSignals)) {
+          throw new Error('Traffic signal metadata must be an object.');
+        }
+
+        if (trafficSignals.encoding !== TRAFFIC_SIGNAL_ENCODING) {
+          throw new Error(`Traffic signal encoding must be ${TRAFFIC_SIGNAL_ENCODING}.`);
+        }
+
+        if (!Array.isArray(trafficSignals.overrides)) {
+          throw new Error('Traffic signal overrides must be an array.');
+        }
+
+        const autoSignalIds = new Set(buildAutoTrafficSignalGroups(graph).map((group) => group.id));
+        const overrideIds = new Set();
+        const overrides = [];
+
+        for (let index = 0; index < trafficSignals.overrides.length; index += 1) {
+          const override = normalizeTrafficSignalOverride(trafficSignals.overrides[index], index, overrideIds);
+
+          if (!autoSignalIds.has(override.id)) {
+            continue;
+          }
+
+          overrides.push(override);
+        }
+
+        return {
+          encoding: TRAFFIC_SIGNAL_ENCODING,
+          overrides
+        };
+      }
+
+      function normalizeTrafficSignalOverride(override, index, overrideIds) {
+        if (!override || typeof override !== 'object' || Array.isArray(override)) {
+          throw new Error(`Traffic signal override ${index} must be an object.`);
+        }
+
+        if (typeof override.id !== 'string' || override.id.length === 0) {
+          throw new Error(`Traffic signal override ${index} must include a non-empty id.`);
+        }
+
+        if (overrideIds.has(override.id)) {
+          throw new Error(`Traffic signal override ${override.id} is duplicated.`);
+        }
+
+        overrideIds.add(override.id);
+
+        const normalized = {
+          id: override.id,
+          enabled: override.enabled !== false,
+          phaseOffset: normalizeTrafficSignalPhaseOffset(override.phaseOffset)
+        };
+
+        if (override.tile !== undefined) {
+          if (!override.tile || typeof override.tile !== 'object' || Array.isArray(override.tile) ||
+              !inGrid(override.tile.x, override.tile.y)) {
+            throw new Error(`Traffic signal override ${override.id} tile must be in bounds.`);
+          }
+
+          normalized.tile = { x: override.tile.x, y: override.tile.y };
+        }
+
+        if (override.phases !== undefined) {
+          normalized.phases = normalizeTrafficSignalPhases(override.phases, `Traffic signal override ${override.id}`);
+        }
+
+        return normalized;
+      }
+
+      function normalizeTrafficSignalPhaseOffset(value) {
+        if (value === undefined) {
+          return 0;
+        }
+
+        if (!Number.isFinite(value) || value < 0) {
+          throw new Error('Traffic signal phaseOffset must be a non-negative number.');
+        }
+
+        return value;
+      }
+
+      function normalizeTrafficSignalPhases(phases, subject) {
+        if (!Array.isArray(phases) || phases.length === 0) {
+          throw new Error(`${subject} phases must be a non-empty array.`);
+        }
+
+        return phases.map((phase, index) => {
+          if (!phase || typeof phase !== 'object' || Array.isArray(phase)) {
+            throw new Error(`${subject} phase ${index} must be an object.`);
+          }
+
+          if (!TRAFFIC_SIGNAL_MOVEMENTS.includes(phase.movement)) {
+            throw new Error(`${subject} phase ${index} has an invalid movement.`);
+          }
+
+          if (!TRAFFIC_SIGNAL_STATES.includes(phase.state)) {
+            throw new Error(`${subject} phase ${index} has an invalid state.`);
+          }
+
+          if (!Number.isFinite(phase.duration) || phase.duration <= 0) {
+            throw new Error(`${subject} phase ${index} duration must be positive.`);
+          }
+
+          return {
+            movement: phase.movement,
+            state: phase.state,
+            duration: phase.duration
+          };
+        });
+      }
+
       function cloneLaneGraph(laneGraph) {
         return normalizeLaneGraphLayout(laneGraph);
       }
 
       function buildLaneGraphJson() {
         const laneGraph = cloneLaneGraph(state.map.laneGraph);
+        const signalOverrides = laneGraph.trafficSignals?.overrides || [];
 
-        if (laneGraph.nodes.length === 0 && laneGraph.edges.length === 0) {
+        if (laneGraph.nodes.length === 0 && laneGraph.edges.length === 0 && signalOverrides.length === 0) {
           return null;
         }
 
-        return laneGraph;
+        return {
+          encoding: laneGraph.encoding,
+          drivingSide: laneGraph.drivingSide,
+          coordinateSpace: laneGraph.coordinateSpace,
+          nodes: laneGraph.nodes,
+          edges: laneGraph.edges,
+          ...(signalOverrides.length > 0
+            ? { trafficSignals: { encoding: TRAFFIC_SIGNAL_ENCODING, overrides: signalOverrides } }
+            : {})
+        };
       }
 
       function assignLaneGraphJson(payload) {
@@ -685,15 +841,86 @@
       }
 
       function clearLaneGraph(graph) {
-        if (graph.nodes.length === 0 && graph.edges.length === 0) {
+        const overrides = graph.trafficSignals?.overrides || [];
+
+        if (graph.nodes.length === 0 && graph.edges.length === 0 && overrides.length === 0) {
           return false;
         }
 
         graph.nodes = [];
         graph.edges = [];
+        graph.trafficSignals = createEmptyTrafficSignalLayout();
         state.selectedLaneNodeId = null;
         state.activeLaneSegmentTile = null;
         return true;
+      }
+
+      function ensureTrafficSignalLayout(graph) {
+        if (!graph.trafficSignals) {
+          graph.trafficSignals = createEmptyTrafficSignalLayout();
+        }
+
+        return graph.trafficSignals;
+      }
+
+      function trafficSignalOverrideForGroup(graph, group) {
+        return (graph.trafficSignals?.overrides || []).find((override) => override.id === group.id) || null;
+      }
+
+      function upsertTrafficSignalOverride(graph, group, mutator) {
+        const trafficSignals = ensureTrafficSignalLayout(graph);
+        let override = trafficSignals.overrides.find((item) => item.id === group.id);
+
+        if (!override) {
+          override = {
+            id: group.id,
+            tile: { ...group.tile },
+            enabled: true,
+            phaseOffset: 0
+          };
+          trafficSignals.overrides.push(override);
+        }
+
+        mutator(override);
+        override.tile = { ...group.tile };
+        return override;
+      }
+
+      function toggleTrafficSignalOverride(graph, group) {
+        const trafficSignals = ensureTrafficSignalLayout(graph);
+        const override = trafficSignalOverrideForGroup(graph, group);
+
+        if (!override) {
+          upsertTrafficSignalOverride(graph, group, (nextOverride) => {
+            nextOverride.enabled = false;
+          });
+          return true;
+        }
+
+        if (override.enabled === false) {
+          trafficSignals.overrides = trafficSignals.overrides.filter((item) => item.id !== group.id);
+        } else {
+          override.enabled = false;
+        }
+
+        return true;
+      }
+
+      function offsetTrafficSignalOverride(graph, group) {
+        const cycleDuration = trafficSignalCycleDuration(DEFAULT_TRAFFIC_SIGNAL_PHASES);
+        const currentOffset = trafficSignalEffectivePhaseOffset(graph, group);
+
+        upsertTrafficSignalOverride(graph, group, (override) => {
+          override.enabled = true;
+          override.phaseOffset = (currentOffset + 2) % cycleDuration;
+        });
+
+        return true;
+      }
+
+      function trafficSignalEffectivePhaseOffset(graph, group) {
+        const override = trafficSignalOverrideForGroup(graph, group);
+        return override?.phaseOffset ?? defaultTrafficSignalPhaseOffset(group.tile);
       }
 
       function laneTurnType(fromDirection, toDirection) {
@@ -764,6 +991,160 @@
 
       function sameTile(a, b) {
         return Boolean(a && b && a.x === b.x && a.y === b.y);
+      }
+
+      function buildAutoTrafficSignalGroups(graph) {
+        const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+        const axesByNodeId = new Map(graph.nodes.map((node) => [node.id, new Set()]));
+
+        for (const edge of graph.edges) {
+          const axis = trafficSignalMovementForDirection(edge.direction);
+
+          if (!axis) {
+            continue;
+          }
+
+          if (axesByNodeId.has(edge.from)) {
+            axesByNodeId.get(edge.from).add(axis);
+          }
+
+          if (axesByNodeId.has(edge.to)) {
+            axesByNodeId.get(edge.to).add(axis);
+          }
+        }
+
+        const candidateTiles = [];
+        const candidateKeys = new Set();
+
+        for (const node of graph.nodes) {
+          const axes = axesByNodeId.get(node.id);
+
+          if (!axes || axes.size < 2) {
+            continue;
+          }
+
+          const key = tileKey(node.tile.x, node.tile.y);
+          candidateKeys.add(key);
+          candidateTiles.push({ x: node.tile.x, y: node.tile.y });
+        }
+
+        candidateTiles.sort(compareTiles);
+
+        const groups = [];
+        const visited = new Set();
+
+        for (const tile of candidateTiles) {
+          const startKey = tileKey(tile.x, tile.y);
+
+          if (visited.has(startKey)) {
+            continue;
+          }
+
+          const tiles = [];
+          const stack = [tile];
+          visited.add(startKey);
+
+          while (stack.length > 0) {
+            const current = stack.pop();
+            tiles.push(current);
+
+            for (const offset of Object.values(LANE_GRAPH_DIRECTION_OFFSETS)) {
+              const nextTile = { x: current.x + offset.dx, y: current.y + offset.dy };
+              const nextKey = tileKey(nextTile.x, nextTile.y);
+
+              if (!candidateKeys.has(nextKey) || visited.has(nextKey)) {
+                continue;
+              }
+
+              visited.add(nextKey);
+              stack.push(nextTile);
+            }
+          }
+
+          tiles.sort(compareTiles);
+          const entryEdges = trafficSignalEntryEdges(graph.edges, nodesById, tiles);
+          const entryAxes = new Set(entryEdges.map((entry) => entry.axis));
+
+          if (entryAxes.size < 2) {
+            continue;
+          }
+
+          const anchor = tiles[0];
+          groups.push({
+            id: `traffic-signal-${anchor.x}-${anchor.y}`,
+            tile: { ...anchor },
+            tiles,
+            entryEdges
+          });
+        }
+
+        return groups;
+      }
+
+      function trafficSignalEntryEdges(edges, nodesById, tiles) {
+        const tileKeys = new Set(tiles.map((tile) => tileKey(tile.x, tile.y)));
+        const entryEdges = [];
+
+        for (const edge of edges) {
+          const fromNode = nodesById.get(edge.from);
+          const toNode = nodesById.get(edge.to);
+
+          if (!fromNode || !toNode) {
+            continue;
+          }
+
+          const fromInside = tileKeys.has(tileKey(fromNode.tile.x, fromNode.tile.y));
+          const toInside = tileKeys.has(tileKey(toNode.tile.x, toNode.tile.y));
+
+          if (fromInside || !toInside) {
+            continue;
+          }
+
+          const axis = trafficSignalMovementForDirection(edge.direction);
+
+          if (!axis) {
+            continue;
+          }
+
+          entryEdges.push({
+            edgeId: edge.id,
+            axis,
+            direction: edge.direction
+          });
+        }
+
+        return entryEdges.sort((a, b) => a.edgeId.localeCompare(b.edgeId));
+      }
+
+      function trafficSignalGroupForTile(graph, tileX, tileY) {
+        return buildAutoTrafficSignalGroups(graph).find((group) =>
+          group.tiles.some((tile) => tile.x === tileX && tile.y === tileY)
+        ) || null;
+      }
+
+      function trafficSignalMovementForDirection(direction) {
+        if (direction === 'north' || direction === 'south') {
+          return 'north-south';
+        }
+
+        if (direction === 'east' || direction === 'west') {
+          return 'east-west';
+        }
+
+        return null;
+      }
+
+      function trafficSignalCycleDuration(phases) {
+        return phases.reduce((total, phase) => total + phase.duration, 0);
+      }
+
+      function defaultTrafficSignalPhaseOffset(tile) {
+        const cycleDuration = trafficSignalCycleDuration(DEFAULT_TRAFFIC_SIGNAL_PHASES);
+        return (tile.x * 3 + tile.y * 5) % cycleDuration;
+      }
+
+      function compareTiles(a, b) {
+        return a.y - b.y || a.x - b.x;
       }
 
       function laneEdgeExists(graph, fromId, toId) {
@@ -853,6 +1234,36 @@
           return;
         }
 
+        if (tool === 'toggle-signal' || tool === 'signal-offset') {
+          const signalGroup = trafficSignalGroupForTile(state.map.laneGraph, tileX, tileY);
+
+          if (!signalGroup) {
+            setStatus(`No auto-generated traffic signal at ${tileX},${tileY}.`, true);
+            return;
+          }
+
+          const changed = applyLaneGraphMutation((graph) => {
+            const group = trafficSignalGroupForTile(graph, tileX, tileY);
+
+            if (!group) {
+              return false;
+            }
+
+            return tool === 'toggle-signal'
+              ? toggleTrafficSignalOverride(graph, group)
+              : offsetTrafficSignalOverride(graph, group);
+          }, tool === 'toggle-signal'
+            ? `Toggled traffic signal ${signalGroup.id}.`
+            : `Adjusted traffic signal ${signalGroup.id} phase offset.`);
+
+          if (!changed) {
+            updateStats();
+            draw();
+          }
+
+          return;
+        }
+
         if (tool !== 'segment') {
           return;
         }
@@ -939,6 +1350,8 @@
           drawLaneGraphArrowHead(edge);
         }
 
+        drawTrafficSignalOverlay(graph);
+
         for (const node of graph.nodes) {
           const selected = node.id === state.selectedLaneNodeId;
           const point = laneGraphPointToCanvas(node.x, node.y);
@@ -962,6 +1375,28 @@
 
         drawLaneGraphSegmentPreview();
         ctx.globalAlpha = 1;
+      }
+
+      function drawTrafficSignalOverlay(graph) {
+        for (const group of buildAutoTrafficSignalGroups(graph)) {
+          const override = trafficSignalOverrideForGroup(graph, group);
+          const point = laneGraphPointToCanvas(group.tile.x + 0.5, group.tile.y + 0.5);
+          const radius = 6 / state.view.zoom;
+          const disabled = override && override.enabled === false;
+
+          ctx.fillStyle = disabled ? LANE_GRAPH_COLORS.signalDisabled : LANE_GRAPH_COLORS.signal;
+          ctx.strokeStyle = override ? LANE_GRAPH_COLORS.signalOverride : '#102014';
+          ctx.lineWidth = 1.8 / state.view.zoom;
+          ctx.beginPath();
+          ctx.rect(point.x - radius, point.y - radius, radius * 2, radius * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#101410';
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 2.2 / state.view.zoom, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       function drawLaneGraphSegmentPreview() {
@@ -1054,6 +1489,10 @@
 
         if (!Array.isArray(laneGraph.nodes) || !Array.isArray(laneGraph.edges)) {
           throw new Error('Lane graph nodes and edges must be arrays.');
+        }
+
+        if (laneGraph.trafficSignals !== undefined) {
+          validateTrafficSignalMetadata(laneGraph.trafficSignals);
         }
 
         const nodeIds = new Set();
@@ -1166,6 +1605,26 @@
               edge.path[1][1] !== toNode.y) {
             throw new Error(`Lane graph edge ${edge.id} path must connect its centered endpoint nodes.`);
           }
+        }
+      }
+
+      function validateTrafficSignalMetadata(trafficSignals) {
+        if (!trafficSignals || typeof trafficSignals !== 'object' || Array.isArray(trafficSignals)) {
+          throw new Error('Traffic signal metadata must be an object.');
+        }
+
+        if (trafficSignals.encoding !== TRAFFIC_SIGNAL_ENCODING) {
+          throw new Error(`Traffic signal encoding must be ${TRAFFIC_SIGNAL_ENCODING}.`);
+        }
+
+        if (!Array.isArray(trafficSignals.overrides)) {
+          throw new Error('Traffic signal overrides must be an array.');
+        }
+
+        const overrideIds = new Set();
+
+        for (let index = 0; index < trafficSignals.overrides.length; index += 1) {
+          normalizeTrafficSignalOverride(trafficSignals.overrides[index], index, overrideIds);
         }
       }
 
@@ -2965,8 +3424,12 @@
             addStat('unknown', unknownCount);
           }
         } else if (layer === 'laneGraph') {
+          const signalGroups = buildAutoTrafficSignalGroups(state.map.laneGraph);
+          const signalOverrides = state.map.laneGraph.trafficSignals?.overrides || [];
           addStat('lane nodes', state.map.laneGraph.nodes.length);
           addStat('lane edges', state.map.laneGraph.edges.length);
+          addStat('traffic signals', signalGroups.length);
+          addStat('signal overrides', signalOverrides.length);
           addStat('lane tool', state.selectedLaneGraphTool);
           addStat('segment end', laneTileLabel(state.activeLaneSegmentTile));
           addStat('selected node', state.selectedLaneNodeId || 'none');

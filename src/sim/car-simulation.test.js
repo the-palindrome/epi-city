@@ -192,6 +192,45 @@ function createLaneChangeTrafficCity() {
   }))
 }
 
+function createTrafficSignalCity() {
+  return compileCityMap(validateCityMap({
+    width: 7,
+    height: 5,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      p: { category: 'sidewalk', walkable: true, drivable: false, parkable: true },
+      r: { category: 'road', walkable: false, drivable: true, parkable: false },
+      c: { category: 'crosswalk', walkable: true, drivable: true, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: [
+        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+      ]
+    },
+    rows: [
+      'sssrsss',
+      'sbsrsbs',
+      'ppprppp',
+      'rrrcrrr',
+      'sssrsss'
+    ],
+    textureRows: [
+      [0, 0, 0, 2, 0, 0, 0],
+      [0, 1, 0, 2, 0, 1, 0],
+      [0, 0, 0, 2, 0, 0, 0],
+      [2, 2, 2, 3, 2, 2, 2],
+      [0, 0, 0, 2, 0, 0, 0]
+    ],
+    laneGraph: createTrafficSignalLaneGraph()
+  }))
+}
+
 function createLineLaneGraph(width, y) {
   const nodes = []
   const edges = []
@@ -211,6 +250,65 @@ function createLineLaneGraph(width, y) {
     coordinateSpace: 'tile',
     nodes,
     edges
+  }
+}
+
+function createTrafficSignalLaneGraph() {
+  const nodes = []
+  const edges = []
+  const nodeIds = new Map()
+
+  function ensureNode(x, y, direction) {
+    const key = `${x},${y}`
+    const existing = nodeIds.get(key)
+
+    if (existing) {
+      return existing
+    }
+
+    const node = {
+      id: `node-${x}-${y}`,
+      x: x + 0.5,
+      y: y + 0.5,
+      tile: { x, y },
+      direction
+    }
+
+    nodeIds.set(key, node)
+    nodes.push(node)
+    return node
+  }
+
+  for (let x = 0; x < 7; x += 1) {
+    ensureNode(x, 3, 'east')
+  }
+
+  for (let y = 0; y < 5; y += 1) {
+    ensureNode(3, y, 'south')
+  }
+
+  for (let x = 0; x < 6; x += 1) {
+    edges.push(createLaneEdge(`east-${x}`, `node-${x}-3`, `node-${x + 1}-3`, 'east', x, 3, x + 1, 3))
+    edges.push(createLaneEdge(`west-${x + 1}`, `node-${x + 1}-3`, `node-${x}-3`, 'west', x + 1, 3, x, 3))
+  }
+
+  for (let y = 0; y < 4; y += 1) {
+    edges.push(createLaneEdge(`south-${y}`, `node-3-${y}`, `node-3-${y + 1}`, 'south', 3, y, 3, y + 1))
+    edges.push(createLaneEdge(`north-${y + 1}`, `node-3-${y + 1}`, `node-3-${y}`, 'north', 3, y + 1, 3, y))
+  }
+
+  return {
+    encoding: 'directed-lanes-v1',
+    drivingSide: 'right',
+    coordinateSpace: 'tile',
+    nodes,
+    edges,
+    trafficSignals: {
+      encoding: 'traffic-signals-v1',
+      overrides: [
+        { id: 'traffic-signal-3-3', tile: { x: 3, y: 3 }, phaseOffset: 0 }
+      ]
+    }
   }
 }
 
@@ -319,6 +417,15 @@ function routeEdges(planner, startNodeId, endNodeId) {
   const route = planner.findRoute(nodeIndexes.get(startNodeId), nodeIndexes.get(endNodeId))
 
   return route.map((edgeIndex) => planner.network.edges[edgeIndex])
+}
+
+function routeIndexesByEdgeId(network, edgeIds) {
+  return edgeIds.map((edgeId) => {
+    const edgeIndex = network.edges.findIndex((edge) => edge.id === edgeId)
+
+    expect(edgeIndex).toBeGreaterThanOrEqual(0)
+    return edgeIndex
+  })
 }
 
 function isGeneratedLaneChangeEdge(edge) {
@@ -525,6 +632,142 @@ describe('car simulation', () => {
     expect(car.movement.edge.sweptTiles.length).toBeGreaterThan(car.lengthTiles)
     expect(car.occupiedTiles).toHaveLength(car.lengthTiles)
     expect(new Set(car.occupiedTiles).size).toBe(car.lengthTiles)
+
+    simulation.destroy()
+  })
+
+  it('waits before entering an intersection traffic signal and proceeds on the matching green phase', () => {
+    const city = createTrafficSignalCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock: createClock(8.5),
+      random: createSeededRandom('traffic-signal'),
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const car = simulation.cars[0]
+    const signalTileIndex = city.index(3, 3)
+
+    city.setCrosswalkSignalState('green')
+    city.resetTrafficSignals()
+    simulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.movement).toBeNull()
+    expect(car.occupiedTiles).not.toContain(signalTileIndex)
+    expect(city.getTrafficSignalState('traffic-signal-3-3')).toMatchObject({
+      movement: 'north-south',
+      state: 'green'
+    })
+
+    city.updateTrafficSignals(9)
+    simulation.update(0.01)
+
+    expect(city.getTrafficSignalState('traffic-signal-3-3')).toMatchObject({
+      movement: 'east-west',
+      state: 'green'
+    })
+    expect(car.movement?.edge.id).toBe('east-2')
+    expect(car.occupiedTiles).toContain(signalTileIndex)
+
+    simulation.destroy()
+  })
+
+  it('waits before a green intersection when the exit clearance is blocked', () => {
+    const city = createTrafficSignalCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock: createClock(8.5),
+      random: createSeededRandom('traffic-signal-clearance'),
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const car = simulation.cars[0]
+    const blocker = { id: 999, occupiedTiles: [] }
+    const signalTileIndex = city.index(3, 3)
+
+    city.setCrosswalkSignalState('green')
+    city.resetTrafficSignals()
+    city.updateTrafficSignals(9)
+    simulation.parking.occupyTiles(blocker, [city.index(5, 3)])
+    simulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.movement).toBeNull()
+    expect(car.occupiedTiles).not.toContain(signalTileIndex)
+
+    simulation.parking.releaseOccupiedTiles(blocker)
+    simulation.update(0.01)
+
+    expect(car.movement?.edge.id).toBe('east-2')
+    expect(car.occupiedTiles).toContain(signalTileIndex)
+
+    simulation.destroy()
+  })
+
+  it('uses the right-hand rule so a left turn yields to oncoming straight traffic', () => {
+    const city = createTrafficSignalCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      clock: createClock(8.5),
+      random: createSeededRandom('right-hand-rule'),
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const network = simulation.router.network
+    const leftEntryEdge = routeIndexesByEdgeId(network, ['east-2'])[0]
+    const straightEntryEdge = routeIndexesByEdgeId(network, ['west-4'])[0]
+    const leftTurningCar = {
+      id: 1,
+      owners: [],
+      state: 'driving',
+      route: {
+        edges: routeIndexesByEdgeId(network, ['east-2', 'north-3', 'north-2']),
+        cursor: 0,
+        currentNode: network.edgeFrom[leftEntryEdge]
+      },
+      movement: null,
+      trafficSignalReservation: null,
+      lengthTiles: 2,
+      occupiedTiles: [],
+      direction: { dx: 1, dy: 0 }
+    }
+    const straightCar = {
+      id: 2,
+      owners: [],
+      state: 'driving',
+      route: {
+        edges: routeIndexesByEdgeId(network, ['west-4', 'west-3', 'west-2']),
+        cursor: 0,
+        currentNode: network.edgeFrom[straightEntryEdge]
+      },
+      movement: null,
+      trafficSignalReservation: null,
+      lengthTiles: 2,
+      occupiedTiles: [],
+      direction: { dx: -1, dy: 0 }
+    }
+
+    simulation.cars.push(leftTurningCar, straightCar)
+    simulation.parking.occupyTiles(straightCar, [city.index(4, 3), city.index(5, 3)])
+    city.setCrosswalkSignalState('green')
+    city.resetTrafficSignals()
+    city.updateTrafficSignals(9)
+    simulation.update(0.01)
+
+    expect(leftTurningCar.movement).toBeNull()
+    expect(leftTurningCar.occupiedTiles).not.toContain(city.index(3, 3))
+    expect(straightCar.movement?.edge.id).toBe('west-4')
+    expect(straightCar.occupiedTiles).toContain(city.index(3, 3))
 
     simulation.destroy()
   })

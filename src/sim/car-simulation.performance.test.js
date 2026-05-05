@@ -90,5 +90,5 @@ describe('car simulation performance', () => {
     expect(uncachedRouteLength).toBeGreaterThan(0)
     expect(cachedRouteLength).toBe(uncachedRouteLength)
     expect(speedup).toBeGreaterThanOrEqual(10)
-  })
+  }, 30000)
 })

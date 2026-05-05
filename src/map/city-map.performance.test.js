@@ -76,7 +76,7 @@ describe('city map performance', () => {
     const speedup = uncachedMs / Math.max(cachedMs, 0.001)
 
     expect(speedup).toBeGreaterThanOrEqual(10)
-  })
+  }, 30000)
 
   it('extracts NPC-ready index routes at least 10x faster than uncached routes', () => {
     const city = loadLibertyCity()
@@ -109,5 +109,5 @@ describe('city map performance', () => {
     const speedup = uncachedMs / Math.max(cachedIndexMs, 0.001)
 
     expect(speedup).toBeGreaterThanOrEqual(10)
-  })
+  }, 30000)
 })

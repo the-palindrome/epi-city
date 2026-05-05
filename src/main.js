@@ -167,6 +167,7 @@ async function main() {
       }
 
       city.resetCrosswalkSignals()
+      city.resetTrafficSignals()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
       carSimulation = createConfiguredCarSimulation()
@@ -225,7 +226,12 @@ async function main() {
 
     game.setSpeed(simulationState.speed)
     game.addSystem(simulationClock)
-    game.addSystem({ update: (deltaSeconds) => city.updateCrosswalkSignals(deltaSeconds) })
+    game.addSystem({
+      update: (deltaSeconds) => {
+        city.updateCrosswalkSignals(deltaSeconds)
+        city.updateTrafficSignals(deltaSeconds)
+      }
+    })
     game.addSystem(dayNightOverlay)
     game.addSystem({ render: () => dashboard.render() })
     npcSimulation = createConfiguredNpcSimulation()

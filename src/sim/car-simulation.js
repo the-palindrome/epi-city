@@ -26,6 +26,40 @@ const LANE_CHANGE_MAX_FORWARD_TILES = 6
 const LANE_CHANGE_LATERAL_TILES = 1
 const LANE_CHANGE_CURVE_SAMPLES = 9
 const LANE_CHANGE_SPEED_LIMIT = 18
+const TRAFFIC_SIGNAL_CLEARANCE_GAP_TILES = 1
+const RIGHT_HAND_LOOKAHEAD_EDGES = 6
+
+const RIGHT_TURN_DIRECTION = Object.freeze({
+  north: 'east',
+  east: 'south',
+  south: 'west',
+  west: 'north'
+})
+const LEFT_TURN_DIRECTION = Object.freeze({
+  north: 'west',
+  west: 'south',
+  south: 'east',
+  east: 'north'
+})
+const OPPOSITE_DIRECTION = Object.freeze({
+  north: 'south',
+  east: 'west',
+  south: 'north',
+  west: 'east'
+})
+const DIRECTION_FROM_RIGHT = Object.freeze({
+  north: 'west',
+  east: 'north',
+  south: 'east',
+  west: 'south'
+})
+const TURN_PRIORITY = Object.freeze({
+  right: 3,
+  straight: 2,
+  merge: 2,
+  left: 1,
+  'u-turn': 0
+})
 
 const networkCache = new WeakMap()
 
@@ -37,6 +71,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   const network = getCarTrafficNetwork(city)
   const router = createCarRoutePlanner(city, resolvedConfig, network)
   const parking = createParkingManager(city, network, resolvedConfig)
+  const trafficReservations = createTrafficSignalReservationManager(city)
   const residentialBuildings = collectBuildings(city, 'residential')
   const commercialBuildings = collectBuildings(city, 'commercial')
   const buildingsById = new Map((city.buildings || []).map((building) => [building.id, building]))
@@ -49,6 +84,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     network,
     router,
     parking,
+    trafficReservations,
+    cars,
     buildingsById,
     config: resolvedConfig
   }
@@ -115,6 +152,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     render,
     destroy() {
       destroyed = true
+      trafficReservations.clear()
       parking.clear()
 
       if (graphics.parent) {
@@ -871,6 +909,104 @@ function createParkingManager(city, network, config) {
   }
 }
 
+function createTrafficSignalReservationManager(city) {
+  const tileIndexesByGroupId = new Map()
+  const groupReservations = new Map()
+  const tileReservations = new Int32Array(city.tiles.length)
+  const reservedTilesByCarId = new Map()
+
+  tileReservations.fill(-1)
+
+  for (const group of city.trafficSignals?.groups || []) {
+    tileIndexesByGroupId.set(group.id, new Set(group.tiles.map((tile) => city.index(tile.x, tile.y))))
+  }
+
+  function canOccupy(tileIndexes, carId) {
+    for (const tileIndex of tileIndexes || []) {
+      if (tileReservations[tileIndex] !== -1 && tileReservations[tileIndex] !== carId) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  function canReserve(group, tileIndexes, carId) {
+    const reservedBy = groupReservations.get(group.id)
+
+    return (reservedBy === undefined || reservedBy === carId) && canOccupy(tileIndexes, carId)
+  }
+
+  function reserve(group, tileIndexes, car) {
+    releaseReservedTiles(car.id)
+    groupReservations.set(group.id, car.id)
+
+    const uniqueTiles = uniqueTileIndexes(tileIndexes)
+
+    for (const tileIndex of uniqueTiles) {
+      tileReservations[tileIndex] = car.id
+    }
+
+    reservedTilesByCarId.set(car.id, uniqueTiles)
+    car.trafficSignalReservation = group.id
+  }
+
+  function releaseReservedTiles(carId) {
+    const tileIndexes = reservedTilesByCarId.get(carId)
+
+    if (!tileIndexes) {
+      return
+    }
+
+    for (const tileIndex of tileIndexes) {
+      if (tileReservations[tileIndex] === carId) {
+        tileReservations[tileIndex] = -1
+      }
+    }
+
+    reservedTilesByCarId.delete(carId)
+  }
+
+  function releaseForCar(car) {
+    if (car.trafficSignalReservation && groupReservations.get(car.trafficSignalReservation) === car.id) {
+      groupReservations.delete(car.trafficSignalReservation)
+    }
+
+    releaseReservedTiles(car.id)
+    car.trafficSignalReservation = null
+  }
+
+  function releaseIfClear(car) {
+    if (!car.trafficSignalReservation || !car.route) {
+      return
+    }
+
+    const tileIndexes = tileIndexesByGroupId.get(car.trafficSignalReservation)
+
+    if (!tileIndexes || !(car.occupiedTiles || []).some((tileIndex) => tileIndexes.has(tileIndex))) {
+      releaseForCar(car)
+    }
+  }
+
+  function groupTileIndexes(groupId) {
+    return tileIndexesByGroupId.get(groupId) || null
+  }
+
+  return {
+    groupTileIndexes,
+    canOccupy,
+    canReserve,
+    reserve,
+    releaseForCar,
+    releaseIfClear,
+    clear() {
+      groupReservations.clear()
+      reservedTilesByCarId.clear()
+      tileReservations.fill(-1)
+    }
+  }
+}
+
 function createCarEntity(id, city, residentialBuildings, commercialBuildings, buildingsById, ownerPools, parking, random, config) {
   const ownerHome = takeOwnerHome(ownerPools, random)
   const home = ownerHome
@@ -914,6 +1050,7 @@ function createCarEntity(id, city, residentialBuildings, commercialBuildings, bu
     occupiedTiles: [],
     route: null,
     movement: null,
+    trafficSignalReservation: null,
     driverOwnerId: null,
     riderOwners: []
   }
@@ -1112,6 +1249,7 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
     currentNode: startNode
   }
   car.movement = null
+  car.trafficSignalReservation = null
   car.driverOwnerId = owner.id
   car.riderOwners = [owner]
   car.position = laneNodePosition(context.network, startNode)
@@ -1152,6 +1290,7 @@ function updateDrivingCar(car, deltaSeconds, context) {
 
     car.position = edgePositionAt(movement.edge, 1)
     car.route.currentNode = movement.toNodeIndex
+    context.trafficReservations.releaseIfClear(car)
     car.movement = null
   }
 }
@@ -1168,17 +1307,48 @@ function startNextDrivingEdge(car, context) {
   const fromNodeIndex = context.network.edgeFrom[edgeIndex]
   const nextFootprint = edgeDrivingFootprint(context.city, context.network, edge, toNodeIndex, car.lengthTiles)
   const clearanceTiles = edgeClearanceTiles(edge)
+  const trafficSignalGroup = activeTrafficSignalGroup(context.city, edge)
 
-  if (isBlockedByCrosswalkSignal(context.city, context.network, fromNodeIndex, toNodeIndex)) {
+  if (trafficSignalGroup && isBlockedByTrafficSignal(context.city, edge)) {
     return false
   }
 
-  if (clearanceTiles && !context.parking.canOccupy(clearanceTiles, car.id)) {
+  const trafficSignalClearanceTiles = trafficSignalGroup
+    ? exitClearanceTilesForTrafficSignal(car, context, trafficSignalGroup)
+    : null
+
+  if (trafficSignalGroup &&
+      (!trafficSignalClearanceTiles ||
+       !context.parking.canOccupy(trafficSignalClearanceTiles, car.id) ||
+       !context.trafficReservations.canReserve(trafficSignalGroup, trafficSignalClearanceTiles, car.id))) {
     return false
   }
 
-  if (!context.parking.canOccupy(nextFootprint, car.id)) {
+  const rightHandMovement = createRightHandMovement(car, context)
+
+  if (rightHandMovement && shouldYieldByRightHandRule(car, rightHandMovement, context)) {
     return false
+  }
+
+  if (!trafficSignalGroup &&
+      !car.trafficSignalReservation &&
+      isBlockedByCrosswalkSignal(context.city, context.network, fromNodeIndex, toNodeIndex)) {
+    return false
+  }
+
+  if (clearanceTiles &&
+      (!context.parking.canOccupy(clearanceTiles, car.id) ||
+       !context.trafficReservations.canOccupy(clearanceTiles, car.id))) {
+    return false
+  }
+
+  if (!context.parking.canOccupy(nextFootprint, car.id) ||
+      !context.trafficReservations.canOccupy(nextFootprint, car.id)) {
+    return false
+  }
+
+  if (trafficSignalGroup) {
+    context.trafficReservations.reserve(trafficSignalGroup, trafficSignalClearanceTiles, car)
   }
 
   context.parking.occupyTiles(car, nextFootprint)
@@ -1195,6 +1365,7 @@ function startNextDrivingEdge(car, context) {
 }
 
 function parkCarAtDestination(car, context) {
+  context.trafficReservations.releaseForCar(car)
   context.parking.releaseOccupiedTiles(car)
   context.parking.occupyTiles(car, car.destinationParkingSpot.tileIndexes)
   context.parking.releaseParkingReservation(car.destinationParkingSpot.tileIndexes, car.id)
@@ -1231,6 +1402,288 @@ function isBlockedByCrosswalkSignal(city, network, fromNodeIndex, toNodeIndex) {
   }
 
   return city.getCrosswalkSignalState() !== 'green'
+}
+
+function isBlockedByTrafficSignal(city, edge) {
+  return typeof city.canEnterTrafficSignal === 'function' && !city.canEnterTrafficSignal(edge)
+}
+
+function activeTrafficSignalGroup(city, edge) {
+  const group = trafficConflictGroup(city, edge)
+
+  return group?.enabled ? group : null
+}
+
+function trafficConflictGroup(city, edge) {
+  const group = typeof city.getTrafficSignalForEdge === 'function'
+    ? city.getTrafficSignalForEdge(edge.id)
+    : null
+
+  return group || null
+}
+
+function createRightHandMovement(car, context) {
+  if (!car.route || car.movement || car.route.cursor >= car.route.edges.length) {
+    return null
+  }
+
+  const routeEdges = car.route.edges
+  const startCursor = car.route.cursor
+  const startEdgeIndex = routeEdges[startCursor]
+  const startEdge = context.network.edges[startEdgeIndex]
+  const startDirection = startEdge.direction
+  const signalGroup = trafficConflictGroup(context.city, startEdge)
+  const signalTileIndexes = signalGroup
+    ? context.trafficReservations.groupTileIndexes(signalGroup.id)
+    : null
+  const tileIndexes = []
+  let explicitTurn = normalizeMovementTurn(startEdge.turn)
+  let lastDirection = startDirection
+  let sawDirectionChange = false
+  let sawInsideSignal = false
+  let outsideSignalEdges = 0
+
+  for (let cursor = startCursor; cursor < routeEdges.length && cursor < startCursor + RIGHT_HAND_LOOKAHEAD_EDGES; cursor += 1) {
+    const edgeIndex = routeEdges[cursor]
+    const edge = context.network.edges[edgeIndex]
+    const toNodeIndex = context.network.edgeTo[edgeIndex]
+    const toTileIndex = context.network.nodeTileIndexes[toNodeIndex]
+
+    appendUniqueTileIndexes(tileIndexes, edgeDrivingFootprint(context.city, context.network, edge, toNodeIndex, car.lengthTiles))
+
+    if (edge.direction !== startDirection) {
+      sawDirectionChange = true
+    }
+
+    explicitTurn = explicitTurn || normalizeMovementTurn(edge.turn)
+    lastDirection = edge.direction
+
+    if (signalTileIndexes) {
+      if (signalTileIndexes.has(toTileIndex)) {
+        sawInsideSignal = true
+        continue
+      }
+
+      if (sawInsideSignal) {
+        outsideSignalEdges += 1
+
+        if (outsideSignalEdges >= 1) {
+          break
+        }
+      }
+
+      continue
+    }
+
+    if (cursor > startCursor && sawDirectionChange) {
+      break
+    }
+  }
+
+  if (!signalGroup && !sawDirectionChange && !explicitTurn) {
+    return null
+  }
+
+  const turn = explicitTurn || classifyTurn(startDirection, lastDirection)
+
+  return {
+    edge: startEdge,
+    fromNodeIndex: context.network.edgeFrom[startEdgeIndex],
+    toNodeIndex: context.network.edgeTo[startEdgeIndex],
+    approachDirection: startDirection,
+    turn,
+    priority: TURN_PRIORITY[turn] ?? TURN_PRIORITY.straight,
+    signalGroupId: signalGroup?.id || null,
+    tileIndexes: uniqueTileIndexes(tileIndexes)
+  }
+}
+
+function shouldYieldByRightHandRule(car, movement, context) {
+  for (const other of context.cars) {
+    if (other === car ||
+        other.state !== 'driving' ||
+        other.movement ||
+        !other.route ||
+        other.route.cursor >= other.route.edges.length) {
+      continue
+    }
+
+    const otherMovement = createRightHandMovement(other, context)
+
+    if (!otherMovement ||
+        !rightHandMovementsConflict(movement, otherMovement) ||
+        !rightHandCandidateCanEnter(other, otherMovement, context)) {
+      continue
+    }
+
+    if (rightHandMovementMustYield(car, movement, other, otherMovement)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function rightHandCandidateCanEnter(car, movement, context) {
+  const edge = movement.edge
+  const nextFootprint = edgeDrivingFootprint(context.city, context.network, edge, movement.toNodeIndex, car.lengthTiles)
+  const clearanceTiles = edgeClearanceTiles(edge)
+  const trafficSignalGroup = activeTrafficSignalGroup(context.city, edge)
+
+  if (trafficSignalGroup && isBlockedByTrafficSignal(context.city, edge)) {
+    return false
+  }
+
+  if (trafficSignalGroup) {
+    const trafficSignalClearanceTiles = exitClearanceTilesForTrafficSignal(car, context, trafficSignalGroup)
+
+    if (!trafficSignalClearanceTiles ||
+        !context.parking.canOccupy(trafficSignalClearanceTiles, car.id) ||
+        !context.trafficReservations.canReserve(trafficSignalGroup, trafficSignalClearanceTiles, car.id)) {
+      return false
+    }
+  } else if (!car.trafficSignalReservation &&
+      isBlockedByCrosswalkSignal(context.city, context.network, movement.fromNodeIndex, movement.toNodeIndex)) {
+    return false
+  }
+
+  if (clearanceTiles &&
+      (!context.parking.canOccupy(clearanceTiles, car.id) ||
+       !context.trafficReservations.canOccupy(clearanceTiles, car.id))) {
+    return false
+  }
+
+  return context.parking.canOccupy(nextFootprint, car.id) &&
+    context.trafficReservations.canOccupy(nextFootprint, car.id)
+}
+
+function rightHandMovementsConflict(a, b) {
+  if (a.signalGroupId && a.signalGroupId === b.signalGroupId) {
+    return true
+  }
+
+  const bTiles = new Set(b.tileIndexes)
+
+  return a.tileIndexes.some((tileIndex) => bTiles.has(tileIndex))
+}
+
+function rightHandMovementMustYield(car, movement, other, otherMovement) {
+  const oncoming = OPPOSITE_DIRECTION[movement.approachDirection] === otherMovement.approachDirection
+
+  if (oncoming) {
+    const myLeftTurnYields = movement.turn === 'left' &&
+      otherMovement.turn !== 'left' &&
+      otherMovement.turn !== 'u-turn'
+
+    if (myLeftTurnYields) {
+      return true
+    }
+
+    const otherLeftTurnYields = otherMovement.turn === 'left' &&
+      movement.turn !== 'left' &&
+      movement.turn !== 'u-turn'
+
+    if (otherLeftTurnYields) {
+      return false
+    }
+  }
+
+  if (movement.priority !== otherMovement.priority) {
+    return movement.priority < otherMovement.priority
+  }
+
+  if (otherMovement.approachDirection === DIRECTION_FROM_RIGHT[movement.approachDirection]) {
+    return true
+  }
+
+  if (movement.approachDirection === DIRECTION_FROM_RIGHT[otherMovement.approachDirection]) {
+    return false
+  }
+
+  return car.id > other.id
+}
+
+function normalizeMovementTurn(turn) {
+  return turn === 'right' ||
+    turn === 'straight' ||
+    turn === 'left' ||
+    turn === 'u-turn' ||
+    turn === 'merge'
+    ? turn
+    : null
+}
+
+function classifyTurn(fromDirection, toDirection) {
+  if (fromDirection === toDirection) {
+    return 'straight'
+  }
+
+  if (RIGHT_TURN_DIRECTION[fromDirection] === toDirection) {
+    return 'right'
+  }
+
+  if (LEFT_TURN_DIRECTION[fromDirection] === toDirection) {
+    return 'left'
+  }
+
+  if (OPPOSITE_DIRECTION[fromDirection] === toDirection) {
+    return 'u-turn'
+  }
+
+  return 'merge'
+}
+
+function exitClearanceTilesForTrafficSignal(car, context, group) {
+  const groupTileIndexes = context.trafficReservations.groupTileIndexes(group.id)
+
+  if (!groupTileIndexes || !car.route) {
+    return null
+  }
+
+  const routeEdges = car.route.edges
+  const requiredOutsideNodes = car.lengthTiles + TRAFFIC_SIGNAL_CLEARANCE_GAP_TILES
+  const clearanceTiles = []
+  let outsideNodeCount = 0
+  let hasExitedSignal = false
+
+  for (let cursor = car.route.cursor; cursor < routeEdges.length; cursor += 1) {
+    const edgeIndex = routeEdges[cursor]
+    const edge = context.network.edges[edgeIndex]
+    const toNodeIndex = context.network.edgeTo[edgeIndex]
+    const toTileIndex = context.network.nodeTileIndexes[toNodeIndex]
+
+    if (groupTileIndexes.has(toTileIndex)) {
+      if (hasExitedSignal) {
+        outsideNodeCount = 0
+      }
+
+      continue
+    }
+
+    hasExitedSignal = true
+    outsideNodeCount += 1
+    appendUniqueTileIndexes(clearanceTiles, edgeDrivingFootprint(context.city, context.network, edge, toNodeIndex, car.lengthTiles))
+
+    if (outsideNodeCount >= requiredOutsideNodes) {
+      return clearanceTiles
+    }
+  }
+
+  return hasExitedSignal ? clearanceTiles : null
+}
+
+function appendUniqueTileIndexes(target, tileIndexes) {
+  for (const tileIndex of tileIndexes) {
+    if (!target.includes(tileIndex)) {
+      target.push(tileIndex)
+    }
+  }
+}
+
+function uniqueTileIndexes(tileIndexes) {
+  const unique = []
+  appendUniqueTileIndexes(unique, tileIndexes || [])
+  return unique
 }
 
 function drivingFootprint(city, network, nodeIndex, directionName, lengthTiles) {

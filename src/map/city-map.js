@@ -419,6 +419,7 @@ export function compileCityMap(data) {
   const pathScratch = createPathScratch(width * height)
   const crosswalkSignals = createCrosswalkSignalController(CROSSWALK_SIGNAL_PHASES)
   const laneGraph = compileLaneGraphLayout(data.laneGraph, tileSize)
+  const trafficSignals = createTrafficSignalController(laneGraph.trafficSignals)
 
   tileBuildingIndexes.fill(-1)
 
@@ -843,6 +844,7 @@ export function compileCityMap(data) {
     legend: legendEntries,
     buildings,
     laneGraph,
+    trafficSignals: trafficSignals.layout,
     index: (x, y) => indexOf(x, y, width),
     getTile,
     getTileId,
@@ -862,6 +864,11 @@ export function compileCityMap(data) {
     setCrosswalkSignalState: (state) => crosswalkSignals.setState(state),
     resetCrosswalkSignals: () => crosswalkSignals.reset(),
     updateCrosswalkSignals: (deltaSeconds) => crosswalkSignals.update(deltaSeconds),
+    getTrafficSignalState: (id) => trafficSignals.getState(id),
+    getTrafficSignalForEdge: (edgeId) => trafficSignals.getSignalForEdge(edgeId),
+    canEnterTrafficSignal: (edge) => trafficSignals.canEnterEdge(edge),
+    resetTrafficSignals: () => trafficSignals.reset(),
+    updateTrafficSignals: (deltaSeconds) => trafficSignals.update(deltaSeconds),
     isPassable,
     nearestPassableTile,
     findPath,
@@ -877,6 +884,124 @@ export function compileCityMap(data) {
       routeFieldLimit: navigation.routeFields.limit
     })
   }
+}
+
+function createTrafficSignalController(layout) {
+  const groups = layout?.groups || []
+  const edgeSignalIndexesById = new Map()
+  let elapsedSeconds = 0
+
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+    for (const entryEdge of groups[groupIndex].entryEdges) {
+      edgeSignalIndexesById.set(entryEdge.edgeId, groupIndex)
+    }
+  }
+
+  function currentPhase(group) {
+    if (!group || !group.enabled || group.phases.length === 0) {
+      return null
+    }
+
+    const cycleDuration = group.cycleDuration
+    let phaseTime = (elapsedSeconds + group.phaseOffset) % cycleDuration
+
+    for (const phase of group.phases) {
+      if (phaseTime < phase.duration) {
+        return phase
+      }
+
+      phaseTime -= phase.duration
+    }
+
+    return group.phases[group.phases.length - 1]
+  }
+
+  function getState(id) {
+    const group = groups.find((candidate) => candidate.id === id)
+    const phase = currentPhase(group)
+
+    if (!group || !group.enabled || !phase) {
+      return {
+        id,
+        enabled: false,
+        movement: 'all',
+        state: 'green'
+      }
+    }
+
+    return {
+      id: group.id,
+      enabled: true,
+      movement: phase.movement,
+      state: phase.state
+    }
+  }
+
+  function getSignalForEdge(edgeId) {
+    const groupIndex = edgeSignalIndexesById.get(edgeId)
+
+    if (groupIndex === undefined) {
+      return null
+    }
+
+    return groups[groupIndex]
+  }
+
+  function canEnterEdge(edge) {
+    if (!edge || typeof edge.id !== 'string') {
+      return true
+    }
+
+    const group = getSignalForEdge(edge.id)
+
+    if (!group || !group.enabled) {
+      return true
+    }
+
+    const phase = currentPhase(group)
+
+    return Boolean(
+      phase &&
+      phase.state === 'green' &&
+      (phase.movement === 'all' || phase.movement === trafficSignalMovementForDirection(edge.direction))
+    )
+  }
+
+  function reset() {
+    elapsedSeconds = 0
+  }
+
+  function update(deltaSeconds) {
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+      return
+    }
+
+    elapsedSeconds += deltaSeconds
+  }
+
+  return {
+    layout: Object.freeze({
+      encoding: layout?.encoding,
+      groups
+    }),
+    getState,
+    getSignalForEdge,
+    canEnterEdge,
+    reset,
+    update
+  }
+}
+
+function trafficSignalMovementForDirection(direction) {
+  if (direction === 'north' || direction === 'south') {
+    return 'north-south'
+  }
+
+  if (direction === 'east' || direction === 'west') {
+    return 'east-west'
+  }
+
+  return null
 }
 
 function createCrosswalkSignalController(phases) {
