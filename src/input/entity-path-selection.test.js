@@ -60,8 +60,8 @@ describe('entity path selection', () => {
       tile: { x: 0, y: 0, index: city.index(0, 0) },
       movement: {
         target: {
-          position: { x: 48, y: 16 },
-          routeCursor: 1
+          position: { x: 53, y: 10 },
+          tile: { x: 1, y: 0, index: city.index(1, 0) }
         }
       },
       routing: {
