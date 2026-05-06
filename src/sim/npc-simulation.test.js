@@ -307,6 +307,53 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
+  it('advances walking movement using simulation-clock seconds', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const clock = {
+      secondsPerSimulationHour: 60,
+      getTimeOfDayHours: () => 8
+    }
+    const simulation = createSimulation('clock-walk', city, {
+      count: 1,
+      tileCapacity: 1,
+      clock,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const targetLocation = { x: 1, y: 0, index: city.index(1, 0) }
+
+    npc.present = true
+    npc.locationState = null
+    npc.position = { x: 16, y: 16 }
+    npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
+    npc.slot = { id: 0, index: -1 }
+    npc.movement.speed = 8
+    npc.movement.target = null
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: targetLocation
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    const startX = npc.position.x
+
+    simulation.update(1 / 60)
+
+    expect(npc.position.x).toBeGreaterThan(startX + 4)
+    expect(npc.position.x).toBeLessThan(48)
+
+    simulation.destroy()
+  })
+
   it('rounds route turns with a bezier movement curve', () => {
     const city = createCornerCity()
     const simulation = createSimulation('bezier-turn', city, {

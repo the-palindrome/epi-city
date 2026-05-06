@@ -717,7 +717,7 @@ function normalizeSpeedRange(range) {
     return { min, max, step }
   }
 
-  return { min: 1, max: 16, step: 0.25 }
+  return { min: 1, max: 24, step: 0.25 }
 }
 
 function normalizeNpcCountRange(range) {

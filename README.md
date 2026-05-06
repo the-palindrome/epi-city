@@ -25,7 +25,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Use the dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
 - Hover an NPC to inspect its infection status, contagiousness, immunity, and phase timer.
 - Right-click an NPC and choose `infect` to manually make that NPC infectious.
-- The dashboard shows the simulated day/time and can toggle the darker day-night overlay.
+- The dashboard shows the simulated day/time, can run up to 24x speed, and can toggle the darker day-night overlay.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
@@ -100,7 +100,7 @@ Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at 
 
 Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. NPCs interpolate smoothly between anchor positions.
 
-The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed. The debug dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time.
+The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed, and pedestrian and vehicle movement use that same simulated-time delta. The debug dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time.
 
 ## Car Prototype
 

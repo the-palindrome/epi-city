@@ -512,6 +512,34 @@ function routeIndexesByEdgeId(network, edgeIds) {
   })
 }
 
+function tileCenterPosition(city, x, y) {
+  return {
+    x: (x + 0.5) * city.tileSize,
+    y: (y + 0.5) * city.tileSize
+  }
+}
+
+function createManualDrivingCar({ id, routeEdges, currentNode, destinationNode, position, adaptiveSpeed = null }) {
+  return {
+    id,
+    owners: [],
+    state: 'driving',
+    route: {
+      edges: routeEdges,
+      cursor: 0,
+      currentNode,
+      destinationNode
+    },
+    movement: null,
+    adaptiveSpeed,
+    trafficSignalReservation: null,
+    lengthTiles: 2,
+    occupiedTiles: [],
+    direction: { dx: 1, dy: 0 },
+    position
+  }
+}
+
 function isGeneratedLaneChangeEdge(edge) {
   return edge !== null && edge !== undefined && (
     edge.type === 'lane-change' ||
@@ -693,6 +721,42 @@ describe('car simulation', () => {
 
     expect(car.movement).not.toBeNull()
     expect(car.occupiedTiles).toContain(crosswalkIndex)
+
+    simulation.destroy()
+  })
+
+  it('advances driving movement using simulation-clock seconds', () => {
+    const city = createTrafficCity()
+    const clock = {
+      secondsPerSimulationHour: 60,
+      getTimeOfDayHours: () => 8
+    }
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      clock,
+      maxSpeed: 28,
+      speedLimitScale: 1,
+      minCruiseSpeedScale: 1,
+      maxCruiseSpeedScale: 1
+    })
+    const network = simulation.router.network
+    const nodeIndexes = new Map(network.laneGraph.nodes.map((node, index) => [node.id, index]))
+    const [edgeIndex, exitEdgeIndex] = routeIndexesByEdgeId(network, ['east-0', 'east-1'])
+    const car = createManualDrivingCar({
+      id: 1,
+      routeEdges: [edgeIndex, exitEdgeIndex],
+      currentNode: nodeIndexes.get('lane-0'),
+      destinationNode: nodeIndexes.get('lane-2'),
+      position: tileCenterPosition(city, 0, 3)
+    })
+
+    simulation.cars.push(car)
+    simulation.parking.occupyTiles(car, [city.index(0, 3)])
+    simulation.update(0.01)
+
+    expect(car.movement?.edgeIndex).toBe(edgeIndex)
+    expect(car.position.x).toBeGreaterThan(tileCenterPosition(city, 0, 3).x + 10)
+    expect(car.position.x).toBeLessThan(tileCenterPosition(city, 1, 3).x)
 
     simulation.destroy()
   })
@@ -1006,6 +1070,113 @@ describe('generated lane-change maneuver routing', () => {
 
     expect(car.movement?.edgeIndex).toBe(forwardEdgeIndex)
     expect(car.route.destinationNode).toBe(destinationNode)
+
+    simulation.destroy()
+  })
+
+  it('speeds up on approach when a moving target-lane blocker can be overtaken', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      maxSpeed: 1000,
+      speedLimitScale: 100,
+      speedAdjustmentRate: 10,
+      minCruiseSpeedScale: 0.7,
+      maxCruiseSpeedScale: 0.7
+    })
+    const network = simulation.router.network
+    const nodeIndexes = new Map(network.laneGraph.nodes.map((node, index) => [node.id, index]))
+    const [approachEdgeIndex, laneChangeEdgeIndex, exitEdgeIndex] = routeIndexesByEdgeId(network, [
+      'upper-0-1',
+      'generated-lane-change-upper-1-lower-4',
+      'lower-4-5'
+    ])
+    const [blockerEdgeIndex, blockerExitEdgeIndex] = routeIndexesByEdgeId(network, ['lower-1-2', 'lower-2-3'])
+    const mergingCar = createManualDrivingCar({
+      id: 1,
+      routeEdges: [approachEdgeIndex, laneChangeEdgeIndex, exitEdgeIndex],
+      currentNode: nodeIndexes.get('upper-0'),
+      destinationNode: nodeIndexes.get('lower-5'),
+      position: tileCenterPosition(city, 0, 0),
+      adaptiveSpeed: {
+        cruiseScale: 0.7,
+        currentScale: 0.7,
+        targetScale: 0.7,
+        intent: null,
+        laneChangeWaitSeconds: 0
+      }
+    })
+    const blocker = createManualDrivingCar({
+      id: 2,
+      routeEdges: [blockerEdgeIndex, blockerExitEdgeIndex],
+      currentNode: nodeIndexes.get('lower-1'),
+      destinationNode: nodeIndexes.get('lower-3'),
+      position: tileCenterPosition(city, 1, 1)
+    })
+
+    simulation.cars.push(blocker, mergingCar)
+    simulation.parking.occupyTiles(blocker, [city.index(1, 1)])
+    simulation.parking.occupyTiles(mergingCar, [city.index(0, 0)])
+    simulation.update(0.01)
+
+    expect(mergingCar.movement?.edgeIndex).toBe(approachEdgeIndex)
+    expect(mergingCar.adaptiveSpeed.intent).toBe('overtake')
+    expect(mergingCar.adaptiveSpeed.targetScale).toBe(1)
+    expect(mergingCar.adaptiveSpeed.currentScale).toBeGreaterThan(0.7)
+
+    simulation.destroy()
+  })
+
+  it('slows down on approach when a moving target-lane blocker is ahead of the merge gap', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      maxSpeed: 1000,
+      speedLimitScale: 100,
+      speedAdjustmentRate: 10,
+      minCruiseSpeedScale: 0.8,
+      maxCruiseSpeedScale: 0.8,
+      laneChangeSlowSpeedScale: 0.55
+    })
+    const network = simulation.router.network
+    const nodeIndexes = new Map(network.laneGraph.nodes.map((node, index) => [node.id, index]))
+    const [approachEdgeIndex, laneChangeEdgeIndex, exitEdgeIndex] = routeIndexesByEdgeId(network, [
+      'upper-0-1',
+      'generated-lane-change-upper-1-lower-4',
+      'lower-4-5'
+    ])
+    const [blockerEdgeIndex, blockerExitEdgeIndex] = routeIndexesByEdgeId(network, ['lower-3-4', 'lower-4-5'])
+    const mergingCar = createManualDrivingCar({
+      id: 1,
+      routeEdges: [approachEdgeIndex, laneChangeEdgeIndex, exitEdgeIndex],
+      currentNode: nodeIndexes.get('upper-0'),
+      destinationNode: nodeIndexes.get('lower-5'),
+      position: tileCenterPosition(city, 0, 0),
+      adaptiveSpeed: {
+        cruiseScale: 0.8,
+        currentScale: 0.8,
+        targetScale: 0.8,
+        intent: null,
+        laneChangeWaitSeconds: 0
+      }
+    })
+    const blocker = createManualDrivingCar({
+      id: 2,
+      routeEdges: [blockerEdgeIndex, blockerExitEdgeIndex],
+      currentNode: nodeIndexes.get('lower-3'),
+      destinationNode: nodeIndexes.get('lower-5'),
+      position: tileCenterPosition(city, 3, 1)
+    })
+
+    simulation.cars.push(blocker, mergingCar)
+    simulation.parking.occupyTiles(blocker, [city.index(3, 1)])
+    simulation.parking.occupyTiles(mergingCar, [city.index(0, 0)])
+    simulation.update(0.01)
+
+    expect(mergingCar.movement?.edgeIndex).toBe(approachEdgeIndex)
+    expect(mergingCar.adaptiveSpeed.intent).toBe('slow')
+    expect(mergingCar.adaptiveSpeed.targetScale).toBe(0.55)
+    expect(mergingCar.adaptiveSpeed.currentScale).toBeLessThan(0.8)
 
     simulation.destroy()
   })

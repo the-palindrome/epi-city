@@ -101,6 +101,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
 
     const safeDelta = Math.min(Math.max(deltaSeconds, 0), 0.1)
+    const movementDelta = getSimulationDeltaSeconds(clock, safeDelta)
     const timeOfDayHours = clock.getTimeOfDayHours()
 
     for (const npc of npcs) {
@@ -108,13 +109,13 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
 
     for (const npc of npcs) {
-      prepareNpcForRouting(npc, safeDelta, context)
+      prepareNpcForRouting(npc, movementDelta, context)
     }
 
     routePlanner.process(context)
 
     for (const npc of npcs) {
-      updateNpcMovement(npc, safeDelta, context)
+      updateNpcMovement(npc, movementDelta, context)
     }
 
     infection.update(safeDelta)
@@ -1383,6 +1384,14 @@ function probabilityForDeltaSeconds(probabilityPerMinute, deltaSeconds) {
 }
 
 function getSimulationDeltaSeconds(clock, deltaSeconds) {
+  if (clock && typeof clock.toSimulationSeconds === 'function') {
+    return clock.toSimulationSeconds(deltaSeconds)
+  }
+
+  if (clock && typeof clock.getSimulationSecondsPerRealSecond === 'function') {
+    return deltaSeconds * clock.getSimulationSecondsPerRealSecond()
+  }
+
   const secondsPerSimulationHour = Number(clock && clock.secondsPerSimulationHour)
 
   if (Number.isFinite(secondsPerSimulationHour) && secondsPerSimulationHour > 0) {

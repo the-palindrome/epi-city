@@ -288,6 +288,36 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
+  it('updates simulation speed and allows 24x playback', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      speed: 1,
+      speedRange: { min: 1, max: 24, step: 0.25 },
+      onSpeedChange(speed) {
+        changes.push(speed)
+      }
+    })
+    const speed = findByDataset(dashboard.element, 'simulationSpeed')
+
+    expect(speed.min).toBe('1')
+    expect(speed.max).toBe('24')
+    expect(speed.step).toBe('0.25')
+    expect(speed.value).toBe('1')
+
+    speed.value = '24'
+    speed.eventListeners.input()
+
+    expect(dashboard.simulation.state.speed).toBe(24)
+    expect(changes).toEqual([24])
+
+    dashboard.simulation.setSpeed(99)
+
+    expect(dashboard.simulation.state.speed).toBe(24)
+    expect(speed.value).toBe('24')
+
+    dashboard.destroy()
+  })
+
   it('updates infection controls and renders SEIR counts', () => {
     const changes = []
     const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
