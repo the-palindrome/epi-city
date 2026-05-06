@@ -195,6 +195,8 @@ Create a production build with:
 npm run build
 ```
 
+For GitHub Pages, the repository includes a workflow at `.github/workflows/deploy-pages.yml`. Enable Pages for GitHub Actions in the repository settings; pushes to `main` will build `dist/` with `VITE_BASE_PATH=/<repository-name>/` and deploy it to Pages.
+
 Preview the production build with:
 
 ```bash
