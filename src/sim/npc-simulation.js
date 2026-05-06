@@ -29,6 +29,9 @@ const INFECTION_STATE_NAMES = Object.freeze([
   'infectious',
   'recovered'
 ])
+const NPC_MOVEMENT_CURVE_SAMPLE_COUNT = 12
+const NPC_MOVEMENT_CURVE_TANGENT_SCALE = 0.36
+const NPC_MOVEMENT_CURVE_MAX_TANGENT_TILES = 0.5
 
 export function createNpcSimulation(city, entityLayer, config) {
   const graphics = new PIXI.Graphics()
@@ -159,7 +162,9 @@ class NpcEntity {
     this.slot = { id: slot.id, index: slot.index }
     this.movement = {
       speed: random.between(config.minSpeed, config.maxSpeed),
-      target: null
+      target: null,
+      headingX: 0,
+      headingY: 0
     }
     this.sprite = createNpcSpriteState(id)
     this.routing = createEmptyRouteState()
@@ -213,6 +218,7 @@ class NpcEntity {
     this.present = false
     this.locationState = null
     this.movement.target = null
+    clearNpcMovementHeading(this)
     idleNpcSprite(this)
     this.routing = createEmptyRouteState()
   }
@@ -246,6 +252,7 @@ class NpcEntity {
     this.tile = { ...location }
     this.slot = { id: -1, index: -1 }
     this.movement.target = null
+    clearNpcMovementHeading(this)
     idleNpcSprite(this)
     this.routing = createEmptyRouteState()
   }
@@ -865,11 +872,19 @@ function updateNpcMovement(npc, deltaSeconds, context) {
 function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const target = npc.movement.target
   const maxStep = npc.movement.speed * deltaSeconds
-  const movedDistance = Math.min(Math.max(target.remainingDistance, 0), maxStep)
+  const nextDistance = Math.min(target.distanceTravelled + maxStep, target.curve.length)
+  const previousPosition = { x: npc.position.x, y: npc.position.y }
+  const nextPosition = pointOnNpcMovementCurve(target.curve, nextDistance)
+  const direction = normalizeVector(
+    nextPosition.x - previousPosition.x,
+    nextPosition.y - previousPosition.y
+  ) || { x: target.directionX, y: target.directionY }
+  const movedDistance = Math.hypot(nextPosition.x - previousPosition.x, nextPosition.y - previousPosition.y)
 
-  stepNpcSpriteAnimation(npc, target.directionX, target.directionY, movedDistance)
+  stepNpcSpriteAnimation(npc, direction.x, direction.y, movedDistance)
+  setNpcMovementHeading(npc, direction.x, direction.y)
 
-  if (target.remainingDistance <= maxStep || target.remainingDistance === 0) {
+  if (nextDistance >= target.curve.length || target.remainingDistance <= maxStep || target.remainingDistance === 0) {
     npc.position.x = target.position.x
     npc.position.y = target.position.y
     npc.tile.x = target.tile.x
@@ -877,13 +892,17 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
     npc.tile.index = target.tile.index
     npc.slot.id = target.slot.id
     npc.slot.index = target.slot.index
+    setNpcMovementHeading(npc, target.endDirectionX, target.endDirectionY)
     npc.movement.target = null
     return
   }
 
-  npc.position.x += target.directionX * maxStep
-  npc.position.y += target.directionY * maxStep
-  target.remainingDistance -= maxStep
+  npc.position.x = nextPosition.x
+  npc.position.y = nextPosition.y
+  target.distanceTravelled = nextDistance
+  target.remainingDistance = target.curve.length - nextDistance
+  target.directionX = direction.x
+  target.directionY = direction.y
 }
 
 function followRoute(npc, deltaSeconds, context) {
@@ -987,34 +1006,193 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
     targetIndex,
     random,
     config.tileCapacity,
-    context.unlimitedCapacityTiles
+    context.unlimitedCapacityTiles,
+    npc.slot.id
   )
 
   const target = targetSlot.unlimited
     ? tileCenterPosition(city, tileX, tileY)
     : tileSlotPosition(city, tileX, tileY, targetSlot.slot, config, context.slotOffsets)
-  const dx = target.x - npc.position.x
-  const dy = target.y - npc.position.y
-  const distance = Math.hypot(dx, dy)
+  const movementTarget = createNpcMovementTarget(npc, target, {
+    tileX,
+    tileY,
+    targetIndex,
+    slot: targetSlot.slot,
+    slotIndex: targetSlot.slotIndex
+  }, context)
 
-  npc.movement.target = {
-    position: target,
-    directionX: distance === 0 ? 0 : dx / distance,
-    directionY: distance === 0 ? 0 : dy / distance,
-    remainingDistance: distance,
-    tile: {
-      x: tileX,
-      y: tileY,
-      index: targetIndex
-    },
-    slot: {
-      id: targetSlot.slot,
-      index: targetSlot.slotIndex
-    }
-  }
-  faceNpcSprite(npc, npc.movement.target.directionX, npc.movement.target.directionY)
+  npc.movement.target = movementTarget
+  faceNpcSprite(npc, movementTarget.directionX, movementTarget.directionY)
 
   return true
+}
+
+function createNpcMovementTarget(npc, target, targetState, context) {
+  const start = { x: npc.position.x, y: npc.position.y }
+  const directDirection = normalizeVector(target.x - start.x, target.y - start.y) || { x: 0, y: 0 }
+  const startDirection = npcMovementHeading(npc, directDirection)
+  const curve = createNpcMovementCurve(
+    start,
+    target,
+    startDirection,
+    directDirection,
+    context.city.tileSize
+  )
+
+  return {
+    position: target,
+    directionX: startDirection.x,
+    directionY: startDirection.y,
+    endDirectionX: directDirection.x,
+    endDirectionY: directDirection.y,
+    distanceTravelled: 0,
+    remainingDistance: curve.length,
+    curve,
+    tile: {
+      x: targetState.tileX,
+      y: targetState.tileY,
+      index: targetState.targetIndex
+    },
+    slot: {
+      id: targetState.slot,
+      index: targetState.slotIndex
+    }
+  }
+}
+
+function createNpcMovementCurve(start, end, startDirection, endDirection, tileSize) {
+  const straightDistance = Math.hypot(end.x - start.x, end.y - start.y)
+  const tangentDistance = Math.min(
+    straightDistance * NPC_MOVEMENT_CURVE_TANGENT_SCALE,
+    tileSize * NPC_MOVEMENT_CURVE_MAX_TANGENT_TILES
+  )
+  const p0 = { x: start.x, y: start.y }
+  const p1 = {
+    x: start.x + startDirection.x * tangentDistance,
+    y: start.y + startDirection.y * tangentDistance
+  }
+  const p2 = {
+    x: end.x - endDirection.x * tangentDistance,
+    y: end.y - endDirection.y * tangentDistance
+  }
+  const p3 = { x: end.x, y: end.y }
+  const samples = createNpcMovementCurveSamples(p0, p1, p2, p3)
+  const length = samples[samples.length - 1].distance
+
+  return {
+    p0,
+    p1,
+    p2,
+    p3,
+    samples,
+    length
+  }
+}
+
+function createNpcMovementCurveSamples(p0, p1, p2, p3) {
+  const samples = [{ t: 0, distance: 0, point: { x: p0.x, y: p0.y } }]
+  let previous = samples[0].point
+  let distance = 0
+
+  for (let index = 1; index <= NPC_MOVEMENT_CURVE_SAMPLE_COUNT; index += 1) {
+    const t = index / NPC_MOVEMENT_CURVE_SAMPLE_COUNT
+    const point = cubicBezierPoint(p0, p1, p2, p3, t)
+
+    distance += Math.hypot(point.x - previous.x, point.y - previous.y)
+    samples.push({ t, distance, point })
+    previous = point
+  }
+
+  return samples
+}
+
+function pointOnNpcMovementCurve(curve, distance) {
+  if (curve.length === 0 || distance <= 0) {
+    return { x: curve.p0.x, y: curve.p0.y }
+  }
+
+  if (distance >= curve.length) {
+    return { x: curve.p3.x, y: curve.p3.y }
+  }
+
+  const samples = curve.samples
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const sample = samples[index]
+
+    if (distance > sample.distance) {
+      continue
+    }
+
+    const previous = samples[index - 1]
+    const span = sample.distance - previous.distance
+    const ratio = span === 0 ? 0 : (distance - previous.distance) / span
+    const t = previous.t + (sample.t - previous.t) * ratio
+
+    return cubicBezierPoint(curve.p0, curve.p1, curve.p2, curve.p3, t)
+  }
+
+  return { x: curve.p3.x, y: curve.p3.y }
+}
+
+function cubicBezierPoint(p0, p1, p2, p3, t) {
+  const inverse = 1 - t
+  const a = inverse * inverse * inverse
+  const b = 3 * inverse * inverse * t
+  const c = 3 * inverse * t * t
+  const d = t * t * t
+
+  return {
+    x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
+    y: a * p0.y + b * p1.y + c * p2.y + d * p3.y
+  }
+}
+
+function npcMovementHeading(npc, fallback) {
+  const heading = normalizeVector(npc.movement.headingX, npc.movement.headingY)
+
+  if (!heading) {
+    return fallback
+  }
+
+  if (fallback.x === 0 && fallback.y === 0) {
+    return heading
+  }
+
+  return heading.x * fallback.x + heading.y * fallback.y < -0.2 ? fallback : heading
+}
+
+function setNpcMovementHeading(npc, x, y) {
+  const direction = normalizeVector(x, y)
+
+  if (!direction) {
+    return
+  }
+
+  npc.movement.headingX = direction.x
+  npc.movement.headingY = direction.y
+}
+
+function clearNpcMovementHeading(npc) {
+  npc.movement.headingX = 0
+  npc.movement.headingY = 0
+}
+
+function normalizeVector(x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null
+  }
+
+  const length = Math.hypot(x, y)
+
+  if (length <= 0.0001) {
+    return null
+  }
+
+  return {
+    x: x / length,
+    y: y / length
+  }
 }
 
 function tryExitCurrentLocation(npc, context) {
@@ -1039,6 +1217,7 @@ function tryExitCurrentLocation(npc, context) {
   npc.tile.index = location.index
   npc.slot.id = targetSlot.slot
   npc.slot.index = targetSlot.slotIndex
+  clearNpcMovementHeading(npc)
   idleNpcSprite(npc)
 
   return true
@@ -1059,13 +1238,18 @@ function enterGoalLocation(npc, context) {
   npc.tile = { ...npc.goal.location }
   npc.slot = { id: -1, index: -1 }
   npc.movement.target = null
+  clearNpcMovementHeading(npc)
   idleNpcSprite(npc)
   npc.routing = createEmptyRouteState()
 }
 
-function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles) {
+function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
     return { slot: -1, slotIndex: -1, unlimited: true }
+  }
+
+  if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
+    return { slot: preferredSlot, slotIndex: -1, unlimited: false }
   }
 
   return { slot: random.int(tileCapacity), slotIndex: -1, unlimited: false }

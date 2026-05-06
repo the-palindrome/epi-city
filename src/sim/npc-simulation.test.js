@@ -118,6 +118,25 @@ function createCityWithSharedBuildings() {
   })
 }
 
+function createCornerCity() {
+  return createCity({
+    width: 3,
+    height: 2,
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      o: { category: 'obstacle', walkable: false, drivable: false, parkable: false }
+    },
+    rows: [
+      'sss',
+      'oos'
+    ],
+    textureRows: [
+      [0, 0, 0],
+      [0, 0, 0]
+    ]
+  })
+}
+
 function createActorLayer() {
   return {
     eventMode: 'auto',
@@ -249,6 +268,101 @@ describe('NPC simulation randomness', () => {
 
     expect(npc.movement.target).toBeNull()
     expect(npc.tile).toMatchObject({ x: 0, y: 0, index: 0 })
+
+    simulation.destroy()
+  })
+
+  it('keeps the same visual slot when moving across normal route tiles', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('stable-slot', city, {
+      count: 1,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const targetLocation = { x: 1, y: 0, index: city.index(1, 0) }
+
+    npc.present = true
+    npc.locationState = null
+    npc.position = { x: 16, y: 16 }
+    npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
+    npc.slot = { id: 4, index: -1 }
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: targetLocation
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    expect(npc.movement.target).toBeTruthy()
+    expect(npc.movement.target.slot.id).toBe(4)
+
+    simulation.destroy()
+  })
+
+  it('rounds route turns with a bezier movement curve', () => {
+    const city = createCornerCity()
+    const simulation = createSimulation('bezier-turn', city, {
+      count: 1,
+      tileCapacity: 1,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const cornerIndex = city.index(1, 0)
+    const targetLocation = { x: 2, y: 1, index: city.index(2, 1) }
+
+    npc.present = true
+    npc.locationState = null
+    npc.position = { x: 16, y: 16 }
+    npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
+    npc.slot = { id: 0, index: -1 }
+    npc.movement.speed = 64
+    npc.movement.target = null
+    npc.movement.headingX = 0
+    npc.movement.headingY = 0
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: targetLocation
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    expect(npc.movement.target.tile).toMatchObject({ x: 1, y: 0, index: cornerIndex })
+
+    for (let step = 0; step < 120 && npc.tile.index !== cornerIndex; step += 1) {
+      simulation.update(1 / 60)
+    }
+
+    expect(npc.tile.index).toBe(cornerIndex)
+    expect(npc.movement.target).toBeNull()
+
+    simulation.update(1 / 60)
+
+    const turnTarget = npc.movement.target
+    const start = { ...npc.position }
+    const end = { ...turnTarget.position }
+
+    expect(turnTarget.tile).toMatchObject(targetLocation)
+    expect(turnTarget.curve.p1.x).toBeGreaterThan(turnTarget.curve.p0.x)
+    expect(turnTarget.curve.p1.y).toBeCloseTo(turnTarget.curve.p0.y)
+
+    simulation.update(0.1)
+
+    const straightProgress = (npc.position.x - start.x) / (end.x - start.x)
+    const straightY = start.y + (end.y - start.y) * straightProgress
+
+    expect(npc.position.y).toBeLessThan(straightY)
+    expect(npc.movement.headingX).toBeGreaterThan(0)
 
     simulation.destroy()
   })
