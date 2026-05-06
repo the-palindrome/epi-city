@@ -10,6 +10,7 @@ vi.mock('pixi.js', () => ({
       this.eventMode = 'auto'
       this.parent = null
       this.sortableChildren = false
+      this.cacheAsTextureOptions = null
     }
 
     addChild(child) {
@@ -30,6 +31,10 @@ vi.mock('pixi.js', () => ({
     }
 
     destroy() {}
+
+    cacheAsTexture(options) {
+      this.cacheAsTextureOptions = options
+    }
   },
   Sprite: class {
     constructor(texture) {
@@ -91,7 +96,9 @@ describe('city renderer z-ordering', () => {
     expect(layer.sortableChildren).toBe(true)
     expect(chunkZorders).toEqual([0, 2])
     expect(groundChunk.children).toHaveLength(3)
+    expect(groundChunk.cacheAsTextureOptions).toEqual({ scaleMode: 'nearest' })
     expect(buildingChunk.children).toHaveLength(1)
+    expect(buildingChunk.cacheAsTextureOptions).toEqual({ scaleMode: 'nearest' })
     expect(buildingChunk.children[0]).toMatchObject({
       zorder: 2,
       zIndex: 2,

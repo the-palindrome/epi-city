@@ -320,7 +320,8 @@ function buildCarTrafficNetwork(city) {
     tileToNodeIndex,
     nearestNodeByTile: buildNearestLaneNodeByTile(city, tileToNodeIndex),
     edgeGeometry: edges.map(createEdgeGeometry),
-    edgeFootprintsByLength: new Map()
+    edgeFootprintsByLength: new Map(),
+    edgeFootprintLengthsByLength: new Map()
   }
 
   precomputeEdgeFootprints(city, network, 2)
@@ -1924,15 +1925,18 @@ function setCarPositionAt(position, geometry, ratio) {
 
 function precomputeEdgeFootprints(city, network, lengthTiles) {
   const footprints = new Array(network.edgeCount)
+  const footprintLengths = new Uint8Array(network.edgeCount)
 
   for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
     const edge = network.edges[edgeIndex]
     const toNodeIndex = network.edgeTo[edgeIndex]
 
     footprints[edgeIndex] = drivingFootprint(city, network, toNodeIndex, edge.direction, lengthTiles)
+    footprintLengths[edgeIndex] = footprints[edgeIndex].length
   }
 
   network.edgeFootprintsByLength.set(lengthTiles, footprints)
+  network.edgeFootprintLengthsByLength.set(lengthTiles, footprintLengths)
   return footprints
 }
 

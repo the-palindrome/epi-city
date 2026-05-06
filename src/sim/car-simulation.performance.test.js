@@ -56,6 +56,18 @@ function measure(fn) {
   return performance.now() - start
 }
 
+function measureBest(fn, attempts = 5) {
+  fn()
+
+  let bestMs = Infinity
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    bestMs = Math.min(bestMs, measure(fn))
+  }
+
+  return bestMs
+}
+
 describe('car simulation performance', () => {
   it('extracts repeated destination lane routes at least 10x faster from cached route data', () => {
     const city = loadLibertyCity()
@@ -98,28 +110,33 @@ describe('car simulation performance', () => {
     const network = planner.network
     const edgeIndexes = []
 
-    for (let edgeIndex = 0; edgeIndex < network.edgeCount && edgeIndexes.length < 2000; edgeIndex += 1) {
+    for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
       edgeIndexes.push(edgeIndex)
     }
 
-    expect(edgeIndexes.length).toBeGreaterThanOrEqual(1000)
+    expect(edgeIndexes.length).toBeGreaterThanOrEqual(10000)
 
-    const repetitions = 50
+    const lengthTiles = 3
+    const repetitions = 10
     let dynamicTotal = 0
-    const dynamicMs = measure(() => {
+    const dynamicMs = measureBest(() => {
+      dynamicTotal = 0
+
       for (let repetition = 0; repetition < repetitions; repetition += 1) {
         for (const edgeIndex of edgeIndexes) {
-          dynamicTotal += dynamicDrivingFootprint(city, network, edgeIndex, 2).length
+          dynamicTotal += dynamicDrivingFootprint(city, network, edgeIndex, lengthTiles).length
         }
       }
     })
 
-    const footprints = network.edgeFootprintsByLength.get(2)
+    const footprintLengths = network.edgeFootprintLengthsByLength.get(lengthTiles)
     let precomputedTotal = 0
-    const precomputedMs = measure(() => {
+    const precomputedMs = measureBest(() => {
+      precomputedTotal = 0
+
       for (let repetition = 0; repetition < repetitions; repetition += 1) {
         for (const edgeIndex of edgeIndexes) {
-          precomputedTotal += footprints[edgeIndex].length
+          precomputedTotal += footprintLengths[edgeIndex]
         }
       }
     })

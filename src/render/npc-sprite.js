@@ -10,6 +10,17 @@ const SHOE_COLOR = 0x24201d
 const HAIR_COLOR = 0x2f2318
 const SKIN_COLOR = 0xe8b579
 const SHADOW_COLOR = 0x000000
+const SKIN_DARK_COLOR = mixColor(SKIN_COLOR, OUTLINE_COLOR, 0.18)
+
+const STATIC_NPC_FILL_STYLES = {
+  outline: createFillStyle(OUTLINE_COLOR),
+  shoe: createFillStyle(SHOE_COLOR),
+  hair: createFillStyle(HAIR_COLOR),
+  skin: createFillStyle(SKIN_COLOR),
+  skinDark: createFillStyle(SKIN_DARK_COLOR),
+  shadow: createFillStyle(SHADOW_COLOR, 0.34)
+}
+const NPC_SPRITE_PALETTE_CACHE = new Map()
 
 export function createNpcSpriteState(id = 0) {
   const safeId = Number.isInteger(id) ? Math.max(0, id) : 0
@@ -82,7 +93,7 @@ export function drawNpcSprite(graphics, npc, { color, size = DEFAULT_NPC_SIZE } 
   const pixel = Math.max(MIN_SPRITE_PIXEL, (size / DEFAULT_NPC_SIZE) * NPC_SPRITE_DRAW_SCALE)
   const facing = sprite.facing || 'south'
   const frame = getNpcSpriteFrame(sprite)
-  const palette = createNpcSpritePalette(color)
+  const palette = getNpcSpritePalette(color)
 
   if (facing === 'east' || facing === 'west') {
     drawHorizontalNpcSprite(graphics, npc.position.x, npc.position.y, pixel, facing, frame, palette)
@@ -100,21 +111,38 @@ function ensureNpcSpriteState(npc) {
   return npc.sprite
 }
 
-function createNpcSpritePalette(color) {
+function getNpcSpritePalette(color) {
   const status = normalizeColor(color)
+  const cachedPalette = NPC_SPRITE_PALETTE_CACHE.get(status)
+
+  if (cachedPalette) {
+    return cachedPalette
+  }
+
+  const palette = createNpcSpritePalette(status)
+
+  NPC_SPRITE_PALETTE_CACHE.set(status, palette)
+
+  return palette
+}
+
+function createNpcSpritePalette(status) {
+  const statusDark = mixColor(status, OUTLINE_COLOR, 0.28)
+  const statusLight = mixColor(status, 0xffffff, 0.36)
+  const rim = mixColor(status, 0xffffff, 0.68)
 
   return {
-    status,
-    statusDark: mixColor(status, OUTLINE_COLOR, 0.28),
-    statusLight: mixColor(status, 0xffffff, 0.36),
-    rim: mixColor(status, 0xffffff, 0.68),
-    outline: OUTLINE_COLOR,
-    shoe: SHOE_COLOR,
-    hair: HAIR_COLOR,
-    skin: SKIN_COLOR,
-    skinDark: mixColor(SKIN_COLOR, OUTLINE_COLOR, 0.18),
-    shadow: SHADOW_COLOR
+    status: createFillStyle(status),
+    statusDark: createFillStyle(statusDark),
+    statusLight: createFillStyle(statusLight),
+    rimStrong: createFillStyle(rim, 0.42),
+    rimSoft: createFillStyle(rim, 0.32),
+    ...STATIC_NPC_FILL_STYLES
   }
+}
+
+function createFillStyle(color, alpha = 1) {
+  return { color, alpha }
 }
 
 function drawVerticalNpcSprite(graphics, x, y, pixel, facing, frame, palette) {
@@ -124,9 +152,9 @@ function drawVerticalNpcSprite(graphics, x, y, pixel, facing, frame, palette) {
   const leftStep = stride
   const rightStep = -stride
 
-  spriteRect(graphics, originX, originY, pixel, 1, 2, 7, 8, palette.rim, 0.42)
-  spriteRect(graphics, originX, originY, pixel, 1, -1, 7, 6, palette.rim, 0.32)
-  spriteRect(graphics, originX, originY, pixel, 0, 11, 9, 3, palette.shadow, 0.34)
+  spriteRect(graphics, originX, originY, pixel, 1, 2, 7, 8, palette.rimStrong)
+  spriteRect(graphics, originX, originY, pixel, 1, -1, 7, 6, palette.rimSoft)
+  spriteRect(graphics, originX, originY, pixel, 0, 11, 9, 3, palette.shadow)
   drawVerticalLeg(graphics, originX, originY, pixel, 3, leftStep, palette)
   drawVerticalLeg(graphics, originX, originY, pixel, 5, rightStep, palette)
 
@@ -158,9 +186,9 @@ function drawHorizontalNpcSprite(graphics, x, y, pixel, facing, frame, palette) 
   const topStep = stride
   const bottomStep = -stride
 
-  spriteRect(graphics, originX, originY, pixel, 3, 1, 7, 7, palette.rim, 0.42)
-  mirroredSpriteRect(graphics, originX, originY, pixel, mirror, 7, 0, 6, 7, palette.rim, 0.32)
-  spriteRect(graphics, originX, originY, pixel, 1, 7, 11, 3, palette.shadow, 0.34)
+  spriteRect(graphics, originX, originY, pixel, 3, 1, 7, 7, palette.rimStrong)
+  mirroredSpriteRect(graphics, originX, originY, pixel, mirror, 7, 0, 6, 7, palette.rimSoft)
+  spriteRect(graphics, originX, originY, pixel, 1, 7, 11, 3, palette.shadow)
   drawHorizontalLeg(graphics, originX, originY, pixel, 3, topStep, mirror, palette)
   drawHorizontalLeg(graphics, originX, originY, pixel, 5, bottomStep, mirror, palette)
 
@@ -222,13 +250,13 @@ function walkStride(frame) {
   return 0
 }
 
-function mirroredSpriteRect(graphics, originX, originY, pixel, mirror, x, y, width, height, color, alpha = 1) {
+function mirroredSpriteRect(graphics, originX, originY, pixel, mirror, x, y, width, height, fillStyle) {
   const mirroredX = mirror ? 13 - x - width : x
 
-  spriteRect(graphics, originX, originY, pixel, mirroredX, y, width, height, color, alpha)
+  spriteRect(graphics, originX, originY, pixel, mirroredX, y, width, height, fillStyle)
 }
 
-function spriteRect(graphics, originX, originY, pixel, x, y, width, height, color, alpha = 1) {
+function spriteRect(graphics, originX, originY, pixel, x, y, width, height, fillStyle) {
   graphics
     .rect(
       originX + x * pixel,
@@ -236,7 +264,7 @@ function spriteRect(graphics, originX, originY, pixel, x, y, width, height, colo
       Math.max(1, width * pixel),
       Math.max(1, height * pixel)
     )
-    .fill({ color, alpha })
+    .fill(fillStyle)
 }
 
 function normalizeColor(color) {
