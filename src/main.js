@@ -18,6 +18,7 @@ import {
   refreshFollowedCamera
 } from './input/camera.js'
 import { installEntityContextMenu } from './input/entity-context-menu.js'
+import { installNpcHoverMenu } from './input/npc-hover-menu.js'
 import { createEntityPathSelection } from './input/entity-path-selection.js'
 import {
   compileCityMap,
@@ -107,6 +108,7 @@ async function main() {
       enabled: simulationState.dayNightOverlayEnabled
     })
     let entityContextMenu = null
+    let npcHoverMenu = null
     const pathSelection = createEntityPathSelection({
       app,
       camera,
@@ -262,6 +264,13 @@ async function main() {
       getNpcSimulation: () => npcSimulation,
       getCarSimulation: () => carSimulation,
       requestRender: () => game.render()
+    })
+    npcHoverMenu = installNpcHoverMenu({
+      app,
+      camera,
+      city,
+      getNpcSimulation: () => npcSimulation,
+      getCarSimulation: () => carSimulation
     })
     const dashboard = installDebugDashboard(city, entityLayer, {
       paused: game.paused,
@@ -456,6 +465,7 @@ async function main() {
       dashboard.destroy()
       cameraControls.destroy()
       entityContextMenu.destroy()
+      npcHoverMenu.destroy()
       clearPixiContainer(entityLayer)
       app.destroy({ removeView: true }, { children: true })
       delete window.citySim
@@ -465,6 +475,7 @@ async function main() {
       camera,
       city,
       dashboard,
+      npcHoverMenu,
       simulationClock,
       dayNightOverlay,
       pathSelection,

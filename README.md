@@ -23,6 +23,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Use the dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the dashboard car control to restart the simulation with the selected number of cars. The default is 500.
 - Use the dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
+- Hover an NPC to inspect its infection status, contagiousness, immunity, and phase timer.
 - Right-click an NPC and choose `infect` to manually make that NPC infectious.
 - The dashboard shows the simulated day/time and can toggle the darker day-night overlay.
 - Use the browser console to inspect `window.citySim`.

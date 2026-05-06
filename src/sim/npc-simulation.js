@@ -364,6 +364,30 @@ class NpcInfectionDynamics {
     return this.colors[npc.infection] ?? this.colors.susceptible
   }
 
+  getNpcStatus(npcOrIndex) {
+    const index = typeof npcOrIndex === 'number' ? npcOrIndex : npcOrIndex?.id
+
+    if (!Number.isInteger(index) || index < 0 || index >= this.npcs.length) {
+      return null
+    }
+
+    const state = this.states[index]
+    const infection = INFECTION_STATE_NAMES[state]
+    const remainingSeconds = Math.max(0, this.timers[index])
+
+    return {
+      id: this.npcs[index].id,
+      infection,
+      color: this.colors[infection],
+      contagious: state === INFECTION_STATE_IDS.infectious,
+      canBeInfected: state === INFECTION_STATE_IDS.susceptible,
+      immune: state === INFECTION_STATE_IDS.recovered,
+      nextState: this.getNextStateName(state),
+      remainingSeconds,
+      remainingDays: remainingSeconds / SECONDS_PER_DAY
+    }
+  }
+
   setNpcState(npcOrIndex, infection, timerSeconds = null) {
     const index = typeof npcOrIndex === 'number' ? npcOrIndex : npcOrIndex?.id
     const state = INFECTION_STATE_IDS[infection]
@@ -581,6 +605,22 @@ class NpcInfectionDynamics {
     }
 
     return 0
+  }
+
+  getNextStateName(state) {
+    if (state === INFECTION_STATE_IDS.exposed) {
+      return 'infectious'
+    }
+
+    if (state === INFECTION_STATE_IDS.infectious) {
+      return this.immunitySeconds > 0 ? 'recovered' : 'susceptible'
+    }
+
+    if (state === INFECTION_STATE_IDS.recovered) {
+      return 'susceptible'
+    }
+
+    return null
   }
 
   setStateByIndex(index, state, timerSeconds) {

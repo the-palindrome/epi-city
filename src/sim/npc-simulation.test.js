@@ -351,6 +351,31 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
+  it('reports full infection status for an NPC', () => {
+    const twoDays = 2 * SECONDS_PER_DAY
+    const simulation = createSimulation('infection-status', createCity(), {
+      count: 1,
+      initialInfectiousCount: 0,
+      initialUpdate: false
+    })
+
+    simulation.infection.setNpcState(0, 'exposed', twoDays)
+
+    expect(simulation.infection.getNpcStatus(simulation.npcs[0])).toMatchObject({
+      id: 0,
+      infection: 'exposed',
+      color: 0xf0a33a,
+      contagious: false,
+      canBeInfected: false,
+      immune: false,
+      nextState: 'infectious',
+      remainingSeconds: twoDays,
+      remainingDays: 2
+    })
+
+    simulation.destroy()
+  })
+
   it('renders NPC infection states with their configured colors', () => {
     const colors = {
       susceptible: 0x111111,

@@ -83,6 +83,61 @@
         background: rgba(44, 154, 84, 0.14);
       }
 
+      #npc-hover-menu {
+        position: fixed;
+        min-width: 174px;
+        padding: 8px;
+        border: 1px solid rgba(24, 28, 22, 0.22);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 10px 28px rgba(20, 24, 18, 0.18);
+        color: #20261d;
+        font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        pointer-events: none;
+        user-select: none;
+        z-index: 5;
+      }
+
+      #npc-hover-menu[hidden] {
+        display: none;
+      }
+
+      .npc-hover-menu-title {
+        margin-bottom: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .npc-hover-menu-row {
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 8px;
+        padding: 2px 0;
+      }
+
+      .npc-hover-menu-label {
+        color: #526044;
+      }
+
+      .npc-hover-menu-value {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 5px;
+        min-width: 0;
+        text-align: right;
+      }
+
+      .npc-hover-menu-swatch {
+        width: 8px;
+        height: 8px;
+        border: 1px solid rgba(24, 28, 22, 0.2);
+        border-radius: 50%;
+        flex: 0 0 auto;
+      }
+
 	      #debug-dashboard {
 	        position: fixed;
 	        top: 16px;
