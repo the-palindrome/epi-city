@@ -70,6 +70,51 @@ export const NPC_CONFIG = Object.freeze({
   routeBlockedReplanSeconds: 2
 })
 
+export const INFECTION_CONFIG = Object.freeze({
+  initialInfectiousCount: 4,
+  infectionDistance: 48,
+  infectionProbability: 0.03,
+  incubationDays: 5,
+  infectionDays: 7,
+  immunityDays: 90,
+  colors: Object.freeze({
+    susceptible: NPC_CONFIG.color,
+    exposed: 0xf0a33a,
+    infectious: 0xdb3b34,
+    recovered: 0x49b86e
+  }),
+  initialInfectiousCountRange: Object.freeze({
+    min: 0,
+    max: 10000,
+    step: 1
+  }),
+  infectionDistanceRange: Object.freeze({
+    min: 0,
+    max: 256,
+    step: 1
+  }),
+  infectionProbabilityRange: Object.freeze({
+    min: 0,
+    max: 1,
+    step: 0.01
+  }),
+  incubationDaysRange: Object.freeze({
+    min: 0,
+    max: 14,
+    step: 0.25
+  }),
+  infectionDaysRange: Object.freeze({
+    min: 0,
+    max: 21,
+    step: 0.25
+  }),
+  immunityDaysRange: Object.freeze({
+    min: 0,
+    max: 365,
+    step: 1
+  })
+})
+
 export const CAR_CONFIG = Object.freeze({
   count: 500,
   zorder: 1,

@@ -15,6 +15,7 @@ export function installEntityContextMenu({
 }) {
   const menu = document.createElement('div')
   const followButton = document.createElement('button')
+  const infectButton = document.createElement('button')
   let target = null
   let destroyed = false
 
@@ -28,7 +29,13 @@ export function installEntityContextMenu({
   followButton.textContent = 'follow'
   followButton.setAttribute('role', 'menuitem')
 
+  infectButton.type = 'button'
+  infectButton.className = 'entity-context-menu-option'
+  infectButton.textContent = 'infect'
+  infectButton.setAttribute('role', 'menuitem')
+
   menu.appendChild(followButton)
+  menu.appendChild(infectButton)
   document.body.appendChild(menu)
 
   function onContextMenu(event) {
@@ -47,6 +54,7 @@ export function installEntityContextMenu({
     }
 
     target = { kind: hit.kind, id: hit.entity.id }
+    updateMenuActions()
     showAt(event.clientX, event.clientY)
   }
 
@@ -60,6 +68,23 @@ export function installEntityContextMenu({
     }
 
     if (followEntityWithCamera(camera, world, selection.entity) && typeof requestRender === 'function') {
+      requestRender()
+    }
+  }
+
+  function onInfectClick() {
+    const selection = resolveTarget()
+    const npcSimulation = getNpcSimulation()
+
+    hide()
+
+    if (!selection || selection.kind !== 'npc' || !npcSimulation?.infection) {
+      return
+    }
+
+    npcSimulation.infection.setNpcState(selection.entity, 'infectious')
+
+    if (typeof requestRender === 'function') {
       requestRender()
     }
   }
@@ -94,6 +119,10 @@ export function installEntityContextMenu({
     menu.hidden = true
   }
 
+  function updateMenuActions() {
+    infectButton.hidden = !target || target.kind !== 'npc'
+  }
+
   function resolveTarget() {
     if (!target) {
       return null
@@ -115,6 +144,7 @@ export function installEntityContextMenu({
     destroyed = true
     app.canvas.removeEventListener('contextmenu', onContextMenu)
     followButton.removeEventListener('click', onFollowClick)
+    infectButton.removeEventListener('click', onInfectClick)
     document.removeEventListener('mousedown', onDocumentMouseDown)
     document.removeEventListener('keydown', onKeyDown)
     menu.remove()
@@ -122,6 +152,7 @@ export function installEntityContextMenu({
 
   app.canvas.addEventListener('contextmenu', onContextMenu)
   followButton.addEventListener('click', onFollowClick)
+  infectButton.addEventListener('click', onInfectClick)
   document.addEventListener('mousedown', onDocumentMouseDown)
   document.addEventListener('keydown', onKeyDown)
 

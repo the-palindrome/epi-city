@@ -1,16 +1,33 @@
 import * as PIXI from 'pixi.js'
-import { NPC_CONFIG } from '../core/constants.js'
-import { createSystemRandom } from '../core/random.js'
+import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
+import { createSeededRandom, createSystemRandom } from '../core/random.js'
 import { hourInRange, normalizeHour } from '../core/time.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
 })
+const SECONDS_PER_MINUTE = 60
+const SECONDS_PER_HOUR = 3600
+const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
+const MIN_INFECTION_GRID_CELL_SIZE = 8
+const INFECTION_STATE_IDS = Object.freeze({
+  susceptible: 0,
+  exposed: 1,
+  infectious: 2,
+  recovered: 3
+})
+const INFECTION_STATE_NAMES = Object.freeze([
+  'susceptible',
+  'exposed',
+  'infectious',
+  'recovered'
+])
 
 export function createNpcSimulation(city, entityLayer, config) {
   const graphics = new PIXI.Graphics()
   const random = config.random || createSystemRandom()
+  const infectionRandom = config.infectionRandom || (random.seed ? createSeededRandom(`${random.seed}:infection`) : createSystemRandom())
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
   const clock = config.clock || STATIC_CLOCK
   const visibleTileCounts = new Uint8Array(city.tiles.length)
@@ -64,6 +81,8 @@ export function createNpcSimulation(city, entityLayer, config) {
     }))
   }
 
+  const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
+
   function update(deltaSeconds) {
     if (destroyed) {
       return
@@ -85,6 +104,8 @@ export function createNpcSimulation(city, entityLayer, config) {
     for (const npc of npcs) {
       updateNpcMovement(npc, safeDelta, context)
     }
+
+    infection.update(safeDelta)
   }
 
   function render() {
@@ -92,7 +113,7 @@ export function createNpcSimulation(city, entityLayer, config) {
       return
     }
 
-    drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes)
+    drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes, infection)
   }
 
   render()
@@ -101,6 +122,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     npcs,
     tileCapacity: config.tileCapacity,
     routePlanner,
+    infection,
     graphics,
     update,
     render,
@@ -138,6 +160,7 @@ class NpcEntity {
     this.waitingForCar = false
     this.carId = null
     this.commuteByCar = false
+    this.infection = 'susceptible'
   }
 
   getActiveTimetableElement(timeOfDayHours) {
@@ -282,6 +305,295 @@ class NpcRoutePlanner {
       this.queue.splice(0, this.head)
       this.head = 0
     }
+  }
+}
+
+class NpcInfectionDynamics {
+  constructor(npcs, city, config, random, clock) {
+    this.npcs = npcs
+    this.city = city
+    this.random = random
+    this.clock = clock
+    this.infectionDistance = nonNegativeNumberOrDefault(config.infectionDistance, INFECTION_CONFIG.infectionDistance)
+    this.infectionProbability = clampUnitInterval(config.infectionProbability ?? INFECTION_CONFIG.infectionProbability)
+    this.incubationSeconds = daysToSeconds(nonNegativeNumberOrDefault(config.incubationDays, INFECTION_CONFIG.incubationDays))
+    this.infectionSeconds = daysToSeconds(nonNegativeNumberOrDefault(config.infectionDays, INFECTION_CONFIG.infectionDays))
+    this.immunitySeconds = daysToSeconds(nonNegativeNumberOrDefault(config.immunityDays, INFECTION_CONFIG.immunityDays))
+    this.colors = normalizeInfectionColors(config.infectionColors)
+    this.states = new Uint8Array(npcs.length)
+    this.timers = new Float64Array(npcs.length)
+    this.counts = new Int32Array(INFECTION_STATE_NAMES.length)
+    this.gridCellSize = Math.max(MIN_INFECTION_GRID_CELL_SIZE, this.infectionDistance)
+    this.gridColumns = Math.max(1, Math.ceil(city.width * city.tileSize / this.gridCellSize))
+    this.gridRows = Math.max(1, Math.ceil(city.height * city.tileSize / this.gridCellSize))
+    this.gridHeads = new Int32Array(this.gridColumns * this.gridRows)
+    this.gridStamps = new Uint32Array(this.gridHeads.length)
+    this.gridNext = new Int32Array(npcs.length)
+    this.gridStamp = 0
+
+    this.counts[INFECTION_STATE_IDS.susceptible] = npcs.length
+
+    for (const npc of npcs) {
+      npc.infection = 'susceptible'
+    }
+
+    this.seedInitialInfections(config.initialInfectiousCount)
+  }
+
+  update(deltaSeconds) {
+    const simulationDeltaSeconds = getSimulationDeltaSeconds(this.clock, deltaSeconds)
+
+    if (!Number.isFinite(simulationDeltaSeconds) || simulationDeltaSeconds <= 0) {
+      return
+    }
+
+    this.advanceTimers(simulationDeltaSeconds)
+    this.transmit(simulationDeltaSeconds)
+  }
+
+  getStats() {
+    return {
+      susceptible: this.counts[INFECTION_STATE_IDS.susceptible],
+      exposed: this.counts[INFECTION_STATE_IDS.exposed],
+      infectious: this.counts[INFECTION_STATE_IDS.infectious],
+      recovered: this.counts[INFECTION_STATE_IDS.recovered]
+    }
+  }
+
+  getNpcColor(npc) {
+    return this.colors[npc.infection] ?? this.colors.susceptible
+  }
+
+  setNpcState(npcOrIndex, infection, timerSeconds = null) {
+    const index = typeof npcOrIndex === 'number' ? npcOrIndex : npcOrIndex?.id
+    const state = INFECTION_STATE_IDS[infection]
+
+    if (!Number.isInteger(index) || index < 0 || index >= this.npcs.length) {
+      throw new Error('NPC infection index is out of bounds.')
+    }
+
+    if (!Number.isInteger(state)) {
+      throw new Error(`Unknown NPC infection state "${infection}".`)
+    }
+
+    this.setStateByIndex(index, state, timerSeconds ?? this.getDefaultTimerSeconds(state))
+  }
+
+  seedInitialInfections(initialInfectiousCount) {
+    const count = clampInteger(
+      initialInfectiousCount ?? INFECTION_CONFIG.initialInfectiousCount,
+      0,
+      this.npcs.length
+    )
+
+    if (count === 0) {
+      return
+    }
+
+    const indexes = new Int32Array(this.npcs.length)
+
+    for (let index = 0; index < indexes.length; index += 1) {
+      indexes[index] = index
+    }
+
+    for (let index = 0; index < count; index += 1) {
+      const selectedIndex = index + this.random.int(indexes.length - index)
+      const npcIndex = indexes[selectedIndex]
+
+      indexes[selectedIndex] = indexes[index]
+      indexes[index] = npcIndex
+      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.infectious, this.infectionSeconds)
+    }
+  }
+
+  advanceTimers(deltaSeconds) {
+    for (let index = 0; index < this.states.length; index += 1) {
+      const initialState = this.states[index]
+
+      if (initialState === INFECTION_STATE_IDS.susceptible) {
+        continue
+      }
+
+      let state = initialState
+      let remainingSeconds = this.timers[index] - deltaSeconds
+      let transitions = 0
+
+      while (remainingSeconds <= 0 && state !== INFECTION_STATE_IDS.susceptible && transitions < 4) {
+        if (state === INFECTION_STATE_IDS.exposed) {
+          state = INFECTION_STATE_IDS.infectious
+          remainingSeconds += this.infectionSeconds
+        } else if (state === INFECTION_STATE_IDS.infectious) {
+          state = this.immunitySeconds > 0
+            ? INFECTION_STATE_IDS.recovered
+            : INFECTION_STATE_IDS.susceptible
+          remainingSeconds += this.immunitySeconds
+        } else if (state === INFECTION_STATE_IDS.recovered) {
+          state = INFECTION_STATE_IDS.susceptible
+          remainingSeconds = 0
+        }
+
+        transitions += 1
+      }
+
+      this.setStateByIndex(
+        index,
+        state,
+        state === INFECTION_STATE_IDS.susceptible ? 0 : Math.max(0, remainingSeconds)
+      )
+    }
+  }
+
+  transmit(deltaSeconds) {
+    if (
+      this.infectionDistance <= 0 ||
+      this.infectionProbability <= 0 ||
+      this.counts[INFECTION_STATE_IDS.infectious] === 0 ||
+      this.counts[INFECTION_STATE_IDS.susceptible] === 0
+    ) {
+      return
+    }
+
+    const transmissionProbability = probabilityForDeltaSeconds(this.infectionProbability, deltaSeconds)
+
+    if (transmissionProbability <= 0) {
+      return
+    }
+
+    this.indexInfectiousNpcs()
+
+    const infectionDistanceSquared = this.infectionDistance * this.infectionDistance
+
+    susceptibleLoop:
+    for (let index = 0; index < this.npcs.length; index += 1) {
+      if (this.states[index] !== INFECTION_STATE_IDS.susceptible) {
+        continue
+      }
+
+      const npc = this.npcs[index]
+
+      if (!canParticipateInInfection(npc)) {
+        continue
+      }
+
+      const cellX = this.cellXAt(npc.position.x)
+      const cellY = this.cellYAt(npc.position.y)
+
+      if (cellX < 0 || cellY < 0) {
+        continue
+      }
+
+      for (let neighborY = Math.max(0, cellY - 1); neighborY <= Math.min(this.gridRows - 1, cellY + 1); neighborY += 1) {
+        for (let neighborX = Math.max(0, cellX - 1); neighborX <= Math.min(this.gridColumns - 1, cellX + 1); neighborX += 1) {
+          const cellIndex = neighborY * this.gridColumns + neighborX
+
+          if (this.gridStamps[cellIndex] !== this.gridStamp) {
+            continue
+          }
+
+          for (let infectiousIndex = this.gridHeads[cellIndex]; infectiousIndex !== -1; infectiousIndex = this.gridNext[infectiousIndex]) {
+            const infectiousNpc = this.npcs[infectiousIndex]
+            const dx = infectiousNpc.position.x - npc.position.x
+            const dy = infectiousNpc.position.y - npc.position.y
+
+            if (dx * dx + dy * dy > infectionDistanceSquared) {
+              continue
+            }
+
+            if (this.random.next() < transmissionProbability) {
+              this.setStateByIndex(index, INFECTION_STATE_IDS.exposed, this.incubationSeconds)
+              continue susceptibleLoop
+            }
+          }
+        }
+      }
+    }
+  }
+
+  indexInfectiousNpcs() {
+    this.gridStamp += 1
+
+    if (this.gridStamp === 0) {
+      this.gridStamps.fill(0)
+      this.gridStamp = 1
+    }
+
+    for (let index = 0; index < this.npcs.length; index += 1) {
+      if (this.states[index] !== INFECTION_STATE_IDS.infectious) {
+        continue
+      }
+
+      const npc = this.npcs[index]
+
+      if (!canParticipateInInfection(npc)) {
+        continue
+      }
+
+      const cellIndex = this.cellIndexAt(npc.position)
+
+      if (cellIndex === -1) {
+        continue
+      }
+
+      if (this.gridStamps[cellIndex] !== this.gridStamp) {
+        this.gridStamps[cellIndex] = this.gridStamp
+        this.gridHeads[cellIndex] = -1
+      }
+
+      this.gridNext[index] = this.gridHeads[cellIndex]
+      this.gridHeads[cellIndex] = index
+    }
+  }
+
+  cellIndexAt(position) {
+    const cellX = this.cellXAt(position.x)
+    const cellY = this.cellYAt(position.y)
+
+    if (cellX < 0 || cellY < 0) {
+      return -1
+    }
+
+    return cellY * this.gridColumns + cellX
+  }
+
+  cellXAt(x) {
+    const cellX = Math.floor(x / this.gridCellSize)
+
+    return cellX >= 0 && cellX < this.gridColumns ? cellX : -1
+  }
+
+  cellYAt(y) {
+    const cellY = Math.floor(y / this.gridCellSize)
+
+    return cellY >= 0 && cellY < this.gridRows ? cellY : -1
+  }
+
+  getDefaultTimerSeconds(state) {
+    if (state === INFECTION_STATE_IDS.exposed) {
+      return this.incubationSeconds
+    }
+
+    if (state === INFECTION_STATE_IDS.infectious) {
+      return this.infectionSeconds
+    }
+
+    if (state === INFECTION_STATE_IDS.recovered) {
+      return this.immunitySeconds
+    }
+
+    return 0
+  }
+
+  setStateByIndex(index, state, timerSeconds) {
+    const previousState = this.states[index]
+
+    if (previousState !== state) {
+      this.counts[previousState] -= 1
+      this.counts[state] += 1
+      this.states[index] = state
+    }
+
+    this.timers[index] = timerSeconds
+    this.npcs[index].infection = INFECTION_STATE_NAMES[state]
   }
 }
 
@@ -761,7 +1073,7 @@ function tileCenterPosition(city, tileX, tileY) {
   }
 }
 
-function drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes) {
+function drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes, infection) {
   graphics.clear()
   const visibleLimit = Math.min(
     positiveIntegerOrDefault(config.maxVisiblePerTile, NPC_CONFIG.maxVisiblePerTile),
@@ -777,7 +1089,7 @@ function drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIn
       continue
     }
 
-    drawNpcBlob(graphics, npc.position.x, npc.position.y, config.size, config.color)
+    drawNpcBlob(graphics, npc.position.x, npc.position.y, config.size, infection.getNpcColor(npc))
   }
 
   for (const tileIndex of visibleTileIndexes) {
@@ -843,4 +1155,74 @@ function finiteNumberOrDefault(value, fallback) {
 
 function positiveIntegerOrDefault(value, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback
+}
+
+function nonNegativeNumberOrDefault(value, fallback) {
+  const number = Number(value)
+
+  return Number.isFinite(number) && number >= 0 ? number : fallback
+}
+
+function clampUnitInterval(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return INFECTION_CONFIG.infectionProbability
+  }
+
+  return Math.min(Math.max(number, 0), 1)
+}
+
+function clampInteger(value, min, max) {
+  const number = Math.round(Number(value))
+
+  if (!Number.isFinite(number)) {
+    return min
+  }
+
+  return Math.min(Math.max(number, min), max)
+}
+
+function daysToSeconds(days) {
+  return days * SECONDS_PER_DAY
+}
+
+function probabilityForDeltaSeconds(probabilityPerMinute, deltaSeconds) {
+  return 1 - ((1 - probabilityPerMinute) ** (deltaSeconds / SECONDS_PER_MINUTE))
+}
+
+function getSimulationDeltaSeconds(clock, deltaSeconds) {
+  const secondsPerSimulationHour = Number(clock && clock.secondsPerSimulationHour)
+
+  if (Number.isFinite(secondsPerSimulationHour) && secondsPerSimulationHour > 0) {
+    return deltaSeconds * SECONDS_PER_HOUR / secondsPerSimulationHour
+  }
+
+  return deltaSeconds
+}
+
+function canParticipateInInfection(npc) {
+  return Boolean(
+    npc &&
+    !npc.vehicleTrip &&
+    npc.position &&
+    Number.isFinite(npc.position.x) &&
+    Number.isFinite(npc.position.y)
+  )
+}
+
+function normalizeInfectionColors(colors = {}) {
+  const palette = colors || {}
+  const fallback = INFECTION_CONFIG.colors
+
+  return {
+    susceptible: finiteColorOrDefault(palette.susceptible, fallback.susceptible),
+    exposed: finiteColorOrDefault(palette.exposed, fallback.exposed),
+    infectious: finiteColorOrDefault(palette.infectious, fallback.infectious),
+    recovered: finiteColorOrDefault(palette.recovered, fallback.recovered)
+  }
+}
+
+function finiteColorOrDefault(value, fallback) {
+  return Number.isFinite(value) ? value : fallback
 }

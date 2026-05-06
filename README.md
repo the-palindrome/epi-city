@@ -22,6 +22,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
 - Use the dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the dashboard car control to restart the simulation with the selected number of cars. The default is 500.
+- Use the dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
+- Right-click an NPC and choose `infect` to manually make that NPC infectious.
 - The dashboard shows the simulated day/time and can toggle the darker day-night overlay.
 - Use the browser console to inspect `window.citySim`.
 
@@ -89,7 +91,9 @@ Vehicles use the directed lane graph when it exists and park on tiles marked `pa
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, and `movement` state, render as small `#e5c748` pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, and NPC speeds can repeat after a restart. Route extraction is deterministic.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, and `infection` state, render as colored pixel blobs while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
+
+Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPCs render yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 48 world-unit infection distance, a `0.03` per-minute contact probability, a 5-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
 
@@ -126,9 +130,11 @@ city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
 window.citySim.simulationClock.formatTimeOfDay()
 window.citySim.npcs.length
+window.citySim.npcSimulation.infection.getStats()
 window.citySim.cars.length
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
+window.citySim.npcs[0].infection
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt
 window.citySim.npcs[0].timetable.elements
@@ -140,6 +146,12 @@ window.citySim.restart()
 window.citySim.setSpeed(4)
 window.citySim.setNpcCount(2500)
 window.citySim.setCarCount(250)
+window.citySim.setInitialInfectiousCount(10)
+window.citySim.setInfectionDistance(64)
+window.citySim.setInfectionProbability(0.05)
+window.citySim.setIncubationDays(4)
+window.citySim.setInfectionDays(8)
+window.citySim.setImmunityDays(120)
 window.citySim.setDayNightOverlayEnabled(false)
 ```
 

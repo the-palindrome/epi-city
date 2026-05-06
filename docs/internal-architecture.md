@@ -149,7 +149,8 @@ NPC entities expose the state the simulation needs:
   position: { x, y },
   tile: { x, y, index },
   slot: { id, index },
-  movement: { speed, target }
+  movement: { speed, target },
+  infection
 }
 ```
 
@@ -160,6 +161,10 @@ The NPC system receives a random source through config. At creation time, each N
 NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
 
 Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
+
+NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses COVID-like defaults: 48 world units of infection distance, `0.03` per-minute transmission probability, 5 days of incubation, 7 days infectious, and 90 days of recovered immunity.
+
+Transmission indexes only infectious NPCs in a reusable world-space spatial hash sized from the infection distance. Susceptible NPCs check their own cell plus neighboring cells and then run exact squared-distance tests against the infectious candidates. This avoids an all-pairs contact scan at the 10,000-NPC dashboard limit. Infection randomness uses a dedicated seeded random stream derived from the NPC seed, so adding disease dynamics does not change movement or timetable repeatability.
 
 ## Car Simulation
 
@@ -209,7 +214,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboard
 
-Press `Space` to play or pause the simulation, and press `d` to toggle the top-right debug dashboard. The dashboard displays the simulation clock, exposes a day-night overlay checkbox, and includes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+Press `Space` to play or pause the simulation, and press `d` to toggle the top-right debug dashboard. The dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, exposes infection parameters including the initial infected count, and includes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
 
 The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
 
@@ -246,7 +251,7 @@ The dependency command creates or repairs `map-editor/.venv`, then installs the 
 
 ## Debugging Hooks
 
-`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. This keeps the console useful without exposing every Pixi container and loader helper.
+`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. Right-clicking an NPC opens a context menu with `follow` and `infect`; the `infect` action marks that NPC infectious through the same infection state API used by the simulation. This keeps the console useful without exposing every Pixi container and loader helper.
 
 Useful console checks:
 
@@ -264,6 +269,8 @@ window.citySim.setSeed('demo-seed')
 window.citySim.restart()
 window.citySim.setSpeed(4)
 window.citySim.setCarCount(250)
+window.citySim.setInitialInfectiousCount(10)
+window.citySim.npcSimulation.infection.getStats()
 window.citySim.setDayNightOverlayEnabled(false)
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt
@@ -280,7 +287,7 @@ window.citySim.dashboard.setOverlay('walkable', true)
 
 - Add focused tests around editor-side validators once the browser editor is split into modules.
 - Add hierarchical routing if future maps become much larger than the current 256x256 Liberty City layout.
-- Add simulation metadata outside the base tile category when infection dynamics need population, occupancy, or district information.
+- Add simulation metadata outside the base tile category if future disease models need district-level population, occupancy, or ventilation information.
 
 ## Lane Graph
 

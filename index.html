@@ -97,6 +97,8 @@
 	        font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	        user-select: none;
 	        box-sizing: border-box;
+        max-height: calc(100vh - 32px);
+        overflow: auto;
 	        z-index: 2;
 	      }
 
@@ -132,6 +134,10 @@
 	        letter-spacing: 0;
 	        text-transform: uppercase;
 	      }
+
+      .dashboard-subsection-title {
+        margin-top: 8px;
+      }
 
 	      .dashboard-actions {
 	        display: grid;
@@ -236,6 +242,14 @@
 	        font-weight: 700;
 	        text-align: right;
 	      }
+
+      .dashboard-infection-stats-value {
+        color: #20261d;
+        font-size: 12px;
+        font-weight: 700;
+        text-align: right;
+        white-space: nowrap;
+      }
 
 	      .dashboard-paired-inputs {
 	        display: grid;
