@@ -47,6 +47,42 @@
         color: #8f2020;
       }
 
+      #entity-context-menu {
+        position: fixed;
+        min-width: 112px;
+        padding: 4px;
+        border: 1px solid rgba(24, 28, 22, 0.2);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 10px 28px rgba(20, 24, 18, 0.18);
+        box-sizing: border-box;
+        z-index: 4;
+      }
+
+      #entity-context-menu[hidden] {
+        display: none;
+      }
+
+      .entity-context-menu-option {
+        display: block;
+        width: 100%;
+        min-height: 30px;
+        padding: 5px 9px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: #20261d;
+        font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .entity-context-menu-option:hover,
+      .entity-context-menu-option:focus-visible {
+        outline: 0;
+        background: rgba(44, 154, 84, 0.14);
+      }
+
 	      #debug-dashboard {
 	        position: fixed;
 	        top: 16px;

@@ -10,9 +10,13 @@ import { Game } from './engine/game.js'
 import {
   applyCameraToWorld,
   centerCameraOnCity,
+  clearCameraFollow,
   createCamera,
-  installCameraControls
+  followEntityWithCamera,
+  installCameraControls,
+  refreshFollowedCamera
 } from './input/camera.js'
+import { installEntityContextMenu } from './input/entity-context-menu.js'
 import { createEntityPathSelection } from './input/entity-path-selection.js'
 import {
   compileCityMap,
@@ -67,6 +71,11 @@ async function main() {
 
     const camera = createCamera()
     const applyCamera = () => applyCameraToWorld(camera, world)
+    const applyCameraFollow = () => {
+      if (!refreshFollowedCamera(camera, world)) {
+        applyCamera()
+      }
+    }
     const mapData = await loadCityMap(DEFAULT_CITY_MAP_PATHS.tileLayout, DEFAULT_CITY_MAP_PATHS.textureLayout)
     const city = compileCityMap(mapData)
     const textureSet = await loadTextureSet(city.textureSetName)
@@ -90,6 +99,7 @@ async function main() {
     const dayNightOverlay = createDayNightOverlay(city, entityLayer, simulationClock, {
       enabled: simulationState.dayNightOverlayEnabled
     })
+    let entityContextMenu = null
     const pathSelection = createEntityPathSelection({
       app,
       camera,
@@ -177,6 +187,8 @@ async function main() {
 
       city.resetCrosswalkSignals()
       city.resetTrafficSignals()
+      clearCameraFollow(camera)
+      entityContextMenu?.hide()
       pathSelection.clearSelection()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
@@ -187,7 +199,16 @@ async function main() {
       game.render()
     }
 
-    const cameraControls = installCameraControls(app, camera, applyCamera)
+    const cameraControls = installCameraControls(app, camera, applyCamera, { applyCameraFollow })
+    entityContextMenu = installEntityContextMenu({
+      app,
+      camera,
+      city,
+      world,
+      getNpcSimulation: () => npcSimulation,
+      getCarSimulation: () => carSimulation,
+      requestRender: () => game.render()
+    })
     const dashboard = installDebugDashboard(city, entityLayer, {
       paused: game.paused,
       seedEnabled: simulationState.seedEnabled,
@@ -244,6 +265,7 @@ async function main() {
     game.addSystem(carSimulation)
     game.addSystem(npcSimulation)
     game.addSystem(pathSelection)
+    game.addSystem({ render: applyCameraFollow })
     game.start()
 
     function playSimulation() {
@@ -296,6 +318,7 @@ async function main() {
       game.destroy()
       dashboard.destroy()
       cameraControls.destroy()
+      entityContextMenu.destroy()
       clearPixiContainer(entityLayer)
       app.destroy({ removeView: true }, { children: true })
       delete window.citySim
@@ -333,6 +356,8 @@ async function main() {
       setCarCount,
       setDayNightOverlayEnabled,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
+      followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
+      clearCameraFollow: () => clearCameraFollow(camera),
       destroy
     }
 
