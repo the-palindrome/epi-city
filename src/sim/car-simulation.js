@@ -3,7 +3,7 @@ import { CAR_CONFIG } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
 import { hourInRange } from '../core/time.js'
-import { fillRect } from '../render/pixi-rendering.js'
+import { drawCarSprite } from '../render/car-sprite.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -1944,28 +1944,8 @@ function drawCars(graphics, cars, city, config) {
   graphics.clear()
 
   for (const car of cars) {
-    drawCar(graphics, car, city, config)
+    drawCarSprite(graphics, car, city, config)
   }
-}
-
-function drawCar(graphics, car, city, config) {
-  const direction = car.direction || { dx: 1, dy: 0 }
-  const length = car.state === 'parked'
-    ? car.lengthTiles * city.tileSize * 0.82
-    : positiveNumberOrDefault(config.roadBodyLength, CAR_CONFIG.roadBodyLength)
-  const width = positiveNumberOrDefault(config.bodyWidth, CAR_CONFIG.bodyWidth)
-  const horizontal = Math.abs(direction.dx) >= Math.abs(direction.dy)
-  const rectWidth = horizontal ? length : width
-  const rectHeight = horizontal ? width : length
-
-  fillRect(
-    graphics,
-    Math.round(car.position.x - rectWidth / 2),
-    Math.round(car.position.y - rectHeight / 2),
-    Math.round(rectWidth),
-    Math.round(rectHeight),
-    car.color
-  )
 }
 
 function collectBuildings(city, type) {

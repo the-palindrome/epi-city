@@ -130,8 +130,9 @@ export const CAR_CONFIG = Object.freeze({
   maxSpeed: 96,
   speedLimitScale: 2.5,
   parkingSearchRadius: 64,
-  bodyWidth: 12,
-  roadBodyLength: 24,
+  bodyWidth: 18,
+  roadBodyLength: 34,
+  longBodyLength: 44,
   parkedRoadOffset: 0.24
 })
 

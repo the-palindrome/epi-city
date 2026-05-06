@@ -18,8 +18,11 @@ vi.mock('pixi.js', () => ({
 
     rect(x, y, width, height) {
       this.rects.push({ x, y, width, height })
+      const rect = this.rects[this.rects.length - 1]
       return {
-        fill() {}
+        fill(options) {
+          rect.fill = options
+        }
       }
     }
 
@@ -486,7 +489,8 @@ describe('car simulation', () => {
     expect(new Set(occupiedTiles).size).toBe(occupiedTiles.length)
 
     simulation.render()
-    expect(simulation.graphics.rects).toHaveLength(2)
+    expect(simulation.graphics.rects.length).toBeGreaterThan(simulation.cars.length * 10)
+    expect(simulation.graphics.rects.some((rect) => rect.fill?.color === simulation.cars[0].color)).toBe(true)
 
     simulation.destroy()
   })

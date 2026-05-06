@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js'
 import { CAR_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { canvasPoint } from '../core/math.js'
+import { getCarSpriteMetrics } from '../render/car-sprite.js'
 
 const PATH_OVERLAY_ZORDER = 6
 const CLICK_DRAG_TOLERANCE_PX = 5
@@ -209,14 +210,9 @@ function carHitScore(point, car, city) {
     return null
   }
 
-  const direction = car.direction || { dx: 1, dy: 0 }
-  const horizontal = Math.abs(direction.dx) >= Math.abs(direction.dy)
-  const length = car.state === 'parked'
-    ? car.lengthTiles * city.tileSize * 0.82
-    : CAR_CONFIG.roadBodyLength
-  const width = CAR_CONFIG.bodyWidth
-  const halfWidth = (horizontal ? length : width) / 2 + 5
-  const halfHeight = (horizontal ? width : length) / 2 + 5
+  const metrics = getCarSpriteMetrics(car, city, CAR_CONFIG)
+  const halfWidth = (metrics.horizontal ? metrics.length : metrics.width) / 2 + 5
+  const halfHeight = (metrics.horizontal ? metrics.width : metrics.length) / 2 + 5
   const dx = Math.abs(point.x - car.position.x)
   const dy = Math.abs(point.y - car.position.y)
 
@@ -296,7 +292,7 @@ function drawSelectionMarker(graphics, kind, entity, city) {
   }
 
   const radius = kind === 'car'
-    ? Math.max(CAR_CONFIG.bodyWidth, city.tileSize * 0.35)
+    ? Math.max(getCarSpriteMetrics(entity, city, CAR_CONFIG).width, city.tileSize * 0.35)
     : Math.max(NPC_CONFIG.size, city.tileSize * 0.22)
 
   graphics
