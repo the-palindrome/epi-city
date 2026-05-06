@@ -1,4 +1,4 @@
-import { CAR_CONFIG } from '../core/constants.js'
+import { CAR_CONFIG, PIXEL_ART_SCALE_MODE } from '../core/constants.js'
 
 const CAR_SPRITE_BASE_LENGTH = 25
 const LONG_CAR_SPRITE_BASE_LENGTH = 32
@@ -21,6 +21,7 @@ const STATIC_CAR_FILL_STYLES = {
   shadow: createFillStyle(SHADOW_COLOR, 0.32)
 }
 const CAR_SPRITE_PALETTE_CACHE = new Map()
+const CAR_SPRITE_TEXTURE_CACHE = new Map()
 
 export function getCarSpriteMetrics(car, city, config = {}) {
   const direction = normalizeDirection(car?.direction)
@@ -30,13 +31,132 @@ export function getCarSpriteMetrics(car, city, config = {}) {
     longBody ? CAR_CONFIG.longBodyLength : CAR_CONFIG.roadBodyLength
   )
   const width = positiveNumberOrDefault(config.bodyWidth, CAR_CONFIG.bodyWidth)
+  const baseLength = longBody ? LONG_CAR_SPRITE_BASE_LENGTH : CAR_SPRITE_BASE_LENGTH
+  const pixel = Math.max(
+    MIN_SPRITE_PIXEL,
+    Math.min(length / baseLength, width / CAR_SPRITE_BASE_WIDTH)
+  )
+  const horizontal = Math.abs(direction.dx) >= Math.abs(direction.dy)
 
   return {
     length,
     width,
     longBody,
-    horizontal: Math.abs(direction.dx) >= Math.abs(direction.dy),
+    baseLength,
+    baseWidth: CAR_SPRITE_BASE_WIDTH,
+    pixel,
+    textureWidth: Math.round((horizontal ? baseLength : CAR_SPRITE_BASE_WIDTH) * pixel),
+    textureHeight: Math.round((horizontal ? CAR_SPRITE_BASE_WIDTH : baseLength) * pixel),
+    horizontal,
     direction
+  }
+}
+
+export function createCarSpriteRenderer(cars, city, config = {}, options = {}) {
+  const pixi = options.pixi
+
+  if (!pixi || typeof pixi.Container !== 'function' || typeof pixi.Sprite !== 'function') {
+    return createGraphicsCarSpriteRenderer(cars, city, config, pixi)
+  }
+
+  const textureFactory = options.textureFactory || createAtlasCarSpriteTextureFactory(cars, city, config, pixi)
+  const container = new pixi.Container()
+  const sprites = []
+  const textureKeys = []
+  const lastColors = []
+  const lastLengthTiles = []
+  const lastDirectionIds = []
+
+  container.eventMode = 'none'
+  container.zIndex = config.zorder
+  container.zorder = config.zorder
+  container.sortableChildren = false
+
+  function ensureSprite(index) {
+    if (sprites[index]) {
+      return sprites[index]
+    }
+
+    const sprite = new pixi.Sprite()
+
+    sprite.eventMode = 'none'
+    sprite.roundPixels = true
+    sprite.visible = false
+    sprite.zIndex = config.zorder
+    sprite.zorder = config.zorder
+
+    if (sprite.anchor && typeof sprite.anchor.set === 'function') {
+      sprite.anchor.set(0.5)
+    } else {
+      sprite.anchor = { x: 0.5, y: 0.5 }
+    }
+
+    sprites[index] = sprite
+    container.addChild(sprite)
+    return sprite
+  }
+
+  function render(nextCars = cars) {
+    for (let index = 0; index < nextCars.length; index += 1) {
+      const car = nextCars[index]
+      const sprite = ensureSprite(index)
+
+      if (!car?.position) {
+        sprite.visible = false
+        continue
+      }
+
+      const directionId = carSpriteDirectionId(car.direction)
+
+      if (lastColors[index] !== car.color ||
+          lastLengthTiles[index] !== car.lengthTiles ||
+          lastDirectionIds[index] !== directionId) {
+        const textureKey = getCarSpriteTextureKey(car, city, config)
+
+        sprite.texture = textureFactory(textureKey, car, city, config, pixi)
+        textureKeys[index] = textureKey
+        lastColors[index] = car.color
+        lastLengthTiles[index] = car.lengthTiles
+        lastDirectionIds[index] = directionId
+      }
+
+      sprite.visible = true
+      sprite.x = Math.round(car.position.x)
+      sprite.y = Math.round(car.position.y)
+    }
+
+    for (let index = nextCars.length; index < sprites.length; index += 1) {
+      sprites[index].visible = false
+    }
+  }
+
+  function destroy() {
+    for (const sprite of sprites) {
+      if (sprite && typeof sprite.destroy === 'function') {
+        sprite.destroy()
+      }
+    }
+
+    sprites.length = 0
+    textureKeys.length = 0
+    lastColors.length = 0
+    lastLengthTiles.length = 0
+    lastDirectionIds.length = 0
+
+    if (container.parent) {
+      container.parent.removeChild(container)
+    }
+
+    if (typeof container.destroy === 'function') {
+      container.destroy({ children: true })
+    }
+  }
+
+  return {
+    display: container,
+    sprites,
+    render,
+    destroy
   }
 }
 
@@ -46,21 +166,16 @@ export function drawCarSprite(graphics, car, city, config = {}) {
   }
 
   const metrics = getCarSpriteMetrics(car, city, config)
-  const baseLength = metrics.longBody ? LONG_CAR_SPRITE_BASE_LENGTH : CAR_SPRITE_BASE_LENGTH
-  const pixel = Math.max(
-    MIN_SPRITE_PIXEL,
-    Math.min(metrics.length / baseLength, metrics.width / CAR_SPRITE_BASE_WIDTH)
-  )
   const palette = getCarSpritePalette(car.color)
 
   if (metrics.horizontal) {
     drawCarTemplate(
       graphics,
-      Math.round(car.position.x - (baseLength * pixel) / 2),
-      Math.round(car.position.y - (CAR_SPRITE_BASE_WIDTH * pixel) / 2),
-      pixel,
+      Math.round(car.position.x - (metrics.baseLength * metrics.pixel) / 2),
+      Math.round(car.position.y - (metrics.baseWidth * metrics.pixel) / 2),
+      metrics.pixel,
       'horizontal',
-      baseLength,
+      metrics.baseLength,
       metrics.direction.dx < 0,
       palette,
       metrics.longBody
@@ -70,15 +185,31 @@ export function drawCarSprite(graphics, car, city, config = {}) {
 
   drawCarTemplate(
     graphics,
-    Math.round(car.position.x - (CAR_SPRITE_BASE_WIDTH * pixel) / 2),
-    Math.round(car.position.y - (baseLength * pixel) / 2),
-    pixel,
+    Math.round(car.position.x - (metrics.baseWidth * metrics.pixel) / 2),
+    Math.round(car.position.y - (metrics.baseLength * metrics.pixel) / 2),
+    metrics.pixel,
     'vertical',
-    baseLength,
+    metrics.baseLength,
     metrics.direction.dy < 0,
     palette,
     metrics.longBody
   )
+}
+
+export function getCarSpriteTextureKey(car, city, config = {}) {
+  const metrics = getCarSpriteMetrics(car, city, config)
+  const color = normalizeColor(car?.color).toString(16).padStart(6, '0')
+  const direction = metrics.horizontal
+    ? (metrics.direction.dx < 0 ? 'west' : 'east')
+    : (metrics.direction.dy < 0 ? 'north' : 'south')
+
+  return [
+    color,
+    metrics.longBody ? 'long' : 'short',
+    direction,
+    metrics.textureWidth,
+    metrics.textureHeight
+  ].join(':')
 }
 
 function normalizeDirection(direction) {
@@ -90,6 +221,21 @@ function normalizeDirection(direction) {
   }
 
   return direction
+}
+
+function carSpriteDirectionId(direction) {
+  if (!direction ||
+      !Number.isFinite(direction.dx) ||
+      !Number.isFinite(direction.dy) ||
+      (Math.abs(direction.dx) < 0.001 && Math.abs(direction.dy) < 0.001)) {
+    return 0
+  }
+
+  if (Math.abs(direction.dx) >= Math.abs(direction.dy)) {
+    return direction.dx < 0 ? 1 : 0
+  }
+
+  return direction.dy < 0 ? 3 : 2
 }
 
 function getCarSpritePalette(color) {
@@ -125,6 +271,283 @@ function createCarSpritePalette(body) {
 
 function createFillStyle(color, alpha = 1) {
   return { color, alpha }
+}
+
+function defaultCarSpriteTextureFactory(textureKey, car, city, config, pixi) {
+  const cachedTexture = CAR_SPRITE_TEXTURE_CACHE.get(textureKey)
+
+  if (cachedTexture) {
+    return cachedTexture
+  }
+
+  const texture = createCarSpriteTexture(car, city, config, pixi)
+
+  CAR_SPRITE_TEXTURE_CACHE.set(textureKey, texture)
+  return texture
+}
+
+function createAtlasCarSpriteTextureFactory(cars, city, config, pixi) {
+  const atlas = createCarSpriteAtlas(cars, city, config, pixi)
+
+  if (!atlas) {
+    return defaultCarSpriteTextureFactory
+  }
+
+  return (textureKey, car, nextCity, nextConfig, nextPixi) => {
+    return atlas.textures.get(textureKey) ||
+      defaultCarSpriteTextureFactory(textureKey, car, nextCity, nextConfig, nextPixi)
+  }
+}
+
+function createCarSpriteAtlas(cars, city, config, pixi) {
+  if (!pixi.Texture ||
+      typeof pixi.Texture.from !== 'function' ||
+      typeof pixi.Texture !== 'function' ||
+      typeof pixi.Rectangle !== 'function') {
+    return null
+  }
+
+  const specs = createCarSpriteAtlasSpecs(cars, city, config)
+
+  if (specs.length === 0) {
+    return null
+  }
+
+  const padding = 1
+  const atlasWidth = 512
+  let cursorX = 0
+  let cursorY = 0
+  let rowHeight = 0
+
+  for (const spec of specs) {
+    if (cursorX > 0 && cursorX + spec.width > atlasWidth) {
+      cursorX = 0
+      cursorY += rowHeight + padding
+      rowHeight = 0
+    }
+
+    spec.x = cursorX
+    spec.y = cursorY
+    cursorX += spec.width + padding
+    rowHeight = Math.max(rowHeight, spec.height)
+  }
+
+  const atlasHeight = cursorY + rowHeight
+  const canvas = createCanvas(atlasWidth, atlasHeight)
+
+  if (!canvas) {
+    return null
+  }
+
+  const context = canvas.getContext?.('2d')
+
+  if (!context) {
+    return null
+  }
+
+  context.imageSmoothingEnabled = false
+
+  for (const spec of specs) {
+    drawCarTemplate(
+      createCanvasGraphics(context),
+      spec.x,
+      spec.y,
+      spec.metrics.pixel,
+      spec.metrics.horizontal ? 'horizontal' : 'vertical',
+      spec.metrics.baseLength,
+      spec.metrics.horizontal ? spec.metrics.direction.dx < 0 : spec.metrics.direction.dy < 0,
+      spec.palette,
+      spec.metrics.longBody
+    )
+  }
+
+  const atlasTexture = pixi.Texture.from(canvas, true)
+  const textures = new Map()
+
+  applyNearestSampling(atlasTexture)
+
+  for (const spec of specs) {
+    const texture = new pixi.Texture({
+      source: atlasTexture.source,
+      frame: new pixi.Rectangle(spec.x, spec.y, spec.width, spec.height)
+    })
+
+    applyNearestSampling(texture)
+    textures.set(spec.key, texture)
+  }
+
+  return { atlasTexture, textures }
+}
+
+function createCarSpriteAtlasSpecs(cars, city, config) {
+  const colors = new Set()
+  const specs = []
+  const seenKeys = new Set()
+
+  for (const color of config.colorPalette || []) {
+    colors.add(normalizeColor(color))
+  }
+
+  for (const car of cars || []) {
+    colors.add(normalizeColor(car?.color))
+  }
+
+  for (const color of colors) {
+    for (const lengthTiles of [2, 3]) {
+      for (const direction of [
+        { dx: 1, dy: 0 },
+        { dx: -1, dy: 0 },
+        { dx: 0, dy: 1 },
+        { dx: 0, dy: -1 }
+      ]) {
+        const car = {
+          color,
+          lengthTiles,
+          direction,
+          position: { x: 0, y: 0 }
+        }
+        const key = getCarSpriteTextureKey(car, city, config)
+
+        if (seenKeys.has(key)) {
+          continue
+        }
+
+        const metrics = getCarSpriteMetrics(car, city, config)
+
+        seenKeys.add(key)
+        specs.push({
+          key,
+          car,
+          metrics,
+          palette: getCarSpritePalette(color),
+          width: metrics.textureWidth,
+          height: metrics.textureHeight,
+          x: 0,
+          y: 0
+        })
+      }
+    }
+  }
+
+  return specs
+}
+
+function createCarSpriteTexture(car, city, config, pixi) {
+  const metrics = getCarSpriteMetrics(car, city, config)
+  const palette = getCarSpritePalette(car.color)
+  const canvas = createCanvas(metrics.textureWidth, metrics.textureHeight)
+
+  if (!canvas || !pixi.Texture || typeof pixi.Texture.from !== 'function') {
+    return pixi.Texture?.EMPTY || null
+  }
+
+  const context = canvas.getContext?.('2d')
+
+  if (!context) {
+    return pixi.Texture?.EMPTY || null
+  }
+
+  context.imageSmoothingEnabled = false
+  drawCarTemplate(
+    createCanvasGraphics(context),
+    0,
+    0,
+    metrics.pixel,
+    metrics.horizontal ? 'horizontal' : 'vertical',
+    metrics.baseLength,
+    metrics.horizontal ? metrics.direction.dx < 0 : metrics.direction.dy < 0,
+    palette,
+    metrics.longBody
+  )
+
+  const texture = pixi.Texture.from(canvas, true)
+
+  applyNearestSampling(texture)
+  return texture
+}
+
+function createCanvas(width, height) {
+  if (globalThis.OffscreenCanvas) {
+    return new OffscreenCanvas(width, height)
+  }
+
+  if (globalThis.document && typeof document.createElement === 'function') {
+    const canvas = document.createElement('canvas')
+
+    canvas.width = width
+    canvas.height = height
+    return canvas
+  }
+
+  return null
+}
+
+function createCanvasGraphics(context) {
+  return {
+    rect(x, y, width, height) {
+      return {
+        fill: (fillStyle) => {
+          context.fillStyle = canvasFillStyle(fillStyle)
+          context.fillRect(x, y, width, height)
+        }
+      }
+    }
+  }
+}
+
+function canvasFillStyle(fillStyle) {
+  const color = Number.isInteger(fillStyle?.color) ? fillStyle.color & 0xffffff : 0xffffff
+  const alpha = Number.isFinite(fillStyle?.alpha) ? Math.min(Math.max(fillStyle.alpha, 0), 1) : 1
+  const red = (color >> 16) & 0xff
+  const green = (color >> 8) & 0xff
+  const blue = color & 0xff
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+function applyNearestSampling(texture) {
+  const source = texture && texture.source
+
+  if (!source) {
+    return
+  }
+
+  source.scaleMode = PIXEL_ART_SCALE_MODE
+  source.magFilter = PIXEL_ART_SCALE_MODE
+  source.minFilter = PIXEL_ART_SCALE_MODE
+  source.mipmapFilter = PIXEL_ART_SCALE_MODE
+  source.autoGenerateMipmaps = false
+
+  if (source.style && typeof source.style.update === 'function') {
+    source.style.update()
+  }
+}
+
+function createGraphicsCarSpriteRenderer(cars, city, config, pixi) {
+  const graphics = new pixi.Graphics()
+
+  graphics.eventMode = 'none'
+  graphics.zIndex = config.zorder
+  graphics.zorder = config.zorder
+
+  return {
+    display: graphics,
+    sprites: [],
+    render(nextCars = cars) {
+      graphics.clear()
+
+      for (const car of nextCars) {
+        drawCarSprite(graphics, car, city, config)
+      }
+    },
+    destroy() {
+      if (graphics.parent) {
+        graphics.parent.removeChild(graphics)
+      }
+
+      graphics.destroy()
+    }
+  }
 }
 
 function drawCarTemplate(graphics, originX, originY, pixel, orientation, baseLength, mirror, palette, longBody) {

@@ -2,9 +2,9 @@ import * as PIXI from 'pixi.js'
 import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
 import { hourInRange, normalizeHour } from '../core/time.js'
+import { createNpcSpriteRenderer } from '../render/npc-sprite-renderer.js'
 import {
   createNpcSpriteState,
-  drawNpcSprite,
   faceNpcSprite,
   idleNpcSprite,
   stepNpcSpriteAnimation
@@ -34,7 +34,6 @@ const NPC_MOVEMENT_CURVE_TANGENT_SCALE = 0.36
 const NPC_MOVEMENT_CURVE_MAX_TANGENT_TILES = 0.5
 
 export function createNpcSimulation(city, entityLayer, config) {
-  const graphics = new PIXI.Graphics()
   const random = config.random || createSystemRandom()
   const infectionRandom = config.infectionRandom || (random.seed ? createSeededRandom(`${random.seed}:infection`) : createSystemRandom())
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
@@ -59,12 +58,8 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
   let destroyed = false
 
-  graphics.eventMode = 'none'
-  graphics.zIndex = zorder
-  graphics.zorder = zorder
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
-  entityLayer.addChild(graphics)
 
   for (let id = 0; id < config.count; id += 1) {
     const buildingAssignment = createNpcBuildingAssignment(buildingsByType, random)
@@ -91,6 +86,14 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
 
   const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
+  const npcRenderer = createNpcSpriteRenderer(npcs, city, config, infection, {
+    pixi: PIXI,
+    visibleTileCounts,
+    visibleTileIndexes
+  })
+  const graphics = npcRenderer.display
+
+  entityLayer.addChild(graphics)
 
   function update(deltaSeconds) {
     if (destroyed) {
@@ -122,7 +125,7 @@ export function createNpcSimulation(city, entityLayer, config) {
       return
     }
 
-    drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes, infection)
+    npcRenderer.render(npcs, infection)
   }
 
   render()
@@ -138,11 +141,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     destroy() {
       destroyed = true
 
-      if (graphics.parent) {
-        graphics.parent.removeChild(graphics)
-      }
-
-      graphics.destroy()
+      npcRenderer.destroy()
     }
   }
 }
@@ -873,16 +872,21 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const target = npc.movement.target
   const maxStep = npc.movement.speed * deltaSeconds
   const nextDistance = Math.min(target.distanceTravelled + maxStep, target.curve.length)
-  const previousPosition = { x: npc.position.x, y: npc.position.y }
-  const nextPosition = pointOnNpcMovementCurve(target.curve, nextDistance)
-  const direction = normalizeVector(
-    nextPosition.x - previousPosition.x,
-    nextPosition.y - previousPosition.y
-  ) || { x: target.directionX, y: target.directionY }
-  const movedDistance = Math.hypot(nextPosition.x - previousPosition.x, nextPosition.y - previousPosition.y)
+  const previousX = npc.position.x
+  const previousY = npc.position.y
+  const nextPosition = target.nextPosition || (target.nextPosition = { x: previousX, y: previousY })
 
-  stepNpcSpriteAnimation(npc, direction.x, direction.y, movedDistance)
-  setNpcMovementHeading(npc, direction.x, direction.y)
+  pointOnNpcMovementCurve(target.curve, nextDistance, nextPosition)
+
+  const deltaX = nextPosition.x - previousX
+  const deltaY = nextPosition.y - previousY
+  const movedDistance = Math.hypot(deltaX, deltaY)
+  const directionX = movedDistance > 0.0001 ? deltaX / movedDistance : target.directionX
+  const directionY = movedDistance > 0.0001 ? deltaY / movedDistance : target.directionY
+
+  stepNpcSpriteAnimation(npc, directionX, directionY, movedDistance)
+  npc.movement.headingX = directionX
+  npc.movement.headingY = directionY
 
   if (nextDistance >= target.curve.length || target.remainingDistance <= maxStep || target.remainingDistance === 0) {
     npc.position.x = target.position.x
@@ -901,8 +905,8 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
   npc.position.y = nextPosition.y
   target.distanceTravelled = nextDistance
   target.remainingDistance = target.curve.length - nextDistance
-  target.directionX = direction.x
-  target.directionY = direction.y
+  target.directionX = directionX
+  target.directionY = directionY
 }
 
 function followRoute(npc, deltaSeconds, context) {
@@ -1106,13 +1110,17 @@ function createNpcMovementCurveSamples(p0, p1, p2, p3) {
   return samples
 }
 
-function pointOnNpcMovementCurve(curve, distance) {
+function pointOnNpcMovementCurve(curve, distance, out = { x: 0, y: 0 }) {
   if (curve.length === 0 || distance <= 0) {
-    return { x: curve.p0.x, y: curve.p0.y }
+    out.x = curve.p0.x
+    out.y = curve.p0.y
+    return out
   }
 
   if (distance >= curve.length) {
-    return { x: curve.p3.x, y: curve.p3.y }
+    out.x = curve.p3.x
+    out.y = curve.p3.y
+    return out
   }
 
   const samples = curve.samples
@@ -1129,23 +1137,28 @@ function pointOnNpcMovementCurve(curve, distance) {
     const ratio = span === 0 ? 0 : (distance - previous.distance) / span
     const t = previous.t + (sample.t - previous.t) * ratio
 
-    return cubicBezierPoint(curve.p0, curve.p1, curve.p2, curve.p3, t)
+    return cubicBezierPointInto(out, curve.p0, curve.p1, curve.p2, curve.p3, t)
   }
 
-  return { x: curve.p3.x, y: curve.p3.y }
+  out.x = curve.p3.x
+  out.y = curve.p3.y
+  return out
 }
 
 function cubicBezierPoint(p0, p1, p2, p3, t) {
+  return cubicBezierPointInto({ x: 0, y: 0 }, p0, p1, p2, p3, t)
+}
+
+function cubicBezierPointInto(out, p0, p1, p2, p3, t) {
   const inverse = 1 - t
   const a = inverse * inverse * inverse
   const b = 3 * inverse * inverse * t
   const c = 3 * inverse * t * t
   const d = t * t * t
 
-  return {
-    x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
-    y: a * p0.y + b * p1.y + c * p2.y + d * p3.y
-  }
+  out.x = a * p0.x + b * p1.x + c * p2.x + d * p3.x
+  out.y = a * p0.y + b * p1.y + c * p2.y + d * p3.y
+  return out
 }
 
 function npcMovementHeading(npc, fallback) {
@@ -1314,66 +1327,6 @@ function tileCenterPosition(city, tileX, tileY) {
     x: (tileX + 0.5) * city.tileSize,
     y: (tileY + 0.5) * city.tileSize
   }
-}
-
-function drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIndexes, infection) {
-  graphics.clear()
-  const visibleLimit = Math.min(
-    positiveIntegerOrDefault(config.maxVisiblePerTile, NPC_CONFIG.maxVisiblePerTile),
-    positiveIntegerOrDefault(config.tileCapacity, NPC_CONFIG.tileCapacity)
-  )
-
-  for (const npc of npcs) {
-    if (!npc.present) {
-      continue
-    }
-
-    if (!reserveVisibleNpcTile(tileIndexAtPosition(city, npc.position), visibleLimit, visibleTileCounts, visibleTileIndexes)) {
-      continue
-    }
-
-    drawNpcSprite(graphics, npc, {
-      color: infection.getNpcColor(npc),
-      size: config.size
-    })
-  }
-
-  for (const tileIndex of visibleTileIndexes) {
-    visibleTileCounts[tileIndex] = 0
-  }
-
-  visibleTileIndexes.length = 0
-}
-
-function tileIndexAtPosition(city, position) {
-  const tileX = Math.floor(position.x / city.tileSize)
-  const tileY = Math.floor(position.y / city.tileSize)
-
-  if (tileX < 0 || tileY < 0 || tileX >= city.width || tileY >= city.height) {
-    return -1
-  }
-
-  return tileY * city.width + tileX
-}
-
-function reserveVisibleNpcTile(tileIndex, visibleLimit, visibleTileCounts, visibleTileIndexes) {
-  if (tileIndex < 0) {
-    return true
-  }
-
-  const count = visibleTileCounts[tileIndex]
-
-  if (count >= visibleLimit) {
-    return false
-  }
-
-  if (count === 0) {
-    visibleTileIndexes.push(tileIndex)
-  }
-
-  visibleTileCounts[tileIndex] = count + 1
-
-  return true
 }
 
 function createEmptyRouteState() {

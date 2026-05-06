@@ -1,0 +1,126 @@
+import { describe, expect, it } from 'vitest'
+import { NPC_CONFIG } from '../core/constants.js'
+import { NPC_SPRITE_FRAME_DISTANCE, createNpcSpriteState } from './npc-sprite.js'
+import { createNpcSpriteRenderer } from './npc-sprite-renderer.js'
+
+const FACINGS = Object.freeze(['south', 'east', 'north', 'west'])
+
+function createMockPixi() {
+  return {
+    ParticleContainer: class {
+      constructor(options = {}) {
+        this.texture = options.texture
+        this.dynamicProperties = options.dynamicProperties
+        this.roundPixels = options.roundPixels
+        this.particleChildren = options.particles || []
+        this.updateCount = 0
+      }
+
+      update() {
+        this.updateCount += 1
+      }
+
+      destroy() {
+        this.destroyed = true
+      }
+    },
+    Particle: class {
+      constructor(options = {}) {
+        Object.assign(this, options)
+      }
+    }
+  }
+}
+
+function createTextureAtlas(colors) {
+  const textures = []
+  const colorIndexes = new Map(colors.map((color, index) => [color, index]))
+
+  for (let colorIndex = 0; colorIndex < colors.length; colorIndex += 1) {
+    for (let facingIndex = 0; facingIndex < FACINGS.length; facingIndex += 1) {
+      for (let frame = 0; frame < 4; frame += 1) {
+        const slot = colorIndex * 16 + facingIndex * 4 + frame
+
+        textures[slot] = { slot, color: colors[colorIndex], facing: FACINGS[facingIndex], frame }
+      }
+    }
+  }
+
+  return {
+    atlasTexture: { atlas: true },
+    textures,
+    colorIndexes,
+    defaultSlot: 0,
+    defaultTexture: textures[0]
+  }
+}
+
+function createNpc(id, x, y) {
+  return {
+    id,
+    present: true,
+    position: { x, y },
+    sprite: createNpcSpriteState(id)
+  }
+}
+
+describe('NPC sprite renderer', () => {
+  it('compacts visible NPCs into reusable particles and honors tile visibility caps', () => {
+    const city = {
+      width: 1,
+      height: 1,
+      tileSize: 32,
+      tiles: [{}]
+    }
+    const colors = [0x111111, 0x222222]
+    const npcs = [
+      createNpc(0, 16, 16),
+      createNpc(1, 18, 16),
+      createNpc(2, 20, 16),
+      createNpc(3, 22, 16)
+    ]
+    const infection = {
+      getNpcColor(npc) {
+        return colors[npc.id % colors.length]
+      }
+    }
+    const renderer = createNpcSpriteRenderer(npcs, city, {
+      ...NPC_CONFIG,
+      maxVisiblePerTile: 2,
+      tileCapacity: 4
+    }, infection, {
+      pixi: createMockPixi(),
+      textureAtlas: createTextureAtlas(colors)
+    })
+
+    renderer.render()
+
+    expect(renderer.display.particleChildren).toHaveLength(2)
+    expect(renderer.display.updateCount).toBe(1)
+    expect(renderer.display.particleChildren[0]).toBe(renderer.particles[0])
+    expect(renderer.display.particleChildren[1]).toBe(renderer.particles[1])
+    expect(renderer.particles[0]).toMatchObject({ x: 16, y: 16 })
+    expect(renderer.particles[1]).toMatchObject({ x: 18, y: 16 })
+
+    const firstParticle = renderer.particles[0]
+
+    npcs[0].position.x = 19
+    npcs[0].sprite.facing = 'east'
+    npcs[0].sprite.walking = true
+    npcs[0].sprite.walkDistance = NPC_SPRITE_FRAME_DISTANCE
+    renderer.render()
+
+    expect(renderer.display.particleChildren[0]).toBe(firstParticle)
+    expect(firstParticle.x).toBe(19)
+    expect(firstParticle.texture).toMatchObject({
+      color: colors[0],
+      facing: 'east',
+      frame: 1
+    })
+
+    renderer.destroy()
+
+    expect(renderer.display.particleChildren).toHaveLength(0)
+    expect(renderer.display.destroyed).toBe(true)
+  })
+})

@@ -68,6 +68,19 @@ export function getNpcSpriteFrame(sprite) {
   return Math.floor(sprite.walkDistance / NPC_SPRITE_FRAME_DISTANCE) % NPC_SPRITE_FRAME_COUNT
 }
 
+export function getNpcSpriteMetrics({ size = DEFAULT_NPC_SIZE } = {}) {
+  const pixel = Math.max(MIN_SPRITE_PIXEL, (size / DEFAULT_NPC_SIZE) * NPC_SPRITE_DRAW_SCALE)
+  const textureSize = Math.ceil(16 * pixel + 8)
+
+  return {
+    pixel,
+    textureWidth: textureSize,
+    textureHeight: textureSize,
+    centerX: Math.floor(textureSize / 2),
+    centerY: Math.floor(textureSize / 2)
+  }
+}
+
 export function npcSpriteFacingFromVector(directionX, directionY) {
   if (!Number.isFinite(directionX) || !Number.isFinite(directionY)) {
     return null
@@ -90,7 +103,7 @@ export function drawNpcSprite(graphics, npc, { color, size = DEFAULT_NPC_SIZE } 
   }
 
   const sprite = npc.sprite || createNpcSpriteState(npc.id)
-  const pixel = Math.max(MIN_SPRITE_PIXEL, (size / DEFAULT_NPC_SIZE) * NPC_SPRITE_DRAW_SCALE)
+  const { pixel } = getNpcSpriteMetrics({ size })
   const facing = sprite.facing || 'south'
   const frame = getNpcSpriteFrame(sprite)
   const palette = getNpcSpritePalette(color)

@@ -5,6 +5,33 @@ import { createCarRoutePlanner, createCarSimulation } from './car-simulation.js'
 import { createNpcSimulation } from './npc-simulation.js'
 
 vi.mock('pixi.js', () => ({
+  Container: class {
+    constructor() {
+      this.children = []
+      this.eventMode = 'auto'
+      this.parent = null
+    }
+
+    addChild(child) {
+      this.children.push(child)
+      child.parent = this
+    }
+
+    removeChild(child) {
+      this.children = this.children.filter((item) => item !== child)
+      child.parent = null
+    }
+
+    destroy(options) {
+      this.destroyed = true
+
+      if (options?.children) {
+        for (const child of this.children) {
+          child.destroy?.()
+        }
+      }
+    }
+  },
   Graphics: class {
     constructor() {
       this.eventMode = 'auto'
@@ -28,6 +55,34 @@ vi.mock('pixi.js', () => ({
 
     destroy() {
       this.destroyed = true
+    }
+  },
+  Sprite: class {
+    constructor(texture = null) {
+      this.texture = texture
+      this.anchor = {
+        set: (value) => {
+          this.anchorValue = value
+        }
+      }
+      this.visible = true
+    }
+
+    destroy() {
+      this.destroyed = true
+    }
+  },
+  Texture: {
+    EMPTY: { empty: true },
+    from(resource) {
+      return {
+        resource,
+        source: {
+          style: {
+            update() {}
+          }
+        }
+      }
     }
   }
 }))
@@ -489,8 +544,9 @@ describe('car simulation', () => {
     expect(new Set(occupiedTiles).size).toBe(occupiedTiles.length)
 
     simulation.render()
-    expect(simulation.graphics.rects.length).toBeGreaterThan(simulation.cars.length * 10)
-    expect(simulation.graphics.rects.some((rect) => rect.fill?.color === simulation.cars[0].color)).toBe(true)
+    expect(simulation.graphics.children).toHaveLength(simulation.cars.length)
+    expect(simulation.graphics.children.every((sprite) => sprite.visible)).toBe(true)
+    expect(simulation.graphics.children.every((sprite) => sprite.texture)).toBe(true)
 
     simulation.destroy()
   })

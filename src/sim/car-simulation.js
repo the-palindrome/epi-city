@@ -3,7 +3,7 @@ import { CAR_CONFIG } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
 import { hourInRange } from '../core/time.js'
-import { drawCarSprite } from '../render/car-sprite.js'
+import { createCarSpriteRenderer } from '../render/car-sprite.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -67,7 +67,6 @@ const networkCache = new WeakMap()
 
 export function createCarSimulation(city, entityLayer, config = {}) {
   const resolvedConfig = { ...CAR_CONFIG, ...config }
-  const graphics = new PIXI.Graphics()
   const random = resolvedConfig.random || createSystemRandom()
   const clock = resolvedConfig.clock || STATIC_CLOCK
   const network = getCarTrafficNetwork(city)
@@ -94,12 +93,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   }
   let destroyed = false
 
-  graphics.eventMode = 'none'
-  graphics.zIndex = resolvedConfig.zorder
-  graphics.zorder = resolvedConfig.zorder
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
-  entityLayer.addChild(graphics)
 
   for (let id = 0; id < resolvedConfig.count; id += 1) {
     const car = createCarEntity(id, city, residentialBuildings, commercialBuildings, buildingsById, ownerPools, parking, random, resolvedConfig)
@@ -110,6 +105,11 @@ export function createCarSimulation(city, entityLayer, config = {}) {
 
     cars.push(car)
   }
+
+  const carRenderer = createCarSpriteRenderer(cars, city, resolvedConfig, { pixi: PIXI })
+  const graphics = carRenderer.display
+
+  entityLayer.addChild(graphics)
 
   function update(deltaSeconds) {
     if (destroyed || !Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
@@ -145,7 +145,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
       return
     }
 
-    drawCars(graphics, cars, city, resolvedConfig)
+    carRenderer.render(cars)
   }
 
   render()
@@ -161,12 +161,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
       destroyed = true
       trafficReservations.clear()
       parking.clear()
-
-      if (graphics.parent) {
-        graphics.parent.removeChild(graphics)
-      }
-
-      graphics.destroy()
+      carRenderer.destroy()
     }
   }
 }
@@ -1938,14 +1933,6 @@ function precomputeEdgeFootprints(city, network, lengthTiles) {
   network.edgeFootprintsByLength.set(lengthTiles, footprints)
   network.edgeFootprintLengthsByLength.set(lengthTiles, footprintLengths)
   return footprints
-}
-
-function drawCars(graphics, cars, city, config) {
-  graphics.clear()
-
-  for (const car of cars) {
-    drawCarSprite(graphics, car, city, config)
-  }
 }
 
 function collectBuildings(city, type) {
