@@ -8,7 +8,8 @@ export function createCamera() {
     minZoom: 0.08,
     maxZoom: 8,
     worldWidth: 0,
-    worldHeight: 0
+    worldHeight: 0,
+    followedEntity: null
   }
 }
 
@@ -19,6 +20,8 @@ export function applyCameraToWorld(camera, world) {
 }
 
 export function centerCameraOnCity(camera, world, city) {
+  clearCameraFollow(camera)
+
   const worldWidth = city.width * city.tileSize
   const worldHeight = city.height * city.tileSize
 
@@ -31,9 +34,40 @@ export function centerCameraOnCity(camera, world, city) {
   applyCameraToWorld(camera, world)
 }
 
-export function installCameraControls(app, camera, applyCamera) {
+export function followEntityWithCamera(camera, world, entity) {
+  camera.followedEntity = entity
+
+  if (!refreshFollowedCamera(camera, world)) {
+    return false
+  }
+
+  return true
+}
+
+export function refreshFollowedCamera(camera, world) {
+  const position = followableEntityPosition(camera.followedEntity)
+
+  if (!position) {
+    clearCameraFollow(camera)
+    return false
+  }
+
+  camera.x = window.innerWidth / 2 - position.x * camera.zoom
+  camera.y = window.innerHeight / 2 - position.y * camera.zoom
+  applyCameraToWorld(camera, world)
+  return true
+}
+
+export function clearCameraFollow(camera) {
+  camera.followedEntity = null
+}
+
+export function installCameraControls(app, camera, applyCamera, options = {}) {
   let isPanning = false
   let lastPointer = { x: 0, y: 0 }
+  const applyCameraFollow = typeof options.applyCameraFollow === 'function'
+    ? options.applyCameraFollow
+    : null
 
   function onContextMenu(event) {
     event.preventDefault()
@@ -56,6 +90,10 @@ export function installCameraControls(app, camera, applyCamera) {
 
     const dx = event.clientX - lastPointer.x
     const dy = event.clientY - lastPointer.y
+
+    if (dx !== 0 || dy !== 0) {
+      clearCameraFollow(camera)
+    }
 
     camera.x += dx
     camera.y += dy
@@ -81,9 +119,24 @@ export function installCameraControls(app, camera, applyCamera) {
 
     const nextZoom = clamp(camera.zoom * zoomFactor, camera.minZoom, camera.maxZoom)
 
+    if (camera.followedEntity && applyCameraFollow) {
+      camera.zoom = nextZoom
+      applyCameraFollow()
+      return
+    }
+
     camera.x = pointer.x - worldX * nextZoom
     camera.y = pointer.y - worldY * nextZoom
     camera.zoom = nextZoom
+    applyCamera()
+  }
+
+  function onResize() {
+    if (camera.followedEntity && applyCameraFollow) {
+      applyCameraFollow()
+      return
+    }
+
     applyCamera()
   }
 
@@ -92,7 +145,7 @@ export function installCameraControls(app, camera, applyCamera) {
   app.canvas.addEventListener('wheel', onWheel, { passive: false })
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
-  window.addEventListener('resize', applyCamera)
+  window.addEventListener('resize', onResize)
 
   return {
     destroy() {
@@ -101,7 +154,7 @@ export function installCameraControls(app, camera, applyCamera) {
       app.canvas.removeEventListener('wheel', onWheel)
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
-      window.removeEventListener('resize', applyCamera)
+      window.removeEventListener('resize', onResize)
     }
   }
 }
@@ -145,4 +198,18 @@ function constrainAxis(position, viewportSize, scaledWorldSize) {
   }
 
   return clamp(position, viewportSize - scaledWorldSize, 0)
+}
+
+function followableEntityPosition(entity) {
+  if (!entity || entity.present === false || !entity.position) {
+    return null
+  }
+
+  const { x, y } = entity.position
+
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null
+  }
+
+  return { x, y }
 }

@@ -5,6 +5,7 @@ export default defineConfig({
     environment: 'node',
     fileParallelism: false,
     include: ['src/**/*.test.js'],
-    maxWorkers: 1
+    maxWorkers: 1,
+    pool: 'threads'
   }
 })

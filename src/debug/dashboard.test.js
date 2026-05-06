@@ -288,6 +288,126 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
+  it('updates simulation speed and allows 24x playback', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      speed: 1,
+      speedRange: { min: 1, max: 24, step: 0.25 },
+      onSpeedChange(speed) {
+        changes.push(speed)
+      }
+    })
+    const speed = findByDataset(dashboard.element, 'simulationSpeed')
+
+    expect(speed.min).toBe('1')
+    expect(speed.max).toBe('24')
+    expect(speed.step).toBe('0.25')
+    expect(speed.value).toBe('1')
+
+    speed.value = '24'
+    speed.eventListeners.input()
+
+    expect(dashboard.simulation.state.speed).toBe(24)
+    expect(changes).toEqual([24])
+
+    dashboard.simulation.setSpeed(99)
+
+    expect(dashboard.simulation.state.speed).toBe(24)
+    expect(speed.value).toBe('24')
+
+    dashboard.destroy()
+  })
+
+  it('updates infection controls and renders SEIR counts', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      infectionDistance: 48,
+      initialInfectiousCount: 4,
+      initialInfectiousCountRange: { min: 0, max: 10000, step: 1 },
+      infectionDistanceRange: { min: 0, max: 256, step: 1 },
+      infectionProbability: 0.03,
+      infectionProbabilityRange: { min: 0, max: 1, step: 0.01 },
+      incubationDays: 5,
+      incubationDaysRange: { min: 0, max: 14, step: 0.25 },
+      infectionDays: 7,
+      infectionDaysRange: { min: 0, max: 21, step: 0.25 },
+      immunityDays: 90,
+      immunityDaysRange: { min: 0, max: 365, step: 1 },
+      getInfectionStats() {
+        return { susceptible: 8, exposed: 1, infectious: 2, recovered: 3 }
+      },
+      onInfectionDistanceChange(value) {
+        changes.push(['distance', value])
+      },
+      onInitialInfectiousCountChange(value) {
+        changes.push(['initial', value])
+      },
+      onInfectionProbabilityChange(value) {
+        changes.push(['probability', value])
+      },
+      onIncubationDaysChange(value) {
+        changes.push(['incubation', value])
+      },
+      onInfectionDaysChange(value) {
+        changes.push(['infection', value])
+      },
+      onImmunityDaysChange(value) {
+        changes.push(['immunity', value])
+      }
+    })
+    const stats = findByDataset(dashboard.element, 'simulationInfectionStats')
+    const initialInfectiousCount = findByDataset(dashboard.element, 'simulationInitialInfectiousCount')
+    const distance = findByDataset(dashboard.element, 'simulationInfectionDistance')
+    const probability = findByDataset(dashboard.element, 'simulationInfectionProbability')
+    const incubationDays = findByDataset(dashboard.element, 'simulationIncubationDays')
+    const infectionDays = findByDataset(dashboard.element, 'simulationInfectionDays')
+    const immunityDays = findByDataset(dashboard.element, 'simulationImmunityDays')
+
+    expect(stats.textContent).toBe('S 8 E 1 I 2 R 3')
+    expect(initialInfectiousCount.value).toBe('4')
+    expect(distance.value).toBe('48')
+    expect(probability.value).toBe('0.03')
+    expect(incubationDays.value).toBe('5')
+    expect(infectionDays.value).toBe('7')
+    expect(immunityDays.value).toBe('90')
+
+    initialInfectiousCount.value = '13'
+    initialInfectiousCount.eventListeners.change()
+    distance.value = '64'
+    distance.eventListeners.change()
+    probability.value = '2'
+    probability.eventListeners.change()
+    incubationDays.value = '20'
+    incubationDays.eventListeners.change()
+    infectionDays.value = '3.5'
+    infectionDays.eventListeners.change()
+    immunityDays.value = '-1'
+    immunityDays.eventListeners.change()
+
+    expect(dashboard.simulation.state.initialInfectiousCount).toBe(13)
+    expect(dashboard.simulation.state.infectionDistance).toBe(64)
+    expect(dashboard.simulation.state.infectionProbability).toBe(1)
+    expect(dashboard.simulation.state.incubationDays).toBe(14)
+    expect(dashboard.simulation.state.infectionDays).toBe(3.5)
+    expect(dashboard.simulation.state.immunityDays).toBe(0)
+    expect(changes).toEqual([
+      ['initial', 13],
+      ['distance', 64],
+      ['probability', 1],
+      ['incubation', 14],
+      ['infection', 3.5],
+      ['immunity', 0]
+    ])
+
+    dashboard.simulation.setImmunityDays(30)
+    dashboard.simulation.setInitialInfectiousCount(5)
+
+    expect(immunityDays.value).toBe('30')
+    expect(initialInfectiousCount.value).toBe('5')
+
+    dashboard.destroy()
+  })
+
   it('shows the simulation clock and toggles the day-night overlay control', () => {
     const changes = []
     const clock = {

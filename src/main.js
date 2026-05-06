@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js'
 import {
   CAR_CONFIG,
   DEFAULT_CITY_MAP_PATHS,
+  INFECTION_CONFIG,
   NPC_CONFIG,
   SIMULATION_CONFIG
 } from './core/constants.js'
@@ -10,9 +11,14 @@ import { Game } from './engine/game.js'
 import {
   applyCameraToWorld,
   centerCameraOnCity,
+  clearCameraFollow,
   createCamera,
-  installCameraControls
+  followEntityWithCamera,
+  installCameraControls,
+  refreshFollowedCamera
 } from './input/camera.js'
+import { installEntityContextMenu } from './input/entity-context-menu.js'
+import { installNpcHoverMenu } from './input/npc-hover-menu.js'
 import { createEntityPathSelection } from './input/entity-path-selection.js'
 import {
   compileCityMap,
@@ -67,6 +73,11 @@ async function main() {
 
     const camera = createCamera()
     const applyCamera = () => applyCameraToWorld(camera, world)
+    const applyCameraFollow = () => {
+      if (!refreshFollowedCamera(camera, world)) {
+        applyCamera()
+      }
+    }
     const mapData = await loadCityMap(DEFAULT_CITY_MAP_PATHS.tileLayout, DEFAULT_CITY_MAP_PATHS.textureLayout)
     const city = compileCityMap(mapData)
     const textureSet = await loadTextureSet(city.textureSetName)
@@ -82,6 +93,12 @@ async function main() {
       speed: SIMULATION_CONFIG.speed,
       npcCount: NPC_CONFIG.count,
       carCount: CAR_CONFIG.count,
+      initialInfectiousCount: INFECTION_CONFIG.initialInfectiousCount,
+      infectionDistance: INFECTION_CONFIG.infectionDistance,
+      infectionProbability: INFECTION_CONFIG.infectionProbability,
+      incubationDays: INFECTION_CONFIG.incubationDays,
+      infectionDays: INFECTION_CONFIG.infectionDays,
+      immunityDays: INFECTION_CONFIG.immunityDays,
       dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled
     }
     let npcSimulation = null
@@ -90,6 +107,8 @@ async function main() {
     const dayNightOverlay = createDayNightOverlay(city, entityLayer, simulationClock, {
       enabled: simulationState.dayNightOverlayEnabled
     })
+    let entityContextMenu = null
+    let npcHoverMenu = null
     const pathSelection = createEntityPathSelection({
       app,
       camera,
@@ -116,6 +135,12 @@ async function main() {
       return createNpcSimulation(city, entityLayer, {
         ...NPC_CONFIG,
         count: simulationState.npcCount,
+        initialInfectiousCount: simulationState.initialInfectiousCount,
+        infectionDistance: simulationState.infectionDistance,
+        infectionProbability: simulationState.infectionProbability,
+        incubationDays: simulationState.incubationDays,
+        infectionDays: simulationState.infectionDays,
+        immunityDays: simulationState.immunityDays,
         clock: simulationClock,
         random: createNpcRandom()
       })
@@ -164,6 +189,47 @@ async function main() {
       return Math.min(Math.max(value, min), max)
     }
 
+    function clampInitialInfectiousCount(count) {
+      const { min, max } = INFECTION_CONFIG.initialInfectiousCountRange
+      const value = Math.round(Number(count))
+
+      if (!Number.isFinite(value)) {
+        return min
+      }
+
+      return Math.min(Math.max(value, min), Math.min(max, simulationState.npcCount))
+    }
+
+    function clampInfectionDistance(distance) {
+      return clampRangeValue(distance, INFECTION_CONFIG.infectionDistanceRange)
+    }
+
+    function clampInfectionProbability(probability) {
+      return clampRangeValue(probability, INFECTION_CONFIG.infectionProbabilityRange)
+    }
+
+    function clampIncubationDays(days) {
+      return clampRangeValue(days, INFECTION_CONFIG.incubationDaysRange)
+    }
+
+    function clampInfectionDays(days) {
+      return clampRangeValue(days, INFECTION_CONFIG.infectionDaysRange)
+    }
+
+    function clampImmunityDays(days) {
+      return clampRangeValue(days, INFECTION_CONFIG.immunityDaysRange)
+    }
+
+    function clampRangeValue(value, range) {
+      const number = Number(value)
+
+      if (!Number.isFinite(number)) {
+        return range.min
+      }
+
+      return Math.min(Math.max(number, range.min), range.max)
+    }
+
     function restartSimulation() {
       if (npcSimulation) {
         game.removeSystem(npcSimulation)
@@ -177,6 +243,8 @@ async function main() {
 
       city.resetCrosswalkSignals()
       city.resetTrafficSignals()
+      clearCameraFollow(camera)
+      entityContextMenu?.hide()
       pathSelection.clearSelection()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
@@ -187,7 +255,23 @@ async function main() {
       game.render()
     }
 
-    const cameraControls = installCameraControls(app, camera, applyCamera)
+    const cameraControls = installCameraControls(app, camera, applyCamera, { applyCameraFollow })
+    entityContextMenu = installEntityContextMenu({
+      app,
+      camera,
+      city,
+      world,
+      getNpcSimulation: () => npcSimulation,
+      getCarSimulation: () => carSimulation,
+      requestRender: () => game.render()
+    })
+    npcHoverMenu = installNpcHoverMenu({
+      app,
+      camera,
+      city,
+      getNpcSimulation: () => npcSimulation,
+      getCarSimulation: () => carSimulation
+    })
     const dashboard = installDebugDashboard(city, entityLayer, {
       paused: game.paused,
       seedEnabled: simulationState.seedEnabled,
@@ -198,6 +282,19 @@ async function main() {
       npcCountRange: SIMULATION_CONFIG.npcCountRange,
       carCount: simulationState.carCount,
       carCountRange: SIMULATION_CONFIG.carCountRange,
+      initialInfectiousCount: simulationState.initialInfectiousCount,
+      initialInfectiousCountRange: INFECTION_CONFIG.initialInfectiousCountRange,
+      infectionDistance: simulationState.infectionDistance,
+      infectionDistanceRange: INFECTION_CONFIG.infectionDistanceRange,
+      infectionProbability: simulationState.infectionProbability,
+      infectionProbabilityRange: INFECTION_CONFIG.infectionProbabilityRange,
+      incubationDays: simulationState.incubationDays,
+      incubationDaysRange: INFECTION_CONFIG.incubationDaysRange,
+      infectionDays: simulationState.infectionDays,
+      infectionDaysRange: INFECTION_CONFIG.infectionDaysRange,
+      immunityDays: simulationState.immunityDays,
+      immunityDaysRange: INFECTION_CONFIG.immunityDaysRange,
+      getInfectionStats: () => npcSimulation?.infection.getStats(),
       clock: simulationClock,
       dayNightOverlayEnabled: simulationState.dayNightOverlayEnabled,
       onPlay: () => game.play(),
@@ -215,12 +312,44 @@ async function main() {
       },
       onNpcCountChange: (count) => {
         simulationState.npcCount = clampNpcCount(count)
+        simulationState.initialInfectiousCount = clampInitialInfectiousCount(simulationState.initialInfectiousCount)
         dashboard.simulation.setNpcCount(simulationState.npcCount)
+        dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
         restartSimulation()
       },
       onCarCountChange: (count) => {
         simulationState.carCount = clampCarCount(count)
         dashboard.simulation.setCarCount(simulationState.carCount)
+        restartSimulation()
+      },
+      onInitialInfectiousCountChange: (count) => {
+        simulationState.initialInfectiousCount = clampInitialInfectiousCount(count)
+        dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
+        restartSimulation()
+      },
+      onInfectionDistanceChange: (distance) => {
+        simulationState.infectionDistance = clampInfectionDistance(distance)
+        dashboard.simulation.setInfectionDistance(simulationState.infectionDistance)
+        restartSimulation()
+      },
+      onInfectionProbabilityChange: (probability) => {
+        simulationState.infectionProbability = clampInfectionProbability(probability)
+        dashboard.simulation.setInfectionProbability(simulationState.infectionProbability)
+        restartSimulation()
+      },
+      onIncubationDaysChange: (days) => {
+        simulationState.incubationDays = clampIncubationDays(days)
+        dashboard.simulation.setIncubationDays(simulationState.incubationDays)
+        restartSimulation()
+      },
+      onInfectionDaysChange: (days) => {
+        simulationState.infectionDays = clampInfectionDays(days)
+        dashboard.simulation.setInfectionDays(simulationState.infectionDays)
+        restartSimulation()
+      },
+      onImmunityDaysChange: (days) => {
+        simulationState.immunityDays = clampImmunityDays(days)
+        dashboard.simulation.setImmunityDays(simulationState.immunityDays)
         restartSimulation()
       },
       onDayNightOverlayChange: (enabled) => {
@@ -244,6 +373,7 @@ async function main() {
     game.addSystem(carSimulation)
     game.addSystem(npcSimulation)
     game.addSystem(pathSelection)
+    game.addSystem({ render: applyCameraFollow })
     game.start()
 
     function playSimulation() {
@@ -276,13 +406,51 @@ async function main() {
 
     function setNpcCount(count) {
       simulationState.npcCount = clampNpcCount(count)
+      simulationState.initialInfectiousCount = clampInitialInfectiousCount(simulationState.initialInfectiousCount)
       dashboard.simulation.setNpcCount(simulationState.npcCount)
+      dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
       restartSimulation()
     }
 
     function setCarCount(count) {
       simulationState.carCount = clampCarCount(count)
       dashboard.simulation.setCarCount(simulationState.carCount)
+      restartSimulation()
+    }
+
+    function setInitialInfectiousCount(count) {
+      simulationState.initialInfectiousCount = clampInitialInfectiousCount(count)
+      dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
+      restartSimulation()
+    }
+
+    function setInfectionDistance(distance) {
+      simulationState.infectionDistance = clampInfectionDistance(distance)
+      dashboard.simulation.setInfectionDistance(simulationState.infectionDistance)
+      restartSimulation()
+    }
+
+    function setInfectionProbability(probability) {
+      simulationState.infectionProbability = clampInfectionProbability(probability)
+      dashboard.simulation.setInfectionProbability(simulationState.infectionProbability)
+      restartSimulation()
+    }
+
+    function setIncubationDays(days) {
+      simulationState.incubationDays = clampIncubationDays(days)
+      dashboard.simulation.setIncubationDays(simulationState.incubationDays)
+      restartSimulation()
+    }
+
+    function setInfectionDays(days) {
+      simulationState.infectionDays = clampInfectionDays(days)
+      dashboard.simulation.setInfectionDays(simulationState.infectionDays)
+      restartSimulation()
+    }
+
+    function setImmunityDays(days) {
+      simulationState.immunityDays = clampImmunityDays(days)
+      dashboard.simulation.setImmunityDays(simulationState.immunityDays)
       restartSimulation()
     }
 
@@ -296,6 +464,8 @@ async function main() {
       game.destroy()
       dashboard.destroy()
       cameraControls.destroy()
+      entityContextMenu.destroy()
+      npcHoverMenu.destroy()
       clearPixiContainer(entityLayer)
       app.destroy({ removeView: true }, { children: true })
       delete window.citySim
@@ -305,6 +475,7 @@ async function main() {
       camera,
       city,
       dashboard,
+      npcHoverMenu,
       simulationClock,
       dayNightOverlay,
       pathSelection,
@@ -331,8 +502,16 @@ async function main() {
       setSeedEnabled: setSimulationSeedEnabled,
       setNpcCount,
       setCarCount,
+      setInitialInfectiousCount,
+      setInfectionDistance,
+      setInfectionProbability,
+      setIncubationDays,
+      setInfectionDays,
+      setImmunityDays,
       setDayNightOverlayEnabled,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
+      followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
+      clearCameraFollow: () => clearCameraFollow(camera),
       destroy
     }
 

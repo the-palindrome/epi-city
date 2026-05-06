@@ -60,14 +60,59 @@ export const NPC_CONFIG = Object.freeze({
   slotSpacing: 11,
   color: 0xe5c748,
   size: 9,
-  minSpeed: 34,
-  maxSpeed: 58,
+  minSpeed: 3.8,
+  maxSpeed: 4.5,
   workStartHour: 9,
   workEndHour: 17,
   scheduleVariationHours: 0.75,
   routePlanBudget: 24,
   routeRetrySeconds: 1,
   routeBlockedReplanSeconds: 2
+})
+
+export const INFECTION_CONFIG = Object.freeze({
+  initialInfectiousCount: 4,
+  infectionDistance: 48,
+  infectionProbability: 0.03,
+  incubationDays: 5,
+  infectionDays: 7,
+  immunityDays: 90,
+  colors: Object.freeze({
+    susceptible: NPC_CONFIG.color,
+    exposed: 0xf0a33a,
+    infectious: 0xdb3b34,
+    recovered: 0x49b86e
+  }),
+  initialInfectiousCountRange: Object.freeze({
+    min: 0,
+    max: 10000,
+    step: 1
+  }),
+  infectionDistanceRange: Object.freeze({
+    min: 0,
+    max: 256,
+    step: 1
+  }),
+  infectionProbabilityRange: Object.freeze({
+    min: 0,
+    max: 1,
+    step: 0.01
+  }),
+  incubationDaysRange: Object.freeze({
+    min: 0,
+    max: 14,
+    step: 0.25
+  }),
+  infectionDaysRange: Object.freeze({
+    min: 0,
+    max: 21,
+    step: 0.25
+  }),
+  immunityDaysRange: Object.freeze({
+    min: 0,
+    max: 365,
+    step: 1
+  })
 })
 
 export const CAR_CONFIG = Object.freeze({
@@ -82,11 +127,19 @@ export const CAR_CONFIG = Object.freeze({
   workDepartureEndHour: 10,
   homeDepartureHour: 17,
   homeDepartureEndHour: 20,
-  maxSpeed: 96,
-  speedLimitScale: 2.5,
+  maxSpeed: 72,
+  speedLimitScale: 1.6,
+  minCruiseSpeedScale: 0.72,
+  maxCruiseSpeedScale: 0.96,
+  minAdaptiveSpeedScale: 0.45,
+  laneChangeSlowSpeedScale: 0.56,
+  laneChangeOvertakeSpeedScale: 1,
+  speedAdjustmentRate: 1.8,
+  movingLaneChangeWaitSeconds: 0.7,
   parkingSearchRadius: 64,
-  bodyWidth: 12,
-  roadBodyLength: 24,
+  bodyWidth: 18,
+  roadBodyLength: 34,
+  longBodyLength: 44,
   parkedRoadOffset: 0.24
 })
 
@@ -101,7 +154,7 @@ export const SIMULATION_CONFIG = Object.freeze({
   }),
   speedRange: Object.freeze({
     min: 1,
-    max: 16,
+    max: 24,
     step: 0.25
   }),
   npcCountRange: Object.freeze({

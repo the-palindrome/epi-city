@@ -6,19 +6,30 @@ export function renderCity(city, entityLayer, textureSet) {
   entityLayer.sortableChildren = true
 
   const chunkSize = 16
+  const width = city.width
+  const height = city.height
+  const tileSize = city.tileSize
+  const tileTextureIds = city.tileTextureIds
+  const tileZOrders = city.tileZOrders
 
-  for (let chunkY = 0; chunkY < city.height; chunkY += chunkSize) {
-    for (let chunkX = 0; chunkX < city.width; chunkX += chunkSize) {
+  for (let chunkY = 0; chunkY < height; chunkY += chunkSize) {
+    const maxY = Math.min(height, chunkY + chunkSize)
+
+    for (let chunkX = 0; chunkX < width; chunkX += chunkSize) {
+      const maxX = Math.min(width, chunkX + chunkSize)
       const chunksByZorder = new Map()
 
-      for (let y = chunkY; y < Math.min(city.height, chunkY + chunkSize); y += 1) {
-        for (let x = chunkX; x < Math.min(city.width, chunkX + chunkSize); x += 1) {
-          const index = city.index(x, y)
-          const zorder = city.tileZOrders[index]
-          const texture = textureSet.getTexture(city.tileTextureIds[index])
+      for (let y = chunkY; y < maxY; y += 1) {
+        const rowOffset = y * width
+
+        for (let x = chunkX; x < maxX; x += 1) {
+          const index = rowOffset + x
+          const textureId = tileTextureIds[index]
+          const zorder = tileZOrders[index]
+          const texture = textureSet.getTexture(textureId)
 
           if (!texture) {
-            throw new Error(`Missing texture ${city.tileTextureIds[index]} at ${x},${y}.`)
+            throw new Error(`Missing texture ${textureId} at ${x},${y}.`)
           }
 
           const chunk = ensureChunkForZorder(entityLayer, chunksByZorder, zorder)
@@ -28,12 +39,16 @@ export function renderCity(city, entityLayer, textureSet) {
           sprite.roundPixels = true
           sprite.zIndex = zorder
           sprite.zorder = zorder
-          sprite.x = x * city.tileSize
-          sprite.y = y * city.tileSize
-          sprite.width = city.tileSize
-          sprite.height = city.tileSize
+          sprite.x = x * tileSize
+          sprite.y = y * tileSize
+          sprite.width = tileSize
+          sprite.height = tileSize
           chunk.addChild(sprite)
         }
+      }
+
+      for (const chunk of chunksByZorder.values()) {
+        cacheStaticChunkAsTexture(chunk)
       }
     }
   }
@@ -51,4 +66,10 @@ function ensureChunkForZorder(entityLayer, chunksByZorder, zorder) {
   }
 
   return chunksByZorder.get(zorder)
+}
+
+function cacheStaticChunkAsTexture(chunk) {
+  if (typeof chunk.cacheAsTexture === 'function') {
+    chunk.cacheAsTexture({ scaleMode: 'nearest' })
+  }
 }

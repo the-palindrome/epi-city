@@ -20,6 +20,16 @@ const DIRECTION_OFFSETS = Object.freeze({
   south: { dx: 0, dy: 1 },
   west: { dx: -1, dy: 0 }
 })
+const CARDINAL_OFFSET_VALUES = Object.freeze([
+  DIRECTION_OFFSETS.north,
+  DIRECTION_OFFSETS.east,
+  DIRECTION_OFFSETS.south,
+  DIRECTION_OFFSETS.west
+])
+const AXIS_BITS = Object.freeze({
+  'north-south': 1,
+  'east-west': 2
+})
 const EDGE_TYPES = Object.freeze(['lane', 'turn'])
 const TURN_TYPES = Object.freeze(['left', 'right', 'straight', 'u-turn', 'merge'])
 const LEGACY_NODE_FIELDS = Object.freeze(['axis', 'laneIndex', 'laneCount', 'bandId', 'layer', 'orientation'])
@@ -32,9 +42,8 @@ export class LaneNode {
     this.y = node.y
     this.worldX = node.x * tileSize
     this.worldY = node.y * tileSize
-    this.tile = Object.freeze({ ...node.tile })
+    this.tile = { x: node.tile.x, y: node.tile.y }
     this.direction = node.direction
-    Object.freeze(this)
   }
 }
 
@@ -49,11 +58,18 @@ export class LaneEdge {
     this.direction = edge.direction
     this.turn = edge.turn
     this.speedLimit = edge.speedLimit
-    this.path = Object.freeze(edge.path.map((point) => Object.freeze([...point])))
-    this.worldPath = Object.freeze(edge.path.map(([x, y]) => Object.freeze([x * tileSize, y * tileSize])))
+    this.path = new Array(edge.path.length)
+    this.worldPath = new Array(edge.path.length)
+
+    for (let index = 0; index < edge.path.length; index += 1) {
+      const point = edge.path[index]
+
+      this.path[index] = [point[0], point[1]]
+      this.worldPath[index] = [point[0] * tileSize, point[1] * tileSize]
+    }
+
     this.length = measurePolyline(edge.path)
     this.worldLength = this.length * tileSize
-    Object.freeze(this)
   }
 }
 
@@ -62,10 +78,30 @@ export class LaneGraph {
     this.encoding = layout.encoding
     this.drivingSide = layout.drivingSide
     this.coordinateSpace = layout.coordinateSpace
-    this.nodes = Object.freeze(layout.nodes.map((node) => new LaneNode(node, tileSize)))
-    this.nodeById = new Map(this.nodes.map((node) => [node.id, node]))
-    this.edges = Object.freeze(layout.edges.map((edge) => new LaneEdge(edge, this.nodeById, tileSize)))
-    this.edgeById = new Map(this.edges.map((edge) => [edge.id, edge]))
+    this.nodes = new Array(layout.nodes.length)
+
+    for (let index = 0; index < layout.nodes.length; index += 1) {
+      this.nodes[index] = new LaneNode(layout.nodes[index], tileSize)
+    }
+
+    this.nodeById = new Map()
+
+    for (const node of this.nodes) {
+      this.nodeById.set(node.id, node)
+    }
+
+    this.edges = new Array(layout.edges.length)
+
+    for (let index = 0; index < layout.edges.length; index += 1) {
+      this.edges[index] = new LaneEdge(layout.edges[index], this.nodeById, tileSize)
+    }
+
+    this.edgeById = new Map()
+
+    for (const edge of this.edges) {
+      this.edgeById.set(edge.id, edge)
+    }
+
     this.outgoingEdgesByNodeId = buildEdgeIndex(this.nodes, this.edges, 'from')
     this.incomingEdgesByNodeId = buildEdgeIndex(this.nodes, this.edges, 'to')
     this.trafficSignals = compileTrafficSignalLayout(layout.trafficSignals, this.nodes, this.edges)
@@ -332,6 +368,13 @@ function normalizeTrafficSignalLayout(trafficSignals, nodes, edges) {
     throw new Error('Traffic signal overrides must be an array.')
   }
 
+  if (trafficSignals.overrides.length === 0) {
+    return {
+      encoding: TRAFFIC_SIGNAL_ENCODING,
+      overrides: []
+    }
+  }
+
   const autoGroupsById = new Map(buildAutoTrafficSignalGroups(nodes, edges).map((group) => [group.id, group]))
   const overrideIds = new Set()
   const overrides = trafficSignals.overrides.map((override, index) => normalizeTrafficSignalOverride(override, index, overrideIds, autoGroupsById))
@@ -444,30 +487,37 @@ function compileTrafficSignalLayout(layout, nodes, edges) {
     const phases = override?.phases || DEFAULT_TRAFFIC_SIGNAL_PHASES
     const phaseOffset = override?.phaseOffset ?? defaultTrafficSignalPhaseOffset(group.tile)
 
-    return Object.freeze({
+    return {
       ...group,
       enabled: override?.enabled !== false,
       phaseOffset,
-      phases: Object.freeze(phases.map((phase) => Object.freeze({ ...phase }))),
+      phases: phases.map((phase) => ({ ...phase })),
       cycleDuration: trafficSignalCycleDuration(phases),
       overridden: Boolean(override)
-    })
+    }
   })
 
-  return Object.freeze({
+  return {
     encoding: TRAFFIC_SIGNAL_ENCODING,
-    groups: Object.freeze(groups),
-    overrides: Object.freeze((layout?.overrides || []).map((override) => Object.freeze({
+    groups,
+    overrides: (layout?.overrides || []).map((override) => ({
       ...override,
-      tile: Object.freeze({ ...override.tile }),
-      phases: override.phases ? Object.freeze(override.phases.map((phase) => Object.freeze({ ...phase }))) : undefined
-    })))
-  })
+      tile: override.tile ? { ...override.tile } : undefined,
+      phases: override.phases ? override.phases.map((phase) => ({ ...phase })) : undefined
+    }))
+  }
 }
 
 export function buildAutoTrafficSignalGroups(nodes, edges) {
-  const nodesById = new Map(nodes.map((node) => [node.id, node]))
-  const axesByNodeId = new Map(nodes.map((node) => [node.id, new Set()]))
+  const nodesById = new Map()
+  const axisMasksByNode = new Uint8Array(nodes.length)
+  const coordinateStride = coordinateKeyStride(nodes)
+
+  for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
+    nodesById.set(nodes[nodeIndex].id, nodeIndex)
+  }
+
+  const incomingEntriesByTileKey = new Map()
 
   for (const edge of edges) {
     const axis = axisForDirection(edge.direction)
@@ -476,30 +526,45 @@ export function buildAutoTrafficSignalGroups(nodes, edges) {
       continue
     }
 
-    const fromNode = edge.fromNode || nodesById.get(edge.from)
-    const toNode = edge.toNode || nodesById.get(edge.to)
+    const fromIndex = edge.fromNode ? nodesById.get(edge.fromNode.id) : nodesById.get(edge.from)
+    const toIndex = edge.toNode ? nodesById.get(edge.toNode.id) : nodesById.get(edge.to)
 
-    if (fromNode && axesByNodeId.has(fromNode.id)) {
-      axesByNodeId.get(fromNode.id).add(axis)
+    if (fromIndex === undefined || toIndex === undefined) {
+      continue
     }
 
-    if (toNode && axesByNodeId.has(toNode.id)) {
-      axesByNodeId.get(toNode.id).add(axis)
+    const axisBit = AXIS_BITS[axis]
+    const fromNode = nodes[fromIndex]
+    const toNode = nodes[toIndex]
+    const toTileKey = coordinateKey(toNode.tile, coordinateStride)
+    let incomingEntries = incomingEntriesByTileKey.get(toTileKey)
+
+    axisMasksByNode[fromIndex] |= axisBit
+    axisMasksByNode[toIndex] |= axisBit
+
+    if (!incomingEntries) {
+      incomingEntries = []
+      incomingEntriesByTileKey.set(toTileKey, incomingEntries)
     }
+
+    incomingEntries.push({
+      edgeId: edge.id,
+      axis,
+      direction: edge.direction,
+      fromTileKey: coordinateKey(fromNode.tile, coordinateStride)
+    })
   }
 
   const candidateTiles = []
   const candidateKeys = new Set()
 
-  for (const node of nodes) {
-    const axes = axesByNodeId.get(node.id)
-
-    if (!axes || axes.size < 2) {
+  for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
+    if (axisMasksByNode[nodeIndex] !== (AXIS_BITS['north-south'] | AXIS_BITS['east-west'])) {
       continue
     }
 
-    const key = tileKey(node.tile)
-    candidateKeys.add(key)
+    const node = nodes[nodeIndex]
+    candidateKeys.add(coordinateKey(node.tile, coordinateStride))
     candidateTiles.push({ x: node.tile.x, y: node.tile.y })
   }
 
@@ -509,7 +574,7 @@ export function buildAutoTrafficSignalGroups(nodes, edges) {
   const visited = new Set()
 
   for (const tile of candidateTiles) {
-    const startKey = tileKey(tile)
+    const startKey = coordinateKey(tile, coordinateStride)
 
     if (visited.has(startKey)) {
       continue
@@ -523,9 +588,9 @@ export function buildAutoTrafficSignalGroups(nodes, edges) {
       const current = stack.pop()
       tiles.push(current)
 
-      for (const offset of Object.values(DIRECTION_OFFSETS)) {
+      for (const offset of CARDINAL_OFFSET_VALUES) {
         const nextTile = { x: current.x + offset.dx, y: current.y + offset.dy }
-        const nextKey = tileKey(nextTile)
+        const nextKey = coordinateKey(nextTile, coordinateStride)
 
         if (!candidateKeys.has(nextKey) || visited.has(nextKey)) {
           continue
@@ -537,7 +602,13 @@ export function buildAutoTrafficSignalGroups(nodes, edges) {
     }
 
     tiles.sort(compareTiles)
-    const entryEdges = trafficSignalEntryEdges(edges, nodesById, tiles)
+    const tileKeys = new Set()
+
+    for (const groupTile of tiles) {
+      tileKeys.add(coordinateKey(groupTile, coordinateStride))
+    }
+
+    const entryEdges = trafficSignalEntryEdgesForGroup(tileKeys, incomingEntriesByTileKey)
     const entryAxes = new Set(entryEdges.map((entry) => entry.axis))
 
     if (entryAxes.size < 2) {
@@ -546,47 +617,36 @@ export function buildAutoTrafficSignalGroups(nodes, edges) {
 
     const anchor = tiles[0]
 
-    groups.push(Object.freeze({
+    groups.push({
       id: `traffic-signal-${anchor.x}-${anchor.y}`,
-      tile: Object.freeze({ ...anchor }),
-      tiles: Object.freeze(tiles.map((groupTile) => Object.freeze({ ...groupTile }))),
-      entryEdges: Object.freeze(entryEdges.map((entry) => Object.freeze(entry)))
-    }))
+      tile: { x: anchor.x, y: anchor.y },
+      tiles: tiles.map((groupTile) => ({ x: groupTile.x, y: groupTile.y })),
+      entryEdges
+    })
   }
 
-  return Object.freeze(groups)
+  return groups
 }
 
-function trafficSignalEntryEdges(edges, nodesById, tiles) {
-  const tileKeys = new Set(tiles.map(tileKey))
+function trafficSignalEntryEdgesForGroup(tileKeys, incomingEntriesByTileKey) {
   const entryEdges = []
 
-  for (const edge of edges) {
-    const fromNode = edge.fromNode || nodesById.get(edge.from)
-    const toNode = edge.toNode || nodesById.get(edge.to)
+  for (const tileKeyValue of tileKeys) {
+    const incomingEntries = incomingEntriesByTileKey.get(tileKeyValue)
 
-    if (!fromNode || !toNode) {
+    if (!incomingEntries) {
       continue
     }
 
-    const fromInside = tileKeys.has(tileKey(fromNode.tile))
-    const toInside = tileKeys.has(tileKey(toNode.tile))
-
-    if (fromInside || !toInside) {
-      continue
+    for (const entry of incomingEntries) {
+      if (!tileKeys.has(entry.fromTileKey)) {
+        entryEdges.push({
+          edgeId: entry.edgeId,
+          axis: entry.axis,
+          direction: entry.direction
+        })
+      }
     }
-
-    const axis = axisForDirection(edge.direction)
-
-    if (!axis) {
-      continue
-    }
-
-    entryEdges.push({
-      edgeId: edge.id,
-      axis,
-      direction: edge.direction
-    })
   }
 
   entryEdges.sort((a, b) => a.edgeId.localeCompare(b.edgeId))
@@ -614,8 +674,20 @@ export function trafficSignalCycleDuration(phases) {
   return phases.reduce((total, phase) => total + phase.duration, 0)
 }
 
-function tileKey(tile) {
-  return tile.x + ',' + tile.y
+function coordinateKey(tile, stride) {
+  return tile.x + tile.y * stride
+}
+
+function coordinateKeyStride(nodes) {
+  let maxX = 0
+
+  for (const node of nodes) {
+    if (node.tile.x > maxX) {
+      maxX = node.tile.x
+    }
+  }
+
+  return maxX + 2
 }
 
 function compareTiles(a, b) {
@@ -692,10 +764,6 @@ function buildEdgeIndex(nodes, edges, endpointProperty) {
 
   for (const edge of edges) {
     index.get(edge[endpointProperty]).push(edge)
-  }
-
-  for (const [nodeId, nodeEdges] of index) {
-    index.set(nodeId, Object.freeze(nodeEdges))
   }
 
   return index

@@ -14,7 +14,7 @@ export class SimulationClock {
       return
     }
 
-    this.elapsedSimulationSeconds += deltaSeconds * SECONDS_PER_HOUR / this.secondsPerSimulationHour
+    this.elapsedSimulationSeconds += this.toSimulationSeconds(deltaSeconds)
   }
 
   reset() {
@@ -23,6 +23,14 @@ export class SimulationClock {
 
   getElapsedSimulationSeconds() {
     return this.elapsedSimulationSeconds
+  }
+
+  getSimulationSecondsPerRealSecond() {
+    return SECONDS_PER_HOUR / this.secondsPerSimulationHour
+  }
+
+  toSimulationSeconds(deltaSeconds) {
+    return deltaSeconds * this.getSimulationSecondsPerRealSecond()
   }
 
   getTimeOfDayHours() {

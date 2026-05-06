@@ -150,6 +150,12 @@ function createSimulationControls(options) {
     speed: options.speed || 1,
     npcCount: normalizeNpcCount(options.npcCount ?? 1000, options.npcCountRange),
     carCount: normalizeCarCount(options.carCount ?? 500, options.carCountRange),
+    initialInfectiousCount: normalizeInitialInfectiousCount(options.initialInfectiousCount ?? 4, options.initialInfectiousCountRange),
+    infectionDistance: normalizeInfectionDistance(options.infectionDistance ?? 48, options.infectionDistanceRange),
+    infectionProbability: normalizeInfectionProbability(options.infectionProbability ?? 0.03, options.infectionProbabilityRange),
+    incubationDays: normalizeIncubationDays(options.incubationDays ?? 5, options.incubationDaysRange),
+    infectionDays: normalizeInfectionDays(options.infectionDays ?? 7, options.infectionDaysRange),
+    immunityDays: normalizeImmunityDays(options.immunityDays ?? 90, options.immunityDaysRange),
     dayNightOverlayEnabled: options.dayNightOverlayEnabled !== false
   }
   const callbacks = {
@@ -161,11 +167,23 @@ function createSimulationControls(options) {
     onSpeedChange: options.onSpeedChange || noop,
     onNpcCountChange: options.onNpcCountChange || noop,
     onCarCountChange: options.onCarCountChange || noop,
+    onInitialInfectiousCountChange: options.onInitialInfectiousCountChange || noop,
+    onInfectionDistanceChange: options.onInfectionDistanceChange || noop,
+    onInfectionProbabilityChange: options.onInfectionProbabilityChange || noop,
+    onIncubationDaysChange: options.onIncubationDaysChange || noop,
+    onInfectionDaysChange: options.onInfectionDaysChange || noop,
+    onImmunityDaysChange: options.onImmunityDaysChange || noop,
     onDayNightOverlayChange: options.onDayNightOverlayChange || noop
   }
   const speedRange = normalizeSpeedRange(options.speedRange)
   const npcCountRange = normalizeNpcCountRange(options.npcCountRange)
   const carCountRange = normalizeCarCountRange(options.carCountRange)
+  const initialInfectiousCountRange = normalizeInitialInfectiousCountRange(options.initialInfectiousCountRange)
+  const infectionDistanceRange = normalizeInfectionDistanceRange(options.infectionDistanceRange)
+  const infectionProbabilityRange = normalizeInfectionProbabilityRange(options.infectionProbabilityRange)
+  const incubationDaysRange = normalizeIncubationDaysRange(options.incubationDaysRange)
+  const infectionDaysRange = normalizeInfectionDaysRange(options.infectionDaysRange)
+  const immunityDaysRange = normalizeImmunityDaysRange(options.immunityDaysRange)
   const section = createDashboardSection('Simulation')
   const actions = document.createElement('div')
   const playButton = createDashboardButton('Play', 'play')
@@ -178,6 +196,14 @@ function createSimulationControls(options) {
   const npcCountField = createNpcCountField(state.npcCount, npcCountRange)
   const carCountField = createCarCountField(state.carCount, carCountRange)
   const dayNightToggle = createDayNightToggle(state.dayNightOverlayEnabled)
+  const infectionTitle = createDashboardSubsectionTitle('Infection')
+  const infectionStatsField = createInfectionStatsField()
+  const initialInfectiousCountField = createInitialInfectiousCountField(state.initialInfectiousCount, initialInfectiousCountRange)
+  const infectionDistanceField = createInfectionDistanceField(state.infectionDistance, infectionDistanceRange)
+  const infectionProbabilityField = createInfectionProbabilityField(state.infectionProbability, infectionProbabilityRange)
+  const incubationDaysField = createIncubationDaysField(state.incubationDays, incubationDaysRange)
+  const infectionDaysField = createInfectionDaysField(state.infectionDays, infectionDaysRange)
+  const immunityDaysField = createImmunityDaysField(state.immunityDays, immunityDaysRange)
 
   actions.className = 'dashboard-actions'
   actions.appendChild(playButton)
@@ -191,6 +217,14 @@ function createSimulationControls(options) {
   section.appendChild(npcCountField.label)
   section.appendChild(carCountField.label)
   section.appendChild(dayNightToggle.label)
+  section.appendChild(infectionTitle)
+  section.appendChild(infectionStatsField.label)
+  section.appendChild(initialInfectiousCountField.label)
+  section.appendChild(infectionDistanceField.label)
+  section.appendChild(infectionProbabilityField.label)
+  section.appendChild(incubationDaysField.label)
+  section.appendChild(infectionDaysField.label)
+  section.appendChild(immunityDaysField.label)
 
   playButton.addEventListener('click', play)
 
@@ -246,6 +280,36 @@ function createSimulationControls(options) {
   dayNightToggle.input.addEventListener('change', () => {
     setDayNightOverlayEnabled(dayNightToggle.input.checked)
     callbacks.onDayNightOverlayChange(state.dayNightOverlayEnabled)
+  })
+
+  initialInfectiousCountField.input.addEventListener('change', () => {
+    setInitialInfectiousCount(initialInfectiousCountField.input.value)
+    callbacks.onInitialInfectiousCountChange(state.initialInfectiousCount)
+  })
+
+  infectionDistanceField.input.addEventListener('change', () => {
+    setInfectionDistance(infectionDistanceField.input.value)
+    callbacks.onInfectionDistanceChange(state.infectionDistance)
+  })
+
+  infectionProbabilityField.input.addEventListener('change', () => {
+    setInfectionProbability(infectionProbabilityField.input.value)
+    callbacks.onInfectionProbabilityChange(state.infectionProbability)
+  })
+
+  incubationDaysField.input.addEventListener('change', () => {
+    setIncubationDays(incubationDaysField.input.value)
+    callbacks.onIncubationDaysChange(state.incubationDays)
+  })
+
+  infectionDaysField.input.addEventListener('change', () => {
+    setInfectionDays(infectionDaysField.input.value)
+    callbacks.onInfectionDaysChange(state.infectionDays)
+  })
+
+  immunityDaysField.input.addEventListener('change', () => {
+    setImmunityDays(immunityDaysField.input.value)
+    callbacks.onImmunityDaysChange(state.immunityDays)
   })
 
   function play() {
@@ -305,8 +369,41 @@ function createSimulationControls(options) {
     dayNightToggle.input.checked = state.dayNightOverlayEnabled
   }
 
+  function setInitialInfectiousCount(count) {
+    state.initialInfectiousCount = normalizeInitialInfectiousCount(count, initialInfectiousCountRange)
+    initialInfectiousCountField.input.value = String(state.initialInfectiousCount)
+  }
+
+  function setInfectionDistance(distance) {
+    state.infectionDistance = normalizeInfectionDistance(distance, infectionDistanceRange)
+    infectionDistanceField.input.value = formatNumberInput(state.infectionDistance)
+  }
+
+  function setInfectionProbability(probability) {
+    state.infectionProbability = normalizeInfectionProbability(probability, infectionProbabilityRange)
+    infectionProbabilityField.input.value = formatNumberInput(state.infectionProbability)
+  }
+
+  function setIncubationDays(days) {
+    state.incubationDays = normalizeIncubationDays(days, incubationDaysRange)
+    incubationDaysField.input.value = formatNumberInput(state.incubationDays)
+  }
+
+  function setInfectionDays(days) {
+    state.infectionDays = normalizeInfectionDays(days, infectionDaysRange)
+    infectionDaysField.input.value = formatNumberInput(state.infectionDays)
+  }
+
+  function setImmunityDays(days) {
+    state.immunityDays = normalizeImmunityDays(days, immunityDaysRange)
+    immunityDaysField.input.value = formatNumberInput(state.immunityDays)
+  }
+
   function render() {
     clockField.value.textContent = formatClockDisplay(options.clock)
+    infectionStatsField.value.textContent = formatInfectionStats(
+      typeof options.getInfectionStats === 'function' ? options.getInfectionStats() : null
+    )
   }
 
   setPaused(state.paused)
@@ -316,6 +413,12 @@ function createSimulationControls(options) {
   setNpcCount(state.npcCount)
   setCarCount(state.carCount)
   setDayNightOverlayEnabled(state.dayNightOverlayEnabled)
+  setInitialInfectiousCount(state.initialInfectiousCount)
+  setInfectionDistance(state.infectionDistance)
+  setInfectionProbability(state.infectionProbability)
+  setIncubationDays(state.incubationDays)
+  setInfectionDays(state.infectionDays)
+  setImmunityDays(state.immunityDays)
   render()
 
   return {
@@ -329,6 +432,12 @@ function createSimulationControls(options) {
     setNpcCount,
     setCarCount,
     setDayNightOverlayEnabled,
+    setInitialInfectiousCount,
+    setInfectionDistance,
+    setInfectionProbability,
+    setIncubationDays,
+    setInfectionDays,
+    setImmunityDays,
     togglePlayback
   }
 }
@@ -342,6 +451,15 @@ function createDashboardButton(label, action) {
   button.textContent = label
 
   return button
+}
+
+function createDashboardSubsectionTitle(titleText) {
+  const title = document.createElement('div')
+
+  title.className = 'dashboard-section-title dashboard-subsection-title'
+  title.textContent = titleText
+
+  return title
 }
 
 function createSeedToggle(enabled) {
@@ -489,6 +607,107 @@ function createDayNightToggle(enabled) {
   return { label, input }
 }
 
+function createInfectionStatsField() {
+  const label = document.createElement('div')
+  const text = document.createElement('span')
+  const value = document.createElement('output')
+
+  label.className = 'dashboard-field dashboard-infection-stats-field'
+  text.textContent = 'SEIR'
+  value.className = 'dashboard-infection-stats-value'
+  value.dataset.simulationInfectionStats = 'true'
+  label.appendChild(text)
+  label.appendChild(value)
+
+  return { label, value }
+}
+
+function createInitialInfectiousCountField(count, range) {
+  return createNumberField({
+    labelText: 'initial infected',
+    className: 'dashboard-initial-infectious-count-field',
+    dataset: 'simulationInitialInfectiousCount',
+    value: count,
+    range,
+    normalize: normalizeInitialInfectiousCount,
+    format: String
+  })
+}
+
+function createInfectionDistanceField(distance, range) {
+  return createNumberField({
+    labelText: 'infect dist',
+    className: 'dashboard-infection-distance-field',
+    dataset: 'simulationInfectionDistance',
+    value: distance,
+    range,
+    normalize: normalizeInfectionDistance
+  })
+}
+
+function createInfectionProbabilityField(probability, range) {
+  return createNumberField({
+    labelText: 'infect p/min',
+    className: 'dashboard-infection-probability-field',
+    dataset: 'simulationInfectionProbability',
+    value: probability,
+    range,
+    normalize: normalizeInfectionProbability
+  })
+}
+
+function createIncubationDaysField(days, range) {
+  return createNumberField({
+    labelText: 'incub days',
+    className: 'dashboard-incubation-days-field',
+    dataset: 'simulationIncubationDays',
+    value: days,
+    range,
+    normalize: normalizeIncubationDays
+  })
+}
+
+function createInfectionDaysField(days, range) {
+  return createNumberField({
+    labelText: 'infect days',
+    className: 'dashboard-infection-days-field',
+    dataset: 'simulationInfectionDays',
+    value: days,
+    range,
+    normalize: normalizeInfectionDays
+  })
+}
+
+function createImmunityDaysField(days, range) {
+  return createNumberField({
+    labelText: 'immune days',
+    className: 'dashboard-immunity-days-field',
+    dataset: 'simulationImmunityDays',
+    value: days,
+    range,
+    normalize: normalizeImmunityDays
+  })
+}
+
+function createNumberField({ labelText, className, dataset, value, range, normalize, format = formatNumberInput }) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const input = document.createElement('input')
+
+  label.className = `dashboard-field ${className}`
+  text.textContent = labelText
+  input.type = 'number'
+  input.min = String(range.min)
+  input.max = String(range.max)
+  input.step = String(range.step)
+  input.value = format(normalize(value, range))
+  input.dataset[dataset] = 'true'
+  label.appendChild(text)
+  label.appendChild(input)
+
+  return { label, input }
+}
+
 function normalizeSpeedRange(range) {
   const min = Number(range && range.min)
   const max = Number(range && range.max)
@@ -498,7 +717,7 @@ function normalizeSpeedRange(range) {
     return { min, max, step }
   }
 
-  return { min: 1, max: 16, step: 0.25 }
+  return { min: 1, max: 24, step: 0.25 }
 }
 
 function normalizeNpcCountRange(range) {
@@ -509,12 +728,48 @@ function normalizeCarCountRange(range) {
   return normalizeIntegerRange(range, { min: 0, max: 2000, step: 10 })
 }
 
+function normalizeInitialInfectiousCountRange(range) {
+  return normalizeIntegerRange(range, { min: 0, max: 10000, step: 1 })
+}
+
+function normalizeInfectionDistanceRange(range) {
+  return normalizeNumberRange(range, { min: 0, max: 256, step: 1 })
+}
+
+function normalizeInfectionProbabilityRange(range) {
+  return normalizeNumberRange(range, { min: 0, max: 1, step: 0.01 })
+}
+
+function normalizeIncubationDaysRange(range) {
+  return normalizeNumberRange(range, { min: 0, max: 14, step: 0.25 })
+}
+
+function normalizeInfectionDaysRange(range) {
+  return normalizeNumberRange(range, { min: 0, max: 21, step: 0.25 })
+}
+
+function normalizeImmunityDaysRange(range) {
+  return normalizeNumberRange(range, { min: 0, max: 365, step: 1 })
+}
+
 function normalizeIntegerRange(range, fallback) {
   const min = Number(range && range.min)
   const max = Number(range && range.max)
   const step = Number(range && range.step)
 
   if (Number.isInteger(min) && min >= 0 && Number.isInteger(max) && max >= min && Number.isInteger(step) && step > 0) {
+    return { min, max, step }
+  }
+
+  return fallback
+}
+
+function normalizeNumberRange(range, fallback) {
+  const min = Number(range && range.min)
+  const max = Number(range && range.max)
+  const step = Number(range && range.step)
+
+  if (Number.isFinite(min) && min >= 0 && Number.isFinite(max) && max >= min && Number.isFinite(step) && step > 0) {
     return { min, max, step }
   }
 
@@ -543,6 +798,47 @@ function normalizeCarCount(count, range) {
   return Math.min(Math.max(value, countRange.min), countRange.max)
 }
 
+function normalizeInitialInfectiousCount(count, range) {
+  const countRange = normalizeInitialInfectiousCountRange(range)
+  const value = Math.round(Number(count))
+
+  if (!Number.isFinite(value)) {
+    return countRange.min
+  }
+
+  return Math.min(Math.max(value, countRange.min), countRange.max)
+}
+
+function normalizeInfectionDistance(distance, range) {
+  return normalizeNumberInRange(distance, normalizeInfectionDistanceRange(range))
+}
+
+function normalizeInfectionProbability(probability, range) {
+  return normalizeNumberInRange(probability, normalizeInfectionProbabilityRange(range))
+}
+
+function normalizeIncubationDays(days, range) {
+  return normalizeNumberInRange(days, normalizeIncubationDaysRange(range))
+}
+
+function normalizeInfectionDays(days, range) {
+  return normalizeNumberInRange(days, normalizeInfectionDaysRange(range))
+}
+
+function normalizeImmunityDays(days, range) {
+  return normalizeNumberInRange(days, normalizeImmunityDaysRange(range))
+}
+
+function normalizeNumberInRange(value, range) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return range.min
+  }
+
+  return Math.min(Math.max(number, range.min), range.max)
+}
+
 function clampSpeed(speed, range) {
   if (!Number.isFinite(speed)) {
     return range.min
@@ -555,6 +851,10 @@ function formatSpeed(speed) {
   return `${Number(speed.toFixed(2))}x`
 }
 
+function formatNumberInput(value) {
+  return String(Number(value.toFixed(4)))
+}
+
 function formatClockDisplay(clock) {
   if (!clock || typeof clock.formatTimeOfDay !== 'function') {
     return '--:--'
@@ -563,6 +863,20 @@ function formatClockDisplay(clock) {
   const dayIndex = typeof clock.getDayIndex === 'function' ? clock.getDayIndex() : 0
 
   return `day ${dayIndex + 1} ${clock.formatTimeOfDay()}`
+}
+
+function formatInfectionStats(stats) {
+  if (!stats) {
+    return 'S 0 E 0 I 0 R 0'
+  }
+
+  return `S ${formatStatCount(stats.susceptible)} E ${formatStatCount(stats.exposed)} I ${formatStatCount(stats.infectious)} R ${formatStatCount(stats.recovered)}`
+}
+
+function formatStatCount(count) {
+  const value = Math.round(Number(count))
+
+  return Number.isFinite(value) && value >= 0 ? value : 0
 }
 
 function createOverlayToggle(overlay) {

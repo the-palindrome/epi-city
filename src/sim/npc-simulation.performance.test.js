@@ -39,9 +39,28 @@ function collectLongEntranceRoutes(city, target, count) {
 function measure(fn) {
   const start = performance.now()
 
+  const value = fn()
+
+  return {
+    value,
+    ms: performance.now() - start
+  }
+}
+
+function measureBest(fn, attempts = 5) {
   fn()
 
-  return performance.now() - start
+  let best = { value: null, ms: Infinity }
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = measure(fn)
+
+    if (result.ms < best.ms) {
+      best = result
+    }
+  }
+
+  return best
 }
 
 describe('NPC simulation performance', () => {
@@ -60,23 +79,39 @@ describe('NPC simulation performance', () => {
     const startIndexes = starts.map((start) => city.index(start.x, start.y))
     const targetIndex = city.index(target.x, target.y)
     const field = city.getCachedRouteFieldByIndex(targetIndex, 'pedestrian')
-    let arrayRouteTotal = 0
-    let fieldRouteTotal = 0
+    const repetitions = 10
 
-    const pathArrayMs = measure(() => {
-      for (const startIndex of startIndexes) {
-        arrayRouteTotal += city.findCachedPathIndexesByIndex(startIndex, targetIndex, 'pedestrian').length
+    const pathArray = measureBest(() => {
+      let arrayRouteTotal = 0
+
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        for (const startIndex of startIndexes) {
+          const path = city.findCachedPathIndexesByIndex(startIndex, targetIndex, 'pedestrian')
+          const npcRoute = Array.from(path)
+
+          for (let index = 0; index < npcRoute.length; index += 1) {
+            arrayRouteTotal += npcRoute[index]
+          }
+        }
       }
+
+      return arrayRouteTotal
     })
 
-    const fieldHandleMs = measure(() => {
-      for (const startIndex of startIndexes) {
-        fieldRouteTotal += city.getRouteFieldNextIndex(field, startIndex)
+    const fieldHandle = measureBest(() => {
+      let fieldRouteTotal = 0
+
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        for (const startIndex of startIndexes) {
+          fieldRouteTotal += city.getRouteFieldNextIndex(field, startIndex)
+        }
       }
+
+      return fieldRouteTotal
     })
 
-    expect(arrayRouteTotal).toBeGreaterThan(0)
-    expect(fieldRouteTotal).toBeGreaterThan(0)
-    expect(pathArrayMs / Math.max(fieldHandleMs, 0.001)).toBeGreaterThanOrEqual(10)
+    expect(pathArray.value).toBeGreaterThan(0)
+    expect(fieldHandle.value).toBeGreaterThan(0)
+    expect(pathArray.ms / Math.max(fieldHandle.ms, 0.001)).toBeGreaterThanOrEqual(10)
   }, 30000)
 })

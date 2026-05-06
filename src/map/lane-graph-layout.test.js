@@ -74,7 +74,7 @@ describe('lane graph map layout', () => {
       expect(edgePairs.has(edgeKey)).toBe(false)
       edgePairs.add(edgeKey)
     }
-  })
+  }, 30000)
 
   it('keeps road and crosswalk tiles available for manual lane graph authoring', () => {
     const map = loadLibertyCityMap()

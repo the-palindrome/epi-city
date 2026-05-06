@@ -88,6 +88,7 @@ function sourceMapsFromPublicPlugin() {
 }
 
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [sourceMapsFromPublicPlugin()],
   server: {
     host: '0.0.0.0',

@@ -3,7 +3,7 @@ import { CAR_CONFIG } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
 import { hourInRange } from '../core/time.js'
-import { fillRect } from '../render/pixi-rendering.js'
+import { createCarSpriteRenderer } from '../render/car-sprite.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -28,6 +28,10 @@ const LANE_CHANGE_MAX_FORWARD_TILES = 6
 const LANE_CHANGE_LATERAL_TILES = 1
 const LANE_CHANGE_CURVE_SAMPLES = 9
 const LANE_CHANGE_SPEED_LIMIT = 18
+const LANE_CHANGE_ADAPTIVE_LOOKAHEAD_EDGES = 2
+const LANE_CHANGE_AHEAD_GAP_TILES = 0.5
+const MIN_EDGE_DURATION_SECONDS = 0.05
+const SECONDS_PER_HOUR = 3600
 const TRAFFIC_SIGNAL_CLEARANCE_GAP_TILES = 1
 const RIGHT_HAND_LOOKAHEAD_EDGES = 6
 
@@ -67,7 +71,6 @@ const networkCache = new WeakMap()
 
 export function createCarSimulation(city, entityLayer, config = {}) {
   const resolvedConfig = { ...CAR_CONFIG, ...config }
-  const graphics = new PIXI.Graphics()
   const random = resolvedConfig.random || createSystemRandom()
   const clock = resolvedConfig.clock || STATIC_CLOCK
   const network = getCarTrafficNetwork(city)
@@ -94,12 +97,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   }
   let destroyed = false
 
-  graphics.eventMode = 'none'
-  graphics.zIndex = resolvedConfig.zorder
-  graphics.zorder = resolvedConfig.zorder
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
-  entityLayer.addChild(graphics)
 
   for (let id = 0; id < resolvedConfig.count; id += 1) {
     const car = createCarEntity(id, city, residentialBuildings, commercialBuildings, buildingsById, ownerPools, parking, random, resolvedConfig)
@@ -111,12 +110,18 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     cars.push(car)
   }
 
+  const carRenderer = createCarSpriteRenderer(cars, city, resolvedConfig, { pixi: PIXI })
+  const graphics = carRenderer.display
+
+  entityLayer.addChild(graphics)
+
   function update(deltaSeconds) {
     if (destroyed || !Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
       return
     }
 
     const safeDelta = Math.min(deltaSeconds, 0.1)
+    const movementDelta = movementDeltaSeconds(safeDelta, clock)
     const hour = clock.getTimeOfDayHours()
 
     for (const car of cars) {
@@ -133,7 +138,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
 
     for (const car of cars) {
       if (car.state === 'driving') {
-        updateDrivingCar(car, safeDelta, context)
+        updateDrivingCar(car, movementDelta, context)
       }
     }
 
@@ -145,7 +150,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
       return
     }
 
-    drawCars(graphics, cars, city, resolvedConfig)
+    carRenderer.render(cars)
   }
 
   render()
@@ -161,12 +166,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
       destroyed = true
       trafficReservations.clear()
       parking.clear()
-
-      if (graphics.parent) {
-        graphics.parent.removeChild(graphics)
-      }
-
-      graphics.destroy()
+      carRenderer.destroy()
     }
   }
 }
@@ -320,7 +320,8 @@ function buildCarTrafficNetwork(city) {
     tileToNodeIndex,
     nearestNodeByTile: buildNearestLaneNodeByTile(city, tileToNodeIndex),
     edgeGeometry: edges.map(createEdgeGeometry),
-    edgeFootprintsByLength: new Map()
+    edgeFootprintsByLength: new Map(),
+    edgeFootprintLengthsByLength: new Map()
   }
 
   precomputeEdgeFootprints(city, network, 2)
@@ -943,6 +944,7 @@ function createCarEntity(id, city, residentialBuildings, commercialBuildings, bu
     occupiedTiles: [],
     route: null,
     movement: null,
+    adaptiveSpeed: createCarAdaptiveSpeed(random, config),
     trafficSignalReservation: null,
     driverOwnerId: null,
     riderOwners: []
@@ -1166,23 +1168,32 @@ function boardCarRiders(car, destinationKind, destinationBuilding) {
 function updateDrivingCar(car, deltaSeconds, context) {
   let remaining = deltaSeconds
 
+  ensureCarAdaptiveSpeed(car, context)
+
   while (remaining > 0 && car.state === 'driving') {
-    if (!car.movement && !startNextDrivingEdge(car, context)) {
+    if (!car.movement && !startNextDrivingEdge(car, context, remaining)) {
       return
     }
 
     const movement = car.movement
-    const step = Math.min(remaining, movement.duration - movement.elapsed)
+
+    updateCarAdaptiveSpeed(car, context, remaining)
 
     if (!car.position) {
       car.position = { x: 0, y: 0 }
     }
 
-    movement.elapsed += step
-    remaining -= step
-    setCarPositionAt(car.position, movement.geometry, movement.elapsed / movement.duration)
+    const speed = Math.max(0.001, movement.speed)
+    const remainingDistance = Math.max(0, movement.distance - movement.distanceTravelled)
+    const stepDistance = Math.min(remainingDistance, speed * remaining)
+    const stepSeconds = stepDistance > 0 ? stepDistance / speed : remaining
 
-    if (movement.elapsed < movement.duration) {
+    movement.elapsed += stepSeconds
+    movement.distanceTravelled += stepDistance
+    remaining -= stepSeconds
+    setCarPositionAt(car.position, movement.geometry, movement.distanceTravelled / movement.distance)
+
+    if (movement.distanceTravelled + 0.0001 < movement.distance) {
       return
     }
 
@@ -1193,11 +1204,13 @@ function updateDrivingCar(car, deltaSeconds, context) {
   }
 }
 
-function startNextDrivingEdge(car, context) {
+function startNextDrivingEdge(car, context, attemptDeltaSeconds = 0) {
   if (!car.route || car.route.cursor >= car.route.edges.length) {
     parkCarAtDestination(car, context)
     return false
   }
+
+  ensureCarAdaptiveSpeed(car, context)
 
   const edgeIndex = car.route.edges[car.route.cursor]
   const edge = context.network.edges[edgeIndex]
@@ -1237,8 +1250,8 @@ function startNextDrivingEdge(car, context) {
   if (clearanceTiles &&
       (!context.parking.canOccupy(clearanceTiles, car.id) ||
        !context.trafficReservations.canOccupy(clearanceTiles, car.id))) {
-    if (deferBlockedLaneChange(car, context, edgeIndex)) {
-      return startNextDrivingEdge(car, context)
+    if (handleBlockedLaneChange(car, context, edgeIndex, clearanceTiles, attemptDeltaSeconds)) {
+      return startNextDrivingEdge(car, context, attemptDeltaSeconds)
     }
 
     return false
@@ -1253,17 +1266,58 @@ function startNextDrivingEdge(car, context) {
     context.trafficReservations.reserve(trafficSignalGroup, trafficSignalClearanceTiles, car)
   }
 
+  resetLaneChangeWait(car)
   context.parking.occupyTiles(car, nextFootprint)
   car.direction = DIRECTION_OFFSET[edge.direction] || car.direction
   car.route.cursor += 1
+  const speedLimit = edgeSpeedLimit(edge, context.config)
+  const speed = edgeSpeedForCar(edge, car, context.config, speedLimit)
+  const distance = Math.max(0.001, edge.worldLength)
+
   car.movement = {
     edgeIndex,
     edge,
     geometry: context.network.edgeGeometry[edgeIndex],
     toNodeIndex,
     elapsed: 0,
-    duration: edgeDuration(edge, context.config)
+    distance,
+    distanceTravelled: 0,
+    speedLimit,
+    speed,
+    duration: distance / speed
   }
+  return true
+}
+
+function handleBlockedLaneChange(car, context, blockedEdgeIndex, clearanceTiles, deltaSeconds) {
+  const blockedEdge = context.network.edges[blockedEdgeIndex]
+
+  if (blockedEdge?.type !== 'lane-change') {
+    return false
+  }
+
+  const blockers = movingBlockersForTiles(car, context, clearanceTiles)
+  const adaptiveSpeed = ensureCarAdaptiveSpeed(car, context)
+
+  if (blockers.length > 0) {
+    const intent = applyLaneChangeSpeedIntent(car, context, blockedEdgeIndex, blockers)
+    const waitSeconds = positiveNumberOrDefault(
+      context.config.movingLaneChangeWaitSeconds,
+      CAR_CONFIG.movingLaneChangeWaitSeconds
+    )
+
+    adaptiveSpeed.laneChangeWaitSeconds += Math.max(0, finiteNumberOrZero(deltaSeconds))
+
+    if (intent === 'slow' && adaptiveSpeed.laneChangeWaitSeconds < waitSeconds) {
+      return false
+    }
+  }
+
+  if (!deferBlockedLaneChange(car, context, blockedEdgeIndex)) {
+    return false
+  }
+
+  adaptiveSpeed.laneChangeWaitSeconds = 0
   return true
 }
 
@@ -1351,6 +1405,150 @@ function routeCost(edgeIndexes, network) {
   }
 
   return cost
+}
+
+function updateCarAdaptiveSpeed(car, context, deltaSeconds) {
+  const adaptiveSpeed = ensureCarAdaptiveSpeed(car, context)
+  const laneChangeBlock = upcomingMovingLaneChangeBlock(car, context)
+
+  if (laneChangeBlock) {
+    applyLaneChangeSpeedIntent(car, context, laneChangeBlock.edgeIndex, laneChangeBlock.blockers)
+  } else {
+    adaptiveSpeed.targetScale = adaptiveSpeed.cruiseScale
+    adaptiveSpeed.intent = null
+  }
+
+  const adjustmentRate = positiveNumberOrDefault(
+    context.config.speedAdjustmentRate,
+    CAR_CONFIG.speedAdjustmentRate
+  )
+
+  adaptiveSpeed.currentScale = moveToward(
+    adaptiveSpeed.currentScale,
+    adaptiveSpeed.targetScale,
+    adjustmentRate * Math.max(0, finiteNumberOrZero(deltaSeconds))
+  )
+
+  if (car.movement) {
+    car.movement.speedLimit = edgeSpeedLimit(car.movement.edge, context.config)
+    car.movement.speed = edgeSpeedForCar(car.movement.edge, car, context.config, car.movement.speedLimit)
+    car.movement.duration = car.movement.distance / car.movement.speed
+  }
+}
+
+function upcomingMovingLaneChangeBlock(car, context) {
+  if (!car.route) {
+    return null
+  }
+
+  const routeEdges = car.route.edges || []
+  const startCursor = Math.max(0, car.route.cursor)
+  const endCursor = Math.min(routeEdges.length, startCursor + LANE_CHANGE_ADAPTIVE_LOOKAHEAD_EDGES)
+
+  for (let cursor = startCursor; cursor < endCursor; cursor += 1) {
+    const edgeIndex = routeEdges[cursor]
+    const edge = context.network.edges[edgeIndex]
+
+    if (edge?.type !== 'lane-change') {
+      continue
+    }
+
+    const clearanceTiles = edgeClearanceTiles(edge)
+
+    if (!clearanceTiles) {
+      return null
+    }
+
+    const blockers = movingBlockersForTiles(car, context, clearanceTiles)
+
+    return blockers.length > 0 ? { edgeIndex, blockers } : null
+  }
+
+  return null
+}
+
+function applyLaneChangeSpeedIntent(car, context, edgeIndex, blockers) {
+  const adaptiveSpeed = ensureCarAdaptiveSpeed(car, context)
+  const intent = laneChangeGapIntent(context, edgeIndex, blockers)
+  const configuredScale = intent === 'overtake'
+    ? positiveNumberOrDefault(context.config.laneChangeOvertakeSpeedScale, CAR_CONFIG.laneChangeOvertakeSpeedScale)
+    : positiveNumberOrDefault(context.config.laneChangeSlowSpeedScale, CAR_CONFIG.laneChangeSlowSpeedScale)
+
+  adaptiveSpeed.targetScale = clampAdaptiveSpeedScale(configuredScale, context.config)
+  adaptiveSpeed.intent = intent
+  return intent
+}
+
+function laneChangeGapIntent(context, edgeIndex, blockers) {
+  const edge = context.network.edges[edgeIndex]
+  const heading = DIRECTION_OFFSET[edge.direction]
+
+  if (!heading) {
+    return 'slow'
+  }
+
+  const fromNode = context.network.laneGraph.nodes[context.network.edgeFrom[edgeIndex]]
+  const startProjection = fromNode.worldX * heading.dx + fromNode.worldY * heading.dy
+  const aheadGap = context.city.tileSize * LANE_CHANGE_AHEAD_GAP_TILES
+
+  for (const blocker of blockers) {
+    if (!blocker.position) {
+      continue
+    }
+
+    const blockerProjection = blocker.position.x * heading.dx + blocker.position.y * heading.dy
+
+    if (blockerProjection - startProjection > aheadGap) {
+      return 'slow'
+    }
+  }
+
+  return 'overtake'
+}
+
+function movingBlockersForTiles(car, context, tileIndexes) {
+  const occupancy = context.parking.occupancy
+  const blockers = []
+  const seen = new Set()
+
+  if (!occupancy) {
+    return blockers
+  }
+
+  for (const tileIndex of tileIndexes || []) {
+    const carId = occupancy[tileIndex]
+
+    if (carId === -1 || carId === car.id || seen.has(carId)) {
+      continue
+    }
+
+    const blocker = findCarById(context, carId)
+
+    if (!blocker || blocker.state !== 'driving') {
+      continue
+    }
+
+    seen.add(carId)
+    blockers.push(blocker)
+  }
+
+  return blockers
+}
+
+function findCarById(context, carId) {
+  for (const car of context.cars) {
+    if (car.id === carId) {
+      return car
+    }
+  }
+
+  return null
+}
+
+function resetLaneChangeWait(car) {
+  if (car.adaptiveSpeed) {
+    car.adaptiveSpeed.laneChangeWaitSeconds = 0
+  }
 }
 
 function parkCarAtDestination(car, context) {
@@ -1824,9 +2022,92 @@ function parkedCarPosition(city, parkingSpot, config) {
   }
 }
 
-function edgeDuration(edge, config) {
-  const speedLimit = Math.max(1, Math.min(positiveNumberOrDefault(config.maxSpeed, CAR_CONFIG.maxSpeed), edge.speedLimit * positiveNumberOrDefault(config.speedLimitScale, CAR_CONFIG.speedLimitScale)))
-  return Math.max(0.05, edge.worldLength / speedLimit)
+function createCarAdaptiveSpeed(random, config) {
+  const minCruiseScale = positiveNumberOrDefault(config.minCruiseSpeedScale, CAR_CONFIG.minCruiseSpeedScale)
+  const maxCruiseScale = Math.max(
+    minCruiseScale,
+    positiveNumberOrDefault(config.maxCruiseSpeedScale, CAR_CONFIG.maxCruiseSpeedScale)
+  )
+  const cruiseScale = clampAdaptiveSpeedScale(random.between(minCruiseScale, maxCruiseScale), config)
+
+  return {
+    cruiseScale,
+    currentScale: cruiseScale,
+    targetScale: cruiseScale,
+    intent: null,
+    laneChangeWaitSeconds: 0
+  }
+}
+
+function ensureCarAdaptiveSpeed(car, context) {
+  if (!car.adaptiveSpeed) {
+    const cruiseScale = clampAdaptiveSpeedScale(deterministicCarCruiseScale(car.id, context.config), context.config)
+
+    car.adaptiveSpeed = {
+      cruiseScale,
+      currentScale: cruiseScale,
+      targetScale: cruiseScale,
+      intent: null,
+      laneChangeWaitSeconds: 0
+    }
+  }
+
+  return car.adaptiveSpeed
+}
+
+function deterministicCarCruiseScale(carId, config) {
+  const minCruiseScale = positiveNumberOrDefault(config.minCruiseSpeedScale, CAR_CONFIG.minCruiseSpeedScale)
+  const maxCruiseScale = Math.max(
+    minCruiseScale,
+    positiveNumberOrDefault(config.maxCruiseSpeedScale, CAR_CONFIG.maxCruiseSpeedScale)
+  )
+  const value = Math.sin((Number(carId) + 1) * 12.9898) * 43758.5453
+  const unit = value - Math.floor(value)
+
+  return minCruiseScale + unit * (maxCruiseScale - minCruiseScale)
+}
+
+function edgeSpeedLimit(edge, config) {
+  const configuredLimit = Math.max(
+    1,
+    Math.min(
+      positiveNumberOrDefault(config.maxSpeed, CAR_CONFIG.maxSpeed),
+      edge.speedLimit * positiveNumberOrDefault(config.speedLimitScale, CAR_CONFIG.speedLimitScale)
+    )
+  )
+  const durationLimitedSpeed = Math.max(1, edge.worldLength / MIN_EDGE_DURATION_SECONDS)
+
+  return Math.min(configuredLimit, durationLimitedSpeed)
+}
+
+function edgeSpeedForCar(edge, car, config, knownSpeedLimit = null) {
+  const speedLimit = knownSpeedLimit ?? edgeSpeedLimit(edge, config)
+  const speedScale = clampAdaptiveSpeedScale(car.adaptiveSpeed?.currentScale, config)
+
+  return Math.max(0.001, speedLimit * speedScale)
+}
+
+function clampAdaptiveSpeedScale(value, config) {
+  const minScale = positiveNumberOrDefault(config.minAdaptiveSpeedScale, CAR_CONFIG.minAdaptiveSpeedScale)
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return minScale
+  }
+
+  return Math.min(1, Math.max(minScale, number))
+}
+
+function moveToward(value, target, maxStep) {
+  if (value < target) {
+    return Math.min(target, value + maxStep)
+  }
+
+  if (value > target) {
+    return Math.max(target, value - maxStep)
+  }
+
+  return target
 }
 
 function createEdgeGeometry(edge) {
@@ -1924,44 +2205,19 @@ function setCarPositionAt(position, geometry, ratio) {
 
 function precomputeEdgeFootprints(city, network, lengthTiles) {
   const footprints = new Array(network.edgeCount)
+  const footprintLengths = new Uint8Array(network.edgeCount)
 
   for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
     const edge = network.edges[edgeIndex]
     const toNodeIndex = network.edgeTo[edgeIndex]
 
     footprints[edgeIndex] = drivingFootprint(city, network, toNodeIndex, edge.direction, lengthTiles)
+    footprintLengths[edgeIndex] = footprints[edgeIndex].length
   }
 
   network.edgeFootprintsByLength.set(lengthTiles, footprints)
+  network.edgeFootprintLengthsByLength.set(lengthTiles, footprintLengths)
   return footprints
-}
-
-function drawCars(graphics, cars, city, config) {
-  graphics.clear()
-
-  for (const car of cars) {
-    drawCar(graphics, car, city, config)
-  }
-}
-
-function drawCar(graphics, car, city, config) {
-  const direction = car.direction || { dx: 1, dy: 0 }
-  const length = car.state === 'parked'
-    ? car.lengthTiles * city.tileSize * 0.82
-    : positiveNumberOrDefault(config.roadBodyLength, CAR_CONFIG.roadBodyLength)
-  const width = positiveNumberOrDefault(config.bodyWidth, CAR_CONFIG.bodyWidth)
-  const horizontal = Math.abs(direction.dx) >= Math.abs(direction.dy)
-  const rectWidth = horizontal ? length : width
-  const rectHeight = horizontal ? width : length
-
-  fillRect(
-    graphics,
-    Math.round(car.position.x - rectWidth / 2),
-    Math.round(car.position.y - rectHeight / 2),
-    Math.round(rectWidth),
-    Math.round(rectHeight),
-    car.color
-  )
 }
 
 function collectBuildings(city, type) {
@@ -1982,4 +2238,26 @@ function positiveIntegerOrDefault(value, fallback) {
 
 function positiveNumberOrDefault(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function finiteNumberOrZero(value) {
+  return Number.isFinite(value) ? value : 0
+}
+
+function movementDeltaSeconds(deltaSeconds, clock) {
+  if (clock && typeof clock.toSimulationSeconds === 'function') {
+    return clock.toSimulationSeconds(deltaSeconds)
+  }
+
+  if (clock && typeof clock.getSimulationSecondsPerRealSecond === 'function') {
+    return deltaSeconds * clock.getSimulationSecondsPerRealSecond()
+  }
+
+  const secondsPerSimulationHour = Number(clock && clock.secondsPerSimulationHour)
+
+  if (Number.isFinite(secondsPerSimulationHour) && secondsPerSimulationHour > 0) {
+    return deltaSeconds * SECONDS_PER_HOUR / secondsPerSimulationHour
+  }
+
+  return deltaSeconds
 }

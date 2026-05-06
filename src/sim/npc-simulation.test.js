@@ -4,23 +4,30 @@ import { createSeededRandom } from '../core/random.js'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
 import { createNpcSimulation } from './npc-simulation.js'
 
+const SECONDS_PER_DAY = 24 * 60 * 60
+
 vi.mock('pixi.js', () => ({
   Graphics: class {
     constructor() {
       this.eventMode = 'auto'
       this.parent = null
       this.drawnRects = 0
+      this.fills = []
     }
 
     clear() {
       this.drawnRects = 0
+      this.fills.length = 0
     }
 
     rect() {
       this.drawnRects += 1
+      const fills = this.fills
 
       return {
-        fill() {}
+        fill(options) {
+          fills.push(options)
+        }
       }
     }
 
@@ -111,6 +118,25 @@ function createCityWithSharedBuildings() {
   })
 }
 
+function createCornerCity() {
+  return createCity({
+    width: 3,
+    height: 2,
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      o: { category: 'obstacle', walkable: false, drivable: false, parkable: false }
+    },
+    rows: [
+      'sss',
+      'oos'
+    ],
+    textureRows: [
+      [0, 0, 0],
+      [0, 0, 0]
+    ]
+  })
+}
+
 function createActorLayer() {
   return {
     eventMode: 'auto',
@@ -152,6 +178,13 @@ function createSimulation(seed, city = createCity(), options = {}) {
     routePlanBudget: options.routePlanBudget || 24,
     routeRetrySeconds: 1,
     routeBlockedReplanSeconds: 2,
+    initialInfectiousCount: options.initialInfectiousCount ?? 0,
+    infectionDistance: options.infectionDistance ?? 48,
+    infectionProbability: options.infectionProbability ?? 0.03,
+    incubationDays: options.incubationDays ?? 5,
+    infectionDays: options.infectionDays ?? 7,
+    immunityDays: options.immunityDays ?? 90,
+    infectionColors: options.infectionColors,
     clock: options.clock,
     random: createSeededRandom(seed)
   })
@@ -208,7 +241,7 @@ describe('NPC simulation randomness', () => {
       npc.position.y >= minCenter &&
       npc.position.y <= maxCenter
     ))).toBe(true)
-    expect(simulation.graphics.drawnRects).toBe(NPC_CONFIG.maxVisiblePerTile * 2)
+    expect(simulation.graphics.drawnRects).toBeGreaterThan(NPC_CONFIG.maxVisiblePerTile * 2)
 
     simulation.destroy()
   })
@@ -239,12 +272,297 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
+  it('keeps the same visual slot when moving across normal route tiles', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('stable-slot', city, {
+      count: 1,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const targetLocation = { x: 1, y: 0, index: city.index(1, 0) }
+
+    npc.present = true
+    npc.locationState = null
+    npc.position = { x: 16, y: 16 }
+    npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
+    npc.slot = { id: 4, index: -1 }
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: targetLocation
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    expect(npc.movement.target).toBeTruthy()
+    expect(npc.movement.target.slot.id).toBe(4)
+
+    simulation.destroy()
+  })
+
+  it('advances walking movement using simulation-clock seconds', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const clock = {
+      secondsPerSimulationHour: 60,
+      getTimeOfDayHours: () => 8
+    }
+    const simulation = createSimulation('clock-walk', city, {
+      count: 1,
+      tileCapacity: 1,
+      clock,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const targetLocation = { x: 1, y: 0, index: city.index(1, 0) }
+
+    npc.present = true
+    npc.locationState = null
+    npc.position = { x: 16, y: 16 }
+    npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
+    npc.slot = { id: 0, index: -1 }
+    npc.movement.speed = 8
+    npc.movement.target = null
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: targetLocation
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    const startX = npc.position.x
+
+    simulation.update(1 / 60)
+
+    expect(npc.position.x).toBeGreaterThan(startX + 4)
+    expect(npc.position.x).toBeLessThan(48)
+
+    simulation.destroy()
+  })
+
+  it('rounds route turns with a bezier movement curve', () => {
+    const city = createCornerCity()
+    const simulation = createSimulation('bezier-turn', city, {
+      count: 1,
+      tileCapacity: 1,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const cornerIndex = city.index(1, 0)
+    const targetLocation = { x: 2, y: 1, index: city.index(2, 1) }
+
+    npc.present = true
+    npc.locationState = null
+    npc.position = { x: 16, y: 16 }
+    npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
+    npc.slot = { id: 0, index: -1 }
+    npc.movement.speed = 64
+    npc.movement.target = null
+    npc.movement.headingX = 0
+    npc.movement.headingY = 0
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: targetLocation
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    expect(npc.movement.target.tile).toMatchObject({ x: 1, y: 0, index: cornerIndex })
+
+    for (let step = 0; step < 120 && npc.tile.index !== cornerIndex; step += 1) {
+      simulation.update(1 / 60)
+    }
+
+    expect(npc.tile.index).toBe(cornerIndex)
+    expect(npc.movement.target).toBeNull()
+
+    simulation.update(1 / 60)
+
+    const turnTarget = npc.movement.target
+    const start = { ...npc.position }
+    const end = { ...turnTarget.position }
+
+    expect(turnTarget.tile).toMatchObject(targetLocation)
+    expect(turnTarget.curve.p1.x).toBeGreaterThan(turnTarget.curve.p0.x)
+    expect(turnTarget.curve.p1.y).toBeCloseTo(turnTarget.curve.p0.y)
+
+    simulation.update(0.1)
+
+    const straightProgress = (npc.position.x - start.x) / (end.x - start.x)
+    const straightY = start.y + (end.y - start.y) * straightProgress
+
+    expect(npc.position.y).toBeLessThan(straightY)
+    expect(npc.movement.headingX).toBeGreaterThan(0)
+
+    simulation.destroy()
+  })
+
   it('assigns NPC entities and their graphics layer to zorder 1', () => {
     const simulation = createSimulation('zorder')
 
     expect(simulation.npcs.every((npc) => npc.zorder === 1)).toBe(true)
     expect(simulation.graphics.zorder).toBe(1)
     expect(simulation.graphics.zIndex).toBe(1)
+
+    simulation.destroy()
+  })
+
+  it('adds inspectable SEIR infection state to each NPC and seeds initial infectious cases', () => {
+    const simulation = createSimulation('infection-seed', createCity(), {
+      count: 8,
+      initialInfectiousCount: 2,
+      initialUpdate: false
+    })
+    const stats = simulation.infection.getStats()
+
+    expect(simulation.npcs.every((npc) => typeof npc.infection === 'string')).toBe(true)
+    expect(stats).toEqual({
+      susceptible: 6,
+      exposed: 0,
+      infectious: 2,
+      recovered: 0
+    })
+    expect(simulation.npcs.filter((npc) => npc.infection === 'infectious')).toHaveLength(2)
+
+    simulation.destroy()
+  })
+
+  it('spreads infection from infectious NPCs to susceptible NPCs within distance', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('infection-spread', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 1,
+      initialUpdate: false
+    })
+
+    simulation.npcs[0].position = { x: 16, y: 16 }
+    simulation.npcs[1].position = { x: 22, y: 16 }
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.setNpcState(1, 'susceptible')
+
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[1].infection).toBe('exposed')
+    expect(simulation.infection.getStats()).toMatchObject({
+      susceptible: 0,
+      exposed: 1,
+      infectious: 1,
+      recovered: 0
+    })
+
+    simulation.destroy()
+  })
+
+  it('advances infection through exposed, infectious, recovered, and susceptible phases', () => {
+    const oneTickDays = 0.1 / SECONDS_PER_DAY
+    const simulation = createSimulation('infection-phases', createCity(), {
+      count: 1,
+      initialInfectiousCount: 0,
+      infectionProbability: 0,
+      incubationDays: oneTickDays,
+      infectionDays: oneTickDays,
+      immunityDays: oneTickDays,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    simulation.infection.setNpcState(0, 'exposed')
+    simulation.update(0.1)
+
+    expect(npc.infection).toBe('infectious')
+
+    simulation.update(0.1)
+
+    expect(npc.infection).toBe('recovered')
+
+    simulation.update(0.1)
+
+    expect(npc.infection).toBe('susceptible')
+    expect(simulation.infection.getStats()).toMatchObject({
+      susceptible: 1,
+      exposed: 0,
+      infectious: 0,
+      recovered: 0
+    })
+
+    simulation.destroy()
+  })
+
+  it('reports full infection status for an NPC', () => {
+    const twoDays = 2 * SECONDS_PER_DAY
+    const simulation = createSimulation('infection-status', createCity(), {
+      count: 1,
+      initialInfectiousCount: 0,
+      initialUpdate: false
+    })
+
+    simulation.infection.setNpcState(0, 'exposed', twoDays)
+
+    expect(simulation.infection.getNpcStatus(simulation.npcs[0])).toMatchObject({
+      id: 0,
+      infection: 'exposed',
+      color: 0xf0a33a,
+      contagious: false,
+      canBeInfected: false,
+      immune: false,
+      nextState: 'infectious',
+      remainingSeconds: twoDays,
+      remainingDays: 2
+    })
+
+    simulation.destroy()
+  })
+
+  it('renders NPC infection states with their configured colors', () => {
+    const colors = {
+      susceptible: 0x111111,
+      exposed: 0x222222,
+      infectious: 0x333333,
+      recovered: 0x444444
+    }
+    const simulation = createSimulation('infection-colors', createCity(), {
+      count: 4,
+      initialInfectiousCount: 0,
+      infectionColors: colors,
+      initialUpdate: false
+    })
+
+    simulation.infection.setNpcState(0, 'susceptible')
+    simulation.infection.setNpcState(1, 'exposed')
+    simulation.infection.setNpcState(2, 'infectious')
+    simulation.infection.setNpcState(3, 'recovered')
+    simulation.render()
+
+    const drawnColors = simulation.graphics.fills.map((fill) => fill.color)
+
+    expect(drawnColors.filter((color) => color === colors.susceptible)).toHaveLength(1)
+    expect(drawnColors.filter((color) => color === colors.exposed)).toHaveLength(1)
+    expect(drawnColors.filter((color) => color === colors.infectious)).toHaveLength(1)
+    expect(drawnColors.filter((color) => color === colors.recovered)).toHaveLength(1)
 
     simulation.destroy()
   })
