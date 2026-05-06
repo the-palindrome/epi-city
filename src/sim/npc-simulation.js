@@ -2,7 +2,13 @@ import * as PIXI from 'pixi.js'
 import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
 import { hourInRange, normalizeHour } from '../core/time.js'
-import { fillRect } from '../render/pixi-rendering.js'
+import {
+  createNpcSpriteState,
+  drawNpcSprite,
+  faceNpcSprite,
+  idleNpcSprite,
+  stepNpcSpriteAnimation
+} from '../render/npc-sprite.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -155,6 +161,7 @@ class NpcEntity {
       speed: random.between(config.minSpeed, config.maxSpeed),
       target: null
     }
+    this.sprite = createNpcSpriteState(id)
     this.routing = createEmptyRouteState()
     this.vehicleTrip = null
     this.waitingForCar = false
@@ -206,6 +213,7 @@ class NpcEntity {
     this.present = false
     this.locationState = null
     this.movement.target = null
+    idleNpcSprite(this)
     this.routing = createEmptyRouteState()
   }
 
@@ -238,6 +246,7 @@ class NpcEntity {
     this.tile = { ...location }
     this.slot = { id: -1, index: -1 }
     this.movement.target = null
+    idleNpcSprite(this)
     this.routing = createEmptyRouteState()
   }
 }
@@ -827,10 +836,12 @@ function prepareNpcForRouting(npc, deltaSeconds, context) {
 
 function updateNpcMovement(npc, deltaSeconds, context) {
   if (npc.vehicleTrip || npc.waitingForCar) {
+    idleNpcSprite(npc)
     return
   }
 
   if (!npc.present) {
+    idleNpcSprite(npc)
     return
   }
 
@@ -844,6 +855,8 @@ function updateNpcMovement(npc, deltaSeconds, context) {
     return
   }
 
+  idleNpcSprite(npc)
+
   if (npc.goal) {
     followRoute(npc, deltaSeconds, context)
   }
@@ -852,6 +865,9 @@ function updateNpcMovement(npc, deltaSeconds, context) {
 function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const target = npc.movement.target
   const maxStep = npc.movement.speed * deltaSeconds
+  const movedDistance = Math.min(Math.max(target.remainingDistance, 0), maxStep)
+
+  stepNpcSpriteAnimation(npc, target.directionX, target.directionY, movedDistance)
 
   if (target.remainingDistance <= maxStep || target.remainingDistance === 0) {
     npc.position.x = target.position.x
@@ -996,6 +1012,7 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
       index: targetSlot.slotIndex
     }
   }
+  faceNpcSprite(npc, npc.movement.target.directionX, npc.movement.target.directionY)
 
   return true
 }
@@ -1022,6 +1039,7 @@ function tryExitCurrentLocation(npc, context) {
   npc.tile.index = location.index
   npc.slot.id = targetSlot.slot
   npc.slot.index = targetSlot.slotIndex
+  idleNpcSprite(npc)
 
   return true
 }
@@ -1041,6 +1059,7 @@ function enterGoalLocation(npc, context) {
   npc.tile = { ...npc.goal.location }
   npc.slot = { id: -1, index: -1 }
   npc.movement.target = null
+  idleNpcSprite(npc)
   npc.routing = createEmptyRouteState()
 }
 
@@ -1129,7 +1148,10 @@ function drawNpcs(graphics, npcs, city, config, visibleTileCounts, visibleTileIn
       continue
     }
 
-    drawNpcBlob(graphics, npc.position.x, npc.position.y, config.size, infection.getNpcColor(npc))
+    drawNpcSprite(graphics, npc, {
+      color: infection.getNpcColor(npc),
+      size: config.size
+    })
   }
 
   for (const tileIndex of visibleTileIndexes) {
@@ -1168,14 +1190,6 @@ function reserveVisibleNpcTile(tileIndex, visibleLimit, visibleTileCounts, visib
   visibleTileCounts[tileIndex] = count + 1
 
   return true
-}
-
-function drawNpcBlob(graphics, x, y, size, color) {
-  const px = Math.round(x - size / 2)
-  const py = Math.round(y - size / 2)
-
-  fillRect(graphics, px + 1, py, size - 2, size, color)
-  fillRect(graphics, px, py + 2, size, size - 4, color)
 }
 
 function createEmptyRouteState() {
