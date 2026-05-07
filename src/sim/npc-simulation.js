@@ -9,6 +9,7 @@ import {
   idleNpcSprite,
   stepNpcSpriteAnimation
 } from '../render/npc-sprite.js'
+import { toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -107,7 +108,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
 
     const safeDelta = Math.min(Math.max(deltaSeconds, 0), 0.1)
-    const movementDelta = getSimulationDeltaSeconds(clock, safeDelta)
+    const movementDelta = toSimulationSeconds(clock, safeDelta)
     const timeOfDayHours = clock.getTimeOfDayHours()
 
     for (const npc of npcs) {
@@ -181,7 +182,7 @@ class NpcEntity {
     this.locationState = locationState
     this.position = { x: position.x, y: position.y }
     this.tile = { x: tile.x, y: tile.y, index: tile.index }
-    this.slot = { id: slot.id, index: slot.index }
+    this.slot = { id: slot.id }
     this.movement = {
       speed: random.between(config.minSpeed, config.maxSpeed),
       target: null,
@@ -272,7 +273,7 @@ class NpcEntity {
     }
     this.position = tileCenterPosition(city, location.x, location.y)
     this.tile = { ...location }
-    this.slot = { id: -1, index: -1 }
+    this.slot = { id: -1 }
     this.movement.target = null
     clearNpcMovementHeading(this)
     idleNpcSprite(this)
@@ -382,7 +383,7 @@ class NpcInfectionDynamics {
   }
 
   update(deltaSeconds) {
-    const simulationDeltaSeconds = getSimulationDeltaSeconds(this.clock, deltaSeconds)
+    const simulationDeltaSeconds = toSimulationSeconds(this.clock, deltaSeconds)
 
     if (!Number.isFinite(simulationDeltaSeconds) || simulationDeltaSeconds <= 0) {
       return
@@ -836,7 +837,7 @@ function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config,
       present: false,
       position: tileCenterPosition(city, activeElement.location.x, activeElement.location.y),
       tile: { ...activeElement.location },
-      slot: { id: -1, index: -1 },
+      slot: { id: -1 },
       locationState: {
         timetableElementId: activeElement.id,
         buildingId: activeElement.buildingId,
@@ -857,9 +858,9 @@ function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config,
 
   return {
     present: true,
-    position: tileSlotPosition(city, tileX, tileY, slot, config, slotOffsets),
+    position: tileSlotPosition(city, tileX, tileY, slot, slotOffsets),
     tile: { x: tileX, y: tileY, index: tileIndex },
-    slot: { id: slot, index: -1 },
+    slot: { id: slot },
     locationState: null
   }
 }
@@ -994,7 +995,6 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
     npc.tile.y = target.tile.y
     npc.tile.index = target.tile.index
     npc.slot.id = target.slot.id
-    npc.slot.index = target.slot.index
     setNpcMovementHeading(npc, target.endDirectionX, target.endDirectionY)
     npc.movement.target = null
     return
@@ -1047,7 +1047,7 @@ function followRoute(npc, deltaSeconds, context) {
 }
 
 function nextRouteTileIndex(npc, context) {
-  return routeFieldNextIndex(npc.routing.routeField, npc.tile.index)
+  return context.city.getRouteFieldNextIndex(npc.routing.routeField, npc.tile.index)
 }
 
 function areNeighborTileIndexes(city, fromIndex, toIndex) {
@@ -1066,7 +1066,7 @@ function areNeighborTileIndexes(city, fromIndex, toIndex) {
 
 function planRouteForNpc(npc, context) {
   const routeField = context.city.getCachedRouteFieldByIndex(npc.goal.location.index, 'pedestrian')
-  const nextIndex = routeFieldNextIndex(routeField, npc.tile.index)
+  const nextIndex = context.city.getRouteFieldNextIndex(routeField, npc.tile.index)
 
   if (!routeField || (npc.tile.index !== npc.goal.location.index && nextIndex === -1)) {
     npc.routing.routeField = null
@@ -1079,16 +1079,6 @@ function planRouteForNpc(npc, context) {
   npc.routing.destinationIndex = npc.goal.location.index
   npc.routing.retrySeconds = 0
   npc.routing.blockedSeconds = 0
-}
-
-function routeFieldNextIndex(field, fromIndex) {
-  if (!field || fromIndex === field.endIndex) {
-    return -1
-  }
-
-  const directionIndex = field.nextDirection[fromIndex]
-
-  return directionIndex <= 7 ? fromIndex + field.offsets[directionIndex] : -1
 }
 
 function tryStartMoveToIndex(npc, targetIndex, context) {
@@ -1115,13 +1105,12 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
 
   const target = targetSlot.unlimited
     ? tileCenterPosition(city, tileX, tileY)
-    : tileSlotPosition(city, tileX, tileY, targetSlot.slot, config, context.slotOffsets)
+    : tileSlotPosition(city, tileX, tileY, targetSlot.slot, context.slotOffsets)
   const movementTarget = createNpcMovementTarget(npc, target, {
     tileX,
     tileY,
     targetIndex,
-    slot: targetSlot.slot,
-    slotIndex: targetSlot.slotIndex
+    slot: targetSlot.slot
   }, context)
 
   npc.movement.target = movementTarget
@@ -1157,8 +1146,7 @@ function createNpcMovementTarget(npc, target, targetState, context) {
       index: targetState.targetIndex
     },
     slot: {
-      id: targetState.slot,
-      index: targetState.slotIndex
+      id: targetState.slot
     }
   }
 }
@@ -1318,7 +1306,7 @@ function tryExitCurrentLocation(npc, context) {
 
   const position = targetSlot.unlimited
     ? tileCenterPosition(context.city, location.x, location.y)
-    : tileSlotPosition(context.city, location.x, location.y, targetSlot.slot, context.config, context.slotOffsets)
+    : tileSlotPosition(context.city, location.x, location.y, targetSlot.slot, context.slotOffsets)
 
   npc.present = true
   npc.locationState = null
@@ -1328,7 +1316,6 @@ function tryExitCurrentLocation(npc, context) {
   npc.tile.y = location.y
   npc.tile.index = location.index
   npc.slot.id = targetSlot.slot
-  npc.slot.index = targetSlot.slotIndex
   clearNpcMovementHeading(npc)
   idleNpcSprite(npc)
 
@@ -1348,7 +1335,7 @@ function enterGoalLocation(npc, context) {
   }
   npc.position = tileCenterPosition(context.city, npc.goal.location.x, npc.goal.location.y)
   npc.tile = { ...npc.goal.location }
-  npc.slot = { id: -1, index: -1 }
+  npc.slot = { id: -1 }
   npc.movement.target = null
   clearNpcMovementHeading(npc)
   idleNpcSprite(npc)
@@ -1357,14 +1344,14 @@ function enterGoalLocation(npc, context) {
 
 function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
-    return { slot: -1, slotIndex: -1, unlimited: true }
+    return { slot: -1, unlimited: true }
   }
 
   if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
-    return { slot: preferredSlot, slotIndex: -1, unlimited: false }
+    return { slot: preferredSlot, unlimited: false }
   }
 
-  return { slot: random.int(tileCapacity), slotIndex: -1, unlimited: false }
+  return { slot: random.int(tileCapacity), unlimited: false }
 }
 
 function createNpcSlotOffsets(city, config) {
@@ -1391,33 +1378,14 @@ function createNpcSlotOffsets(city, config) {
   return offsets
 }
 
-function tileSlotPosition(city, tileX, tileY, slot, config, slotOffsets = null) {
+function tileSlotPosition(city, tileX, tileY, slot, slotOffsets) {
   const centerX = (tileX + 0.5) * city.tileSize
   const centerY = (tileY + 0.5) * city.tileSize
-
-  if (slotOffsets) {
-    const offset = slotOffsets[slot]
-
-    return {
-      x: centerX + offset.x,
-      y: centerY + offset.y
-    }
-  }
-
-  const columns = Math.ceil(Math.sqrt(config.tileCapacity))
-  const rows = Math.ceil(config.tileCapacity / columns)
-  const column = slot % columns
-  const row = Math.floor(slot / columns)
-  const horizontalSpacing = columns > 1
-    ? Math.min(config.slotSpacing, Math.max(0, city.tileSize - config.size) / (columns - 1))
-    : 0
-  const verticalSpacing = rows > 1
-    ? Math.min(config.slotSpacing, Math.max(0, city.tileSize - config.size) / (rows - 1))
-    : 0
+  const offset = slotOffsets[slot]
 
   return {
-    x: centerX + (column - (columns - 1) / 2) * horizontalSpacing,
-    y: centerY + (row - (rows - 1) / 2) * verticalSpacing
+    x: centerX + offset.x,
+    y: centerY + offset.y
   }
 }
 
@@ -1479,24 +1447,6 @@ function daysToSeconds(days) {
 
 function probabilityForDeltaSeconds(probabilityPerMinute, deltaSeconds) {
   return 1 - ((1 - probabilityPerMinute) ** (deltaSeconds / SECONDS_PER_MINUTE))
-}
-
-function getSimulationDeltaSeconds(clock, deltaSeconds) {
-  if (clock && typeof clock.toSimulationSeconds === 'function') {
-    return clock.toSimulationSeconds(deltaSeconds)
-  }
-
-  if (clock && typeof clock.getSimulationSecondsPerRealSecond === 'function') {
-    return deltaSeconds * clock.getSimulationSecondsPerRealSecond()
-  }
-
-  const secondsPerSimulationHour = Number(clock && clock.secondsPerSimulationHour)
-
-  if (Number.isFinite(secondsPerSimulationHour) && secondsPerSimulationHour > 0) {
-    return deltaSeconds * SECONDS_PER_HOUR / secondsPerSimulationHour
-  }
-
-  return deltaSeconds
 }
 
 function canParticipateInInfection(npc) {

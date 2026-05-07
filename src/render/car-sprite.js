@@ -3,9 +3,10 @@ import {
   ENTITY_RENDER_DEBUG_CONFIG,
   ENTITY_RENDER_MODE_ID,
   ENTITY_RENDER_MODES,
-  INFECTION_CONFIG,
-  PIXEL_ART_SCALE_MODE
+  INFECTION_CONFIG
 } from '../core/constants.js'
+import { createCanvas, createCanvasGraphics } from './canvas-graphics.js'
+import { applyNearestSampling } from './texture-sampling.js'
 
 const CAR_SPRITE_BASE_LENGTH = 25
 const LONG_CAR_SPRITE_BASE_LENGTH = 32
@@ -79,7 +80,6 @@ function createSpriteCarSpriteRenderer(cars, city, config = {}, options = {}) {
   const textureFactory = options.textureFactory || createAtlasCarSpriteTextureFactory(cars, city, config, pixi)
   const container = new pixi.Container()
   const sprites = []
-  const textureKeys = []
   const lastColors = []
   const lastLengthTiles = []
   const lastDirectionIds = []
@@ -131,7 +131,6 @@ function createSpriteCarSpriteRenderer(cars, city, config = {}, options = {}) {
         const textureKey = getCarSpriteTextureKey(car, city, config)
 
         sprite.texture = textureFactory(textureKey, car, city, config, pixi)
-        textureKeys[index] = textureKey
         lastColors[index] = car.color
         lastLengthTiles[index] = car.lengthTiles
         lastDirectionIds[index] = directionId
@@ -155,7 +154,6 @@ function createSpriteCarSpriteRenderer(cars, city, config = {}, options = {}) {
     }
 
     sprites.length = 0
-    textureKeys.length = 0
     lastColors.length = 0
     lastLengthTiles.length = 0
     lastDirectionIds.length = 0
@@ -326,7 +324,7 @@ function createGeometricCarRenderer(cars, city, config, pixi) {
   }
 }
 
-export function drawGeometricCar(graphics, car, city, config = {}) {
+function drawGeometricCar(graphics, car, city, config = {}) {
   if (!graphics || !car?.position) {
     return
   }
@@ -432,7 +430,7 @@ function finitePosition(position) {
   }
 }
 
-export function getCarSpriteTextureKey(car, city, config = {}) {
+function getCarSpriteTextureKey(car, city, config = {}) {
   const metrics = getCarSpriteMetrics(car, city, config)
   const color = normalizeColor(car?.color).toString(16).padStart(6, '0')
   const direction = metrics.horizontal
@@ -700,63 +698,6 @@ function createCarSpriteTexture(car, city, config, pixi) {
 
   applyNearestSampling(texture)
   return texture
-}
-
-function createCanvas(width, height) {
-  if (globalThis.OffscreenCanvas) {
-    return new OffscreenCanvas(width, height)
-  }
-
-  if (globalThis.document && typeof document.createElement === 'function') {
-    const canvas = document.createElement('canvas')
-
-    canvas.width = width
-    canvas.height = height
-    return canvas
-  }
-
-  return null
-}
-
-function createCanvasGraphics(context) {
-  return {
-    rect(x, y, width, height) {
-      return {
-        fill: (fillStyle) => {
-          context.fillStyle = canvasFillStyle(fillStyle)
-          context.fillRect(x, y, width, height)
-        }
-      }
-    }
-  }
-}
-
-function canvasFillStyle(fillStyle) {
-  const color = Number.isInteger(fillStyle?.color) ? fillStyle.color & 0xffffff : 0xffffff
-  const alpha = Number.isFinite(fillStyle?.alpha) ? Math.min(Math.max(fillStyle.alpha, 0), 1) : 1
-  const red = (color >> 16) & 0xff
-  const green = (color >> 8) & 0xff
-  const blue = color & 0xff
-
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
-}
-
-function applyNearestSampling(texture) {
-  const source = texture && texture.source
-
-  if (!source) {
-    return
-  }
-
-  source.scaleMode = PIXEL_ART_SCALE_MODE
-  source.magFilter = PIXEL_ART_SCALE_MODE
-  source.minFilter = PIXEL_ART_SCALE_MODE
-  source.mipmapFilter = PIXEL_ART_SCALE_MODE
-  source.autoGenerateMipmaps = false
-
-  if (source.style && typeof source.style.update === 'function') {
-    source.style.update()
-  }
 }
 
 function createGraphicsCarSpriteRenderer(cars, city, config, pixi) {

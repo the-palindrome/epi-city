@@ -1,12 +1,12 @@
-export const LANE_GRAPH_ENCODING = 'directed-lanes-v1'
-export const TRAFFIC_SIGNAL_ENCODING = 'traffic-signals-v1'
+const LANE_GRAPH_ENCODING = 'directed-lanes-v1'
+const TRAFFIC_SIGNAL_ENCODING = 'traffic-signals-v1'
 
 const DEFAULT_DRIVING_SIDE = 'right'
 const DEFAULT_COORDINATE_SPACE = 'tile'
 const DIRECTIONS = Object.freeze(['north', 'east', 'south', 'west'])
 const TRAFFIC_SIGNAL_MOVEMENTS = Object.freeze(['north-south', 'east-west', 'all'])
 const TRAFFIC_SIGNAL_STATES = Object.freeze(['green', 'yellow', 'red'])
-export const DEFAULT_TRAFFIC_SIGNAL_PHASES = Object.freeze([
+const DEFAULT_TRAFFIC_SIGNAL_PHASES = Object.freeze([
   Object.freeze({ movement: 'north-south', state: 'green', duration: 6 }),
   Object.freeze({ movement: 'north-south', state: 'yellow', duration: 2 }),
   Object.freeze({ movement: 'all', state: 'red', duration: 1 }),
@@ -35,7 +35,7 @@ const TURN_TYPES = Object.freeze(['left', 'right', 'straight', 'u-turn', 'merge'
 const LEGACY_NODE_FIELDS = Object.freeze(['axis', 'laneIndex', 'laneCount', 'bandId', 'layer', 'orientation'])
 const LEGACY_EDGE_FIELDS = Object.freeze(['axis', 'laneIndex', 'laneCount', 'bandId', 'layer', 'orientation'])
 
-export class LaneNode {
+class LaneNode {
   constructor(node, tileSize) {
     this.id = node.id
     this.x = node.x
@@ -47,7 +47,7 @@ export class LaneNode {
   }
 }
 
-export class LaneEdge {
+class LaneEdge {
   constructor(edge, nodesById, tileSize) {
     this.id = edge.id
     this.from = edge.from
@@ -73,7 +73,7 @@ export class LaneEdge {
   }
 }
 
-export class LaneGraph {
+class LaneGraph {
   constructor(layout, tileSize) {
     this.encoding = layout.encoding
     this.drivingSide = layout.drivingSide
@@ -103,7 +103,6 @@ export class LaneGraph {
     }
 
     this.outgoingEdgesByNodeId = buildEdgeIndex(this.nodes, this.edges, 'from')
-    this.incomingEdgesByNodeId = buildEdgeIndex(this.nodes, this.edges, 'to')
     this.trafficSignals = compileTrafficSignalLayout(layout.trafficSignals, this.nodes, this.edges)
   }
 
@@ -119,12 +118,9 @@ export class LaneGraph {
     return this.outgoingEdgesByNodeId.get(nodeId) || []
   }
 
-  getIncomingEdges(nodeId) {
-    return this.incomingEdgesByNodeId.get(nodeId) || []
-  }
 }
 
-export function createEmptyLaneGraphLayout() {
+function createEmptyLaneGraphLayout() {
   return {
     encoding: LANE_GRAPH_ENCODING,
     drivingSide: DEFAULT_DRIVING_SIDE,
@@ -526,8 +522,8 @@ export function buildAutoTrafficSignalGroups(nodes, edges) {
       continue
     }
 
-    const fromIndex = edge.fromNode ? nodesById.get(edge.fromNode.id) : nodesById.get(edge.from)
-    const toIndex = edge.toNode ? nodesById.get(edge.toNode.id) : nodesById.get(edge.to)
+    const fromIndex = nodesById.get(edge.from)
+    const toIndex = nodesById.get(edge.to)
 
     if (fromIndex === undefined || toIndex === undefined) {
       continue
@@ -670,7 +666,7 @@ function defaultTrafficSignalPhaseOffset(tile) {
   return ((tile.x * 3 + tile.y * 5) % cycleDuration)
 }
 
-export function trafficSignalCycleDuration(phases) {
+function trafficSignalCycleDuration(phases) {
   return phases.reduce((total, phase) => total + phase.duration, 0)
 }
 

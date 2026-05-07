@@ -472,7 +472,6 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setMapTextureOpacity,
     setTileOverlayScheme,
     setTileOverlayOpacity: setTileTypeOverlayOpacity,
-    setTileTypeOverlayOpacity,
     setEntityRenderMode,
     setInfectionRadiusVisible,
     setInfectionEdgesVisible,
@@ -482,7 +481,6 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setHeatmapRadius,
     toggle: toggleDashboard,
     toggleRenderingOptions: toggleOverlayDashboard,
-    toggleOverlays: toggleOverlayDashboard,
     toggleGraph: toggleGraphDashboard,
     render,
     destroy() {
@@ -1259,20 +1257,11 @@ function createDashboardSubsectionTitle(titleText) {
 }
 
 function createSeedToggle(enabled) {
-  const label = document.createElement('label')
-  const input = document.createElement('input')
-  const text = document.createElement('span')
-
-  label.className = 'dashboard-toggle'
-  input.type = 'checkbox'
-  input.dataset.simulationSeedToggle = 'true'
-  input.checked = enabled
-  text.textContent = 'use seed'
-
-  label.appendChild(input)
-  label.appendChild(text)
-
-  return { label, input }
+  return createDashboardToggle({
+    labelText: 'use seed',
+    dataset: 'simulationSeedToggle',
+    checked: enabled
+  })
 }
 
 function createSeedField(seed) {
@@ -1387,20 +1376,11 @@ function createCountField({ labelText, className, sliderDataset, inputDataset, c
 }
 
 function createDayNightToggle(enabled) {
-  const label = document.createElement('label')
-  const input = document.createElement('input')
-  const text = document.createElement('span')
-
-  label.className = 'dashboard-toggle'
-  input.type = 'checkbox'
-  input.dataset.simulationDayNightToggle = 'true'
-  input.checked = enabled
-  text.textContent = 'day-night overlay'
-
-  label.appendChild(input)
-  label.appendChild(text)
-
-  return { label, input }
+  return createDashboardToggle({
+    labelText: 'day-night overlay',
+    dataset: 'simulationDayNightToggle',
+    checked: enabled
+  })
 }
 
 function createInfectionStatsField() {
@@ -1702,20 +1682,11 @@ function createDashboardToggle({ labelText, dataset, datasetValue = 'true', chec
 }
 
 function createMapTextureToggle(enabled) {
-  const label = document.createElement('label')
-  const input = document.createElement('input')
-  const text = document.createElement('span')
-
-  label.className = 'dashboard-toggle'
-  input.type = 'checkbox'
-  input.dataset.mapTextureToggle = 'true'
-  input.checked = enabled
-  text.textContent = 'map texture'
-
-  label.appendChild(input)
-  label.appendChild(text)
-
-  return { label, input }
+  return createDashboardToggle({
+    labelText: 'map texture',
+    dataset: 'mapTextureToggle',
+    checked: enabled
+  })
 }
 
 function createMapTextureOpacityField(opacity) {
@@ -1849,35 +1820,16 @@ function createTileTypeOverlayOpacityField(opacity, opacityRange) {
 }
 
 function createHeatmapRadiusField(radius, radiusRange) {
-  const label = document.createElement('label')
-  const text = document.createElement('span')
-  const controls = document.createElement('div')
-  const slider = document.createElement('input')
-  const input = document.createElement('input')
-  const normalizedRadius = normalizeHeatmapRadius(radius, radiusRange)
-
-  label.className = 'dashboard-field dashboard-heatmap-radius-field'
-  text.textContent = 'radius'
-  controls.className = 'dashboard-paired-inputs'
-  slider.type = 'range'
-  slider.min = String(radiusRange.min)
-  slider.max = String(radiusRange.max)
-  slider.step = String(radiusRange.step)
-  slider.value = String(normalizedRadius)
-  slider.dataset.heatmapRadiusSlider = 'true'
-  input.type = 'number'
-  input.min = String(radiusRange.min)
-  input.max = String(radiusRange.max)
-  input.step = String(radiusRange.step)
-  input.value = formatNumberInput(normalizedRadius)
-  input.dataset.heatmapRadius = 'true'
-
-  controls.appendChild(slider)
-  controls.appendChild(input)
-  label.appendChild(text)
-  label.appendChild(controls)
-
-  return { label, slider, input }
+  return createPairedRangeNumberField({
+    labelText: 'radius',
+    className: 'dashboard-heatmap-radius-field',
+    sliderDataset: 'heatmapRadiusSlider',
+    inputDataset: 'heatmapRadius',
+    value: radius,
+    range: radiusRange,
+    normalize: normalizeHeatmapRadius,
+    inputFormat: formatNumberInput
+  })
 }
 
 function createRenderingOpacityField({ labelText, inputDataset, valueDataset, opacity, opacityRange, normalize }) {

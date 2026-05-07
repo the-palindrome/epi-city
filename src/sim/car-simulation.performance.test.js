@@ -129,14 +129,14 @@ describe('car simulation performance', () => {
       }
     })
 
-    const footprintLengths = network.edgeFootprintLengthsByLength.get(lengthTiles)
+    const footprints = network.edgeFootprintsByLength.get(lengthTiles)
     let precomputedTotal = 0
     const precomputedMs = measureBest(() => {
       precomputedTotal = 0
 
       for (let repetition = 0; repetition < repetitions; repetition += 1) {
         for (const edgeIndex of edgeIndexes) {
-          precomputedTotal += footprintLengths[edgeIndex]
+          precomputedTotal += footprints[edgeIndex].length
         }
       }
     })

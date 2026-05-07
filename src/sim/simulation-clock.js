@@ -56,6 +56,24 @@ export class SimulationClock {
   }
 }
 
+export function toSimulationSeconds(clock, deltaSeconds) {
+  if (clock && typeof clock.toSimulationSeconds === 'function') {
+    return clock.toSimulationSeconds(deltaSeconds)
+  }
+
+  if (clock && typeof clock.getSimulationSecondsPerRealSecond === 'function') {
+    return deltaSeconds * clock.getSimulationSecondsPerRealSecond()
+  }
+
+  const secondsPerSimulationHour = Number(clock && clock.secondsPerSimulationHour)
+
+  if (Number.isFinite(secondsPerSimulationHour) && secondsPerSimulationHour > 0) {
+    return deltaSeconds * SECONDS_PER_HOUR / secondsPerSimulationHour
+  }
+
+  return deltaSeconds
+}
+
 function positiveNumberOrDefault(value, fallback) {
   const number = Number(value)
 

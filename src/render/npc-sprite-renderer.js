@@ -3,8 +3,7 @@ import {
   ENTITY_RENDER_MODE_ID,
   ENTITY_RENDER_MODES,
   INFECTION_CONFIG,
-  NPC_CONFIG,
-  PIXEL_ART_SCALE_MODE
+  NPC_CONFIG
 } from '../core/constants.js'
 import {
   NPC_SPRITE_FRAME_COUNT,
@@ -14,6 +13,8 @@ import {
   getNpcSpriteFrame,
   getNpcSpriteMetrics
 } from './npc-sprite.js'
+import { createCanvas, createCanvasGraphics } from './canvas-graphics.js'
+import { applyNearestSampling } from './texture-sampling.js'
 
 const NPC_SPRITE_FACINGS = Object.freeze(['south', 'east', 'north', 'west'])
 const NPC_SPRITE_FACING_IDS = Object.freeze({
@@ -474,7 +475,7 @@ function createGeometricNpcRenderer(npcs, city, config, infection, options) {
   }
 }
 
-export function drawGeometricNpc(graphics, npc, options = {}) {
+function drawGeometricNpc(graphics, npc, options = {}) {
   if (!graphics || !npc?.position) {
     return
   }
@@ -683,7 +684,7 @@ function getElapsedSimulationSeconds(clock) {
   return null
 }
 
-export function createNpcSpriteAtlas(npcs, config = {}, infection = null, pixi = null) {
+function createNpcSpriteAtlas(npcs, config = {}, infection = null, pixi = null) {
   const Texture = getPixiMember(pixi, 'Texture')
   const Rectangle = getPixiMember(pixi, 'Rectangle')
 
@@ -973,62 +974,5 @@ function normalizeEntityDebugOptions(options = {}) {
       debugOptions.pathTrailLength,
       ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength
     )
-  }
-}
-
-function createCanvas(width, height) {
-  if (globalThis.OffscreenCanvas) {
-    return new OffscreenCanvas(width, height)
-  }
-
-  if (globalThis.document && typeof document.createElement === 'function') {
-    const canvas = document.createElement('canvas')
-
-    canvas.width = width
-    canvas.height = height
-    return canvas
-  }
-
-  return null
-}
-
-function createCanvasGraphics(context) {
-  return {
-    rect(x, y, width, height) {
-      return {
-        fill: (fillStyle) => {
-          context.fillStyle = canvasFillStyle(fillStyle)
-          context.fillRect(x, y, width, height)
-        }
-      }
-    }
-  }
-}
-
-function canvasFillStyle(fillStyle) {
-  const color = Number.isInteger(fillStyle?.color) ? fillStyle.color & 0xffffff : 0xffffff
-  const alpha = Number.isFinite(fillStyle?.alpha) ? Math.min(Math.max(fillStyle.alpha, 0), 1) : 1
-  const red = (color >> 16) & 0xff
-  const green = (color >> 8) & 0xff
-  const blue = color & 0xff
-
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
-}
-
-function applyNearestSampling(texture) {
-  const source = texture && texture.source
-
-  if (!source) {
-    return
-  }
-
-  source.scaleMode = PIXEL_ART_SCALE_MODE
-  source.magFilter = PIXEL_ART_SCALE_MODE
-  source.minFilter = PIXEL_ART_SCALE_MODE
-  source.mipmapFilter = PIXEL_ART_SCALE_MODE
-  source.autoGenerateMipmaps = false
-
-  if (source.style && typeof source.style.update === 'function') {
-    source.style.update()
   }
 }

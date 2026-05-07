@@ -4,6 +4,7 @@ import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
 import { hourInRange } from '../core/time.js'
 import { createCarSpriteRenderer } from '../render/car-sprite.js'
+import { toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -31,7 +32,6 @@ const LANE_CHANGE_SPEED_LIMIT = 18
 const LANE_CHANGE_ADAPTIVE_LOOKAHEAD_EDGES = 2
 const LANE_CHANGE_AHEAD_GAP_TILES = 0.5
 const MIN_EDGE_DURATION_SECONDS = 0.05
-const SECONDS_PER_HOUR = 3600
 const TRAFFIC_SIGNAL_CLEARANCE_GAP_TILES = 1
 const RIGHT_HAND_LOOKAHEAD_EDGES = 6
 
@@ -75,8 +75,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   const clock = resolvedConfig.clock || STATIC_CLOCK
   const network = getCarTrafficNetwork(city)
   const router = createCarRoutePlanner(city, network)
-  const parking = createParkingManager(city, network, resolvedConfig)
-  const trafficReservations = createTrafficSignalReservationManager(city)
+  const parking = new ParkingManager(city, network, resolvedConfig)
+  const trafficReservations = new TrafficSignalReservationManager(city)
   const residentialBuildings = collectBuildings(city, 'residential')
   const commercialBuildings = collectBuildings(city, 'commercial')
   const buildingsById = new Map((city.buildings || []).map((building) => [building.id, building]))
@@ -125,7 +125,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     }
 
     const safeDelta = Math.min(deltaSeconds, 0.1)
-    const movementDelta = movementDeltaSeconds(safeDelta, clock)
+    const movementDelta = toSimulationSeconds(clock, safeDelta)
     const hour = clock.getTimeOfDayHours()
 
     for (const car of cars) {
@@ -191,7 +191,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   }
 }
 
-export class CarRoutePlanner {
+class CarRoutePlanner {
   constructor(network) {
     this.network = network
     this.routeFields = new Map()
@@ -238,17 +238,13 @@ export class CarRoutePlanner {
   clearRouteCache() {
     this.routeFields.clear()
   }
-
-  getRouteCacheStats() {
-    return { fields: this.routeFields.size }
-  }
 }
 
 export function createCarRoutePlanner(city, network = getCarTrafficNetwork(city)) {
   return new CarRoutePlanner(network)
 }
 
-export function getCarTrafficNetwork(city) {
+function getCarTrafficNetwork(city) {
   if (networkCache.has(city.laneGraph)) {
     return networkCache.get(city.laneGraph)
   }
@@ -340,12 +336,11 @@ function buildCarTrafficNetwork(city) {
     tileToNodeIndex,
     nearestNodeByTile: buildNearestLaneNodeByTile(city, tileToNodeIndex),
     edgeGeometry: edges.map(createEdgeGeometry),
-    edgeFootprintsByLength: new Map(),
-    edgeFootprintLengthsByLength: new Map()
+    edgeFootprintsByLength: new Map()
   }
 
-  precomputeEdgeFootprints(city, network, 2)
-  precomputeEdgeFootprints(city, network, 3)
+  precomputeEdgeFootprints(network, 2)
+  precomputeEdgeFootprints(network, 3)
 
   return network
 }
@@ -627,28 +622,32 @@ function measureTilePolyline(path) {
   return length
 }
 
-function createParkingManager(city, network, config) {
-  const occupancy = new Int32Array(city.tiles.length)
-  const reservations = new Int32Array(city.tiles.length)
-  const candidateCache = new Map()
+class ParkingManager {
+  constructor(city, network, config) {
+    this.city = city
+    this.network = network
+    this.config = config
+    this.occupancy = new Int32Array(city.tiles.length)
+    this.reservations = new Int32Array(city.tiles.length)
+    this.candidateCache = new Map()
+    this.occupancy.fill(-1)
+    this.reservations.fill(-1)
+  }
 
-  occupancy.fill(-1)
-  reservations.fill(-1)
-
-  function findAndReserveSpot(building, carId, lengthTiles) {
-    const candidates = parkingCandidatesForBuilding(building)
+  findAndReserveSpot(building, carId, lengthTiles) {
+    const candidates = this.parkingCandidatesForBuilding(building)
 
     for (const anchorIndex of candidates) {
       for (const direction of CARDINAL_OFFSETS) {
-        const tileIndexes = parkingFootprint(anchorIndex, direction, lengthTiles)
+        const tileIndexes = this.parkingFootprint(anchorIndex, direction, lengthTiles)
 
-        if (tileIndexes && canReserveParking(tileIndexes, carId)) {
-          reserveParking(tileIndexes, carId)
+        if (tileIndexes && this.canReserveParking(tileIndexes, carId)) {
+          this.reserveParking(tileIndexes, carId)
           return {
             anchorIndex,
             tileIndexes,
             direction,
-            roadOffset: parkedRoadOffset(anchorIndex)
+            roadOffset: this.parkedRoadOffset(anchorIndex)
           }
         }
       }
@@ -657,17 +656,18 @@ function createParkingManager(city, network, config) {
     return null
   }
 
-  function parkingCandidatesForBuilding(building) {
-    if (candidateCache.has(building.id)) {
-      return candidateCache.get(building.id)
+  parkingCandidatesForBuilding(building) {
+    if (this.candidateCache.has(building.id)) {
+      return this.candidateCache.get(building.id)
     }
 
+    const city = this.city
     const entrance = building.entrance
-    const radius = positiveIntegerOrDefault(config.parkingSearchRadius, CAR_CONFIG.parkingSearchRadius)
+    const radius = positiveIntegerOrDefault(this.config.parkingSearchRadius, CAR_CONFIG.parkingSearchRadius)
     const candidates = []
 
     if (!entrance) {
-      candidateCache.set(building.id, candidates)
+      this.candidateCache.set(building.id, candidates)
       return candidates
     }
 
@@ -701,11 +701,12 @@ function createParkingManager(city, network, config) {
         (Math.abs(bx - entrance.x) + Math.abs(by - entrance.y))
     })
 
-    candidateCache.set(building.id, candidates)
+    this.candidateCache.set(building.id, candidates)
     return candidates
   }
 
-  function parkingFootprint(anchorIndex, direction, lengthTiles) {
+  parkingFootprint(anchorIndex, direction, lengthTiles) {
+    const city = this.city
     const anchorX = anchorIndex % city.width
     const anchorY = Math.floor(anchorIndex / city.width)
     const tiles = []
@@ -730,7 +731,8 @@ function createParkingManager(city, network, config) {
     return tiles
   }
 
-  function parkedRoadOffset(anchorIndex) {
+  parkedRoadOffset(anchorIndex) {
+    const city = this.city
     const x = anchorIndex % city.width
     const y = Math.floor(anchorIndex / city.width)
 
@@ -744,7 +746,7 @@ function createParkingManager(city, network, config) {
 
       const tileIndex = city.index(nx, ny)
 
-      if (city.tileDrivable[tileIndex] === 1 || network.tileToNodeIndex[tileIndex] !== -1) {
+      if (city.tileDrivable[tileIndex] === 1 || this.network.tileToNodeIndex[tileIndex] !== -1) {
         return offset
       }
     }
@@ -752,10 +754,10 @@ function createParkingManager(city, network, config) {
     return { dx: 0, dy: 0 }
   }
 
-  function canReserveParking(tileIndexes, carId) {
+  canReserveParking(tileIndexes, carId) {
     for (const tileIndex of tileIndexes) {
-      if ((occupancy[tileIndex] !== -1 && occupancy[tileIndex] !== carId) ||
-          (reservations[tileIndex] !== -1 && reservations[tileIndex] !== carId)) {
+      if ((this.occupancy[tileIndex] !== -1 && this.occupancy[tileIndex] !== carId) ||
+          (this.reservations[tileIndex] !== -1 && this.reservations[tileIndex] !== carId)) {
         return false
       }
     }
@@ -763,43 +765,43 @@ function createParkingManager(city, network, config) {
     return true
   }
 
-  function reserveParking(tileIndexes, carId) {
+  reserveParking(tileIndexes, carId) {
     for (const tileIndex of tileIndexes) {
-      reservations[tileIndex] = carId
+      this.reservations[tileIndex] = carId
     }
   }
 
-  function releaseParkingReservation(tileIndexes, carId) {
+  releaseParkingReservation(tileIndexes, carId) {
     for (const tileIndex of tileIndexes || []) {
-      if (reservations[tileIndex] === carId) {
-        reservations[tileIndex] = -1
+      if (this.reservations[tileIndex] === carId) {
+        this.reservations[tileIndex] = -1
       }
     }
   }
 
-  function occupyTiles(car, tileIndexes) {
-    releaseOccupiedTiles(car)
+  occupyTiles(car, tileIndexes) {
+    this.releaseOccupiedTiles(car)
 
     for (const tileIndex of tileIndexes) {
-      occupancy[tileIndex] = car.id
+      this.occupancy[tileIndex] = car.id
     }
 
     car.occupiedTiles = tileIndexes
   }
 
-  function releaseOccupiedTiles(car) {
+  releaseOccupiedTiles(car) {
     for (const tileIndex of car.occupiedTiles || []) {
-      if (occupancy[tileIndex] === car.id) {
-        occupancy[tileIndex] = -1
+      if (this.occupancy[tileIndex] === car.id) {
+        this.occupancy[tileIndex] = -1
       }
     }
 
     car.occupiedTiles = []
   }
 
-  function canOccupy(tileIndexes, carId) {
+  canOccupy(tileIndexes, carId) {
     for (const tileIndex of tileIndexes) {
-      if (occupancy[tileIndex] !== -1 && occupancy[tileIndex] !== carId) {
+      if (this.occupancy[tileIndex] !== -1 && this.occupancy[tileIndex] !== carId) {
         return false
       }
     }
@@ -807,37 +809,29 @@ function createParkingManager(city, network, config) {
     return true
   }
 
-  return {
-    occupancy,
-    reservations,
-    findAndReserveSpot,
-    occupyTiles,
-    releaseOccupiedTiles,
-    releaseParkingReservation,
-    canOccupy,
-    clear() {
-      occupancy.fill(-1)
-      reservations.fill(-1)
-      candidateCache.clear()
-    }
+  clear() {
+    this.occupancy.fill(-1)
+    this.reservations.fill(-1)
+    this.candidateCache.clear()
   }
 }
 
-function createTrafficSignalReservationManager(city) {
-  const tileIndexesByGroupId = new Map()
-  const groupReservations = new Map()
-  const tileReservations = new Int32Array(city.tiles.length)
-  const reservedTilesByCarId = new Map()
+class TrafficSignalReservationManager {
+  constructor(city) {
+    this.tileIndexesByGroupId = new Map()
+    this.groupReservations = new Map()
+    this.tileReservations = new Int32Array(city.tiles.length)
+    this.reservedTilesByCarId = new Map()
+    this.tileReservations.fill(-1)
 
-  tileReservations.fill(-1)
-
-  for (const group of city.trafficSignals?.groups || []) {
-    tileIndexesByGroupId.set(group.id, new Set(group.tiles.map((tile) => city.index(tile.x, tile.y))))
+    for (const group of city.trafficSignals?.groups || []) {
+      this.tileIndexesByGroupId.set(group.id, new Set(group.tiles.map((tile) => city.index(tile.x, tile.y))))
+    }
   }
 
-  function canOccupy(tileIndexes, carId) {
+  canOccupy(tileIndexes, carId) {
     for (const tileIndex of tileIndexes || []) {
-      if (tileReservations[tileIndex] !== -1 && tileReservations[tileIndex] !== carId) {
+      if (this.tileReservations[tileIndex] !== -1 && this.tileReservations[tileIndex] !== carId) {
         return false
       }
     }
@@ -845,79 +839,71 @@ function createTrafficSignalReservationManager(city) {
     return true
   }
 
-  function canReserve(group, tileIndexes, carId) {
-    const reservedBy = groupReservations.get(group.id)
+  canReserve(group, tileIndexes, carId) {
+    const reservedBy = this.groupReservations.get(group.id)
 
-    return (reservedBy === undefined || reservedBy === carId) && canOccupy(tileIndexes, carId)
+    return (reservedBy === undefined || reservedBy === carId) && this.canOccupy(tileIndexes, carId)
   }
 
-  function reserve(group, tileIndexes, car) {
-    releaseReservedTiles(car.id)
-    groupReservations.set(group.id, car.id)
+  reserve(group, tileIndexes, car) {
+    this.releaseReservedTiles(car.id)
+    this.groupReservations.set(group.id, car.id)
 
     const uniqueTiles = uniqueTileIndexes(tileIndexes)
 
     for (const tileIndex of uniqueTiles) {
-      tileReservations[tileIndex] = car.id
+      this.tileReservations[tileIndex] = car.id
     }
 
-    reservedTilesByCarId.set(car.id, uniqueTiles)
+    this.reservedTilesByCarId.set(car.id, uniqueTiles)
     car.trafficSignalReservation = group.id
   }
 
-  function releaseReservedTiles(carId) {
-    const tileIndexes = reservedTilesByCarId.get(carId)
+  releaseReservedTiles(carId) {
+    const tileIndexes = this.reservedTilesByCarId.get(carId)
 
     if (!tileIndexes) {
       return
     }
 
     for (const tileIndex of tileIndexes) {
-      if (tileReservations[tileIndex] === carId) {
-        tileReservations[tileIndex] = -1
+      if (this.tileReservations[tileIndex] === carId) {
+        this.tileReservations[tileIndex] = -1
       }
     }
 
-    reservedTilesByCarId.delete(carId)
+    this.reservedTilesByCarId.delete(carId)
   }
 
-  function releaseForCar(car) {
-    if (car.trafficSignalReservation && groupReservations.get(car.trafficSignalReservation) === car.id) {
-      groupReservations.delete(car.trafficSignalReservation)
+  releaseForCar(car) {
+    if (car.trafficSignalReservation && this.groupReservations.get(car.trafficSignalReservation) === car.id) {
+      this.groupReservations.delete(car.trafficSignalReservation)
     }
 
-    releaseReservedTiles(car.id)
+    this.releaseReservedTiles(car.id)
     car.trafficSignalReservation = null
   }
 
-  function releaseIfClear(car) {
+  releaseIfClear(car) {
     if (!car.trafficSignalReservation || !car.route) {
       return
     }
 
-    const tileIndexes = tileIndexesByGroupId.get(car.trafficSignalReservation)
+    const tileIndexes = this.tileIndexesByGroupId.get(car.trafficSignalReservation)
 
     if (!tileIndexes || !(car.occupiedTiles || []).some((tileIndex) => tileIndexes.has(tileIndex))) {
-      releaseForCar(car)
+      this.releaseForCar(car)
     }
   }
 
-  function groupTileIndexes(groupId) {
-    return tileIndexesByGroupId.get(groupId) || null
+  groupTileIndexes(groupId) {
+    return this.tileIndexesByGroupId.get(groupId) || null
   }
 
-  return {
-    groupTileIndexes,
-    canOccupy,
-    canReserve,
-    reserve,
-    releaseForCar,
-    releaseIfClear,
-    clear() {
-      groupReservations.clear()
-      reservedTilesByCarId.clear()
-      tileReservations.fill(-1)
-    }
+  clear() {
+    this.groupReservations.clear()
+    this.reservedTilesByCarId.clear()
+    this.tileReservations.fill(-1)
   }
 }
 
@@ -1142,7 +1128,7 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
   const destinationParking = context.parking.findAndReserveSpot(destinationBuilding, car.id, car.lengthTiles)
 
   if (!destinationParking) {
-    return false
+    return
   }
 
   const startNode = context.network.nearestNodeByTile[car.parkingSpot.anchorIndex]
@@ -1151,7 +1137,7 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
 
   if (route.length === 0) {
     context.parking.releaseParkingReservation(destinationParking.tileIndexes, car.id)
-    return false
+    return
   }
 
   car.state = 'driving'
@@ -1170,7 +1156,6 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
   car.riderOwners = [owner]
   car.position = laneNodePosition(context.network, startNode)
   boardCarRiders(car, destinationKind, destinationBuilding)
-  return true
 }
 
 function boardCarRiders(car, destinationKind, destinationBuilding) {
@@ -1985,7 +1970,8 @@ function uniqueTileIndexes(tileIndexes) {
   return unique
 }
 
-function drivingFootprint(city, network, nodeIndex, directionName, lengthTiles) {
+function drivingFootprint(network, nodeIndex, directionName, lengthTiles) {
+  const city = network.city
   const node = network.laneGraph.nodes[nodeIndex]
   const offset = DIRECTION_OFFSET[directionName] || { dx: 0, dy: 0 }
   const tiles = []
@@ -2014,7 +2000,7 @@ function edgeDrivingFootprint(network, edgeIndex, lengthTiles) {
   let footprints = network.edgeFootprintsByLength.get(lengthTiles)
 
   if (!footprints) {
-    footprints = precomputeEdgeFootprints(network.city, network, lengthTiles)
+    footprints = precomputeEdgeFootprints(network, lengthTiles)
   }
 
   return footprints[edgeIndex]
@@ -2223,20 +2209,17 @@ function setCarPositionAt(position, geometry, ratio) {
   position.y = end[1]
 }
 
-function precomputeEdgeFootprints(city, network, lengthTiles) {
+function precomputeEdgeFootprints(network, lengthTiles) {
   const footprints = new Array(network.edgeCount)
-  const footprintLengths = new Uint8Array(network.edgeCount)
 
   for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
     const edge = network.edges[edgeIndex]
     const toNodeIndex = network.edgeTo[edgeIndex]
 
-    footprints[edgeIndex] = drivingFootprint(city, network, toNodeIndex, edge.direction, lengthTiles)
-    footprintLengths[edgeIndex] = footprints[edgeIndex].length
+    footprints[edgeIndex] = drivingFootprint(network, toNodeIndex, edge.direction, lengthTiles)
   }
 
   network.edgeFootprintsByLength.set(lengthTiles, footprints)
-  network.edgeFootprintLengthsByLength.set(lengthTiles, footprintLengths)
   return footprints
 }
 
@@ -2262,22 +2245,4 @@ function positiveNumberOrDefault(value, fallback) {
 
 function finiteNumberOrZero(value) {
   return Number.isFinite(value) ? value : 0
-}
-
-function movementDeltaSeconds(deltaSeconds, clock) {
-  if (clock && typeof clock.toSimulationSeconds === 'function') {
-    return clock.toSimulationSeconds(deltaSeconds)
-  }
-
-  if (clock && typeof clock.getSimulationSecondsPerRealSecond === 'function') {
-    return deltaSeconds * clock.getSimulationSecondsPerRealSecond()
-  }
-
-  const secondsPerSimulationHour = Number(clock && clock.secondsPerSimulationHour)
-
-  if (Number.isFinite(secondsPerSimulationHour) && secondsPerSimulationHour > 0) {
-    return deltaSeconds * SECONDS_PER_HOUR / secondsPerSimulationHour
-  }
-
-  return deltaSeconds
 }
