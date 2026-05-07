@@ -1,7 +1,6 @@
 import * as PIXI from 'pixi.js'
 import {
   DASHBOARD_OVERLAYS,
-  DEBUG_OVERLAY_COLORS,
   TILE_TYPE_OVERLAY_COLORS
 } from '../core/constants.js'
 import { fillRect } from '../render/pixi-rendering.js'
@@ -13,7 +12,14 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const controls = new Map()
   const layers = new Map()
   const simulation = createSimulationControls(simulationControls)
+  const overlaySettings = {
+    tileTypeOpacity: normalizeTileTypeOverlayOpacity(TILE_TYPE_OVERLAY_COLORS.alpha)
+  }
   const overlaySection = createDashboardSection('Map')
+  const tileTypeOpacityField = createTileTypeOverlayOpacityField(
+    overlaySettings.tileTypeOpacity,
+    TILE_TYPE_OVERLAY_COLORS.opacityRange
+  )
 
   dashboard.innerHTML = ''
   overlayDashboard.innerHTML = ''
@@ -32,7 +38,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     })
   }
 
+  overlaySection.appendChild(tileTypeOpacityField.label)
   overlayDashboard.appendChild(overlaySection)
+
+  tileTypeOpacityField.input.addEventListener('input', () => {
+    setTileTypeOverlayOpacity(tileTypeOpacityField.input.value)
+  })
 
   function render() {
     simulation.render()
@@ -51,11 +62,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     if (!layers.has(overlay.id)) {
       const layer = createOverlayLayer(entityLayer)
 
-      if (overlay.kind === 'tileType') {
-        drawTileTypeOverlay(city, layer)
-      } else {
-        drawBehaviorOverlay(city, layer, city[overlay.layer])
-      }
+      drawTileTypeOverlay(city, layer, overlaySettings.tileTypeOpacity)
 
       layers.set(overlay.id, layer)
     }
@@ -71,6 +78,25 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     overlayState[id] = Boolean(enabled)
     controls.get(id).checked = overlayState[id]
     render()
+  }
+
+  function setTileTypeOverlayOpacity(opacity) {
+    const nextOpacity = normalizeTileTypeOverlayOpacity(opacity)
+
+    overlaySettings.tileTypeOpacity = nextOpacity
+    tileTypeOpacityField.input.value = String(nextOpacity)
+    tileTypeOpacityField.value.textContent = formatOpacity(nextOpacity)
+    discardOverlayLayer('tileType')
+    render()
+  }
+
+  function discardOverlayLayer(id) {
+    const layer = layers.get(id)
+
+    if (layer) {
+      destroyOverlayLayer(layer)
+      layers.delete(id)
+    }
   }
 
   function toggleDashboard(force) {
@@ -118,6 +144,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     overlays: overlayState,
     simulation,
     setOverlay,
+    setTileTypeOverlayOpacity,
     toggle: toggleDashboard,
     toggleOverlays: toggleOverlayDashboard,
     render,
@@ -912,6 +939,32 @@ function createOverlayToggle(overlay) {
   return { label, input }
 }
 
+function createTileTypeOverlayOpacityField(opacity, opacityRange) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const input = document.createElement('input')
+  const value = document.createElement('output')
+  const normalizedOpacity = normalizeTileTypeOverlayOpacity(opacity)
+
+  label.className = 'dashboard-field dashboard-slider-field'
+  text.textContent = 'opacity'
+  input.type = 'range'
+  input.min = String(opacityRange.min)
+  input.max = String(opacityRange.max)
+  input.step = String(opacityRange.step)
+  input.value = String(normalizedOpacity)
+  input.dataset.tileTypeOverlayOpacity = 'true'
+  value.className = 'dashboard-opacity-value'
+  value.dataset.tileTypeOverlayOpacityValue = 'true'
+  value.textContent = formatOpacity(normalizedOpacity)
+
+  label.appendChild(text)
+  label.appendChild(input)
+  label.appendChild(value)
+
+  return { label, input, value }
+}
+
 function isEditableTarget(target) {
   if (!target || !target.tagName) {
     return false
@@ -937,6 +990,21 @@ function isSpaceHotkey(event) {
 }
 
 function noop() {}
+
+function normalizeTileTypeOverlayOpacity(opacity) {
+  const range = TILE_TYPE_OVERLAY_COLORS.opacityRange
+  const number = Number(opacity)
+
+  if (!Number.isFinite(number)) {
+    return TILE_TYPE_OVERLAY_COLORS.alpha
+  }
+
+  return Number(Math.min(Math.max(number, range.min), range.max).toFixed(4))
+}
+
+function formatOpacity(opacity) {
+  return `${Math.round(normalizeTileTypeOverlayOpacity(opacity) * 100)}%`
+}
 
 function createOverlayLayer(entityLayer) {
   entityLayer.sortableChildren = true
@@ -971,12 +1039,13 @@ function destroyOverlayLayer(layer) {
   layer.children.length = 0
 }
 
-function drawTileTypeOverlay(city, layer) {
+function drawTileTypeOverlay(city, layer, opacity) {
   drawChunkedOverlay(city, layer, (graphics, x, y) => {
     const variant = city.getTileVariant(x, y)
+    const alpha = normalizeTileTypeOverlayOpacity(opacity)
 
     if (variant.category === 'crosswalk') {
-      drawCrosswalkTileTypeOverlay(graphics, city, x, y)
+      drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha)
       return
     }
 
@@ -986,29 +1055,27 @@ function drawTileTypeOverlay(city, layer) {
       y * city.tileSize,
       city.tileSize,
       city.tileSize,
-      TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.building,
-      TILE_TYPE_OVERLAY_COLORS.alpha
+      getTileTypeOverlayColor(variant),
+      alpha
     )
   })
 }
 
-function drawBehaviorOverlay(city, layer, propertyLayer) {
-  drawChunkedOverlay(city, layer, (graphics, x, y) => {
-    const enabled = propertyLayer[city.index(x, y)] === 1
+function getTileTypeOverlayColor(variant) {
+  if (variant.category === 'building') {
+    return getBuildingTypeOverlayColor(variant.buildingType)
+  }
 
-    fillRect(
-      graphics,
-      x * city.tileSize,
-      y * city.tileSize,
-      city.tileSize,
-      city.tileSize,
-      enabled ? DEBUG_OVERLAY_COLORS.enabled : DEBUG_OVERLAY_COLORS.disabled,
-      enabled ? DEBUG_OVERLAY_COLORS.enabledAlpha : DEBUG_OVERLAY_COLORS.disabledAlpha
-    )
-  })
+  return TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.obstacle
 }
 
-function drawCrosswalkTileTypeOverlay(graphics, city, x, y) {
+function getBuildingTypeOverlayColor(buildingType) {
+  const buildingColors = TILE_TYPE_OVERLAY_COLORS.building
+
+  return buildingColors[buildingType] || buildingColors.default
+}
+
+function drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha) {
   const tileSize = city.tileSize
   const px = x * tileSize
   const py = y * tileSize
@@ -1020,7 +1087,7 @@ function drawCrosswalkTileTypeOverlay(graphics, city, x, y) {
   const stripeSpan = stripeCount * stripeWidth + (stripeCount - 1) * stripeGap
   const stripeLeft = px + Math.round((tileSize - stripeSpan) / 2)
 
-  fillRect(graphics, px, py, tileSize, tileSize, TILE_TYPE_OVERLAY_COLORS.crosswalk, TILE_TYPE_OVERLAY_COLORS.alpha)
+  fillRect(graphics, px, py, tileSize, tileSize, TILE_TYPE_OVERLAY_COLORS.crosswalk, alpha)
 
   for (let stripe = 0; stripe < stripeCount; stripe += 1) {
     fillRect(
@@ -1030,7 +1097,7 @@ function drawCrosswalkTileTypeOverlay(graphics, city, x, y) {
       stripeWidth,
       stripeHeight,
       TILE_TYPE_OVERLAY_COLORS.crosswalkStripe,
-      TILE_TYPE_OVERLAY_COLORS.alpha
+      alpha
     )
   }
 }

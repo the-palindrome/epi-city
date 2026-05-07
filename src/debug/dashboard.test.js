@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TILE_TYPE_OVERLAY_COLORS } from '../core/constants.js'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
 import { installDebugDashboard } from './dashboard.js'
 
@@ -8,11 +9,14 @@ vi.mock('pixi.js', () => ({
       this.eventMode = 'auto'
       this.parent = null
       this.visible = true
+      this.fills = []
     }
 
-    rect() {
+    rect(x, y, width, height) {
       return {
-        fill() {}
+        fill: (style) => {
+          this.fills.push({ x, y, width, height, ...style })
+        }
       }
     }
 
@@ -149,6 +153,39 @@ function createCity() {
   }))
 }
 
+function createTileOverlayColorCity() {
+  return compileCityMap(validateCityMap({
+    width: 3,
+    height: 2,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      r: { category: 'road', walkable: false, drivable: true, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false },
+      c: { category: 'building', walkable: false, drivable: false, parkable: false },
+      p: { category: 'park', walkable: true, drivable: false, parkable: false },
+      w: { category: 'water', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: [
+        { id: 'home', type: 'residential', spans: [[0, 2, 1]] },
+        { id: 'shop', type: 'commercial', spans: [[1, 0, 1]] }
+      ]
+    },
+    rows: [
+      'srb',
+      'cpw'
+    ],
+    textureRows: [
+      [0, 0, 0],
+      [0, 0, 0]
+    ]
+  }))
+}
+
 function findByDataset(root, key) {
   if (root.dataset && Object.prototype.hasOwnProperty.call(root.dataset, key)) {
     return root
@@ -210,13 +247,16 @@ describe('debug dashboard overlays', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const title = dashboard.overlayElement.children[0]
     const shortcut = title.children[0]
+    const overlayToggle = findByDataset(dashboard.overlayElement, 'overlayToggle')
 
     expect(title.className).toBe('dashboard-title')
     expect(title.textContent).toBe('overlays')
     expect(shortcut.className).toBe('dashboard-shortcut')
     expect(shortcut.textContent).toBe('o')
     expect(findByDataset(dashboard.element, 'overlayToggle')).toBeNull()
-    expect(findByDataset(dashboard.overlayElement, 'overlayToggle')).not.toBeNull()
+    expect(overlayToggle).not.toBeNull()
+    expect(overlayToggle.dataset.overlayToggle).toBe('tileType')
+    expect(findByDataset(dashboard.overlayElement, 'tileTypeOverlayOpacity')).not.toBeNull()
 
     dashboard.destroy()
   })
@@ -288,11 +328,11 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('renders overlay chunks at the z-order of their covered tiles', () => {
+  it('renders tile type overlay chunks at the z-order of their covered tiles', () => {
     const entityLayer = createEntityLayer()
     const dashboard = installDebugDashboard(createCity(), entityLayer)
 
-    dashboard.setOverlay('walkable', true)
+    dashboard.setOverlay('tileType', true)
 
     const overlayZorders = entityLayer.children.map((child) => child.zorder).sort((a, b) => a - b)
 
@@ -300,9 +340,56 @@ describe('debug dashboard overlays', () => {
     expect(entityLayer.sortableChildren).toBe(true)
     expect(entityLayer.children.every((child) => child.zIndex === child.zorder)).toBe(true)
 
-    dashboard.setOverlay('walkable', false)
+    dashboard.setOverlay('tileType', false)
 
     expect(entityLayer.children.map((child) => child.visible)).toEqual([false, false])
+
+    dashboard.destroy()
+  })
+
+  it('colors tile type overlays by category, building type, and opacity', () => {
+    const entityLayer = createEntityLayer()
+    const dashboard = installDebugDashboard(createTileOverlayColorCity(), entityLayer)
+
+    dashboard.setOverlay('tileType', true)
+
+    const fills = entityLayer.children.flatMap((child) => child.fills)
+    const fillAt = (x, y) => fills.find((fill) => fill.x === x * 32 && fill.y === y * 32)
+
+    expect(fillAt(0, 0)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLORS.sidewalk,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+    expect(fillAt(1, 0)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLORS.road,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+    expect(fillAt(2, 0)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLORS.building.residential,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+    expect(fillAt(0, 1)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLORS.building.commercial,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+
+    dashboard.destroy()
+  })
+
+  it('updates the tile type overlay opacity from the overlay dashboard slider', () => {
+    const entityLayer = createEntityLayer()
+    const dashboard = installDebugDashboard(createTileOverlayColorCity(), entityLayer)
+    const opacity = findByDataset(dashboard.overlayElement, 'tileTypeOverlayOpacity')
+    const opacityValue = findByDataset(dashboard.overlayElement, 'tileTypeOverlayOpacityValue')
+
+    dashboard.setOverlay('tileType', true)
+    opacity.value = '0.35'
+    opacity.eventListeners.input()
+
+    const fills = entityLayer.children.flatMap((child) => child.fills)
+
+    expect(opacityValue.textContent).toBe('35%')
+    expect(fills.every((fill) => fill.alpha === 0.35)).toBe(true)
 
     dashboard.destroy()
   })

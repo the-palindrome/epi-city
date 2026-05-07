@@ -175,29 +175,28 @@ export const TILE_ZORDERS = Object.freeze({
 })
 
 export const DASHBOARD_OVERLAYS = Object.freeze([
-  { id: 'tileType', label: 'overlay tile type', kind: 'tileType' },
-  { id: 'walkable', label: 'overlay walkable', layer: 'tileWalkable' },
-  { id: 'parkable', label: 'overlay parkable', layer: 'tileParkable' },
-  { id: 'drivable', label: 'overlay drivable', layer: 'tileDrivable' }
+  { id: 'tileType', label: 'tile type', kind: 'tileType' }
 ])
 
-export const DEBUG_OVERLAY_COLORS = Object.freeze({
-  enabled: 0x35d46f,
-  disabled: 0xe3504f,
-  enabledAlpha: 0.42,
-  disabledAlpha: 0.34
-})
-
 export const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
-  sidewalk: 0x9aa09a,
+  sidewalk: 0xffffff,
   road: 0x151a16,
-  park: 0x4fa43d,
-  water: 0x0786c8,
-  building: 0x5f6762,
-  obstacle: 0xd94a48,
-  crosswalk: 0x151a16,
+  park: 0x59a14f,
+  water: 0x2f80d0,
+  building: Object.freeze({
+    residential: 0x3f6fa7,
+    commercial: 0xe09b2d,
+    default: 0x8c8f94
+  }),
+  obstacle: 0xd1495b,
+  crosswalk: 0xb8beb9,
   crosswalkStripe: 0xffffff,
-  alpha: 0.86
+  alpha: 0.78,
+  opacityRange: Object.freeze({
+    min: 0,
+    max: 1,
+    step: 0.05
+  })
 })
 
 export const DIRECTIONS = Object.freeze([

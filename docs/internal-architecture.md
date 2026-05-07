@@ -16,7 +16,7 @@ Startup follows this sequence:
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds simulation controls, the clock display, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
+9. `installDebugDashboard()` adds simulation controls, the clock display, a keyboard-controlled tile type overlay, and a cached overlay layer after its first build.
 10. `SimulationClock`, `createNpcSimulation()`, and `createCarSimulation()` create the clock and entity systems with their configured random sources, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
@@ -214,11 +214,11 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `o` to toggle the overlays dashboard. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. The overlays dashboard includes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `o` to toggle the overlays dashboard. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. The overlays dashboard includes the tile type overlay and an opacity slider for it. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
-The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
+The tile-type overlay paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
 
-Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without covering NPCs.
+The tile type overlay layer is built lazily the first time it is enabled. Visibility toggles only change layer visibility, while opacity changes rebuild the cached layer with the new fill alpha. The overlay builder uses the same 16x16 chunk pattern as the city renderer so large masks remain inspectable without covering NPCs.
 
 ## Map Editor
 
@@ -280,7 +280,8 @@ window.citySim.npcs[0].timetable.elements
 window.citySim.npcs[0].position
 window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()
-window.citySim.dashboard.setOverlay('walkable', true)
+window.citySim.dashboard.setOverlay('tileType', true)
+window.citySim.dashboard.setTileTypeOverlayOpacity(0.5)
 ```
 
 ## Near-Term Extension Points

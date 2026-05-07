@@ -18,8 +18,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
 - Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `o` to toggle the overlays dashboard.
-- Use the overlays dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
-- Use `overlay tile type` in the overlays dashboard to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
+- Use the overlays dashboard to show the tile type overlay and tune its opacity.
+- The tile type overlay uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, blue residential buildings, and amber commercial buildings.
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 500.
 - Use the simulation dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
@@ -158,13 +158,13 @@ window.citySim.setDayNightOverlayEnabled(false)
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
 
-The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setOverlay(id, enabled)`, `toggle(force)`, `toggleOverlays(force)`, and `render()` for quick checks from the console:
+The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setOverlay(id, enabled)`, `setTileTypeOverlayOpacity(opacity)`, `toggle(force)`, `toggleOverlays(force)`, and `render()` for quick checks from the console:
 
 ```js
 window.citySim.dashboard.toggle(true)
 window.citySim.dashboard.toggleOverlays(true)
-window.citySim.dashboard.setOverlay('walkable', true)
-window.citySim.dashboard.setOverlay('drivable', true)
+window.citySim.dashboard.setOverlay('tileType', true)
+window.citySim.dashboard.setTileTypeOverlayOpacity(0.5)
 ```
 
 ## Map Editor
