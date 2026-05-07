@@ -11,6 +11,8 @@ vi.mock('pixi.js', () => ({
       this.parent = null
       this.sortableChildren = false
       this.cacheAsTextureOptions = null
+      this.visible = true
+      this.alpha = 1
     }
 
     addChild(child) {
@@ -87,7 +89,7 @@ describe('city renderer z-ordering', () => {
       getTexture: (id) => ({ id })
     }
 
-    renderCity(city, layer, textureSet)
+    const mapTextures = renderCity(city, layer, textureSet)
 
     const chunkZorders = layer.children.map((chunk) => chunk.zorder).sort((a, b) => a - b)
     const groundChunk = layer.children.find((chunk) => chunk.zorder === 0)
@@ -105,5 +107,31 @@ describe('city renderer z-ordering', () => {
       x: 32,
       y: 32
     })
+    expect(mapTextures.chunks).toEqual(layer.children)
+    expect(mapTextures.state).toEqual({ visible: true, opacity: 1 })
+  })
+
+  it('controls static map texture visibility and opacity', () => {
+    const city = createCity()
+    const layer = new PIXI.Container()
+    const textureSet = {
+      getTexture: (id) => ({ id })
+    }
+
+    const mapTextures = renderCity(city, layer, textureSet)
+
+    mapTextures.setVisible(false)
+    mapTextures.setOpacity(0.35)
+
+    expect(mapTextures.state).toEqual({ visible: false, opacity: 0.35 })
+    expect(layer.children.every((chunk) => chunk.visible === false)).toBe(true)
+    expect(layer.children.every((chunk) => chunk.alpha === 0.35)).toBe(true)
+
+    mapTextures.setVisible(true)
+    mapTextures.setOpacity(2)
+
+    expect(mapTextures.state).toEqual({ visible: true, opacity: 1 })
+    expect(layer.children.every((chunk) => chunk.visible === true)).toBe(true)
+    expect(layer.children.every((chunk) => chunk.alpha === 1)).toBe(true)
   })
 })

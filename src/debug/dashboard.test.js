@@ -243,17 +243,21 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('renders the overlays title and o shortcut on the overlay dashboard', () => {
+  it('renders the rendering options title and r shortcut', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const title = dashboard.overlayElement.children[0]
     const shortcut = title.children[0]
     const overlayToggle = findByDataset(dashboard.overlayElement, 'overlayToggle')
+    const mapTextureToggle = findByDataset(dashboard.overlayElement, 'mapTextureToggle')
+    const mapTextureOpacity = findByDataset(dashboard.overlayElement, 'mapTextureOpacity')
 
     expect(title.className).toBe('dashboard-title')
-    expect(title.textContent).toBe('overlays')
+    expect(title.textContent).toBe('rendering options')
     expect(shortcut.className).toBe('dashboard-shortcut')
-    expect(shortcut.textContent).toBe('o')
+    expect(shortcut.textContent).toBe('r')
     expect(findByDataset(dashboard.element, 'overlayToggle')).toBeNull()
+    expect(mapTextureToggle.checked).toBe(true)
+    expect(mapTextureOpacity.value).toBe('1')
     expect(overlayToggle).not.toBeNull()
     expect(overlayToggle.dataset.overlayToggle).toBe('tileType')
     expect(findByDataset(dashboard.overlayElement, 'tileTypeOverlayOpacity')).not.toBeNull()
@@ -280,18 +284,18 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('toggles the overlay dashboard with the o hotkey', () => {
+  it('toggles the rendering options dashboard with the r hotkey', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const keydown = globalThis.document.eventListeners.keydown
 
-    const hideEvent = createKeydownEvent({ key: 'o', code: 'KeyO' })
+    const hideEvent = createKeydownEvent({ key: 'r', code: 'KeyR' })
     keydown(hideEvent)
 
     expect(hideEvent.defaultPrevented).toBe(true)
     expect(dashboard.overlayElement.classList.contains('hidden')).toBe(true)
     expect(dashboard.element.classList.contains('hidden')).toBe(false)
 
-    const showEvent = createKeydownEvent({ key: 'O', code: 'KeyO' })
+    const showEvent = createKeydownEvent({ key: 'R', code: 'KeyR' })
     keydown(showEvent)
 
     expect(showEvent.defaultPrevented).toBe(true)
@@ -314,12 +318,12 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('does not toggle the overlay dashboard with the o hotkey inside editable controls', () => {
+  it('does not toggle the rendering options dashboard with the r hotkey inside editable controls', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const keydown = globalThis.document.eventListeners.keydown
     const seedInput = findByDataset(dashboard.element, 'simulationSeed')
 
-    const inputEvent = createKeydownEvent({ key: 'o', code: 'KeyO', target: seedInput })
+    const inputEvent = createKeydownEvent({ key: 'r', code: 'KeyR', target: seedInput })
     keydown(inputEvent)
 
     expect(inputEvent.defaultPrevented).toBe(false)
@@ -376,7 +380,7 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('updates the tile type overlay opacity from the overlay dashboard slider', () => {
+  it('updates the tile type overlay opacity from the rendering options slider', () => {
     const entityLayer = createEntityLayer()
     const dashboard = installDebugDashboard(createTileOverlayColorCity(), entityLayer)
     const opacity = findByDataset(dashboard.overlayElement, 'tileTypeOverlayOpacity')
@@ -390,6 +394,53 @@ describe('debug dashboard overlays', () => {
 
     expect(opacityValue.textContent).toBe('35%')
     expect(fills.every((fill) => fill.alpha === 0.35)).toBe(true)
+
+    dashboard.destroy()
+  })
+
+  it('updates map texture visibility and opacity from rendering options controls', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      onMapTextureEnabledChange(enabled) {
+        changes.push(['enabled', enabled])
+      },
+      onMapTextureOpacityChange(opacity) {
+        changes.push(['opacity', opacity])
+      }
+    })
+    const mapTextureToggle = findByDataset(dashboard.overlayElement, 'mapTextureToggle')
+    const mapTextureOpacity = findByDataset(dashboard.overlayElement, 'mapTextureOpacity')
+    const mapTextureOpacityValue = findByDataset(dashboard.overlayElement, 'mapTextureOpacityValue')
+
+    expect(mapTextureToggle.checked).toBe(true)
+    expect(mapTextureOpacity.value).toBe('1')
+    expect(mapTextureOpacityValue.textContent).toBe('100%')
+
+    mapTextureToggle.checked = false
+    mapTextureToggle.eventListeners.change()
+    mapTextureOpacity.value = '0.4'
+    mapTextureOpacity.eventListeners.input()
+
+    expect(dashboard.rendering.mapTextureEnabled).toBe(false)
+    expect(dashboard.rendering.mapTextureOpacity).toBe(0.4)
+    expect(mapTextureOpacityValue.textContent).toBe('40%')
+    expect(changes).toEqual([
+      ['enabled', false],
+      ['opacity', 0.4]
+    ])
+
+    dashboard.setMapTextureEnabled(true)
+    dashboard.setMapTextureOpacity(2)
+
+    expect(mapTextureToggle.checked).toBe(true)
+    expect(mapTextureOpacity.value).toBe('1')
+    expect(mapTextureOpacityValue.textContent).toBe('100%')
+    expect(changes).toEqual([
+      ['enabled', false],
+      ['opacity', 0.4],
+      ['enabled', true],
+      ['opacity', 1]
+    ])
 
     dashboard.destroy()
   })

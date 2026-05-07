@@ -5,6 +5,8 @@ import {
 } from '../core/constants.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
+const RENDERING_OPACITY_RANGE = Object.freeze({ min: 0, max: 1, step: 0.05 })
+
 export function installDebugDashboard(city, entityLayer, simulationControls = {}) {
   const dashboard = document.getElementById('debug-dashboard')
   const overlayDashboard = document.getElementById('overlay-dashboard')
@@ -12,12 +14,20 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const controls = new Map()
   const layers = new Map()
   const simulation = createSimulationControls(simulationControls)
-  const overlaySettings = {
+  const renderingSettings = {
+    mapTextureEnabled: simulationControls.mapTextureEnabled !== false,
+    mapTextureOpacity: normalizeRenderingOpacity(simulationControls.mapTextureOpacity ?? 1),
     tileTypeOpacity: normalizeTileTypeOverlayOpacity(TILE_TYPE_OVERLAY_COLORS.alpha)
   }
+  const renderingCallbacks = {
+    onMapTextureEnabledChange: simulationControls.onMapTextureEnabledChange || noop,
+    onMapTextureOpacityChange: simulationControls.onMapTextureOpacityChange || noop
+  }
   const overlaySection = createDashboardSection('Map')
+  const mapTextureToggle = createMapTextureToggle(renderingSettings.mapTextureEnabled)
+  const mapTextureOpacityField = createMapTextureOpacityField(renderingSettings.mapTextureOpacity)
   const tileTypeOpacityField = createTileTypeOverlayOpacityField(
-    overlaySettings.tileTypeOpacity,
+    renderingSettings.tileTypeOpacity,
     TILE_TYPE_OVERLAY_COLORS.opacityRange
   )
 
@@ -25,7 +35,9 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   overlayDashboard.innerHTML = ''
   dashboard.appendChild(createDashboardTitle('simulation', 's'))
   dashboard.appendChild(simulation.element)
-  overlayDashboard.appendChild(createDashboardTitle('overlays', 'o'))
+  overlayDashboard.appendChild(createDashboardTitle('rendering options', 'r'))
+  overlaySection.appendChild(mapTextureToggle.label)
+  overlaySection.appendChild(mapTextureOpacityField.label)
 
   for (const overlay of DASHBOARD_OVERLAYS) {
     const control = createOverlayToggle(overlay)
@@ -40,6 +52,14 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   overlaySection.appendChild(tileTypeOpacityField.label)
   overlayDashboard.appendChild(overlaySection)
+
+  mapTextureToggle.input.addEventListener('change', () => {
+    setMapTextureEnabled(mapTextureToggle.input.checked)
+  })
+
+  mapTextureOpacityField.input.addEventListener('input', () => {
+    setMapTextureOpacity(mapTextureOpacityField.input.value)
+  })
 
   tileTypeOpacityField.input.addEventListener('input', () => {
     setTileTypeOverlayOpacity(tileTypeOpacityField.input.value)
@@ -62,7 +82,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     if (!layers.has(overlay.id)) {
       const layer = createOverlayLayer(entityLayer)
 
-      drawTileTypeOverlay(city, layer, overlaySettings.tileTypeOpacity)
+      drawTileTypeOverlay(city, layer, renderingSettings.tileTypeOpacity)
 
       layers.set(overlay.id, layer)
     }
@@ -80,10 +100,25 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     render()
   }
 
+  function setMapTextureEnabled(enabled) {
+    renderingSettings.mapTextureEnabled = Boolean(enabled)
+    mapTextureToggle.input.checked = renderingSettings.mapTextureEnabled
+    renderingCallbacks.onMapTextureEnabledChange(renderingSettings.mapTextureEnabled)
+  }
+
+  function setMapTextureOpacity(opacity) {
+    const nextOpacity = normalizeRenderingOpacity(opacity)
+
+    renderingSettings.mapTextureOpacity = nextOpacity
+    mapTextureOpacityField.input.value = String(nextOpacity)
+    mapTextureOpacityField.value.textContent = formatOpacity(nextOpacity)
+    renderingCallbacks.onMapTextureOpacityChange(nextOpacity)
+  }
+
   function setTileTypeOverlayOpacity(opacity) {
     const nextOpacity = normalizeTileTypeOverlayOpacity(opacity)
 
-    overlaySettings.tileTypeOpacity = nextOpacity
+    renderingSettings.tileTypeOpacity = nextOpacity
     tileTypeOpacityField.input.value = String(nextOpacity)
     tileTypeOpacityField.value.textContent = formatOpacity(nextOpacity)
     discardOverlayLayer('tileType')
@@ -122,7 +157,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
       return
     }
 
-    if (key === 'o' && !isEditableTarget(event.target)) {
+    if (key === 'r' && !isEditableTarget(event.target)) {
       event.preventDefault()
       toggleOverlayDashboard()
       return
@@ -142,10 +177,14 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     element: dashboard,
     overlayElement: overlayDashboard,
     overlays: overlayState,
+    rendering: renderingSettings,
     simulation,
     setOverlay,
+    setMapTextureEnabled,
+    setMapTextureOpacity,
     setTileTypeOverlayOpacity,
     toggle: toggleDashboard,
+    toggleRenderingOptions: toggleOverlayDashboard,
     toggleOverlays: toggleOverlayDashboard,
     render,
     destroy() {
@@ -939,23 +978,62 @@ function createOverlayToggle(overlay) {
   return { label, input }
 }
 
+function createMapTextureToggle(enabled) {
+  const label = document.createElement('label')
+  const input = document.createElement('input')
+  const text = document.createElement('span')
+
+  label.className = 'dashboard-toggle'
+  input.type = 'checkbox'
+  input.dataset.mapTextureToggle = 'true'
+  input.checked = enabled
+  text.textContent = 'map texture'
+
+  label.appendChild(input)
+  label.appendChild(text)
+
+  return { label, input }
+}
+
+function createMapTextureOpacityField(opacity) {
+  return createRenderingOpacityField({
+    labelText: 'texture opacity',
+    inputDataset: 'mapTextureOpacity',
+    valueDataset: 'mapTextureOpacityValue',
+    opacity,
+    opacityRange: RENDERING_OPACITY_RANGE,
+    normalize: normalizeRenderingOpacity
+  })
+}
+
 function createTileTypeOverlayOpacityField(opacity, opacityRange) {
+  return createRenderingOpacityField({
+    labelText: 'tile opacity',
+    inputDataset: 'tileTypeOverlayOpacity',
+    valueDataset: 'tileTypeOverlayOpacityValue',
+    opacity,
+    opacityRange,
+    normalize: normalizeTileTypeOverlayOpacity
+  })
+}
+
+function createRenderingOpacityField({ labelText, inputDataset, valueDataset, opacity, opacityRange, normalize }) {
   const label = document.createElement('label')
   const text = document.createElement('span')
   const input = document.createElement('input')
   const value = document.createElement('output')
-  const normalizedOpacity = normalizeTileTypeOverlayOpacity(opacity)
+  const normalizedOpacity = normalize(opacity)
 
   label.className = 'dashboard-field dashboard-slider-field'
-  text.textContent = 'opacity'
+  text.textContent = labelText
   input.type = 'range'
   input.min = String(opacityRange.min)
   input.max = String(opacityRange.max)
   input.step = String(opacityRange.step)
   input.value = String(normalizedOpacity)
-  input.dataset.tileTypeOverlayOpacity = 'true'
+  input.dataset[inputDataset] = 'true'
   value.className = 'dashboard-opacity-value'
-  value.dataset.tileTypeOverlayOpacityValue = 'true'
+  value.dataset[valueDataset] = 'true'
   value.textContent = formatOpacity(normalizedOpacity)
 
   label.appendChild(text)
@@ -991,6 +1069,16 @@ function isSpaceHotkey(event) {
 
 function noop() {}
 
+function normalizeRenderingOpacity(opacity) {
+  const number = Number(opacity)
+
+  if (!Number.isFinite(number)) {
+    return 1
+  }
+
+  return Number(Math.min(Math.max(number, RENDERING_OPACITY_RANGE.min), RENDERING_OPACITY_RANGE.max).toFixed(4))
+}
+
 function normalizeTileTypeOverlayOpacity(opacity) {
   const range = TILE_TYPE_OVERLAY_COLORS.opacityRange
   const number = Number(opacity)
@@ -1003,7 +1091,7 @@ function normalizeTileTypeOverlayOpacity(opacity) {
 }
 
 function formatOpacity(opacity) {
-  return `${Math.round(normalizeTileTypeOverlayOpacity(opacity) * 100)}%`
+  return `${Math.round(normalizeRenderingOpacity(opacity) * 100)}%`
 }
 
 function createOverlayLayer(entityLayer) {

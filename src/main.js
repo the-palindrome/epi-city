@@ -84,7 +84,7 @@ async function main() {
     const textureSet = await loadTextureSet(city.textureSetName)
 
     validateCityTextureBindings(city, textureSet)
-    renderCity(city, entityLayer, textureSet)
+    const mapTextures = renderCity(city, entityLayer, textureSet)
     centerCameraOnCity(camera, world, city)
 
     const game = new Game(app)
@@ -100,7 +100,9 @@ async function main() {
       incubationDays: INFECTION_CONFIG.incubationDays,
       infectionDays: INFECTION_CONFIG.infectionDays,
       immunityDays: INFECTION_CONFIG.immunityDays,
-      dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled
+      dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled,
+      mapTextureEnabled: true,
+      mapTextureOpacity: 1
     }
     let npcSimulation = null
     let carSimulation = null
@@ -221,6 +223,10 @@ async function main() {
       return clampRangeValue(days, INFECTION_CONFIG.immunityDaysRange)
     }
 
+    function clampRenderingOpacity(opacity) {
+      return clampRangeValue(opacity, { min: 0, max: 1 })
+    }
+
     function clampRangeValue(value, range) {
       const number = Number(value)
 
@@ -298,6 +304,8 @@ async function main() {
       getInfectionStats: () => npcSimulation?.infection.getStats(),
       clock: simulationClock,
       dayNightOverlayEnabled: simulationState.dayNightOverlayEnabled,
+      mapTextureEnabled: simulationState.mapTextureEnabled,
+      mapTextureOpacity: simulationState.mapTextureOpacity,
       onPlay: () => game.play(),
       onPause: () => game.pause(),
       onRestart: restartSimulation,
@@ -356,6 +364,16 @@ async function main() {
       onDayNightOverlayChange: (enabled) => {
         simulationState.dayNightOverlayEnabled = Boolean(enabled)
         dayNightOverlay.setEnabled(simulationState.dayNightOverlayEnabled)
+      },
+      onMapTextureEnabledChange: (enabled) => {
+        simulationState.mapTextureEnabled = Boolean(enabled)
+        mapTextures.setVisible(simulationState.mapTextureEnabled)
+        game.render()
+      },
+      onMapTextureOpacityChange: (opacity) => {
+        simulationState.mapTextureOpacity = clampRenderingOpacity(opacity)
+        mapTextures.setOpacity(simulationState.mapTextureOpacity)
+        game.render()
       }
     })
 
@@ -456,6 +474,14 @@ async function main() {
       dashboard.simulation.setDayNightOverlayEnabled(simulationState.dayNightOverlayEnabled)
     }
 
+    function setMapTextureEnabled(enabled) {
+      dashboard.setMapTextureEnabled(enabled)
+    }
+
+    function setMapTextureOpacity(opacity) {
+      dashboard.setMapTextureOpacity(opacity)
+    }
+
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -505,6 +531,8 @@ async function main() {
       setInfectionDays,
       setImmunityDays,
       setDayNightOverlayEnabled,
+      setMapTextureEnabled,
+      setMapTextureOpacity,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
       clearCameraFollow: () => clearCameraFollow(camera),

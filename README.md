@@ -17,8 +17,8 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `o` to toggle the overlays dashboard.
-- Use the overlays dashboard to show the tile type overlay and tune its opacity.
+- Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options.
+- Use rendering options to show or hide the map texture, tune texture opacity, show the tile type overlay, and tune tile overlay opacity.
 - The tile type overlay uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, blue residential buildings, and amber commercial buildings.
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 500.
@@ -158,11 +158,13 @@ window.citySim.setDayNightOverlayEnabled(false)
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
 
-The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setOverlay(id, enabled)`, `setTileTypeOverlayOpacity(opacity)`, `toggle(force)`, `toggleOverlays(force)`, and `render()` for quick checks from the console:
+The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setMapTextureEnabled(enabled)`, `setMapTextureOpacity(opacity)`, `setOverlay(id, enabled)`, `setTileTypeOverlayOpacity(opacity)`, `toggle(force)`, `toggleRenderingOptions(force)`, and `render()` for quick checks from the console:
 
 ```js
 window.citySim.dashboard.toggle(true)
-window.citySim.dashboard.toggleOverlays(true)
+window.citySim.dashboard.toggleRenderingOptions(true)
+window.citySim.dashboard.setMapTextureEnabled(false)
+window.citySim.dashboard.setMapTextureOpacity(0.45)
 window.citySim.dashboard.setOverlay('tileType', true)
 window.citySim.dashboard.setTileTypeOverlayOpacity(0.5)
 ```

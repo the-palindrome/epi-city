@@ -16,7 +16,7 @@ Startup follows this sequence:
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds simulation controls, the clock display, a keyboard-controlled tile type overlay, and a cached overlay layer after its first build.
+9. `installDebugDashboard()` adds simulation controls, the clock display, map texture rendering controls, a keyboard-controlled tile type overlay, and a cached overlay layer after its first build.
 10. `SimulationClock`, `createNpcSimulation()`, and `createCarSimulation()` create the clock and entity systems with their configured random sources, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
@@ -214,7 +214,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `o` to toggle the overlays dashboard. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. The overlays dashboard includes the tile type overlay and an opacity slider for it. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, the tile type overlay, and an opacity slider for the tile overlay. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
 The tile-type overlay paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
 
@@ -280,6 +280,8 @@ window.citySim.npcs[0].timetable.elements
 window.citySim.npcs[0].position
 window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()
+window.citySim.setMapTextureEnabled(false)
+window.citySim.setMapTextureOpacity(0.45)
 window.citySim.dashboard.setOverlay('tileType', true)
 window.citySim.dashboard.setTileTypeOverlayOpacity(0.5)
 ```
