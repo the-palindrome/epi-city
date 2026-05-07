@@ -21,7 +21,6 @@ const EPIDEMIC_GRAPH_CONFIG = Object.freeze({
   height: 176,
   padding: Object.freeze({ top: 12, right: 14, bottom: 36, left: 46 }),
   sampleIntervalSeconds: 5 * 60,
-  maxSamples: 720,
   minTimeSpanSeconds: 60,
   minValueSpan: 1
 })
@@ -1091,10 +1090,6 @@ function createEpidemicGraph(options = {}) {
       timeSeconds,
       ...stats
     })
-
-    while (samples.length > EPIDEMIC_GRAPH_CONFIG.maxSamples) {
-      samples.shift()
-    }
   }
 
   function draw() {

@@ -1022,6 +1022,32 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
+  it('keeps epidemic graph samples for the full simulation history', () => {
+    const clock = {
+      seconds: 0,
+      getElapsedSimulationSeconds() {
+        return this.seconds
+      }
+    }
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      clock,
+      getInfectionStats() {
+        return { susceptible: 8, exposed: 1, infectious: 2, recovered: 0 }
+      }
+    })
+
+    for (let sampleIndex = 0; sampleIndex < 730; sampleIndex += 1) {
+      clock.seconds = sampleIndex * 5 * 60
+      dashboard.render()
+    }
+
+    expect(dashboard.graph.samples).toHaveLength(730)
+    expect(dashboard.graph.samples[0]).toEqual(expect.objectContaining({ timeSeconds: 0 }))
+    expect(dashboard.graph.samples[729]).toEqual(expect.objectContaining({ timeSeconds: 729 * 5 * 60 }))
+
+    dashboard.destroy()
+  })
+
   it('zooms and pans only the epidemic graph time axis with plot mouse interactions', () => {
     const clock = {
       seconds: 0,
