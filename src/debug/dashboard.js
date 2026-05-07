@@ -1,7 +1,10 @@
 import * as PIXI from 'pixi.js'
 import {
   DASHBOARD_OVERLAYS,
-  TILE_TYPE_OVERLAY_COLORS
+  TILE_TYPE_OVERLAY_COLOR_SCHEMES,
+  TILE_TYPE_OVERLAY_COLORS,
+  TILE_TYPE_OVERLAY_SCHEME_ID,
+  TILE_TYPE_OVERLAY_SCHEME_OPTIONS
 } from '../core/constants.js'
 import { fillRect } from '../render/pixi-rendering.js'
 
@@ -17,6 +20,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const renderingSettings = {
     mapTextureEnabled: simulationControls.mapTextureEnabled !== false,
     mapTextureOpacity: normalizeRenderingOpacity(simulationControls.mapTextureOpacity ?? 1),
+    tileOverlayScheme: normalizeTileOverlayScheme(simulationControls.tileOverlayScheme),
     tileTypeOpacity: normalizeTileTypeOverlayOpacity(TILE_TYPE_OVERLAY_COLORS.alpha)
   }
   const renderingCallbacks = {
@@ -26,6 +30,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const overlaySection = createDashboardSection('Map')
   const mapTextureToggle = createMapTextureToggle(renderingSettings.mapTextureEnabled)
   const mapTextureOpacityField = createMapTextureOpacityField(renderingSettings.mapTextureOpacity)
+  const tileOverlaySchemeField = createTileOverlaySchemeField(renderingSettings.tileOverlayScheme)
   const tileTypeOpacityField = createTileTypeOverlayOpacityField(
     renderingSettings.tileTypeOpacity,
     TILE_TYPE_OVERLAY_COLORS.opacityRange
@@ -50,6 +55,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     })
   }
 
+  overlaySection.appendChild(tileOverlaySchemeField.label)
   overlaySection.appendChild(tileTypeOpacityField.label)
   overlayDashboard.appendChild(overlaySection)
 
@@ -59,6 +65,10 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   mapTextureOpacityField.input.addEventListener('input', () => {
     setMapTextureOpacity(mapTextureOpacityField.input.value)
+  })
+
+  tileOverlaySchemeField.select.addEventListener('change', () => {
+    setTileOverlayScheme(tileOverlaySchemeField.select.value)
   })
 
   tileTypeOpacityField.input.addEventListener('input', () => {
@@ -82,7 +92,10 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     if (!layers.has(overlay.id)) {
       const layer = createOverlayLayer(entityLayer)
 
-      drawTileTypeOverlay(city, layer, renderingSettings.tileTypeOpacity)
+      drawTileTypeOverlay(city, layer, {
+        opacity: renderingSettings.tileTypeOpacity,
+        schemeId: renderingSettings.tileOverlayScheme
+      })
 
       layers.set(overlay.id, layer)
     }
@@ -113,6 +126,15 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     mapTextureOpacityField.input.value = String(nextOpacity)
     mapTextureOpacityField.value.textContent = formatOpacity(nextOpacity)
     renderingCallbacks.onMapTextureOpacityChange(nextOpacity)
+  }
+
+  function setTileOverlayScheme(schemeId) {
+    const nextSchemeId = normalizeTileOverlayScheme(schemeId)
+
+    renderingSettings.tileOverlayScheme = nextSchemeId
+    tileOverlaySchemeField.select.value = nextSchemeId
+    discardOverlayLayer('tileType')
+    render()
   }
 
   function setTileTypeOverlayOpacity(opacity) {
@@ -182,6 +204,8 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setOverlay,
     setMapTextureEnabled,
     setMapTextureOpacity,
+    setTileOverlayScheme,
+    setTileOverlayOpacity: setTileTypeOverlayOpacity,
     setTileTypeOverlayOpacity,
     toggle: toggleDashboard,
     toggleRenderingOptions: toggleOverlayDashboard,
@@ -236,7 +260,7 @@ function createSimulationControls(options) {
     initialInfectiousCount: normalizeInitialInfectiousCount(options.initialInfectiousCount ?? 4, options.initialInfectiousCountRange),
     infectionDistance: normalizeInfectionDistance(options.infectionDistance ?? 48, options.infectionDistanceRange),
     infectionProbability: normalizeInfectionProbability(options.infectionProbability ?? 0.03, options.infectionProbabilityRange),
-    incubationDays: normalizeIncubationDays(options.incubationDays ?? 5, options.incubationDaysRange),
+    incubationDays: normalizeIncubationDays(options.incubationDays ?? 1, options.incubationDaysRange),
     infectionDays: normalizeInfectionDays(options.infectionDays ?? 7, options.infectionDaysRange),
     immunityDays: normalizeImmunityDays(options.immunityDays ?? 90, options.immunityDaysRange),
     dayNightOverlayEnabled: options.dayNightOverlayEnabled !== false
@@ -1006,6 +1030,31 @@ function createMapTextureOpacityField(opacity) {
   })
 }
 
+function createTileOverlaySchemeField(schemeId) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const select = document.createElement('select')
+  const normalizedSchemeId = normalizeTileOverlayScheme(schemeId)
+
+  label.className = 'dashboard-field'
+  text.textContent = 'color scheme'
+  select.dataset.tileOverlayScheme = 'true'
+
+  for (const scheme of TILE_TYPE_OVERLAY_SCHEME_OPTIONS) {
+    const option = document.createElement('option')
+
+    option.value = scheme.id
+    option.textContent = scheme.label
+    select.appendChild(option)
+  }
+
+  select.value = normalizedSchemeId
+  label.appendChild(text)
+  label.appendChild(select)
+
+  return { label, select }
+}
+
 function createTileTypeOverlayOpacityField(opacity, opacityRange) {
   return createRenderingOpacityField({
     labelText: 'tile opacity',
@@ -1079,6 +1128,14 @@ function normalizeRenderingOpacity(opacity) {
   return Number(Math.min(Math.max(number, RENDERING_OPACITY_RANGE.min), RENDERING_OPACITY_RANGE.max).toFixed(4))
 }
 
+function normalizeTileOverlayScheme(schemeId) {
+  const id = String(schemeId || '')
+
+  return Object.prototype.hasOwnProperty.call(TILE_TYPE_OVERLAY_COLOR_SCHEMES, id)
+    ? id
+    : TILE_TYPE_OVERLAY_SCHEME_ID
+}
+
 function normalizeTileTypeOverlayOpacity(opacity) {
   const range = TILE_TYPE_OVERLAY_COLORS.opacityRange
   const number = Number(opacity)
@@ -1127,13 +1184,16 @@ function destroyOverlayLayer(layer) {
   layer.children.length = 0
 }
 
-function drawTileTypeOverlay(city, layer, opacity) {
+function drawTileTypeOverlay(city, layer, options) {
+  const opacity = options && options.opacity
+  const scheme = TILE_TYPE_OVERLAY_COLOR_SCHEMES[normalizeTileOverlayScheme(options && options.schemeId)]
+
   drawChunkedOverlay(city, layer, (graphics, x, y) => {
     const variant = city.getTileVariant(x, y)
     const alpha = normalizeTileTypeOverlayOpacity(opacity)
 
     if (variant.category === 'crosswalk') {
-      drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha)
+      drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha, scheme)
       return
     }
 
@@ -1143,27 +1203,27 @@ function drawTileTypeOverlay(city, layer, opacity) {
       y * city.tileSize,
       city.tileSize,
       city.tileSize,
-      getTileTypeOverlayColor(variant),
+      getTileTypeOverlayColor(variant, scheme),
       alpha
     )
   })
 }
 
-function getTileTypeOverlayColor(variant) {
+function getTileTypeOverlayColor(variant, scheme) {
   if (variant.category === 'building') {
-    return getBuildingTypeOverlayColor(variant.buildingType)
+    return getBuildingTypeOverlayColor(variant.buildingType, scheme)
   }
 
-  return TILE_TYPE_OVERLAY_COLORS[variant.category] || TILE_TYPE_OVERLAY_COLORS.obstacle
+  return scheme[variant.category] || scheme.obstacle
 }
 
-function getBuildingTypeOverlayColor(buildingType) {
-  const buildingColors = TILE_TYPE_OVERLAY_COLORS.building
+function getBuildingTypeOverlayColor(buildingType, scheme) {
+  const buildingColors = scheme.building
 
   return buildingColors[buildingType] || buildingColors.default
 }
 
-function drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha) {
+function drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha, scheme) {
   const tileSize = city.tileSize
   const px = x * tileSize
   const py = y * tileSize
@@ -1175,7 +1235,7 @@ function drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha) {
   const stripeSpan = stripeCount * stripeWidth + (stripeCount - 1) * stripeGap
   const stripeLeft = px + Math.round((tileSize - stripeSpan) / 2)
 
-  fillRect(graphics, px, py, tileSize, tileSize, TILE_TYPE_OVERLAY_COLORS.crosswalk, alpha)
+  fillRect(graphics, px, py, tileSize, tileSize, scheme.crosswalk, alpha)
 
   for (let stripe = 0; stripe < stripeCount; stripe += 1) {
     fillRect(
@@ -1184,7 +1244,7 @@ function drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha) {
       stripeTop,
       stripeWidth,
       stripeHeight,
-      TILE_TYPE_OVERLAY_COLORS.crosswalkStripe,
+      scheme.crosswalkStripe,
       alpha
     )
   }

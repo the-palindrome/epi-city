@@ -74,7 +74,7 @@ export const INFECTION_CONFIG = Object.freeze({
   initialInfectiousCount: 4,
   infectionDistance: 48,
   infectionProbability: 0.03,
-  incubationDays: 5,
+  incubationDays: 1,
   infectionDays: 7,
   immunityDays: 90,
   colors: Object.freeze({
@@ -175,7 +175,63 @@ export const TILE_ZORDERS = Object.freeze({
 })
 
 export const DASHBOARD_OVERLAYS = Object.freeze([
-  { id: 'tileType', label: 'tile type', kind: 'tileType' }
+  { id: 'tileType', label: 'tile overlay', kind: 'tileType' }
+])
+
+export const TILE_TYPE_OVERLAY_SCHEME_ID = 'tileType'
+
+export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
+  tileType: Object.freeze({
+    label: 'tile type',
+    sidewalk: 0xffffff,
+    road: 0x151a16,
+    park: 0x59a14f,
+    water: 0x2f80d0,
+    building: Object.freeze({
+      residential: 0x3f6fa7,
+      commercial: 0xe09b2d,
+      default: 0x8c8f94
+    }),
+    obstacle: 0xd1495b,
+    crosswalk: 0xb8beb9,
+    crosswalkStripe: 0xffffff
+  }),
+  'monochrome-light': Object.freeze({
+    label: 'monochrome-light',
+    sidewalk: 0xffffff,
+    road: 0xd3d6d2,
+    park: 0xf2f3f1,
+    water: 0xe5e8ea,
+    building: Object.freeze({
+      residential: 0xa8ada7,
+      commercial: 0x8f9690,
+      default: 0xb7bcb6
+    }),
+    obstacle: 0xaeb4ae,
+    crosswalk: 0xd3d6d2,
+    crosswalkStripe: 0xffffff
+  }),
+  'monochrome-dark': Object.freeze({
+    label: 'monochrome-dark',
+    sidewalk: 0x5f6661,
+    road: 0x141816,
+    park: 0x343a36,
+    water: 0x292f31,
+    building: Object.freeze({
+      residential: 0x6f7871,
+      commercial: 0x838c84,
+      default: 0x606861
+    }),
+    obstacle: 0x202522,
+    crosswalk: 0x141816,
+    crosswalkStripe: 0x818982
+  })
+})
+
+export const TILE_TYPE_OVERLAY_SCHEME_OPTIONS = Object.freeze([
+  Object.freeze({ id: 'tileType', label: TILE_TYPE_OVERLAY_COLOR_SCHEMES.tileType.label }),
+  Object.freeze({ id: 'monochrome-light', label: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-light'].label }),
+  Object.freeze({ id: 'monochrome-dark', label: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-dark'].label })
 ])
 
 export const TILE_TYPE_OVERLAY_COLORS = Object.freeze({

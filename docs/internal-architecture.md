@@ -16,7 +16,7 @@ Startup follows this sequence:
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds simulation controls, the clock display, map texture rendering controls, a keyboard-controlled tile type overlay, and a cached overlay layer after its first build.
+9. `installDebugDashboard()` adds simulation controls, the clock display, map texture rendering controls, a keyboard-controlled tile overlay, and a cached overlay layer after its first build.
 10. `SimulationClock`, `createNpcSimulation()`, and `createCarSimulation()` create the clock and entity systems with their configured random sources, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
@@ -162,7 +162,7 @@ NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor 
 
 Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
 
-NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses COVID-like defaults: 48 world units of infection distance, `0.03` per-minute transmission probability, 5 days of incubation, 7 days infectious, and 90 days of recovered immunity.
+NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses defaults of 48 world units of infection distance, `0.03` per-minute transmission probability, 1 day of incubation, 7 days infectious, and 90 days of recovered immunity.
 
 Transmission indexes only infectious NPCs in a reusable world-space spatial hash sized from the infection distance. Susceptible NPCs check their own cell plus neighboring cells and then run exact squared-distance tests against the infectious candidates. This avoids an all-pairs contact scan at the 10,000-NPC dashboard limit. Infection randomness uses a dedicated seeded random stream derived from the NPC seed, so adding disease dynamics does not change movement or timetable repeatability.
 
@@ -214,11 +214,11 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, the tile type overlay, and an opacity slider for the tile overlay. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, the tile overlay, a color-scheme dropdown, and an opacity slider for the tile overlay. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
-The tile-type overlay paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
+The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
 
-The tile type overlay layer is built lazily the first time it is enabled. Visibility toggles only change layer visibility, while opacity changes rebuild the cached layer with the new fill alpha. The overlay builder uses the same 16x16 chunk pattern as the city renderer so large masks remain inspectable without covering NPCs.
+The tile overlay layer is built lazily the first time it is enabled. Visibility toggles only change layer visibility, while opacity and color-scheme changes rebuild the cached layer with the new fill styles. The overlay builder uses the same 16x16 chunk pattern as the city renderer so large masks remain inspectable without covering NPCs.
 
 ## Map Editor
 
@@ -283,7 +283,8 @@ window.citySim.centerCameraOnCity()
 window.citySim.setMapTextureEnabled(false)
 window.citySim.setMapTextureOpacity(0.45)
 window.citySim.dashboard.setOverlay('tileType', true)
-window.citySim.dashboard.setTileTypeOverlayOpacity(0.5)
+window.citySim.dashboard.setTileOverlayScheme('monochrome-dark')
+window.citySim.dashboard.setTileOverlayOpacity(0.5)
 ```
 
 ## Near-Term Extension Points

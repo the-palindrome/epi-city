@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TILE_TYPE_OVERLAY_COLORS } from '../core/constants.js'
+import {
+  TILE_TYPE_OVERLAY_COLOR_SCHEMES,
+  TILE_TYPE_OVERLAY_COLORS
+} from '../core/constants.js'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
 import { installDebugDashboard } from './dashboard.js'
 
@@ -250,6 +253,7 @@ describe('debug dashboard overlays', () => {
     const overlayToggle = findByDataset(dashboard.overlayElement, 'overlayToggle')
     const mapTextureToggle = findByDataset(dashboard.overlayElement, 'mapTextureToggle')
     const mapTextureOpacity = findByDataset(dashboard.overlayElement, 'mapTextureOpacity')
+    const tileOverlayScheme = findByDataset(dashboard.overlayElement, 'tileOverlayScheme')
 
     expect(title.className).toBe('dashboard-title')
     expect(title.textContent).toBe('rendering options')
@@ -260,6 +264,13 @@ describe('debug dashboard overlays', () => {
     expect(mapTextureOpacity.value).toBe('1')
     expect(overlayToggle).not.toBeNull()
     expect(overlayToggle.dataset.overlayToggle).toBe('tileType')
+    expect(overlayToggle.parentNode.children[1].textContent).toBe('tile overlay')
+    expect(tileOverlayScheme.value).toBe('tileType')
+    expect(tileOverlayScheme.children.map((option) => option.value)).toEqual([
+      'tileType',
+      'monochrome-light',
+      'monochrome-dark'
+    ])
     expect(findByDataset(dashboard.overlayElement, 'tileTypeOverlayOpacity')).not.toBeNull()
 
     dashboard.destroy()
@@ -332,7 +343,7 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('renders tile type overlay chunks at the z-order of their covered tiles', () => {
+  it('renders tile overlay chunks at the z-order of their covered tiles', () => {
     const entityLayer = createEntityLayer()
     const dashboard = installDebugDashboard(createCity(), entityLayer)
 
@@ -351,9 +362,10 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('colors tile type overlays by category, building type, and opacity', () => {
+  it('colors tile overlays by category, building type, and opacity', () => {
     const entityLayer = createEntityLayer()
     const dashboard = installDebugDashboard(createTileOverlayColorCity(), entityLayer)
+    const scheme = TILE_TYPE_OVERLAY_COLOR_SCHEMES.tileType
 
     dashboard.setOverlay('tileType', true)
 
@@ -361,26 +373,62 @@ describe('debug dashboard overlays', () => {
     const fillAt = (x, y) => fills.find((fill) => fill.x === x * 32 && fill.y === y * 32)
 
     expect(fillAt(0, 0)).toMatchObject({
-      color: TILE_TYPE_OVERLAY_COLORS.sidewalk,
+      color: scheme.sidewalk,
       alpha: TILE_TYPE_OVERLAY_COLORS.alpha
     })
     expect(fillAt(1, 0)).toMatchObject({
-      color: TILE_TYPE_OVERLAY_COLORS.road,
+      color: scheme.road,
       alpha: TILE_TYPE_OVERLAY_COLORS.alpha
     })
     expect(fillAt(2, 0)).toMatchObject({
-      color: TILE_TYPE_OVERLAY_COLORS.building.residential,
+      color: scheme.building.residential,
       alpha: TILE_TYPE_OVERLAY_COLORS.alpha
     })
     expect(fillAt(0, 1)).toMatchObject({
-      color: TILE_TYPE_OVERLAY_COLORS.building.commercial,
+      color: scheme.building.commercial,
       alpha: TILE_TYPE_OVERLAY_COLORS.alpha
     })
 
     dashboard.destroy()
   })
 
-  it('updates the tile type overlay opacity from the rendering options slider', () => {
+  it('updates tile overlay color scheme from the rendering options dropdown', () => {
+    const entityLayer = createEntityLayer()
+    const dashboard = installDebugDashboard(createTileOverlayColorCity(), entityLayer)
+    const schemeSelect = findByDataset(dashboard.overlayElement, 'tileOverlayScheme')
+
+    dashboard.setOverlay('tileType', true)
+    schemeSelect.value = 'monochrome-dark'
+    schemeSelect.eventListeners.change()
+
+    const darkFills = entityLayer.children.flatMap((child) => child.fills)
+    const darkFillAt = (x, y) => darkFills.find((fill) => fill.x === x * 32 && fill.y === y * 32)
+
+    expect(dashboard.rendering.tileOverlayScheme).toBe('monochrome-dark')
+    expect(darkFillAt(1, 0)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-dark'].road,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+    expect(darkFillAt(2, 0)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-dark'].building.residential,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+
+    dashboard.setTileOverlayScheme('monochrome-light')
+
+    const lightFills = entityLayer.children.flatMap((child) => child.fills)
+    const lightFillAt = (x, y) => lightFills.find((fill) => fill.x === x * 32 && fill.y === y * 32)
+
+    expect(schemeSelect.value).toBe('monochrome-light')
+    expect(lightFillAt(0, 0)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-light'].sidewalk,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+
+    dashboard.destroy()
+  })
+
+  it('updates the tile overlay opacity from the rendering options slider', () => {
     const entityLayer = createEntityLayer()
     const dashboard = installDebugDashboard(createTileOverlayColorCity(), entityLayer)
     const opacity = findByDataset(dashboard.overlayElement, 'tileTypeOverlayOpacity')
@@ -570,7 +618,6 @@ describe('debug dashboard overlays', () => {
       infectionDistanceRange: { min: 0, max: 256, step: 1 },
       infectionProbability: 0.03,
       infectionProbabilityRange: { min: 0, max: 1, step: 0.01 },
-      incubationDays: 5,
       incubationDaysRange: { min: 0, max: 14, step: 0.25 },
       infectionDays: 7,
       infectionDaysRange: { min: 0, max: 21, step: 0.25 },
@@ -610,7 +657,7 @@ describe('debug dashboard overlays', () => {
     expect(initialInfectiousCount.value).toBe('4')
     expect(distance.value).toBe('48')
     expect(probability.value).toBe('0.03')
-    expect(incubationDays.value).toBe('5')
+    expect(incubationDays.value).toBe('1')
     expect(infectionDays.value).toBe('7')
     expect(immunityDays.value).toBe('90')
 
