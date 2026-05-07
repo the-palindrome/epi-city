@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js'
 import { PIXEL_ART_SCALE_MODE, TEXTURE_SET_PATHS } from '../core/constants.js'
 import { validateTextureManifest } from './texture-manifest.js'
+import { applyNearestSampling } from './texture-sampling.js'
 
 export function configurePixelArtRendering() {
   if (PIXI.TextureStyle && PIXI.TextureStyle.defaultOptions) {
@@ -13,24 +14,6 @@ export function configurePixelArtRendering() {
   if (PIXI.TextureSource && PIXI.TextureSource.defaultOptions) {
     PIXI.TextureSource.defaultOptions.scaleMode = PIXEL_ART_SCALE_MODE
     PIXI.TextureSource.defaultOptions.autoGenerateMipmaps = false
-  }
-}
-
-export function applyNearestSampling(texture) {
-  const source = texture && texture.source
-
-  if (!source) {
-    return
-  }
-
-  source.scaleMode = PIXEL_ART_SCALE_MODE
-  source.magFilter = PIXEL_ART_SCALE_MODE
-  source.minFilter = PIXEL_ART_SCALE_MODE
-  source.mipmapFilter = PIXEL_ART_SCALE_MODE
-  source.autoGenerateMipmaps = false
-
-  if (source.style && typeof source.style.update === 'function') {
-    source.style.update()
   }
 }
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { CAR_CONFIG, NPC_CONFIG } from '../core/constants.js'
-import { drawCarSprite, getCarSpriteMetrics } from './car-sprite.js'
+import { CAR_CONFIG, INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
+import {
+  createCarSpriteRenderer,
+  drawCarSprite,
+  getCarPassengerInfectionColor,
+  getCarSpriteMetrics
+} from './car-sprite.js'
 
 function createGraphics() {
   return {
@@ -10,6 +15,87 @@ function createGraphics() {
         fill: (options) => {
           this.fills.push({ x, y, width, height, ...options })
         }
+      }
+    }
+  }
+}
+
+function createRenderModePixi() {
+  return {
+    Container: class {
+      constructor() {
+        this.children = []
+        this.visible = true
+      }
+
+      addChild(child) {
+        this.children.push(child)
+        child.parent = this
+      }
+
+      removeChild(child) {
+        this.children = this.children.filter((item) => item !== child)
+        child.parent = null
+      }
+
+      destroy() {
+        this.destroyed = true
+      }
+    },
+    Sprite: class {
+      constructor() {
+        this.anchor = {
+          set: (value) => {
+            this.anchorValue = value
+          }
+        }
+        this.visible = false
+      }
+
+      destroy() {
+        this.destroyed = true
+      }
+    },
+    Graphics: class {
+      constructor() {
+        this.fills = []
+        this.strokes = []
+        this.path = []
+        this.visible = true
+      }
+
+      clear() {
+        this.fills = []
+        this.strokes = []
+        this.path = []
+      }
+
+      rect(x, y, width, height) {
+        return {
+          fill: (style) => {
+            this.fills.push({ x, y, width, height, ...style })
+          }
+        }
+      }
+
+      moveTo(x, y) {
+        this.path.push({ type: 'moveTo', x, y })
+        return this
+      }
+
+      lineTo(x, y) {
+        this.path.push({ type: 'lineTo', x, y })
+        return this
+      }
+
+      stroke(style) {
+        this.strokes.push({ path: [...this.path], ...style })
+        this.path = []
+        return this
+      }
+
+      destroy() {
+        this.destroyed = true
       }
     }
   }
@@ -132,5 +218,113 @@ describe('car sprite rendering', () => {
     expect(long.width).toBeGreaterThan(short.width + 8)
     expect(short.width).toBeLessThan(city.tileSize * 2 * 0.82)
     expect(long.width).toBeLessThan(city.tileSize * 3 * 0.82)
+  })
+
+  it('switches to geometric rectangles colored by passenger infection state', () => {
+    const cars = [
+      {
+        id: 5,
+        color: 0x3f6fd8,
+        lengthTiles: 2,
+        direction: { dx: 1, dy: 0 },
+        position: { x: 96, y: 64 },
+        riderOwners: [
+          { npc: { infection: 'infectious' } }
+        ]
+      }
+    ]
+    const renderer = createCarSpriteRenderer(cars, city, {
+      ...CAR_CONFIG,
+      entityRenderMode: 'geometric'
+    }, {
+      pixi: createRenderModePixi(),
+      textureFactory: () => ({ texture: true })
+    })
+
+    renderer.render()
+
+    const spriteDisplay = renderer.display.children[0]
+    const geometricDisplay = renderer.display.children[1]
+
+    expect(renderer.renderMode).toBe('geometric')
+    expect(spriteDisplay.visible).toBe(false)
+    expect(geometricDisplay.visible).toBe(true)
+    expect(geometricDisplay.fills).toEqual([
+      expect.objectContaining({
+        color: INFECTION_CONFIG.colors.infectious,
+        alpha: 1
+      })
+    ])
+
+    renderer.setRenderMode('sprite')
+    renderer.render()
+
+    expect(renderer.renderMode).toBe('sprite')
+    expect(spriteDisplay.visible).toBe(true)
+    expect(geometricDisplay.visible).toBe(false)
+    expect(renderer.sprites).toHaveLength(1)
+
+    renderer.destroy()
+  })
+
+  it('uses the highest priority passenger infection for geometric car color', () => {
+    const car = {
+      color: 0x55b86b,
+      riderOwners: [
+        { npc: { infection: 'susceptible' } },
+        { npc: { infection: 'exposed' } },
+        { npc: { infection: 'recovered' } }
+      ]
+    }
+
+    expect(getCarPassengerInfectionColor(car)).toBe(INFECTION_CONFIG.colors.exposed)
+    expect(getCarPassengerInfectionColor({ color: 0x123456, riderOwners: [] })).toBe(0x123456)
+  })
+
+  it('draws car path trails in the debug overlay', () => {
+    const cars = [
+      {
+        id: 6,
+        color: 0x3f6fd8,
+        lengthTiles: 2,
+        direction: { dx: 1, dy: 0 },
+        position: { x: 96, y: 64 },
+        riderOwners: [
+          { npc: { infection: 'infectious' } }
+        ]
+      }
+    ]
+    const renderer = createCarSpriteRenderer(cars, city, CAR_CONFIG, {
+      pixi: createRenderModePixi(),
+      textureFactory: () => ({ texture: true }),
+      entityDebugOptions: {
+        pathTrailsVisible: true,
+        pathTrailLength: 2
+      }
+    })
+
+    renderer.render()
+    cars[0].position = { x: 112, y: 64 }
+    renderer.render()
+
+    const overlay = renderer.display.children[2]
+
+    expect(overlay.strokes).toEqual([
+      expect.objectContaining({
+        color: INFECTION_CONFIG.colors.infectious,
+        alpha: 0.5
+      })
+    ])
+    expect(overlay.strokes[0].path).toEqual([
+      { type: 'moveTo', x: 96, y: 64 },
+      { type: 'lineTo', x: 112, y: 64 }
+    ])
+
+    renderer.setDebugOptions({ pathTrailsVisible: false })
+    renderer.render()
+
+    expect(overlay.strokes).toEqual([])
+
+    renderer.destroy()
   })
 })

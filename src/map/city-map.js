@@ -826,18 +826,18 @@ export function compileCityMap(data) {
       endIndex,
       movementCacheKey: stepMasks.cacheKey,
       nextDirection: field.nextDirection,
+      nextIndex: field.nextIndex,
       offsets: navigation.offsets
     }
   }
 
   function getRouteFieldNextIndex(field, fromIndex) {
-    if (!field || fromIndex === field.endIndex) {
+    if (!field) {
       return -1
     }
 
-    const directionIndex = field.nextDirection[fromIndex]
-
-    return directionIndex <= 7 ? fromIndex + field.offsets[directionIndex] : -1
+    const nextIndex = field.nextIndex[fromIndex]
+    return nextIndex === undefined ? -1 : nextIndex
   }
 
   return {
@@ -1125,8 +1125,7 @@ function createNavigationData(cacheKey, width, height, tileWalkable, tileDrivabl
       layer: tileWalkable,
       tileCrosswalk,
       property: 'walkable',
-      signalState,
-      offsets
+      signalState
     })
   }
 
@@ -1140,8 +1139,7 @@ function createNavigationData(cacheKey, width, height, tileWalkable, tileDrivabl
       layer: tileDrivable,
       tileCrosswalk,
       property: 'drivable',
-      signalState: null,
-      offsets
+      signalState: null
     }),
     routeFields: createRouteFieldCache(length, offsets)
   }
@@ -1277,10 +1275,12 @@ function createRouteFieldCache(length, offsets) {
 
 function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
   const nextDirection = new Uint8Array(length)
+  const nextIndex = new Int32Array(length)
   const runId = beginSearchRun(scratch)
   const { open, closedRuns, scoreRuns, gScore } = scratch
 
   nextDirection.fill(255)
+  nextIndex.fill(-1)
   open.clear()
   gScore[endIndex] = 0
   scoreRuns[endIndex] = runId
@@ -1315,6 +1315,7 @@ function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
         gScore[previousIndex] = tentativeScore
         scoreRuns[previousIndex] = runId
         nextDirection[previousIndex] = OPPOSITE_DIRECTION[directionIndex]
+        nextIndex[previousIndex] = currentIndex
         open.push(previousIndex, tentativeScore)
       }
     }
@@ -1322,6 +1323,7 @@ function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {
 
   return {
     nextDirection,
+    nextIndex,
     pathsByStart: new Map()
   }
 }

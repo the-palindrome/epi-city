@@ -16,7 +16,7 @@ Startup follows this sequence:
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds simulation controls, the clock display, keyboard-controlled behavior overlays for movement debugging, and cached overlay layers after their first build.
+9. `installDebugDashboard()` adds simulation controls, the clock display, map texture rendering controls, graphing controls, keyboard-controlled overlays, and cached overlay layers after their first build.
 10. `SimulationClock`, `createNpcSimulation()`, and `createCarSimulation()` create the clock and entity systems with their configured random sources, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
@@ -162,9 +162,11 @@ NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor 
 
 Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
 
-NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses COVID-like defaults: 48 world units of infection distance, `0.03` per-minute transmission probability, 5 days of incubation, 7 days infectious, and 90 days of recovered immunity.
+NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses defaults of 48 world units of infection distance, `0.03` per-minute transmission probability, 1 day of incubation, 7 days infectious, and 90 days of recovered immunity.
 
 Transmission indexes only infectious NPCs in a reusable world-space spatial hash sized from the infection distance. Susceptible NPCs check their own cell plus neighboring cells and then run exact squared-distance tests against the infectious candidates. This avoids an all-pairs contact scan at the 10,000-NPC dashboard limit. Infection randomness uses a dedicated seeded random stream derived from the NPC seed, so adding disease dynamics does not change movement or timetable repeatability.
+
+Successful transmissions append compact source/target snapshots to a bounded recent-event buffer. Contact tracing records recent close-contact pairs only while the contact-edge overlay is enabled, so normal simulation updates avoid the all-contact proximity scan. Old contact events are pruned after the configured edge display window.
 
 ## Car Simulation
 
@@ -204,7 +206,7 @@ The extraction script checks every map cell against the original image. Each `te
 
 ## Rendering Strategy
 
-The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC and car graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below entities while building overlays stay above building tiles.
+The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC and car graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, SEIR heatmaps render at `zorder: 2.5`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below entities while building overlays stay above building tiles.
 
 `renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
 
@@ -212,13 +214,19 @@ Pixi automatic rendering is disabled during app initialization. The app-level `G
 
 The source texture set is extracted from `process_gta_map/source/gta1-liberty-city-hd.webp` by `process_gta_map/build-gta-tilemap.py`. The checked-in default runtime assets live in `public/maps/liberty-city` so Vite can serve them directly. See `process_gta_map/README.md` for the reproducible import flow.
 
-## Debug Dashboard
+## Debug Dashboards
 
-Press `Space` to play or pause the simulation, and press `d` to toggle the top-right debug dashboard. The dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, exposes infection parameters including the initial infected count, and includes a tile-type overlay plus `walkable`, `parkable`, and `drivable` overlays backed by the runtime typed arrays. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer. Behavior overlays paint green over tiles where the selected behavior is enabled and red over tiles where it is disabled.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, entity debug overlays, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. The bottom-left epidemic graph samples S/E/I/R counts against simulation time, has one visibility tickbox per state, labels the time and case axes, can be resized, and lets users drag to pan or wheel to zoom the time axis while the case axis auto-fits visible data. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
-The tile-type overlay paints semantic categories with fixed debug colors: sidewalk gray, road asphalt black, crosswalk road black with white strips, park green, water blue, building slate, and obstacle red.
+Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car sprites. `geometric` draws NPCs as disks colored by infection state and cars as rectangles colored by the highest-priority infection state among passengers currently inside the car; empty cars keep their normal car color.
 
-Each debug overlay layer is built lazily the first time it is enabled, then later toggles only change layer visibility. The overlay builders use the same 16x16 chunk pattern as the city renderer so large behavior masks remain inspectable without covering NPCs.
+Entity debug overlays share the entity renderer pass and are only drawn when enabled. Infection radius renders outline-only circles around infectious NPCs, infection arrows reuse recorded transmission events from the infection dynamics, contact edges show close-contact pairs from their own contact edge window, and path trails keep a bounded in-memory position history per visible NPC or car. Infection arrows render above contact edges; infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp to 1-120 game minutes. Path trails clamp to 1-100 past steps.
+
+The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
+
+The tile overlay layer is built lazily the first time it is enabled. Visibility toggles only change layer visibility, while opacity and color-scheme changes rebuild the cached layer with the new fill styles. The overlay builder uses the same 16x16 chunk pattern as the city renderer so large masks remain inspectable without covering NPCs.
+
+SEIR heatmaps are built only while their overlay checkbox is enabled. Each active heatmap runs a compact-support kernel density estimate against the current NPC positions for one infection state, reuses one Pixi graphics object per state, and redraws during dashboard rendering so moving NPCs and infection transitions stay current. The density work is clipped to tiles inside the kernel radius around each matching NPC, and NPCs on vehicle trips or without finite positions are skipped.
 
 ## Map Editor
 
@@ -272,6 +280,15 @@ window.citySim.setCarCount(250)
 window.citySim.setInitialInfectiousCount(10)
 window.citySim.npcSimulation.infection.getStats()
 window.citySim.setDayNightOverlayEnabled(false)
+window.citySim.setEntityRenderMode('geometric')
+window.citySim.setInfectionRadiusVisible(true)
+window.citySim.setInfectionEdgesVisible(true)
+window.citySim.setContactEdgesVisible(true)
+window.citySim.setInfectionEdgeDuration(10)
+window.citySim.setContactEdgeDuration(10)
+window.citySim.setPathTrailsVisible(true)
+window.citySim.setPathTrailLength(5)
+window.citySim.setHeatmapRadius(128)
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt
 window.citySim.npcs[0].home
@@ -280,7 +297,18 @@ window.citySim.npcs[0].timetable.elements
 window.citySim.npcs[0].position
 window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()
-window.citySim.dashboard.setOverlay('walkable', true)
+window.citySim.setMapTextureEnabled(false)
+window.citySim.setMapTextureOpacity(0.45)
+window.citySim.dashboard.setInfectionRadiusVisible(true)
+window.citySim.dashboard.setInfectionEdgesVisible(true)
+window.citySim.dashboard.setContactEdgesVisible(true)
+window.citySim.dashboard.setInfectionEdgeDuration(10)
+window.citySim.dashboard.setContactEdgeDuration(10)
+window.citySim.dashboard.setPathTrailsVisible(true)
+window.citySim.dashboard.setPathTrailLength(5)
+window.citySim.dashboard.setOverlay('tileType', true)
+window.citySim.dashboard.setTileOverlayScheme('monochrome-dark')
+window.citySim.dashboard.setTileOverlayOpacity(0.5)
 ```
 
 ## Near-Term Extension Points

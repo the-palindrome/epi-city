@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createNpcSpriteState,
   drawNpcSprite,
+  faceNpcSprite,
   getNpcSpriteFrame,
   idleNpcSprite,
   NPC_SPRITE_FRAME_DISTANCE,
@@ -189,6 +190,28 @@ describe('NPC sprite rendering', () => {
     expect(npcSpriteFacingFromVector(0.1, 1)).toBe('south')
     expect(npcSpriteFacingFromVector(0.1, -1)).toBe('north')
     expect(npcSpriteFacingFromVector(0, 0)).toBeNull()
+  })
+
+  it('keeps a stable facing during near-diagonal movement jitter', () => {
+    const npc = {
+      id: 0,
+      sprite: {
+        ...createNpcSpriteState(0),
+        facing: 'east'
+      }
+    }
+
+    faceNpcSprite(npc, 0.71, 0.7)
+    expect(npc.sprite.facing).toBe('east')
+
+    faceNpcSprite(npc, 0.69, 0.72)
+    expect(npc.sprite.facing).toBe('east')
+
+    faceNpcSprite(npc, 0.45, 0.89)
+    expect(npc.sprite.facing).toBe('south')
+
+    faceNpcSprite(npc, -0.89, 0.45)
+    expect(npc.sprite.facing).toBe('west')
   })
 
   it('advances walking frames by movement distance and idles on demand', () => {

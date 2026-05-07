@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
+import { ENTITY_RENDER_DEBUG_CONFIG, INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
 import { hourInRange, normalizeHour } from '../core/time.js'
 import { createNpcSpriteRenderer } from '../render/npc-sprite-renderer.js'
@@ -9,6 +9,7 @@ import {
   idleNpcSprite,
   stepNpcSpriteAnimation
 } from '../render/npc-sprite.js'
+import { toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -16,6 +17,9 @@ const STATIC_CLOCK = Object.freeze({
 const SECONDS_PER_MINUTE = 60
 const SECONDS_PER_HOUR = 3600
 const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
+const MAX_TRANSMISSION_EVENTS = 1024
+const MAX_TRANSMISSION_EVENT_AGE_SECONDS = 2 * SECONDS_PER_HOUR
+const DEFAULT_CONTACT_EVENT_RETENTION_SECONDS = ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationMinutes * SECONDS_PER_MINUTE
 const MIN_INFECTION_GRID_CELL_SIZE = 8
 const INFECTION_STATE_IDS = Object.freeze({
   susceptible: 0,
@@ -57,6 +61,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     config
   }
   let destroyed = false
+  let entityDebugOptions = { ...(config.entityDebugOptions || {}) }
 
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
@@ -86,14 +91,23 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
 
   const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
+  infection.setContactTracingEnabled(
+    Boolean(entityDebugOptions.contactEdgesVisible),
+    entityDebugOptions.contactEdgeDurationSeconds
+  )
   const npcRenderer = createNpcSpriteRenderer(npcs, city, config, infection, {
     pixi: PIXI,
     visibleTileCounts,
-    visibleTileIndexes
+    visibleTileIndexes,
+    clock,
+    getContactEvents: (options) => infection.getRecentContactEvents(options),
+    getTransmissionEvents: (options) => infection.getRecentTransmissionEvents(options),
+    entityDebugOptions
   })
-  const graphics = npcRenderer.display
+  const display = npcRenderer.display
+  const graphics = npcRenderer.spriteDisplay || display
 
-  entityLayer.addChild(graphics)
+  entityLayer.addChild(display)
 
   function update(deltaSeconds) {
     if (destroyed) {
@@ -101,7 +115,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
 
     const safeDelta = Math.min(Math.max(deltaSeconds, 0), 0.1)
-    const movementDelta = getSimulationDeltaSeconds(clock, safeDelta)
+    const movementDelta = toSimulationSeconds(clock, safeDelta)
     const timeOfDayHours = clock.getTimeOfDayHours()
 
     for (const npc of npcs) {
@@ -129,6 +143,26 @@ export function createNpcSimulation(city, entityLayer, config) {
     npcRenderer.render(npcs, infection)
   }
 
+  function setEntityRenderMode(mode) {
+    if (typeof npcRenderer.setRenderMode === 'function') {
+      npcRenderer.setRenderMode(mode)
+      render()
+    }
+  }
+
+  function setEntityDebugOptions(options) {
+    entityDebugOptions = {
+      ...entityDebugOptions,
+      ...(options || {})
+    }
+    infection.setContactTracingEnabled(Boolean(entityDebugOptions.contactEdgesVisible), entityDebugOptions.contactEdgeDurationSeconds)
+
+    if (typeof npcRenderer.setDebugOptions === 'function') {
+      npcRenderer.setDebugOptions(options)
+      render()
+    }
+  }
+
   render()
 
   return {
@@ -139,6 +173,8 @@ export function createNpcSimulation(city, entityLayer, config) {
     graphics,
     update,
     render,
+    setEntityRenderMode,
+    setEntityDebugOptions,
     destroy() {
       destroyed = true
 
@@ -159,7 +195,7 @@ class NpcEntity {
     this.locationState = locationState
     this.position = { x: position.x, y: position.y }
     this.tile = { x: tile.x, y: tile.y, index: tile.index }
-    this.slot = { id: slot.id, index: slot.index }
+    this.slot = { id: slot.id }
     this.movement = {
       speed: random.between(config.minSpeed, config.maxSpeed),
       target: null,
@@ -250,7 +286,7 @@ class NpcEntity {
     }
     this.position = tileCenterPosition(city, location.x, location.y)
     this.tile = { ...location }
-    this.slot = { id: -1, index: -1 }
+    this.slot = { id: -1 }
     this.movement.target = null
     clearNpcMovementHeading(this)
     idleNpcSprite(this)
@@ -346,6 +382,14 @@ class NpcInfectionDynamics {
     this.gridStamps = new Uint32Array(this.gridHeads.length)
     this.gridNext = new Int32Array(npcs.length)
     this.gridStamp = 0
+    this.elapsedSimulationSeconds = 0
+    this.transmissionEvents = []
+    this.contactEvents = []
+    this.contactEventsByPair = new Map()
+    this.nextTransmissionEventId = 1
+    this.nextContactEventId = 1
+    this.contactTracingEnabled = false
+    this.contactEventRetentionSeconds = DEFAULT_CONTACT_EVENT_RETENTION_SECONDS
 
     this.counts[INFECTION_STATE_IDS.susceptible] = npcs.length
 
@@ -357,14 +401,18 @@ class NpcInfectionDynamics {
   }
 
   update(deltaSeconds) {
-    const simulationDeltaSeconds = getSimulationDeltaSeconds(this.clock, deltaSeconds)
+    const simulationDeltaSeconds = toSimulationSeconds(this.clock, deltaSeconds)
 
     if (!Number.isFinite(simulationDeltaSeconds) || simulationDeltaSeconds <= 0) {
       return
     }
 
+    this.elapsedSimulationSeconds += simulationDeltaSeconds
     this.advanceTimers(simulationDeltaSeconds)
+    this.recordRecentContacts()
     this.transmit(simulationDeltaSeconds)
+    this.pruneTransmissionEvents(this.getElapsedSimulationSeconds() - MAX_TRANSMISSION_EVENT_AGE_SECONDS)
+    this.pruneContactEvents(this.getElapsedSimulationSeconds() - this.contactEventRetentionSeconds)
   }
 
   getStats() {
@@ -373,6 +421,53 @@ class NpcInfectionDynamics {
       exposed: this.counts[INFECTION_STATE_IDS.exposed],
       infectious: this.counts[INFECTION_STATE_IDS.infectious],
       recovered: this.counts[INFECTION_STATE_IDS.recovered]
+    }
+  }
+
+  getRecentTransmissionEvents(options = {}) {
+    const sinceId = Number(options.sinceId)
+    const maxAgeSeconds = Number(options.maxAgeSeconds)
+    const minId = Number.isFinite(sinceId) ? sinceId : 0
+    const minSeconds = Number.isFinite(maxAgeSeconds)
+      ? this.getElapsedSimulationSeconds() - Math.max(0, maxAgeSeconds)
+      : -Infinity
+
+    return this.transmissionEvents
+      .filter((event) => event.id > minId && event.simulationSeconds >= minSeconds)
+      .map(cloneTransmissionEvent)
+  }
+
+  getRecentContactEvents(options = {}) {
+    const sinceId = Number(options.sinceId)
+    const maxAgeSeconds = Number(options.maxAgeSeconds)
+    const minId = Number.isFinite(sinceId) ? sinceId : 0
+    const minSeconds = Number.isFinite(maxAgeSeconds)
+      ? this.getElapsedSimulationSeconds() - Math.max(0, maxAgeSeconds)
+      : -Infinity
+
+    return this.contactEvents
+      .filter((event) => event.id > minId && event.simulationSeconds >= minSeconds)
+      .map(cloneContactEvent)
+  }
+
+  clearTransmissionEvents() {
+    this.transmissionEvents.length = 0
+  }
+
+  clearContactEvents() {
+    this.contactEvents.length = 0
+    this.contactEventsByPair.clear()
+  }
+
+  setContactTracingEnabled(enabled, retentionSeconds = null) {
+    this.contactTracingEnabled = Boolean(enabled)
+
+    if (Number.isFinite(Number(retentionSeconds)) && Number(retentionSeconds) > 0) {
+      this.contactEventRetentionSeconds = Number(retentionSeconds)
+    }
+
+    if (!this.contactTracingEnabled) {
+      this.clearContactEvents()
     }
   }
 
@@ -417,6 +512,106 @@ class NpcInfectionDynamics {
     }
 
     this.setStateByIndex(index, state, timerSeconds ?? this.getDefaultTimerSeconds(state))
+  }
+
+  getElapsedSimulationSeconds() {
+    if (this.clock && typeof this.clock.getElapsedSimulationSeconds === 'function') {
+      const seconds = this.clock.getElapsedSimulationSeconds()
+
+      if (Number.isFinite(seconds)) {
+        return seconds
+      }
+    }
+
+    return this.elapsedSimulationSeconds
+  }
+
+  recordTransmissionEvent(sourceNpc, targetNpc, dx, dy) {
+    const event = {
+      id: this.nextTransmissionEventId,
+      simulationSeconds: this.getElapsedSimulationSeconds(),
+      sourceNpcId: sourceNpc.id,
+      targetNpcId: targetNpc.id,
+      sourcePosition: clonePosition(sourceNpc.position),
+      targetPosition: clonePosition(targetNpc.position),
+      sourceTile: cloneTile(sourceNpc.tile),
+      targetTile: cloneTile(targetNpc.tile),
+      distance: Math.hypot(dx, dy),
+      targetState: 'exposed'
+    }
+
+    this.nextTransmissionEventId += 1
+    this.transmissionEvents.push(event)
+
+    if (this.transmissionEvents.length > MAX_TRANSMISSION_EVENTS) {
+      this.transmissionEvents.splice(0, this.transmissionEvents.length - MAX_TRANSMISSION_EVENTS)
+    }
+  }
+
+  recordContactEvent(sourceNpc, targetNpc, dx, dy) {
+    const pairKey = contactPairKey(sourceNpc.id, targetNpc.id)
+    const existing = this.contactEventsByPair.get(pairKey)
+    const event = existing || {
+      id: this.nextContactEventId,
+      sourceNpcId: Math.min(sourceNpc.id, targetNpc.id),
+      targetNpcId: Math.max(sourceNpc.id, targetNpc.id)
+    }
+    const source = sourceNpc.id === event.sourceNpcId ? sourceNpc : targetNpc
+    const target = targetNpc.id === event.targetNpcId ? targetNpc : sourceNpc
+
+    event.simulationSeconds = this.getElapsedSimulationSeconds()
+    event.sourcePosition = clonePosition(source.position)
+    event.targetPosition = clonePosition(target.position)
+    event.sourceTile = cloneTile(source.tile)
+    event.targetTile = cloneTile(target.tile)
+    event.distance = Math.hypot(dx, dy)
+
+    if (!existing) {
+      this.nextContactEventId += 1
+      this.contactEvents.push(event)
+      this.contactEventsByPair.set(pairKey, event)
+    }
+  }
+
+  pruneTransmissionEvents(minSimulationSeconds) {
+    if (!Number.isFinite(minSimulationSeconds)) {
+      return
+    }
+
+    let firstKept = 0
+
+    while (
+      firstKept < this.transmissionEvents.length &&
+      this.transmissionEvents[firstKept].simulationSeconds < minSimulationSeconds
+    ) {
+      firstKept += 1
+    }
+
+    if (firstKept > 0) {
+      this.transmissionEvents.splice(0, firstKept)
+    }
+  }
+
+  pruneContactEvents(minSimulationSeconds) {
+    if (!Number.isFinite(minSimulationSeconds) || this.contactEvents.length === 0) {
+      return
+    }
+
+    let writeIndex = 0
+
+    for (let index = 0; index < this.contactEvents.length; index += 1) {
+      const event = this.contactEvents[index]
+
+      if (event.simulationSeconds < minSimulationSeconds) {
+        this.contactEventsByPair.delete(contactPairKey(event.sourceNpcId, event.targetNpcId))
+        continue
+      }
+
+      this.contactEvents[writeIndex] = event
+      writeIndex += 1
+    }
+
+    this.contactEvents.length = writeIndex
   }
 
   seedInitialInfections(initialInfectiousCount) {
@@ -540,12 +735,73 @@ class NpcInfectionDynamics {
             }
 
             if (this.random.next() < transmissionProbability) {
+              this.recordTransmissionEvent(infectiousNpc, npc, dx, dy)
               this.setStateByIndex(index, INFECTION_STATE_IDS.exposed, this.incubationSeconds)
               continue susceptibleLoop
             }
           }
         }
       }
+    }
+  }
+
+  recordRecentContacts() {
+    if (!this.contactTracingEnabled || this.infectionDistance <= 0) {
+      return
+    }
+
+    this.gridStamp += 1
+
+    if (this.gridStamp === 0) {
+      this.gridStamps.fill(0)
+      this.gridStamp = 1
+    }
+
+    const infectionDistanceSquared = this.infectionDistance * this.infectionDistance
+
+    for (let index = 0; index < this.npcs.length; index += 1) {
+      const npc = this.npcs[index]
+
+      if (!canParticipateInInfection(npc)) {
+        continue
+      }
+
+      const cellX = this.cellXAt(npc.position.x)
+      const cellY = this.cellYAt(npc.position.y)
+
+      if (cellX < 0 || cellY < 0) {
+        continue
+      }
+
+      for (let neighborY = Math.max(0, cellY - 1); neighborY <= Math.min(this.gridRows - 1, cellY + 1); neighborY += 1) {
+        for (let neighborX = Math.max(0, cellX - 1); neighborX <= Math.min(this.gridColumns - 1, cellX + 1); neighborX += 1) {
+          const cellIndex = neighborY * this.gridColumns + neighborX
+
+          if (this.gridStamps[cellIndex] !== this.gridStamp) {
+            continue
+          }
+
+          for (let otherIndex = this.gridHeads[cellIndex]; otherIndex !== -1; otherIndex = this.gridNext[otherIndex]) {
+            const otherNpc = this.npcs[otherIndex]
+            const dx = otherNpc.position.x - npc.position.x
+            const dy = otherNpc.position.y - npc.position.y
+
+            if (dx * dx + dy * dy <= infectionDistanceSquared) {
+              this.recordContactEvent(otherNpc, npc, dx, dy)
+            }
+          }
+        }
+      }
+
+      const cellIndex = cellY * this.gridColumns + cellX
+
+      if (this.gridStamps[cellIndex] !== this.gridStamp) {
+        this.gridStamps[cellIndex] = this.gridStamp
+        this.gridHeads[cellIndex] = -1
+      }
+
+      this.gridNext[index] = this.gridHeads[cellIndex]
+      this.gridHeads[cellIndex] = index
     }
   }
 
@@ -738,7 +994,7 @@ function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config,
       present: false,
       position: tileCenterPosition(city, activeElement.location.x, activeElement.location.y),
       tile: { ...activeElement.location },
-      slot: { id: -1, index: -1 },
+      slot: { id: -1 },
       locationState: {
         timetableElementId: activeElement.id,
         buildingId: activeElement.buildingId,
@@ -759,9 +1015,9 @@ function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config,
 
   return {
     present: true,
-    position: tileSlotPosition(city, tileX, tileY, slot, config, slotOffsets),
+    position: tileSlotPosition(city, tileX, tileY, slot, slotOffsets),
     tile: { x: tileX, y: tileY, index: tileIndex },
-    slot: { id: slot, index: -1 },
+    slot: { id: slot },
     locationState: null
   }
 }
@@ -896,7 +1152,6 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
     npc.tile.y = target.tile.y
     npc.tile.index = target.tile.index
     npc.slot.id = target.slot.id
-    npc.slot.index = target.slot.index
     setNpcMovementHeading(npc, target.endDirectionX, target.endDirectionY)
     npc.movement.target = null
     return
@@ -949,7 +1204,7 @@ function followRoute(npc, deltaSeconds, context) {
 }
 
 function nextRouteTileIndex(npc, context) {
-  return routeFieldNextIndex(npc.routing.routeField, npc.tile.index)
+  return context.city.getRouteFieldNextIndex(npc.routing.routeField, npc.tile.index)
 }
 
 function areNeighborTileIndexes(city, fromIndex, toIndex) {
@@ -968,7 +1223,7 @@ function areNeighborTileIndexes(city, fromIndex, toIndex) {
 
 function planRouteForNpc(npc, context) {
   const routeField = context.city.getCachedRouteFieldByIndex(npc.goal.location.index, 'pedestrian')
-  const nextIndex = routeFieldNextIndex(routeField, npc.tile.index)
+  const nextIndex = context.city.getRouteFieldNextIndex(routeField, npc.tile.index)
 
   if (!routeField || (npc.tile.index !== npc.goal.location.index && nextIndex === -1)) {
     npc.routing.routeField = null
@@ -981,16 +1236,6 @@ function planRouteForNpc(npc, context) {
   npc.routing.destinationIndex = npc.goal.location.index
   npc.routing.retrySeconds = 0
   npc.routing.blockedSeconds = 0
-}
-
-function routeFieldNextIndex(field, fromIndex) {
-  if (!field || fromIndex === field.endIndex) {
-    return -1
-  }
-
-  const directionIndex = field.nextDirection[fromIndex]
-
-  return directionIndex <= 7 ? fromIndex + field.offsets[directionIndex] : -1
 }
 
 function tryStartMoveToIndex(npc, targetIndex, context) {
@@ -1017,13 +1262,12 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
 
   const target = targetSlot.unlimited
     ? tileCenterPosition(city, tileX, tileY)
-    : tileSlotPosition(city, tileX, tileY, targetSlot.slot, config, context.slotOffsets)
+    : tileSlotPosition(city, tileX, tileY, targetSlot.slot, context.slotOffsets)
   const movementTarget = createNpcMovementTarget(npc, target, {
     tileX,
     tileY,
     targetIndex,
-    slot: targetSlot.slot,
-    slotIndex: targetSlot.slotIndex
+    slot: targetSlot.slot
   }, context)
 
   npc.movement.target = movementTarget
@@ -1059,8 +1303,7 @@ function createNpcMovementTarget(npc, target, targetState, context) {
       index: targetState.targetIndex
     },
     slot: {
-      id: targetState.slot,
-      index: targetState.slotIndex
+      id: targetState.slot
     }
   }
 }
@@ -1220,7 +1463,7 @@ function tryExitCurrentLocation(npc, context) {
 
   const position = targetSlot.unlimited
     ? tileCenterPosition(context.city, location.x, location.y)
-    : tileSlotPosition(context.city, location.x, location.y, targetSlot.slot, context.config, context.slotOffsets)
+    : tileSlotPosition(context.city, location.x, location.y, targetSlot.slot, context.slotOffsets)
 
   npc.present = true
   npc.locationState = null
@@ -1230,7 +1473,6 @@ function tryExitCurrentLocation(npc, context) {
   npc.tile.y = location.y
   npc.tile.index = location.index
   npc.slot.id = targetSlot.slot
-  npc.slot.index = targetSlot.slotIndex
   clearNpcMovementHeading(npc)
   idleNpcSprite(npc)
 
@@ -1250,7 +1492,7 @@ function enterGoalLocation(npc, context) {
   }
   npc.position = tileCenterPosition(context.city, npc.goal.location.x, npc.goal.location.y)
   npc.tile = { ...npc.goal.location }
-  npc.slot = { id: -1, index: -1 }
+  npc.slot = { id: -1 }
   npc.movement.target = null
   clearNpcMovementHeading(npc)
   idleNpcSprite(npc)
@@ -1259,14 +1501,14 @@ function enterGoalLocation(npc, context) {
 
 function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
-    return { slot: -1, slotIndex: -1, unlimited: true }
+    return { slot: -1, unlimited: true }
   }
 
   if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
-    return { slot: preferredSlot, slotIndex: -1, unlimited: false }
+    return { slot: preferredSlot, unlimited: false }
   }
 
-  return { slot: random.int(tileCapacity), slotIndex: -1, unlimited: false }
+  return { slot: random.int(tileCapacity), unlimited: false }
 }
 
 function createNpcSlotOffsets(city, config) {
@@ -1293,33 +1535,14 @@ function createNpcSlotOffsets(city, config) {
   return offsets
 }
 
-function tileSlotPosition(city, tileX, tileY, slot, config, slotOffsets = null) {
+function tileSlotPosition(city, tileX, tileY, slot, slotOffsets) {
   const centerX = (tileX + 0.5) * city.tileSize
   const centerY = (tileY + 0.5) * city.tileSize
-
-  if (slotOffsets) {
-    const offset = slotOffsets[slot]
-
-    return {
-      x: centerX + offset.x,
-      y: centerY + offset.y
-    }
-  }
-
-  const columns = Math.ceil(Math.sqrt(config.tileCapacity))
-  const rows = Math.ceil(config.tileCapacity / columns)
-  const column = slot % columns
-  const row = Math.floor(slot / columns)
-  const horizontalSpacing = columns > 1
-    ? Math.min(config.slotSpacing, Math.max(0, city.tileSize - config.size) / (columns - 1))
-    : 0
-  const verticalSpacing = rows > 1
-    ? Math.min(config.slotSpacing, Math.max(0, city.tileSize - config.size) / (rows - 1))
-    : 0
+  const offset = slotOffsets[slot]
 
   return {
-    x: centerX + (column - (columns - 1) / 2) * horizontalSpacing,
-    y: centerY + (row - (rows - 1) / 2) * verticalSpacing
+    x: centerX + offset.x,
+    y: centerY + offset.y
   }
 }
 
@@ -1383,24 +1606,6 @@ function probabilityForDeltaSeconds(probabilityPerMinute, deltaSeconds) {
   return 1 - ((1 - probabilityPerMinute) ** (deltaSeconds / SECONDS_PER_MINUTE))
 }
 
-function getSimulationDeltaSeconds(clock, deltaSeconds) {
-  if (clock && typeof clock.toSimulationSeconds === 'function') {
-    return clock.toSimulationSeconds(deltaSeconds)
-  }
-
-  if (clock && typeof clock.getSimulationSecondsPerRealSecond === 'function') {
-    return deltaSeconds * clock.getSimulationSecondsPerRealSecond()
-  }
-
-  const secondsPerSimulationHour = Number(clock && clock.secondsPerSimulationHour)
-
-  if (Number.isFinite(secondsPerSimulationHour) && secondsPerSimulationHour > 0) {
-    return deltaSeconds * SECONDS_PER_HOUR / secondsPerSimulationHour
-  }
-
-  return deltaSeconds
-}
-
 function canParticipateInInfection(npc) {
   return Boolean(
     npc &&
@@ -1409,6 +1614,49 @@ function canParticipateInInfection(npc) {
     Number.isFinite(npc.position.x) &&
     Number.isFinite(npc.position.y)
   )
+}
+
+function clonePosition(position) {
+  return {
+    x: Number(position && position.x) || 0,
+    y: Number(position && position.y) || 0
+  }
+}
+
+function cloneTile(tile) {
+  return tile
+    ? {
+        x: tile.x,
+        y: tile.y,
+        index: tile.index
+      }
+    : null
+}
+
+function cloneTransmissionEvent(event) {
+  return {
+    ...event,
+    sourcePosition: { ...event.sourcePosition },
+    targetPosition: { ...event.targetPosition },
+    sourceTile: event.sourceTile ? { ...event.sourceTile } : null,
+    targetTile: event.targetTile ? { ...event.targetTile } : null
+  }
+}
+
+function cloneContactEvent(event) {
+  return {
+    ...event,
+    sourcePosition: { ...event.sourcePosition },
+    targetPosition: { ...event.targetPosition },
+    sourceTile: event.sourceTile ? { ...event.sourceTile } : null,
+    targetTile: event.targetTile ? { ...event.targetTile } : null
+  }
+}
+
+function contactPairKey(firstNpcId, secondNpcId) {
+  return firstNpcId < secondNpcId
+    ? `${firstNpcId}:${secondNpcId}`
+    : `${secondNpcId}:${firstNpcId}`
 }
 
 function normalizeInfectionColors(colors = {}) {

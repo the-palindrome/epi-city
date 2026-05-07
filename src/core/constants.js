@@ -60,8 +60,8 @@ export const NPC_CONFIG = Object.freeze({
   slotSpacing: 11,
   color: 0xe5c748,
   size: 9,
-  minSpeed: 3.8,
-  maxSpeed: 4.5,
+  minSpeed: 1.9,
+  maxSpeed: 2.25,
   workStartHour: 9,
   workEndHour: 17,
   scheduleVariationHours: 0.75,
@@ -74,7 +74,7 @@ export const INFECTION_CONFIG = Object.freeze({
   initialInfectiousCount: 4,
   infectionDistance: 48,
   infectionProbability: 0.03,
-  incubationDays: 5,
+  incubationDays: 1,
   infectionDays: 7,
   immunityDays: 90,
   colors: Object.freeze({
@@ -127,8 +127,8 @@ export const CAR_CONFIG = Object.freeze({
   workDepartureEndHour: 10,
   homeDepartureHour: 17,
   homeDepartureEndHour: 20,
-  maxSpeed: 72,
-  speedLimitScale: 1.6,
+  maxSpeed: 18,
+  speedLimitScale: 0.4,
   minCruiseSpeedScale: 0.72,
   maxCruiseSpeedScale: 0.96,
   minAdaptiveSpeedScale: 0.45,
@@ -174,30 +174,167 @@ export const TILE_ZORDERS = Object.freeze({
   building: 2
 })
 
-export const DASHBOARD_OVERLAYS = Object.freeze([
-  { id: 'tileType', label: 'overlay tile type', kind: 'tileType' },
-  { id: 'walkable', label: 'overlay walkable', layer: 'tileWalkable' },
-  { id: 'parkable', label: 'overlay parkable', layer: 'tileParkable' },
-  { id: 'drivable', label: 'overlay drivable', layer: 'tileDrivable' }
-])
-
-export const DEBUG_OVERLAY_COLORS = Object.freeze({
-  enabled: 0x35d46f,
-  disabled: 0xe3504f,
-  enabledAlpha: 0.42,
-  disabledAlpha: 0.34
+export const SEIR_HEATMAP_CONFIG = Object.freeze({
+  radius: 96,
+  radiusRange: Object.freeze({
+    min: 16,
+    max: 512,
+    step: 16
+  }),
+  alpha: 0.72,
+  minimumNormalizedDensity: 0.02,
+  zorder: 2.5,
+  states: Object.freeze([
+    Object.freeze({
+      id: 'heatmapSusceptible',
+      label: 'S heatmap',
+      infection: 'susceptible',
+      color: INFECTION_CONFIG.colors.susceptible
+    }),
+    Object.freeze({
+      id: 'heatmapExposed',
+      label: 'E heatmap',
+      infection: 'exposed',
+      color: INFECTION_CONFIG.colors.exposed
+    }),
+    Object.freeze({
+      id: 'heatmapInfectious',
+      label: 'I heatmap',
+      infection: 'infectious',
+      color: INFECTION_CONFIG.colors.infectious
+    }),
+    Object.freeze({
+      id: 'heatmapRecovered',
+      label: 'R heatmap',
+      infection: 'recovered',
+      color: INFECTION_CONFIG.colors.recovered
+    })
+  ])
 })
 
+export const ENTITY_RENDER_MODE_ID = 'sprite'
+
+export const ENTITY_RENDER_MODES = Object.freeze({
+  sprite: Object.freeze({ id: 'sprite', label: 'sprite' }),
+  geometric: Object.freeze({ id: 'geometric', label: 'geometric' })
+})
+
+export const ENTITY_RENDER_MODE_OPTIONS = Object.freeze([
+  ENTITY_RENDER_MODES.sprite,
+  ENTITY_RENDER_MODES.geometric
+])
+
+export const ENTITY_RENDER_DEBUG_CONFIG = Object.freeze({
+  infectionRadiusVisible: false,
+  infectionEdgesVisible: false,
+  contactEdgesVisible: false,
+  infectionEdgeDurationMinutes: 10,
+  contactEdgeDurationMinutes: 10,
+  infectionEdgeDurationRange: Object.freeze({
+    min: 1,
+    max: 120,
+    step: 1
+  }),
+  contactEdgeDurationRange: Object.freeze({
+    min: 1,
+    max: 120,
+    step: 1
+  }),
+  pathTrailsVisible: false,
+  pathTrailLength: 5,
+  pathTrailLengthRange: Object.freeze({
+    min: 1,
+    max: 100,
+    step: 1
+  })
+})
+
+export const DASHBOARD_OVERLAYS = Object.freeze([
+  Object.freeze({ id: 'tileType', label: 'tile overlay', kind: 'tileType' }),
+  ...SEIR_HEATMAP_CONFIG.states.map((state) => Object.freeze({
+    id: state.id,
+    label: state.label,
+    kind: 'heatmap',
+    infection: state.infection,
+    color: state.color
+  }))
+])
+
+export const TILE_TYPE_OVERLAY_SCHEME_ID = 'tileType'
+
+export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
+  tileType: Object.freeze({
+    label: 'tile type',
+    sidewalk: 0xffffff,
+    road: 0x151a16,
+    park: 0x59a14f,
+    water: 0x2f80d0,
+    building: Object.freeze({
+      residential: 0x3f6fa7,
+      commercial: 0xe09b2d,
+      default: 0x8c8f94
+    }),
+    obstacle: 0xd1495b,
+    crosswalk: 0xb8beb9,
+    crosswalkStripe: 0xffffff
+  }),
+  'monochrome-light': Object.freeze({
+    label: 'monochrome-light',
+    sidewalk: 0xffffff,
+    road: 0xd3d6d2,
+    park: 0xf2f3f1,
+    water: 0xe5e8ea,
+    building: Object.freeze({
+      residential: 0xa8ada7,
+      commercial: 0x8f9690,
+      default: 0xb7bcb6
+    }),
+    obstacle: 0xaeb4ae,
+    crosswalk: 0xd3d6d2,
+    crosswalkStripe: 0xffffff
+  }),
+  'monochrome-dark': Object.freeze({
+    label: 'monochrome-dark',
+    sidewalk: 0x5f6661,
+    road: 0x141816,
+    park: 0x343a36,
+    water: 0x292f31,
+    building: Object.freeze({
+      residential: 0x6f7871,
+      commercial: 0x838c84,
+      default: 0x606861
+    }),
+    obstacle: 0x202522,
+    crosswalk: 0x141816,
+    crosswalkStripe: 0x818982
+  })
+})
+
+export const TILE_TYPE_OVERLAY_SCHEME_OPTIONS = Object.freeze([
+  Object.freeze({ id: 'tileType', label: TILE_TYPE_OVERLAY_COLOR_SCHEMES.tileType.label }),
+  Object.freeze({ id: 'monochrome-light', label: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-light'].label }),
+  Object.freeze({ id: 'monochrome-dark', label: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-dark'].label })
+])
+
 export const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
-  sidewalk: 0x9aa09a,
+  sidewalk: 0xffffff,
   road: 0x151a16,
-  park: 0x4fa43d,
-  water: 0x0786c8,
-  building: 0x5f6762,
-  obstacle: 0xd94a48,
-  crosswalk: 0x151a16,
+  park: 0x59a14f,
+  water: 0x2f80d0,
+  building: Object.freeze({
+    residential: 0x3f6fa7,
+    commercial: 0xe09b2d,
+    default: 0x8c8f94
+  }),
+  obstacle: 0xd1495b,
+  crosswalk: 0xb8beb9,
   crosswalkStripe: 0xffffff,
-  alpha: 0.86
+  alpha: 0.78,
+  opacityRange: Object.freeze({
+    min: 0,
+    max: 1,
+    step: 0.05
+  })
 })
 
 export const DIRECTIONS = Object.freeze([

@@ -522,57 +522,27 @@
           return createEmptyLaneGraph();
         }
 
-        const normalizedGraph = {
-          ...laneGraph,
-          edges: Array.isArray(laneGraph.edges)
-            ? uniqueDirectedLaneEdges(laneGraph.edges)
-            : laneGraph.edges
-        };
-
-        validateLaneGraph(normalizedGraph);
+        validateLaneGraph(laneGraph);
         const graphForSignals = {
-          ...normalizedGraph,
-          nodes: normalizedGraph.nodes.map((node) => ({ ...node, tile: { ...node.tile } })),
-          edges: normalizedGraph.edges.map((edge) => ({ ...edge }))
+          ...laneGraph,
+          nodes: laneGraph.nodes.map((node) => ({ ...node, tile: { ...node.tile } })),
+          edges: laneGraph.edges.map((edge) => ({ ...edge }))
         };
 
         return {
           encoding: LANE_GRAPH_ENCODING,
-          drivingSide: normalizedGraph.drivingSide,
-          coordinateSpace: normalizedGraph.coordinateSpace,
-          nodes: normalizedGraph.nodes.map((node) => ({
+          drivingSide: laneGraph.drivingSide,
+          coordinateSpace: laneGraph.coordinateSpace,
+          nodes: laneGraph.nodes.map((node) => ({
             ...node,
             tile: { ...node.tile }
           })),
-          edges: normalizedGraph.edges.map((edge) => ({
+          edges: laneGraph.edges.map((edge) => ({
             ...edge,
             path: edge.path.map((point) => [...point])
           })),
-          trafficSignals: normalizeTrafficSignalsLayout(normalizedGraph.trafficSignals, graphForSignals)
+          trafficSignals: normalizeTrafficSignalsLayout(laneGraph.trafficSignals, graphForSignals)
         };
-      }
-
-      function uniqueDirectedLaneEdges(edges) {
-        const seen = new Set();
-        const uniqueEdges = [];
-
-        for (const edge of edges) {
-          if (!edge || typeof edge !== 'object' || typeof edge.from !== 'string' || typeof edge.to !== 'string') {
-            uniqueEdges.push(edge);
-            continue;
-          }
-
-          const edgeKey = `${edge.from}->${edge.to}`;
-
-          if (seen.has(edgeKey)) {
-            continue;
-          }
-
-          seen.add(edgeKey);
-          uniqueEdges.push(edge);
-        }
-
-        return uniqueEdges;
       }
 
       function normalizeTrafficSignalsLayout(trafficSignals, graph) {
@@ -2109,7 +2079,7 @@
           laneGraph,
           buildingLookup: createBuildingLookup(buildings),
           textureRows,
-          textureRowsFileName: metadata.textureRowsFileName || state.map?.textureRowsFileName || (payload.textureRows ? fileName : 'texture-layout.json'),
+          textureRowsFileName: metadata.textureRowsFileName || state.map?.textureRowsFileName || 'texture-layout.json',
           originalTextureLayout: metadata.originalTextureLayout || state.map?.originalTextureLayout || null,
           originalMap: payload
         };
@@ -2122,8 +2092,7 @@
         }
 
         if (payload.textureRows) {
-          validateTextureRows(payload.textureRows);
-          return cloneTextureRows(payload.textureRows);
+          throw new Error('Texture rows must be loaded from texture-layout.json.');
         }
 
         if (state.map && state.map.textureRows) {

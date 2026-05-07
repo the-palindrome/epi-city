@@ -185,6 +185,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     infectionDays: options.infectionDays ?? 7,
     immunityDays: options.immunityDays ?? 90,
     infectionColors: options.infectionColors,
+    entityDebugOptions: options.entityDebugOptions,
     clock: options.clock,
     random: createSeededRandom(seed)
   })
@@ -232,7 +233,7 @@ describe('NPC simulation randomness', () => {
 
     expect(simulation.tileCapacity).toBe(9)
     expect(simulation.npcs).toHaveLength(24)
-    expect(simulation.npcs.every((npc) => npc.slot.index === -1)).toBe(true)
+    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc.slot, 'index'))).toBe(true)
     expect(simulation.npcs.every((npc) => npc.slot.id >= 0 && npc.slot.id < simulation.tileCapacity)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 0 && npc.tile.y === 0)).toBe(true)
     expect(simulation.npcs.every((npc) => (
@@ -261,7 +262,7 @@ describe('NPC simulation randomness', () => {
 
     npc.position = { x: city.tileSize / 2, y: city.tileSize / 2 }
     npc.tile = { x: 0, y: 0, index: 0 }
-    npc.slot = { id: 0, index: -1 }
+    npc.slot = { id: 0 }
     npc.movement.target = null
 
     simulation.update(1 / 60)
@@ -290,7 +291,7 @@ describe('NPC simulation randomness', () => {
     npc.locationState = null
     npc.position = { x: 16, y: 16 }
     npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
-    npc.slot = { id: 4, index: -1 }
+    npc.slot = { id: 4 }
     npc.timetable = {
       getActiveElement: () => ({
         id: 'walk',
@@ -331,7 +332,7 @@ describe('NPC simulation randomness', () => {
     npc.locationState = null
     npc.position = { x: 16, y: 16 }
     npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
-    npc.slot = { id: 0, index: -1 }
+    npc.slot = { id: 0 }
     npc.movement.speed = 8
     npc.movement.target = null
     npc.timetable = {
@@ -369,7 +370,7 @@ describe('NPC simulation randomness', () => {
     npc.locationState = null
     npc.position = { x: 16, y: 16 }
     npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
-    npc.slot = { id: 0, index: -1 }
+    npc.slot = { id: 0 }
     npc.movement.speed = 64
     npc.movement.target = null
     npc.movement.headingX = 0
@@ -473,6 +474,56 @@ describe('NPC simulation randomness', () => {
       infectious: 1,
       recovered: 0
     })
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([
+      expect.objectContaining({
+        id: 1,
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        sourcePosition: { x: 16, y: 16 },
+        targetPosition: { x: 22, y: 16 },
+        distance: 6,
+        targetState: 'exposed'
+      })
+    ])
+
+    simulation.destroy()
+  })
+
+  it('records recent contact events when contact edge display is enabled', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('contact-edges', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 0,
+      initialUpdate: false,
+      entityDebugOptions: {
+        contactEdgesVisible: true,
+        contactEdgeDurationSeconds: 60
+      }
+    })
+
+    simulation.npcs[0].position = { x: 16, y: 16 }
+    simulation.npcs[1].position = { x: 22, y: 16 }
+
+    simulation.update(1 / 60)
+
+    expect(simulation.infection.getRecentContactEvents()).toEqual([
+      expect.objectContaining({
+        id: 1,
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        sourcePosition: { x: 16, y: 16 },
+        targetPosition: { x: 22, y: 16 },
+        distance: 6
+      })
+    ])
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([])
 
     simulation.destroy()
   })
@@ -703,7 +754,7 @@ describe('NPC simulation randomness', () => {
 
     expect(simulation.npcs.every((npc) => npc.present)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 1 && npc.tile.y === 1)).toBe(true)
-    expect(simulation.npcs.every((npc) => npc.slot.index === -1)).toBe(true)
+    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc.slot, 'index'))).toBe(true)
 
     simulation.destroy()
   })

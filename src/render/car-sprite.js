@@ -1,4 +1,12 @@
-import { CAR_CONFIG, PIXEL_ART_SCALE_MODE } from '../core/constants.js'
+import {
+  CAR_CONFIG,
+  ENTITY_RENDER_DEBUG_CONFIG,
+  ENTITY_RENDER_MODE_ID,
+  ENTITY_RENDER_MODES,
+  INFECTION_CONFIG
+} from '../core/constants.js'
+import { createCanvas, createCanvasGraphics } from './canvas-graphics.js'
+import { applyNearestSampling } from './texture-sampling.js'
 
 const CAR_SPRITE_BASE_LENGTH = 25
 const LONG_CAR_SPRITE_BASE_LENGTH = 32
@@ -54,15 +62,24 @@ export function getCarSpriteMetrics(car, city, config = {}) {
 
 export function createCarSpriteRenderer(cars, city, config = {}, options = {}) {
   const pixi = options.pixi
+  const Container = getPixiMember(pixi, 'Container')
+  const Sprite = getPixiMember(pixi, 'Sprite')
 
-  if (!pixi || typeof pixi.Container !== 'function' || typeof pixi.Sprite !== 'function') {
+  if (typeof Container !== 'function' || typeof Sprite !== 'function') {
     return createGraphicsCarSpriteRenderer(cars, city, config, pixi)
   }
+
+  const spriteRenderer = createSpriteCarSpriteRenderer(cars, city, config, options)
+
+  return createModeAwareCarRenderer(spriteRenderer, cars, city, config, options)
+}
+
+function createSpriteCarSpriteRenderer(cars, city, config = {}, options = {}) {
+  const pixi = options.pixi
 
   const textureFactory = options.textureFactory || createAtlasCarSpriteTextureFactory(cars, city, config, pixi)
   const container = new pixi.Container()
   const sprites = []
-  const textureKeys = []
   const lastColors = []
   const lastLengthTiles = []
   const lastDirectionIds = []
@@ -114,7 +131,6 @@ export function createCarSpriteRenderer(cars, city, config = {}, options = {}) {
         const textureKey = getCarSpriteTextureKey(car, city, config)
 
         sprite.texture = textureFactory(textureKey, car, city, config, pixi)
-        textureKeys[index] = textureKey
         lastColors[index] = car.color
         lastLengthTiles[index] = car.lengthTiles
         lastDirectionIds[index] = directionId
@@ -138,7 +154,6 @@ export function createCarSpriteRenderer(cars, city, config = {}, options = {}) {
     }
 
     sprites.length = 0
-    textureKeys.length = 0
     lastColors.length = 0
     lastLengthTiles.length = 0
     lastDirectionIds.length = 0
@@ -156,6 +171,93 @@ export function createCarSpriteRenderer(cars, city, config = {}, options = {}) {
     display: container,
     sprites,
     render,
+    destroy
+  }
+}
+
+function createModeAwareCarRenderer(spriteRenderer, cars, city, config, options) {
+  const pixi = options.pixi
+  const Container = getPixiMember(pixi, 'Container')
+  const Graphics = getPixiMember(pixi, 'Graphics')
+
+  if (typeof Container !== 'function' || typeof Graphics !== 'function') {
+    return spriteRenderer
+  }
+
+  const container = new Container()
+  const geometricRenderer = createGeometricCarRenderer(cars, city, config, pixi)
+  const overlayGraphics = new Graphics()
+  const trailHistories = new Map()
+  let renderMode = normalizeEntityRenderMode(options.entityRenderMode ?? config.entityRenderMode)
+  let debugOptions = normalizeEntityDebugOptions(options.entityDebugOptions ?? config.entityDebugOptions)
+
+  container.eventMode = 'none'
+  container.zIndex = config.zorder
+  container.zorder = config.zorder
+  container.sortableChildren = false
+  overlayGraphics.eventMode = 'none'
+  overlayGraphics.zIndex = config.zorder
+  overlayGraphics.zorder = config.zorder
+  container.addChild(spriteRenderer.display)
+  container.addChild(geometricRenderer.display)
+  container.addChild(overlayGraphics)
+  applyCarRenderModeVisibility()
+
+  function applyCarRenderModeVisibility() {
+    spriteRenderer.display.visible = renderMode === 'sprite'
+    geometricRenderer.display.visible = renderMode === 'geometric'
+  }
+
+  function render(nextCars = cars) {
+    if (renderMode === 'geometric') {
+      geometricRenderer.render(nextCars)
+    } else {
+      spriteRenderer.render(nextCars)
+    }
+
+    drawCarDebugOverlays(overlayGraphics, nextCars, debugOptions, trailHistories)
+  }
+
+  function setRenderMode(mode) {
+    renderMode = normalizeEntityRenderMode(mode)
+    applyCarRenderModeVisibility()
+  }
+
+  function setDebugOptions(options) {
+    debugOptions = normalizeEntityDebugOptions({
+      ...debugOptions,
+      ...options
+    })
+
+    if (!debugOptions.pathTrailsVisible) {
+      trailHistories.clear()
+    }
+  }
+
+  function destroy() {
+    spriteRenderer.destroy()
+    geometricRenderer.destroy()
+    overlayGraphics.destroy()
+
+    if (container.parent) {
+      container.parent.removeChild(container)
+    }
+
+    if (typeof container.destroy === 'function') {
+      container.destroy({ children: true })
+    }
+  }
+
+  return {
+    display: container,
+    spriteDisplay: spriteRenderer.display,
+    sprites: spriteRenderer.sprites || [],
+    render,
+    setRenderMode,
+    setDebugOptions,
+    get renderMode() {
+      return renderMode
+    },
     destroy
   }
 }
@@ -196,7 +298,139 @@ export function drawCarSprite(graphics, car, city, config = {}) {
   )
 }
 
-export function getCarSpriteTextureKey(car, city, config = {}) {
+function createGeometricCarRenderer(cars, city, config, pixi) {
+  const graphics = new pixi.Graphics()
+
+  graphics.eventMode = 'none'
+  graphics.zIndex = config.zorder
+  graphics.zorder = config.zorder
+
+  return {
+    display: graphics,
+    render(nextCars = cars) {
+      graphics.clear()
+
+      for (const car of nextCars) {
+        drawGeometricCar(graphics, car, city, config)
+      }
+    },
+    destroy() {
+      if (graphics.parent) {
+        graphics.parent.removeChild(graphics)
+      }
+
+      graphics.destroy()
+    }
+  }
+}
+
+function drawGeometricCar(graphics, car, city, config = {}) {
+  if (!graphics || !car?.position) {
+    return
+  }
+
+  const metrics = getCarSpriteMetrics(car, city, config)
+  const color = getCarPassengerInfectionColor(car, config.infectionColors)
+  const width = metrics.horizontal ? metrics.length : metrics.width
+  const height = metrics.horizontal ? metrics.width : metrics.length
+
+  graphics
+    .rect(
+      Math.round(car.position.x - width / 2),
+      Math.round(car.position.y - height / 2),
+      Math.round(width),
+      Math.round(height)
+    )
+    .fill({ color, alpha: 1 })
+}
+
+export function getCarPassengerInfectionColor(car, infectionColors = INFECTION_CONFIG.colors) {
+  const infection = getHighestPriorityPassengerInfection(car)
+  const colors = normalizeInfectionColors(infectionColors)
+
+  return infection ? colors[infection] : normalizeColor(car?.color)
+}
+
+function drawCarDebugOverlays(graphics, cars, debugOptions, trailHistories) {
+  graphics.clear()
+
+  if (!debugOptions.pathTrailsVisible) {
+    return
+  }
+
+  drawEntityTrails(graphics, cars || [], trailHistories, debugOptions.pathTrailLength, (car) => (
+    getCarPassengerInfectionColor(car, debugOptions.infectionColors)
+  ))
+}
+
+function drawEntityTrails(graphics, entities, trailHistories, trailLength, colorForEntity) {
+  const activeIds = new Set()
+  const maxPoints = Math.max(2, trailLength + 1)
+
+  for (const entity of entities) {
+    const point = finitePosition(entity?.position)
+
+    if (!point) {
+      continue
+    }
+
+    activeIds.add(entity.id)
+
+    const history = trailHistories.get(entity.id) || []
+    const last = history[history.length - 1]
+
+    if (!last || last.x !== point.x || last.y !== point.y) {
+      history.push(point)
+    }
+
+    while (history.length > maxPoints) {
+      history.shift()
+    }
+
+    trailHistories.set(entity.id, history)
+
+    if (history.length > 1) {
+      strokePolyline(graphics, history, {
+        width: 2,
+        color: colorForEntity(entity),
+        alpha: 0.5
+      })
+    }
+  }
+
+  for (const id of trailHistories.keys()) {
+    if (!activeIds.has(id)) {
+      trailHistories.delete(id)
+    }
+  }
+}
+
+function strokePolyline(graphics, points, style) {
+  if (points.length < 2 || typeof graphics.moveTo !== 'function') {
+    return
+  }
+
+  graphics.moveTo(points[0].x, points[0].y)
+
+  for (let index = 1; index < points.length; index += 1) {
+    graphics.lineTo(points[index].x, points[index].y)
+  }
+
+  graphics.stroke(style)
+}
+
+function finitePosition(position) {
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    return null
+  }
+
+  return {
+    x: Math.round(position.x),
+    y: Math.round(position.y)
+  }
+}
+
+function getCarSpriteTextureKey(car, city, config = {}) {
   const metrics = getCarSpriteMetrics(car, city, config)
   const color = normalizeColor(car?.color).toString(16).padStart(6, '0')
   const direction = metrics.horizontal
@@ -466,63 +700,6 @@ function createCarSpriteTexture(car, city, config, pixi) {
   return texture
 }
 
-function createCanvas(width, height) {
-  if (globalThis.OffscreenCanvas) {
-    return new OffscreenCanvas(width, height)
-  }
-
-  if (globalThis.document && typeof document.createElement === 'function') {
-    const canvas = document.createElement('canvas')
-
-    canvas.width = width
-    canvas.height = height
-    return canvas
-  }
-
-  return null
-}
-
-function createCanvasGraphics(context) {
-  return {
-    rect(x, y, width, height) {
-      return {
-        fill: (fillStyle) => {
-          context.fillStyle = canvasFillStyle(fillStyle)
-          context.fillRect(x, y, width, height)
-        }
-      }
-    }
-  }
-}
-
-function canvasFillStyle(fillStyle) {
-  const color = Number.isInteger(fillStyle?.color) ? fillStyle.color & 0xffffff : 0xffffff
-  const alpha = Number.isFinite(fillStyle?.alpha) ? Math.min(Math.max(fillStyle.alpha, 0), 1) : 1
-  const red = (color >> 16) & 0xff
-  const green = (color >> 8) & 0xff
-  const blue = color & 0xff
-
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
-}
-
-function applyNearestSampling(texture) {
-  const source = texture && texture.source
-
-  if (!source) {
-    return
-  }
-
-  source.scaleMode = PIXEL_ART_SCALE_MODE
-  source.magFilter = PIXEL_ART_SCALE_MODE
-  source.minFilter = PIXEL_ART_SCALE_MODE
-  source.mipmapFilter = PIXEL_ART_SCALE_MODE
-  source.autoGenerateMipmaps = false
-
-  if (source.style && typeof source.style.update === 'function') {
-    source.style.update()
-  }
-}
-
 function createGraphicsCarSpriteRenderer(cars, city, config, pixi) {
   const graphics = new pixi.Graphics()
 
@@ -622,8 +799,73 @@ function positiveNumberOrDefault(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
+function positiveIntegerOrDefault(value, fallback) {
+  return Number.isInteger(value) && value > 0 ? value : fallback
+}
+
 function normalizeColor(color) {
   return Number.isInteger(color) ? color & 0xffffff : 0x3f6fd8
+}
+
+function getPixiMember(pixi, key) {
+  if (!pixi || !Object.prototype.hasOwnProperty.call(pixi, key)) {
+    return null
+  }
+
+  return pixi[key]
+}
+
+function normalizeInfectionColors(colors = {}) {
+  const palette = colors || {}
+  const fallback = INFECTION_CONFIG.colors
+
+  return {
+    susceptible: normalizeColor(palette.susceptible ?? fallback.susceptible),
+    exposed: normalizeColor(palette.exposed ?? fallback.exposed),
+    infectious: normalizeColor(palette.infectious ?? fallback.infectious),
+    recovered: normalizeColor(palette.recovered ?? fallback.recovered)
+  }
+}
+
+function getHighestPriorityPassengerInfection(car) {
+  const infections = new Set()
+
+  for (const owner of car?.riderOwners || []) {
+    const infection = owner?.npc?.infection
+
+    if (Object.prototype.hasOwnProperty.call(INFECTION_CONFIG.colors, infection)) {
+      infections.add(infection)
+    }
+  }
+
+  for (const infection of ['infectious', 'exposed', 'recovered', 'susceptible']) {
+    if (infections.has(infection)) {
+      return infection
+    }
+  }
+
+  return null
+}
+
+function normalizeEntityRenderMode(mode) {
+  const id = String(mode || '')
+
+  return Object.prototype.hasOwnProperty.call(ENTITY_RENDER_MODES, id)
+    ? id
+    : ENTITY_RENDER_MODE_ID
+}
+
+function normalizeEntityDebugOptions(options = {}) {
+  const debugOptions = options || {}
+
+  return {
+    pathTrailsVisible: Boolean(debugOptions.pathTrailsVisible),
+    pathTrailLength: positiveIntegerOrDefault(
+      debugOptions.pathTrailLength,
+      ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength
+    ),
+    infectionColors: debugOptions.infectionColors || INFECTION_CONFIG.colors
+  }
 }
 
 function mixColor(color, target, amount) {

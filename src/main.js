@@ -2,8 +2,11 @@ import * as PIXI from 'pixi.js'
 import {
   CAR_CONFIG,
   DEFAULT_CITY_MAP_PATHS,
+  ENTITY_RENDER_DEBUG_CONFIG,
+  ENTITY_RENDER_MODE_ID,
   INFECTION_CONFIG,
   NPC_CONFIG,
+  SEIR_HEATMAP_CONFIG,
   SIMULATION_CONFIG
 } from './core/constants.js'
 import { createSeededRandom, createSystemRandom } from './core/random.js'
@@ -28,6 +31,7 @@ import {
 import { installDebugDashboard } from './debug/dashboard.js'
 import { createCarSimulation } from './sim/car-simulation.js'
 import { createNpcSimulation } from './sim/npc-simulation.js'
+import { createSignalUpdateSystem } from './sim/signal-update-system.js'
 import { SimulationClock } from './sim/simulation-clock.js'
 import { renderCity } from './render/city-renderer.js'
 import { createDayNightOverlay } from './render/day-night-overlay.js'
@@ -83,7 +87,7 @@ async function main() {
     const textureSet = await loadTextureSet(city.textureSetName)
 
     validateCityTextureBindings(city, textureSet)
-    renderCity(city, entityLayer, textureSet)
+    const mapTextures = renderCity(city, entityLayer, textureSet)
     centerCameraOnCity(camera, world, city)
 
     const game = new Game(app)
@@ -99,7 +103,18 @@ async function main() {
       incubationDays: INFECTION_CONFIG.incubationDays,
       infectionDays: INFECTION_CONFIG.infectionDays,
       immunityDays: INFECTION_CONFIG.immunityDays,
-      dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled
+      dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled,
+      mapTextureEnabled: true,
+      mapTextureOpacity: 1,
+      entityRenderMode: ENTITY_RENDER_MODE_ID,
+      infectionRadiusVisible: ENTITY_RENDER_DEBUG_CONFIG.infectionRadiusVisible,
+      infectionEdgesVisible: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgesVisible,
+      contactEdgesVisible: ENTITY_RENDER_DEBUG_CONFIG.contactEdgesVisible,
+      infectionEdgeDurationMinutes: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationMinutes,
+      contactEdgeDurationMinutes: ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationMinutes,
+      pathTrailsVisible: ENTITY_RENDER_DEBUG_CONFIG.pathTrailsVisible,
+      pathTrailLength: ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength,
+      heatmapRadius: SEIR_HEATMAP_CONFIG.radius
     }
     let npcSimulation = null
     let carSimulation = null
@@ -131,6 +146,18 @@ async function main() {
         : createSystemRandom()
     }
 
+    function getEntityDebugOptions() {
+      return {
+        infectionRadiusVisible: simulationState.infectionRadiusVisible,
+        infectionEdgesVisible: simulationState.infectionEdgesVisible,
+        contactEdgesVisible: simulationState.contactEdgesVisible,
+        infectionEdgeDurationSeconds: simulationState.infectionEdgeDurationMinutes * 60,
+        contactEdgeDurationSeconds: simulationState.contactEdgeDurationMinutes * 60,
+        pathTrailsVisible: simulationState.pathTrailsVisible,
+        pathTrailLength: simulationState.pathTrailLength
+      }
+    }
+
     function createConfiguredNpcSimulation() {
       return createNpcSimulation(city, entityLayer, {
         ...NPC_CONFIG,
@@ -142,7 +169,9 @@ async function main() {
         infectionDays: simulationState.infectionDays,
         immunityDays: simulationState.immunityDays,
         clock: simulationClock,
-        random: createNpcRandom()
+        random: createNpcRandom(),
+        entityRenderMode: simulationState.entityRenderMode,
+        entityDebugOptions: getEntityDebugOptions()
       })
     }
 
@@ -152,7 +181,9 @@ async function main() {
         count: simulationState.carCount,
         clock: simulationClock,
         random: createCarRandom(),
-        npcs: npcSimulation ? npcSimulation.npcs : []
+        npcs: npcSimulation ? npcSimulation.npcs : [],
+        entityRenderMode: simulationState.entityRenderMode,
+        entityDebugOptions: getEntityDebugOptions()
       })
     }
 
@@ -218,6 +249,29 @@ async function main() {
 
     function clampImmunityDays(days) {
       return clampRangeValue(days, INFECTION_CONFIG.immunityDaysRange)
+    }
+
+    function clampRenderingOpacity(opacity) {
+      return clampRangeValue(opacity, { min: 0, max: 1 })
+    }
+
+    function clampInfectionEdgeDurationMinutes(durationMinutes) {
+      return clampRangeValue(durationMinutes, ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange)
+    }
+
+    function clampContactEdgeDurationMinutes(durationMinutes) {
+      return clampRangeValue(durationMinutes, ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationRange)
+    }
+
+    function clampPathTrailLength(length) {
+      const { min, max } = ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange
+      const value = Math.round(Number(length))
+
+      if (!Number.isFinite(value)) {
+        return min
+      }
+
+      return Math.min(Math.max(value, min), max)
     }
 
     function clampRangeValue(value, range) {
@@ -295,8 +349,24 @@ async function main() {
       immunityDays: simulationState.immunityDays,
       immunityDaysRange: INFECTION_CONFIG.immunityDaysRange,
       getInfectionStats: () => npcSimulation?.infection.getStats(),
+      getNpcs: () => npcSimulation?.npcs || [],
       clock: simulationClock,
       dayNightOverlayEnabled: simulationState.dayNightOverlayEnabled,
+      mapTextureEnabled: simulationState.mapTextureEnabled,
+      mapTextureOpacity: simulationState.mapTextureOpacity,
+      entityRenderMode: simulationState.entityRenderMode,
+      infectionRadiusVisible: simulationState.infectionRadiusVisible,
+      infectionEdgesVisible: simulationState.infectionEdgesVisible,
+      contactEdgesVisible: simulationState.contactEdgesVisible,
+      infectionEdgeDurationMinutes: simulationState.infectionEdgeDurationMinutes,
+      infectionEdgeDurationRange: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange,
+      contactEdgeDurationMinutes: simulationState.contactEdgeDurationMinutes,
+      contactEdgeDurationRange: ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationRange,
+      pathTrailsVisible: simulationState.pathTrailsVisible,
+      pathTrailLength: simulationState.pathTrailLength,
+      pathTrailLengthRange: ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange,
+      heatmapRadius: simulationState.heatmapRadius,
+      heatmapRadiusRange: SEIR_HEATMAP_CONFIG.radiusRange,
       onPlay: () => game.play(),
       onPause: () => game.pause(),
       onRestart: restartSimulation,
@@ -355,17 +425,60 @@ async function main() {
       onDayNightOverlayChange: (enabled) => {
         simulationState.dayNightOverlayEnabled = Boolean(enabled)
         dayNightOverlay.setEnabled(simulationState.dayNightOverlayEnabled)
+      },
+      onMapTextureEnabledChange: (enabled) => {
+        simulationState.mapTextureEnabled = Boolean(enabled)
+        mapTextures.setVisible(simulationState.mapTextureEnabled)
+        game.render()
+      },
+      onMapTextureOpacityChange: (opacity) => {
+        simulationState.mapTextureOpacity = clampRenderingOpacity(opacity)
+        mapTextures.setOpacity(simulationState.mapTextureOpacity)
+        game.render()
+      },
+      onEntityRenderModeChange: (mode) => {
+        simulationState.entityRenderMode = mode
+        npcSimulation?.setEntityRenderMode(mode)
+        carSimulation?.setEntityRenderMode(mode)
+        game.render()
+      },
+      onInfectionRadiusVisibleChange: (visible) => {
+        simulationState.infectionRadiusVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
+      onInfectionEdgesVisibleChange: (visible) => {
+        simulationState.infectionEdgesVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
+      onContactEdgesVisibleChange: (visible) => {
+        simulationState.contactEdgesVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
+      onInfectionEdgeDurationChange: (durationMinutes) => {
+        simulationState.infectionEdgeDurationMinutes = clampInfectionEdgeDurationMinutes(durationMinutes)
+        applyEntityDebugOptions()
+      },
+      onContactEdgeDurationChange: (durationMinutes) => {
+        simulationState.contactEdgeDurationMinutes = clampContactEdgeDurationMinutes(durationMinutes)
+        applyEntityDebugOptions()
+      },
+      onPathTrailsVisibleChange: (visible) => {
+        simulationState.pathTrailsVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
+      onPathTrailLengthChange: (length) => {
+        simulationState.pathTrailLength = clampPathTrailLength(length)
+        applyEntityDebugOptions()
+      },
+      onHeatmapRadiusChange: (radius) => {
+        simulationState.heatmapRadius = clampRangeValue(radius, SEIR_HEATMAP_CONFIG.radiusRange)
+        game.render()
       }
     })
 
     game.setSpeed(simulationState.speed)
     game.addSystem(simulationClock)
-    game.addSystem({
-      update: (deltaSeconds) => {
-        city.updateCrosswalkSignals(deltaSeconds)
-        city.updateTrafficSignals(deltaSeconds)
-      }
-    })
+    game.addSystem(createSignalUpdateSystem(city, simulationClock))
     game.addSystem(dayNightOverlay)
     game.addSystem({ render: () => dashboard.render() })
     npcSimulation = createConfiguredNpcSimulation()
@@ -375,6 +488,14 @@ async function main() {
     game.addSystem(pathSelection)
     game.addSystem({ render: applyCameraFollow })
     game.start()
+
+    function applyEntityDebugOptions() {
+      const options = getEntityDebugOptions()
+
+      npcSimulation?.setEntityDebugOptions(options)
+      carSimulation?.setEntityDebugOptions(options)
+      game.render()
+    }
 
     function playSimulation() {
       game.play()
@@ -460,6 +581,50 @@ async function main() {
       dashboard.simulation.setDayNightOverlayEnabled(simulationState.dayNightOverlayEnabled)
     }
 
+    function setMapTextureEnabled(enabled) {
+      dashboard.setMapTextureEnabled(enabled)
+    }
+
+    function setMapTextureOpacity(opacity) {
+      dashboard.setMapTextureOpacity(opacity)
+    }
+
+    function setEntityRenderMode(mode) {
+      dashboard.setEntityRenderMode(mode)
+    }
+
+    function setInfectionRadiusVisible(visible) {
+      dashboard.setInfectionRadiusVisible(visible)
+    }
+
+    function setInfectionEdgesVisible(visible) {
+      dashboard.setInfectionEdgesVisible(visible)
+    }
+
+    function setContactEdgesVisible(visible) {
+      dashboard.setContactEdgesVisible(visible)
+    }
+
+    function setInfectionEdgeDuration(durationMinutes) {
+      dashboard.setInfectionEdgeDuration(durationMinutes)
+    }
+
+    function setContactEdgeDuration(durationMinutes) {
+      dashboard.setContactEdgeDuration(durationMinutes)
+    }
+
+    function setPathTrailsVisible(visible) {
+      dashboard.setPathTrailsVisible(visible)
+    }
+
+    function setPathTrailLength(length) {
+      dashboard.setPathTrailLength(length)
+    }
+
+    function setHeatmapRadius(radius) {
+      dashboard.setHeatmapRadius(radius)
+    }
+
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -509,6 +674,17 @@ async function main() {
       setInfectionDays,
       setImmunityDays,
       setDayNightOverlayEnabled,
+      setMapTextureEnabled,
+      setMapTextureOpacity,
+      setEntityRenderMode,
+      setInfectionRadiusVisible,
+      setInfectionEdgesVisible,
+      setContactEdgesVisible,
+      setInfectionEdgeDuration,
+      setContactEdgeDuration,
+      setPathTrailsVisible,
+      setPathTrailLength,
+      setHeatmapRadius,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
       clearCameraFollow: () => clearCameraFollow(camera),

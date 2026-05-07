@@ -159,7 +159,7 @@ export function installCameraControls(app, camera, applyCamera, options = {}) {
   }
 }
 
-export function refreshCameraZoomBounds(camera) {
+function refreshCameraZoomBounds(camera) {
   if (!camera.worldWidth || !camera.worldHeight) {
     return
   }
