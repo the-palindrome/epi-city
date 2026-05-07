@@ -28,6 +28,7 @@ import {
 import { installDebugDashboard } from './debug/dashboard.js'
 import { createCarSimulation } from './sim/car-simulation.js'
 import { createNpcSimulation } from './sim/npc-simulation.js'
+import { createSignalUpdateSystem } from './sim/signal-update-system.js'
 import { SimulationClock } from './sim/simulation-clock.js'
 import { renderCity } from './render/city-renderer.js'
 import { createDayNightOverlay } from './render/day-night-overlay.js'
@@ -360,12 +361,7 @@ async function main() {
 
     game.setSpeed(simulationState.speed)
     game.addSystem(simulationClock)
-    game.addSystem({
-      update: (deltaSeconds) => {
-        city.updateCrosswalkSignals(deltaSeconds)
-        city.updateTrafficSignals(deltaSeconds)
-      }
-    })
+    game.addSystem(createSignalUpdateSystem(city, simulationClock))
     game.addSystem(dayNightOverlay)
     game.addSystem({ render: () => dashboard.render() })
     npcSimulation = createConfiguredNpcSimulation()
