@@ -4,6 +4,7 @@ import {
   DEFAULT_CITY_MAP_PATHS,
   INFECTION_CONFIG,
   NPC_CONFIG,
+  SEIR_HEATMAP_CONFIG,
   SIMULATION_CONFIG
 } from './core/constants.js'
 import { createSeededRandom, createSystemRandom } from './core/random.js'
@@ -102,7 +103,8 @@ async function main() {
       immunityDays: INFECTION_CONFIG.immunityDays,
       dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled,
       mapTextureEnabled: true,
-      mapTextureOpacity: 1
+      mapTextureOpacity: 1,
+      heatmapRadius: SEIR_HEATMAP_CONFIG.radius
     }
     let npcSimulation = null
     let carSimulation = null
@@ -302,10 +304,13 @@ async function main() {
       immunityDays: simulationState.immunityDays,
       immunityDaysRange: INFECTION_CONFIG.immunityDaysRange,
       getInfectionStats: () => npcSimulation?.infection.getStats(),
+      getNpcs: () => npcSimulation?.npcs || [],
       clock: simulationClock,
       dayNightOverlayEnabled: simulationState.dayNightOverlayEnabled,
       mapTextureEnabled: simulationState.mapTextureEnabled,
       mapTextureOpacity: simulationState.mapTextureOpacity,
+      heatmapRadius: simulationState.heatmapRadius,
+      heatmapRadiusRange: SEIR_HEATMAP_CONFIG.radiusRange,
       onPlay: () => game.play(),
       onPause: () => game.pause(),
       onRestart: restartSimulation,
@@ -373,6 +378,10 @@ async function main() {
       onMapTextureOpacityChange: (opacity) => {
         simulationState.mapTextureOpacity = clampRenderingOpacity(opacity)
         mapTextures.setOpacity(simulationState.mapTextureOpacity)
+        game.render()
+      },
+      onHeatmapRadiusChange: (radius) => {
+        simulationState.heatmapRadius = clampRangeValue(radius, SEIR_HEATMAP_CONFIG.radiusRange)
         game.render()
       }
     })
@@ -482,6 +491,10 @@ async function main() {
       dashboard.setMapTextureOpacity(opacity)
     }
 
+    function setHeatmapRadius(radius) {
+      dashboard.setHeatmapRadius(radius)
+    }
+
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -533,6 +546,7 @@ async function main() {
       setDayNightOverlayEnabled,
       setMapTextureEnabled,
       setMapTextureOpacity,
+      setHeatmapRadius,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
       clearCameraFollow: () => clearCameraFollow(camera),

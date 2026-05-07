@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  INFECTION_CONFIG,
   TILE_TYPE_OVERLAY_COLOR_SCHEMES,
   TILE_TYPE_OVERLAY_COLORS
 } from '../core/constants.js'
@@ -25,6 +26,10 @@ vi.mock('pixi.js', () => ({
 
     destroy() {
       this.destroyed = true
+    }
+
+    clear() {
+      this.fills = []
     }
   }
 }))
@@ -203,6 +208,18 @@ function findByDataset(root, key) {
   }
 
   return null
+}
+
+function findAllByDataset(root, key, results = []) {
+  if (root.dataset && Object.prototype.hasOwnProperty.call(root.dataset, key)) {
+    results.push(root)
+  }
+
+  for (const child of root.children || []) {
+    findAllByDataset(child, key, results)
+  }
+
+  return results
 }
 
 function createKeydownEvent(overrides = {}) {
@@ -800,5 +817,197 @@ describe('debug dashboard overlays', () => {
     expect(changes).toEqual([])
 
     dashboard.destroy()
+  })
+
+  describe('SEIR kernel-density heatmap overlays', () => {
+    it('renders S/E/I/R heatmap toggles in rendering options with the tile overlay controls', () => {
+      const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+      const toggles = findAllByDataset(dashboard.overlayElement, 'overlayToggle')
+      const labelsById = Object.fromEntries(
+        toggles.map((toggle) => [toggle.dataset.overlayToggle, toggle.parentNode.children[1].textContent])
+      )
+
+      expect(labelsById).toMatchObject({
+        tileType: 'tile overlay',
+        heatmapSusceptible: 'S heatmap',
+        heatmapExposed: 'E heatmap',
+        heatmapInfectious: 'I heatmap',
+        heatmapRecovered: 'R heatmap'
+      })
+
+      dashboard.destroy()
+    })
+
+    it('exposes a heatmap radius control with clamped state, value text, and change callback', () => {
+      const changes = []
+      const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+        heatmapRadius: 64,
+        heatmapRadiusRange: { min: 16, max: 128, step: 16 },
+        onHeatmapRadiusChange(radius) {
+          changes.push(radius)
+        }
+      })
+      const slider = findByDataset(dashboard.overlayElement, 'heatmapRadiusSlider')
+      const input = findByDataset(dashboard.overlayElement, 'heatmapRadius')
+
+      expect(slider.min).toBe('16')
+      expect(slider.max).toBe('128')
+      expect(slider.step).toBe('16')
+      expect(slider.value).toBe('64')
+      expect(input.value).toBe('64')
+
+      slider.value = '80'
+      slider.eventListeners.input()
+
+      expect(dashboard.rendering.heatmapRadius).toBe(80)
+      expect(input.value).toBe('80')
+
+      input.value = '512'
+      input.eventListeners.change()
+
+      expect(dashboard.rendering.heatmapRadius).toBe(128)
+      expect(slider.value).toBe('128')
+
+      dashboard.setHeatmapRadius(0)
+
+      expect(dashboard.rendering.heatmapRadius).toBe(16)
+      expect(changes).toEqual([80, 128, 16])
+
+      dashboard.destroy()
+    })
+
+    it('builds one heatmap layer per enabled SEIR state from current NPC positions and infection states', () => {
+      const entityLayer = createEntityLayer()
+      let getNpcsCalls = 0
+      const dashboard = installDebugDashboard(createCity(), entityLayer, {
+        heatmapRadius: 16,
+        getNpcs() {
+          getNpcsCalls += 1
+          return [
+            { infection: 'susceptible', position: { x: 16, y: 16 } },
+            { infection: 'infectious', position: { x: 48, y: 48 } },
+            { infection: 'recovered', position: { x: 16, y: 48 }, vehicleTrip: true }
+          ]
+        }
+      })
+
+      dashboard.render()
+
+      expect(getNpcsCalls).toBe(0)
+
+      dashboard.setOverlay('heatmapSusceptible', true)
+      dashboard.setOverlay('heatmapInfectious', true)
+
+      const fills = entityLayer.children.flatMap((child) => child.fills)
+
+      expect(entityLayer.children).toHaveLength(2)
+      expect(fills).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            x: 0,
+            y: 0,
+            color: INFECTION_CONFIG.colors.susceptible,
+            alpha: 0.72
+          }),
+          expect.objectContaining({
+            x: 32,
+            y: 32,
+            color: INFECTION_CONFIG.colors.infectious,
+            alpha: 0.72
+          })
+        ])
+      )
+      expect(fills.some((fill) => fill.color === INFECTION_CONFIG.colors.recovered)).toBe(false)
+
+      dashboard.destroy()
+    })
+
+    it('redraws enabled heatmaps on render so moved NPCs and infection transitions update without toggling', () => {
+      const entityLayer = createEntityLayer()
+      const npc = { infection: 'susceptible', position: { x: 16, y: 16 } }
+      const dashboard = installDebugDashboard(createCity(), entityLayer, {
+        heatmapRadius: 16,
+        getNpcs: () => [npc]
+      })
+
+      dashboard.setOverlay('heatmapSusceptible', true)
+
+      const heatmap = entityLayer.children[0]
+
+      expect(heatmap.fills).toEqual([
+        expect.objectContaining({ x: 0, y: 0, color: INFECTION_CONFIG.colors.susceptible })
+      ])
+
+      npc.position = { x: 48, y: 48 }
+      dashboard.render()
+
+      expect(heatmap.fills).toEqual([
+        expect.objectContaining({ x: 32, y: 32, color: INFECTION_CONFIG.colors.susceptible })
+      ])
+
+      npc.infection = 'exposed'
+      dashboard.render()
+
+      expect(heatmap.fills).toEqual([])
+
+      dashboard.setOverlay('heatmapExposed', true)
+
+      const fills = entityLayer.children.flatMap((child) => child.fills)
+
+      expect(fills).toEqual([
+        expect.objectContaining({ x: 32, y: 32, color: INFECTION_CONFIG.colors.exposed })
+      ])
+
+      dashboard.destroy()
+    })
+
+    it('applies radius changes to existing enabled heatmap overlays without rebuilding unrelated tile overlays', () => {
+      const entityLayer = createEntityLayer()
+      const dashboard = installDebugDashboard(createCity(), entityLayer, {
+        heatmapRadius: 16,
+        heatmapRadiusRange: { min: 16, max: 64, step: 16 },
+        getNpcs: () => [{ infection: 'susceptible', position: { x: 16, y: 16 } }]
+      })
+
+      dashboard.setOverlay('tileType', true)
+      dashboard.setOverlay('heatmapSusceptible', true)
+
+      const tileChildren = entityLayer.children.filter((child) => child.fills.some((fill) => (
+        fill.color === TILE_TYPE_OVERLAY_COLOR_SCHEMES.tileType.sidewalk ||
+        fill.color === TILE_TYPE_OVERLAY_COLOR_SCHEMES.tileType.building.residential
+      )))
+      const heatmap = entityLayer.children.find((child) => (
+        child.fills.some((fill) => fill.color === INFECTION_CONFIG.colors.susceptible)
+      ))
+      const initialHeatmapFillCount = heatmap.fills.length
+
+      dashboard.setHeatmapRadius(64)
+
+      expect(tileChildren.every((child) => entityLayer.children.includes(child))).toBe(true)
+      expect(tileChildren.every((child) => child.destroyed)).toBe(false)
+      expect(heatmap.fills.length).toBeGreaterThan(initialHeatmapFillCount)
+
+      dashboard.destroy()
+    })
+
+    it('destroys all heatmap layers and removes them from the entity layer when the dashboard is destroyed', () => {
+      const entityLayer = createEntityLayer()
+      const dashboard = installDebugDashboard(createCity(), entityLayer, {
+        getNpcs: () => [
+          { infection: 'susceptible', position: { x: 16, y: 16 } },
+          { infection: 'recovered', position: { x: 48, y: 48 } }
+        ]
+      })
+
+      dashboard.setOverlay('heatmapSusceptible', true)
+      dashboard.setOverlay('heatmapRecovered', true)
+
+      const heatmapChildren = [...entityLayer.children]
+
+      dashboard.destroy()
+
+      expect(entityLayer.children).toHaveLength(0)
+      expect(heatmapChildren.every((child) => child.destroyed)).toBe(true)
+    })
   })
 })

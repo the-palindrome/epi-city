@@ -18,8 +18,9 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
 - Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options.
-- Use rendering options to show or hide the map texture, tune texture opacity, show the tile overlay, choose its color scheme, and tune tile overlay opacity.
+- Use rendering options to show or hide the map texture, tune texture opacity, show the tile overlay, choose its color scheme, tune tile overlay opacity, and enable optional SEIR heatmaps.
 - The tile overlay has `tile type`, `monochrome-light`, and `monochrome-dark` color schemes. The `tile type` scheme uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, blue residential buildings, and amber commercial buildings.
+- SEIR heatmaps use kernel density estimation for susceptible, exposed, infectious, and recovered NPC positions. The rendering panel includes a kernel-radius slider plus exact number input.
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 500.
 - Use the simulation dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
@@ -96,7 +97,7 @@ The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `wor
 
 Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 48 world-unit infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
 
-Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover.
+Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover, while SEIR heatmaps render above map tiles and below the day-night overlay.
 
 Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. NPCs interpolate smoothly between anchor positions.
 
@@ -154,11 +155,12 @@ window.citySim.setIncubationDays(4)
 window.citySim.setInfectionDays(8)
 window.citySim.setImmunityDays(120)
 window.citySim.setDayNightOverlayEnabled(false)
+window.citySim.setHeatmapRadius(128)
 ```
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
 
-The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setMapTextureEnabled(enabled)`, `setMapTextureOpacity(opacity)`, `setOverlay(id, enabled)`, `setTileOverlayScheme(schemeId)`, `setTileOverlayOpacity(opacity)`, `toggle(force)`, `toggleRenderingOptions(force)`, and `render()` for quick checks from the console:
+The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setMapTextureEnabled(enabled)`, `setMapTextureOpacity(opacity)`, `setOverlay(id, enabled)`, `setTileOverlayScheme(schemeId)`, `setTileOverlayOpacity(opacity)`, `setHeatmapRadius(radius)`, `toggle(force)`, `toggleRenderingOptions(force)`, and `render()` for quick checks from the console:
 
 ```js
 window.citySim.dashboard.toggle(true)
@@ -166,8 +168,10 @@ window.citySim.dashboard.toggleRenderingOptions(true)
 window.citySim.dashboard.setMapTextureEnabled(false)
 window.citySim.dashboard.setMapTextureOpacity(0.45)
 window.citySim.dashboard.setOverlay('tileType', true)
+window.citySim.dashboard.setOverlay('heatmapInfectious', true)
 window.citySim.dashboard.setTileOverlayScheme('monochrome-dark')
 window.citySim.dashboard.setTileOverlayOpacity(0.5)
+window.citySim.dashboard.setHeatmapRadius(128)
 ```
 
 ## Map Editor

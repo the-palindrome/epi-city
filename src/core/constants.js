@@ -174,8 +174,53 @@ export const TILE_ZORDERS = Object.freeze({
   building: 2
 })
 
+export const SEIR_HEATMAP_CONFIG = Object.freeze({
+  radius: 96,
+  radiusRange: Object.freeze({
+    min: 16,
+    max: 512,
+    step: 16
+  }),
+  alpha: 0.72,
+  minimumNormalizedDensity: 0.02,
+  zorder: 2.5,
+  states: Object.freeze([
+    Object.freeze({
+      id: 'heatmapSusceptible',
+      label: 'S heatmap',
+      infection: 'susceptible',
+      color: INFECTION_CONFIG.colors.susceptible
+    }),
+    Object.freeze({
+      id: 'heatmapExposed',
+      label: 'E heatmap',
+      infection: 'exposed',
+      color: INFECTION_CONFIG.colors.exposed
+    }),
+    Object.freeze({
+      id: 'heatmapInfectious',
+      label: 'I heatmap',
+      infection: 'infectious',
+      color: INFECTION_CONFIG.colors.infectious
+    }),
+    Object.freeze({
+      id: 'heatmapRecovered',
+      label: 'R heatmap',
+      infection: 'recovered',
+      color: INFECTION_CONFIG.colors.recovered
+    })
+  ])
+})
+
 export const DASHBOARD_OVERLAYS = Object.freeze([
-  { id: 'tileType', label: 'tile overlay', kind: 'tileType' }
+  Object.freeze({ id: 'tileType', label: 'tile overlay', kind: 'tileType' }),
+  ...SEIR_HEATMAP_CONFIG.states.map((state) => Object.freeze({
+    id: state.id,
+    label: state.label,
+    kind: 'heatmap',
+    infection: state.infection,
+    color: state.color
+  }))
 ])
 
 export const TILE_TYPE_OVERLAY_SCHEME_ID = 'tileType'

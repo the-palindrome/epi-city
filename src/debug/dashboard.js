@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js'
 import {
   DASHBOARD_OVERLAYS,
+  SEIR_HEATMAP_CONFIG,
   TILE_TYPE_OVERLAY_COLOR_SCHEMES,
   TILE_TYPE_OVERLAY_COLORS,
   TILE_TYPE_OVERLAY_SCHEME_ID,
@@ -14,20 +15,30 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const dashboard = document.getElementById('debug-dashboard')
   const overlayDashboard = document.getElementById('overlay-dashboard')
   const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]))
+  const mapOverlays = DASHBOARD_OVERLAYS.filter((overlay) => overlay.kind !== 'heatmap')
+  const heatmapOverlays = DASHBOARD_OVERLAYS.filter((overlay) => overlay.kind === 'heatmap')
   const controls = new Map()
   const layers = new Map()
   const simulation = createSimulationControls(simulationControls)
+  const heatmapRadiusRange = normalizeHeatmapRadiusRange(simulationControls.heatmapRadiusRange)
+  const getNpcs = typeof simulationControls.getNpcs === 'function' ? simulationControls.getNpcs : () => []
   const renderingSettings = {
     mapTextureEnabled: simulationControls.mapTextureEnabled !== false,
     mapTextureOpacity: normalizeRenderingOpacity(simulationControls.mapTextureOpacity ?? 1),
     tileOverlayScheme: normalizeTileOverlayScheme(simulationControls.tileOverlayScheme),
-    tileTypeOpacity: normalizeTileTypeOverlayOpacity(TILE_TYPE_OVERLAY_COLORS.alpha)
+    tileTypeOpacity: normalizeTileTypeOverlayOpacity(TILE_TYPE_OVERLAY_COLORS.alpha),
+    heatmapRadius: normalizeHeatmapRadius(
+      simulationControls.heatmapRadius ?? SEIR_HEATMAP_CONFIG.radius,
+      heatmapRadiusRange
+    )
   }
   const renderingCallbacks = {
     onMapTextureEnabledChange: simulationControls.onMapTextureEnabledChange || noop,
-    onMapTextureOpacityChange: simulationControls.onMapTextureOpacityChange || noop
+    onMapTextureOpacityChange: simulationControls.onMapTextureOpacityChange || noop,
+    onHeatmapRadiusChange: simulationControls.onHeatmapRadiusChange || noop
   }
   const overlaySection = createDashboardSection('Map')
+  const heatmapSection = createDashboardSection('Heatmap')
   const mapTextureToggle = createMapTextureToggle(renderingSettings.mapTextureEnabled)
   const mapTextureOpacityField = createMapTextureOpacityField(renderingSettings.mapTextureOpacity)
   const tileOverlaySchemeField = createTileOverlaySchemeField(renderingSettings.tileOverlayScheme)
@@ -35,6 +46,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     renderingSettings.tileTypeOpacity,
     TILE_TYPE_OVERLAY_COLORS.opacityRange
   )
+  const heatmapRadiusField = createHeatmapRadiusField(renderingSettings.heatmapRadius, heatmapRadiusRange)
 
   dashboard.innerHTML = ''
   overlayDashboard.innerHTML = ''
@@ -44,7 +56,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   overlaySection.appendChild(mapTextureToggle.label)
   overlaySection.appendChild(mapTextureOpacityField.label)
 
-  for (const overlay of DASHBOARD_OVERLAYS) {
+  for (const overlay of mapOverlays) {
     const control = createOverlayToggle(overlay)
 
     controls.set(overlay.id, control.input)
@@ -58,6 +70,20 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   overlaySection.appendChild(tileOverlaySchemeField.label)
   overlaySection.appendChild(tileTypeOpacityField.label)
   overlayDashboard.appendChild(overlaySection)
+
+  for (const overlay of heatmapOverlays) {
+    const control = createOverlayToggle(overlay)
+
+    controls.set(overlay.id, control.input)
+    heatmapSection.appendChild(control.label)
+
+    control.input.addEventListener('change', () => {
+      setOverlay(overlay.id, control.input.checked)
+    })
+  }
+
+  heatmapSection.appendChild(heatmapRadiusField.label)
+  overlayDashboard.appendChild(heatmapSection)
 
   mapTextureToggle.input.addEventListener('change', () => {
     setMapTextureEnabled(mapTextureToggle.input.checked)
@@ -75,8 +101,17 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setTileTypeOverlayOpacity(tileTypeOpacityField.input.value)
   })
 
+  heatmapRadiusField.slider.addEventListener('input', () => {
+    setHeatmapRadius(heatmapRadiusField.slider.value)
+  })
+
+  heatmapRadiusField.input.addEventListener('change', () => {
+    setHeatmapRadius(heatmapRadiusField.input.value)
+  })
+
   function render() {
     simulation.render()
+    let currentHeatmapNpcsByState
 
     for (const overlay of DASHBOARD_OVERLAYS) {
       const enabled = overlayState[overlay.id]
@@ -85,6 +120,20 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
       if (layer) {
         setOverlayLayerVisible(layer, enabled)
       }
+
+      if (enabled && overlay.kind === 'heatmap') {
+        if (currentHeatmapNpcsByState === undefined) {
+          currentHeatmapNpcsByState = groupHeatmapNpcsByInfection(getNpcs())
+        }
+
+        drawHeatmapOverlay(
+          city,
+          layer,
+          currentHeatmapNpcsByState.get(overlay.infection) || [],
+          overlay,
+          renderingSettings.heatmapRadius
+        )
+      }
     }
   }
 
@@ -92,10 +141,16 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     if (!layers.has(overlay.id)) {
       const layer = createOverlayLayer(entityLayer)
 
-      drawTileTypeOverlay(city, layer, {
-        opacity: renderingSettings.tileTypeOpacity,
-        schemeId: renderingSettings.tileOverlayScheme
-      })
+      if (overlay.kind === 'tileType') {
+        drawTileTypeOverlay(city, layer, {
+          opacity: renderingSettings.tileTypeOpacity,
+          schemeId: renderingSettings.tileOverlayScheme
+        })
+      } else if (overlay.kind === 'heatmap') {
+        ensureHeatmapGraphics(layer)
+      } else {
+        throw new Error(`Unknown debug overlay kind "${overlay.kind}".`)
+      }
 
       layers.set(overlay.id, layer)
     }
@@ -144,6 +199,16 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     tileTypeOpacityField.input.value = String(nextOpacity)
     tileTypeOpacityField.value.textContent = formatOpacity(nextOpacity)
     discardOverlayLayer('tileType')
+    render()
+  }
+
+  function setHeatmapRadius(radius) {
+    const nextRadius = normalizeHeatmapRadius(radius, heatmapRadiusRange)
+
+    renderingSettings.heatmapRadius = nextRadius
+    heatmapRadiusField.slider.value = String(nextRadius)
+    heatmapRadiusField.input.value = formatNumberInput(nextRadius)
+    renderingCallbacks.onHeatmapRadiusChange(nextRadius)
     render()
   }
 
@@ -207,6 +272,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setTileOverlayScheme,
     setTileOverlayOpacity: setTileTypeOverlayOpacity,
     setTileTypeOverlayOpacity,
+    setHeatmapRadius,
     toggle: toggleDashboard,
     toggleRenderingOptions: toggleOverlayDashboard,
     toggleOverlays: toggleOverlayDashboard,
@@ -1066,6 +1132,38 @@ function createTileTypeOverlayOpacityField(opacity, opacityRange) {
   })
 }
 
+function createHeatmapRadiusField(radius, radiusRange) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const controls = document.createElement('div')
+  const slider = document.createElement('input')
+  const input = document.createElement('input')
+  const normalizedRadius = normalizeHeatmapRadius(radius, radiusRange)
+
+  label.className = 'dashboard-field dashboard-heatmap-radius-field'
+  text.textContent = 'radius'
+  controls.className = 'dashboard-paired-inputs'
+  slider.type = 'range'
+  slider.min = String(radiusRange.min)
+  slider.max = String(radiusRange.max)
+  slider.step = String(radiusRange.step)
+  slider.value = String(normalizedRadius)
+  slider.dataset.heatmapRadiusSlider = 'true'
+  input.type = 'number'
+  input.min = String(radiusRange.min)
+  input.max = String(radiusRange.max)
+  input.step = String(radiusRange.step)
+  input.value = formatNumberInput(normalizedRadius)
+  input.dataset.heatmapRadius = 'true'
+
+  controls.appendChild(slider)
+  controls.appendChild(input)
+  label.appendChild(text)
+  label.appendChild(controls)
+
+  return { label, slider, input }
+}
+
 function createRenderingOpacityField({ labelText, inputDataset, valueDataset, opacity, opacityRange, normalize }) {
   const label = document.createElement('label')
   const text = document.createElement('span')
@@ -1128,6 +1226,14 @@ function normalizeRenderingOpacity(opacity) {
   return Number(Math.min(Math.max(number, RENDERING_OPACITY_RANGE.min), RENDERING_OPACITY_RANGE.max).toFixed(4))
 }
 
+function normalizeHeatmapRadiusRange(range) {
+  return normalizeNumberRange(range, SEIR_HEATMAP_CONFIG.radiusRange)
+}
+
+function normalizeHeatmapRadius(radius, range = SEIR_HEATMAP_CONFIG.radiusRange) {
+  return Number(normalizeNumberInRange(radius, normalizeHeatmapRadiusRange(range)).toFixed(4))
+}
+
 function normalizeTileOverlayScheme(schemeId) {
   const id = String(schemeId || '')
 
@@ -1182,6 +1288,189 @@ function destroyOverlayLayer(layer) {
   }
 
   layer.children.length = 0
+}
+
+function ensureHeatmapGraphics(layer) {
+  if (!layer.heatmapGraphics) {
+    const graphics = new PIXI.Graphics()
+
+    graphics.eventMode = 'none'
+    graphics.zIndex = SEIR_HEATMAP_CONFIG.zorder
+    graphics.zorder = SEIR_HEATMAP_CONFIG.zorder
+    layer.heatmapGraphics = graphics
+    layer.addChild(graphics)
+  }
+
+  return layer.heatmapGraphics
+}
+
+function drawHeatmapOverlay(city, layer, npcs, overlay, radius) {
+  const graphics = ensureHeatmapGraphics(layer)
+  const normalizedRadius = positiveHeatmapRadius(radius)
+  const scratch = ensureHeatmapScratch(layer, city)
+
+  clearHeatmapGraphics(graphics)
+
+  if (normalizedRadius <= 0) {
+    return
+  }
+
+  const maxDensity = accumulateHeatmapDensity(city, scratch, npcs, overlay.infection, normalizedRadius)
+
+  if (maxDensity <= 0) {
+    resetHeatmapScratch(scratch)
+    return
+  }
+
+  const density = scratch.density
+  const touched = scratch.touched
+  const tileSize = city.tileSize
+  const color = Number.isFinite(overlay.color) ? overlay.color : SEIR_HEATMAP_CONFIG.states[0].color
+  const maxAlpha = SEIR_HEATMAP_CONFIG.alpha
+
+  for (const index of touched) {
+    const normalizedDensity = density[index] / maxDensity
+
+    if (normalizedDensity < SEIR_HEATMAP_CONFIG.minimumNormalizedDensity) {
+      continue
+    }
+
+    const x = index % city.width
+    const y = Math.floor(index / city.width)
+    const alpha = Number((maxAlpha * Math.sqrt(normalizedDensity)).toFixed(4))
+
+    fillRect(graphics, x * tileSize, y * tileSize, tileSize, tileSize, color, alpha)
+  }
+
+  resetHeatmapScratch(scratch)
+}
+
+function ensureHeatmapScratch(layer, city) {
+  const tileCount = city.width * city.height
+
+  if (!layer.heatmapScratch || layer.heatmapScratch.density.length !== tileCount) {
+    layer.heatmapScratch = {
+      density: new Float32Array(tileCount),
+      touched: []
+    }
+  }
+
+  return layer.heatmapScratch
+}
+
+function accumulateHeatmapDensity(city, scratch, npcs, infection, radius) {
+  const npcList = Array.isArray(npcs) ? npcs : []
+  const density = scratch.density
+  const touched = scratch.touched
+  const tileSize = city.tileSize
+  const halfTileSize = tileSize / 2
+  const radiusSquared = radius * radius
+  let maxDensity = 0
+
+  touched.length = 0
+
+  for (const npc of npcList) {
+    if (!canUseNpcInHeatmap(npc, infection)) {
+      continue
+    }
+
+    const position = npc.position
+    const minX = Math.max(0, Math.floor((position.x - radius) / tileSize))
+    const maxX = Math.min(city.width - 1, Math.floor((position.x + radius) / tileSize))
+    const minY = Math.max(0, Math.floor((position.y - radius) / tileSize))
+    const maxY = Math.min(city.height - 1, Math.floor((position.y + radius) / tileSize))
+
+    for (let y = minY; y <= maxY; y += 1) {
+      const cellCenterY = y * tileSize + halfTileSize
+      const dy = cellCenterY - position.y
+
+      for (let x = minX; x <= maxX; x += 1) {
+        const cellCenterX = x * tileSize + halfTileSize
+        const dx = cellCenterX - position.x
+        const distanceSquared = dx * dx + dy * dy
+
+        if (distanceSquared > radiusSquared) {
+          continue
+        }
+
+        const normalizedDistanceSquared = distanceSquared / radiusSquared
+        const kernel = (1 - normalizedDistanceSquared) * (1 - normalizedDistanceSquared)
+
+        if (kernel <= 0) {
+          continue
+        }
+
+        const index = y * city.width + x
+
+        if (density[index] === 0) {
+          touched.push(index)
+        }
+
+        density[index] += kernel
+        maxDensity = Math.max(maxDensity, density[index])
+      }
+    }
+  }
+
+  return maxDensity
+}
+
+function groupHeatmapNpcsByInfection(npcs) {
+  const groups = new Map(SEIR_HEATMAP_CONFIG.states.map((state) => [state.infection, []]))
+  const npcList = Array.isArray(npcs) ? npcs : []
+
+  for (const npc of npcList) {
+    if (!hasUsableHeatmapPosition(npc)) {
+      continue
+    }
+
+    const group = groups.get(npc.infection)
+
+    if (group) {
+      group.push(npc)
+    }
+  }
+
+  return groups
+}
+
+function canUseNpcInHeatmap(npc, infection) {
+  return npc && npc.infection === infection && hasUsableHeatmapPosition(npc)
+}
+
+function hasUsableHeatmapPosition(npc) {
+  return Boolean(
+    npc &&
+    !npc.vehicleTrip &&
+    npc.position &&
+    Number.isFinite(npc.position.x) &&
+    Number.isFinite(npc.position.y)
+  )
+}
+
+function positiveHeatmapRadius(radius) {
+  const value = Number(radius)
+
+  return Number.isFinite(value) && value > 0 ? value : SEIR_HEATMAP_CONFIG.radius
+}
+
+function clearHeatmapGraphics(graphics) {
+  if (typeof graphics.clear === 'function') {
+    graphics.clear()
+    return
+  }
+
+  if (Array.isArray(graphics.fills)) {
+    graphics.fills.length = 0
+  }
+}
+
+function resetHeatmapScratch(scratch) {
+  for (const index of scratch.touched) {
+    scratch.density[index] = 0
+  }
+
+  scratch.touched.length = 0
 }
 
 function drawTileTypeOverlay(city, layer, options) {

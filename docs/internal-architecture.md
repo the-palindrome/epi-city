@@ -204,7 +204,7 @@ The extraction script checks every map cell against the original image. Each `te
 
 ## Rendering Strategy
 
-The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC and car graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below entities while building overlays stay above building tiles.
+The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC and car graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, SEIR heatmaps render at `zorder: 2.5`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below entities while building overlays stay above building tiles.
 
 `renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
 
@@ -214,11 +214,13 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, the tile overlay, a color-scheme dropdown, and an opacity slider for the tile overlay. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
 The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
 
 The tile overlay layer is built lazily the first time it is enabled. Visibility toggles only change layer visibility, while opacity and color-scheme changes rebuild the cached layer with the new fill styles. The overlay builder uses the same 16x16 chunk pattern as the city renderer so large masks remain inspectable without covering NPCs.
+
+SEIR heatmaps are built only while their overlay checkbox is enabled. Each active heatmap runs a compact-support kernel density estimate against the current NPC positions for one infection state, reuses one Pixi graphics object per state, and redraws during dashboard rendering so moving NPCs and infection transitions stay current. The density work is clipped to tiles inside the kernel radius around each matching NPC, and NPCs on vehicle trips or without finite positions are skipped.
 
 ## Map Editor
 
@@ -272,6 +274,7 @@ window.citySim.setCarCount(250)
 window.citySim.setInitialInfectiousCount(10)
 window.citySim.npcSimulation.infection.getStats()
 window.citySim.setDayNightOverlayEnabled(false)
+window.citySim.setHeatmapRadius(128)
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt
 window.citySim.npcs[0].home
