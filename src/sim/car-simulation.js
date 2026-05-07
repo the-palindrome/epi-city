@@ -111,9 +111,10 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   }
 
   const carRenderer = createCarSpriteRenderer(cars, city, resolvedConfig, { pixi: PIXI })
-  const graphics = carRenderer.display
+  const display = carRenderer.display
+  const graphics = carRenderer.spriteDisplay || display
 
-  entityLayer.addChild(graphics)
+  entityLayer.addChild(display)
 
   function update(deltaSeconds) {
     if (destroyed || !Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
@@ -153,6 +154,13 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     carRenderer.render(cars)
   }
 
+  function setEntityRenderMode(mode) {
+    if (typeof carRenderer.setRenderMode === 'function') {
+      carRenderer.setRenderMode(mode)
+      render()
+    }
+  }
+
   render()
 
   return {
@@ -162,6 +170,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     router,
     update,
     render,
+    setEntityRenderMode,
     destroy() {
       destroyed = true
       trafficReservations.clear()

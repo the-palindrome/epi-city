@@ -1,4 +1,10 @@
-import { INFECTION_CONFIG, NPC_CONFIG, PIXEL_ART_SCALE_MODE } from '../core/constants.js'
+import {
+  ENTITY_RENDER_MODE_ID,
+  ENTITY_RENDER_MODES,
+  INFECTION_CONFIG,
+  NPC_CONFIG,
+  PIXEL_ART_SCALE_MODE
+} from '../core/constants.js'
 import {
   NPC_SPRITE_FRAME_COUNT,
   NPC_SPRITE_FRAME_DISTANCE,
@@ -21,28 +27,95 @@ const NPC_TEXTURES_PER_COLOR = NPC_SPRITE_FACINGS.length * NPC_TEXTURES_PER_FACI
 export function createNpcSpriteRenderer(npcs, city, config = {}, infection = null, options = {}) {
   const pixi = options.pixi
   const textureAtlas = options.textureAtlas || createNpcSpriteAtlas(npcs, config, infection, pixi)
+  let spriteRenderer = null
 
   if (textureAtlas && pixi &&
       typeof pixi.ParticleContainer === 'function' &&
       typeof pixi.Particle === 'function') {
-    return createParticleNpcSpriteRenderer(npcs, city, config, infection, {
+    spriteRenderer = createParticleNpcSpriteRenderer(npcs, city, config, infection, {
       ...options,
       pixi,
       textureAtlas
     })
-  }
-
-  if (textureAtlas && pixi &&
+  } else if (textureAtlas && pixi &&
       typeof pixi.Container === 'function' &&
       typeof pixi.Sprite === 'function') {
-    return createSpriteNpcSpriteRenderer(npcs, city, config, infection, {
+    spriteRenderer = createSpriteNpcSpriteRenderer(npcs, city, config, infection, {
       ...options,
       pixi,
       textureAtlas
     })
+  } else {
+    spriteRenderer = createGraphicsNpcSpriteRenderer(npcs, city, config, infection, options)
   }
 
-  return createGraphicsNpcSpriteRenderer(npcs, city, config, infection, options)
+  return createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infection, options)
+}
+
+function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infection, options) {
+  const pixi = options.pixi
+  const Container = getPixiMember(pixi, 'Container')
+  const Graphics = getPixiMember(pixi, 'Graphics')
+
+  if (typeof Container !== 'function' || typeof Graphics !== 'function') {
+    return spriteRenderer
+  }
+
+  const container = new Container()
+  const geometricRenderer = createGeometricNpcRenderer(npcs, city, config, infection, options)
+  let renderMode = normalizeEntityRenderMode(options.entityRenderMode ?? config.entityRenderMode)
+
+  configureDisplay(container, config)
+  container.sortableChildren = false
+  container.addChild(spriteRenderer.display)
+  container.addChild(geometricRenderer.display)
+  applyNpcRenderModeVisibility()
+
+  function applyNpcRenderModeVisibility() {
+    spriteRenderer.display.visible = renderMode === 'sprite'
+    geometricRenderer.display.visible = renderMode === 'geometric'
+  }
+
+  function render(nextNpcs = npcs, nextInfection = infection) {
+    if (renderMode === 'geometric') {
+      geometricRenderer.render(nextNpcs, nextInfection)
+      return
+    }
+
+    spriteRenderer.render(nextNpcs, nextInfection)
+  }
+
+  function setRenderMode(mode) {
+    renderMode = normalizeEntityRenderMode(mode)
+    applyNpcRenderModeVisibility()
+  }
+
+  function destroy() {
+    spriteRenderer.destroy()
+    geometricRenderer.destroy()
+
+    if (container.parent) {
+      container.parent.removeChild(container)
+    }
+
+    if (typeof container.destroy === 'function') {
+      container.destroy({ children: true })
+    }
+  }
+
+  return {
+    display: container,
+    spriteDisplay: spriteRenderer.display,
+    sprites: spriteRenderer.sprites || [],
+    particles: spriteRenderer.particles || [],
+    textureAtlas: spriteRenderer.textureAtlas,
+    render,
+    setRenderMode,
+    get renderMode() {
+      return renderMode
+    },
+    destroy
+  }
 }
 
 function createParticleNpcSpriteRenderer(npcs, city, config, infection, options) {
@@ -327,6 +400,69 @@ function createGraphicsNpcSpriteRenderer(npcs, city, config, infection, options)
   }
 }
 
+function createGeometricNpcRenderer(npcs, city, config, infection, options) {
+  const pixi = options.pixi
+  const graphics = new pixi.Graphics()
+  const visibleTileCounts = options.visibleTileCounts || new Uint8Array(city.tiles.length)
+  const visibleTileIndexes = options.visibleTileIndexes || []
+
+  configureDisplay(graphics, config)
+
+  return {
+    display: graphics,
+    render(nextNpcs = npcs, nextInfection = infection) {
+      graphics.clear()
+      const visibleLimit = getVisibleNpcLimit(config)
+
+      for (let index = 0; index < nextNpcs.length; index += 1) {
+        const npc = nextNpcs[index]
+
+        if (!npc?.present || !npc.position) {
+          continue
+        }
+
+        if (!reserveVisibleNpcTile(tileIndexAtPosition(city, npc.position), visibleLimit, visibleTileCounts, visibleTileIndexes)) {
+          continue
+        }
+
+        drawGeometricNpc(graphics, npc, {
+          color: getNpcRenderColor(nextInfection, npc),
+          size: config.size
+        })
+      }
+
+      clearVisibleNpcTiles(visibleTileCounts, visibleTileIndexes)
+    },
+    destroy() {
+      if (graphics.parent) {
+        graphics.parent.removeChild(graphics)
+      }
+
+      graphics.destroy()
+    }
+  }
+}
+
+export function drawGeometricNpc(graphics, npc, options = {}) {
+  if (!graphics || !npc?.position) {
+    return
+  }
+
+  const color = normalizeColor(options.color)
+  const radius = Math.max(2, positiveNumberOrDefault(options.size, NPC_CONFIG.size) / 2)
+  const x = Math.round(npc.position.x)
+  const y = Math.round(npc.position.y)
+
+  if (typeof graphics.circle === 'function') {
+    graphics.circle(x, y, radius).fill({ color, alpha: 1 })
+    return
+  }
+
+  graphics
+    .rect(x - radius, y - radius, radius * 2, radius * 2)
+    .fill({ color, alpha: 1 })
+}
+
 export function createNpcSpriteAtlas(npcs, config = {}, infection = null, pixi = null) {
   const Texture = getPixiMember(pixi, 'Texture')
   const Rectangle = getPixiMember(pixi, 'Rectangle')
@@ -592,6 +728,14 @@ function positiveNumberOrDefault(value, fallback) {
 
 function normalizeColor(color) {
   return Number.isInteger(color) ? color & 0xffffff : NPC_CONFIG.color
+}
+
+function normalizeEntityRenderMode(mode) {
+  const id = String(mode || '')
+
+  return Object.prototype.hasOwnProperty.call(ENTITY_RENDER_MODES, id)
+    ? id
+    : ENTITY_RENDER_MODE_ID
 }
 
 function createCanvas(width, height) {

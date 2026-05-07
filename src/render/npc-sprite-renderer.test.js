@@ -32,6 +32,54 @@ function createMockPixi() {
   }
 }
 
+function createRenderModeMockPixi() {
+  return {
+    ...createMockPixi(),
+    Container: class {
+      constructor() {
+        this.children = []
+        this.visible = true
+      }
+
+      addChild(child) {
+        this.children.push(child)
+        child.parent = this
+      }
+
+      removeChild(child) {
+        this.children = this.children.filter((item) => item !== child)
+        child.parent = null
+      }
+
+      destroy() {
+        this.destroyed = true
+      }
+    },
+    Graphics: class {
+      constructor() {
+        this.circles = []
+        this.visible = true
+      }
+
+      clear() {
+        this.circles = []
+      }
+
+      circle(x, y, radius) {
+        return {
+          fill: (style) => {
+            this.circles.push({ x, y, radius, ...style })
+          }
+        }
+      }
+
+      destroy() {
+        this.destroyed = true
+      }
+    }
+  }
+}
+
 function createTextureAtlas(colors) {
   const textures = []
   const colorIndexes = new Map(colors.map((color, index) => [color, index]))
@@ -122,5 +170,54 @@ describe('NPC sprite renderer', () => {
 
     expect(renderer.display.particleChildren).toHaveLength(0)
     expect(renderer.display.destroyed).toBe(true)
+  })
+
+  it('switches to geometric disks colored by infection state', () => {
+    const city = {
+      width: 2,
+      height: 1,
+      tileSize: 32,
+      tiles: [{}, {}]
+    }
+    const colors = [0xe5c748, 0xf0a33a]
+    const npcs = [
+      createNpc(0, 16, 16),
+      createNpc(1, 48, 16)
+    ]
+    const infection = {
+      getNpcColor(npc) {
+        return colors[npc.id]
+      }
+    }
+    const renderer = createNpcSpriteRenderer(npcs, city, {
+      ...NPC_CONFIG,
+      entityRenderMode: 'geometric'
+    }, infection, {
+      pixi: createRenderModeMockPixi(),
+      textureAtlas: createTextureAtlas(colors)
+    })
+
+    renderer.render()
+
+    const spriteDisplay = renderer.display.children[0]
+    const geometricDisplay = renderer.display.children[1]
+
+    expect(renderer.renderMode).toBe('geometric')
+    expect(spriteDisplay.visible).toBe(false)
+    expect(geometricDisplay.visible).toBe(true)
+    expect(geometricDisplay.circles).toEqual([
+      expect.objectContaining({ x: 16, y: 16, color: colors[0], alpha: 1 }),
+      expect.objectContaining({ x: 48, y: 16, color: colors[1], alpha: 1 })
+    ])
+
+    renderer.setRenderMode('sprite')
+    renderer.render()
+
+    expect(renderer.renderMode).toBe('sprite')
+    expect(spriteDisplay.visible).toBe(true)
+    expect(geometricDisplay.visible).toBe(false)
+    expect(spriteDisplay.particleChildren).toHaveLength(2)
+
+    renderer.destroy()
   })
 })

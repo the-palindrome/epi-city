@@ -1,6 +1,9 @@
 import * as PIXI from 'pixi.js'
 import {
   DASHBOARD_OVERLAYS,
+  ENTITY_RENDER_MODE_ID,
+  ENTITY_RENDER_MODE_OPTIONS,
+  ENTITY_RENDER_MODES,
   SEIR_HEATMAP_CONFIG,
   TILE_TYPE_OVERLAY_COLOR_SCHEMES,
   TILE_TYPE_OVERLAY_COLORS,
@@ -25,6 +28,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const renderingSettings = {
     mapTextureEnabled: simulationControls.mapTextureEnabled !== false,
     mapTextureOpacity: normalizeRenderingOpacity(simulationControls.mapTextureOpacity ?? 1),
+    entityRenderMode: normalizeEntityRenderMode(simulationControls.entityRenderMode),
     tileOverlayScheme: normalizeTileOverlayScheme(simulationControls.tileOverlayScheme),
     tileTypeOpacity: normalizeTileTypeOverlayOpacity(TILE_TYPE_OVERLAY_COLORS.alpha),
     heatmapRadius: normalizeHeatmapRadius(
@@ -35,12 +39,15 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const renderingCallbacks = {
     onMapTextureEnabledChange: simulationControls.onMapTextureEnabledChange || noop,
     onMapTextureOpacityChange: simulationControls.onMapTextureOpacityChange || noop,
+    onEntityRenderModeChange: simulationControls.onEntityRenderModeChange || noop,
     onHeatmapRadiusChange: simulationControls.onHeatmapRadiusChange || noop
   }
   const overlaySection = createDashboardSection('Map')
+  const entitySection = createDashboardSection('Entities')
   const heatmapSection = createDashboardSection('Heatmap')
   const mapTextureToggle = createMapTextureToggle(renderingSettings.mapTextureEnabled)
   const mapTextureOpacityField = createMapTextureOpacityField(renderingSettings.mapTextureOpacity)
+  const entityRenderModeField = createEntityRenderModeField(renderingSettings.entityRenderMode)
   const tileOverlaySchemeField = createTileOverlaySchemeField(renderingSettings.tileOverlayScheme)
   const tileTypeOpacityField = createTileTypeOverlayOpacityField(
     renderingSettings.tileTypeOpacity,
@@ -70,6 +77,8 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   overlaySection.appendChild(tileOverlaySchemeField.label)
   overlaySection.appendChild(tileTypeOpacityField.label)
   overlayDashboard.appendChild(overlaySection)
+  entitySection.appendChild(entityRenderModeField.label)
+  overlayDashboard.appendChild(entitySection)
 
   for (const overlay of heatmapOverlays) {
     const control = createOverlayToggle(overlay)
@@ -99,6 +108,10 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   tileTypeOpacityField.input.addEventListener('input', () => {
     setTileTypeOverlayOpacity(tileTypeOpacityField.input.value)
+  })
+
+  entityRenderModeField.select.addEventListener('change', () => {
+    setEntityRenderMode(entityRenderModeField.select.value)
   })
 
   heatmapRadiusField.slider.addEventListener('input', () => {
@@ -202,6 +215,14 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     render()
   }
 
+  function setEntityRenderMode(mode) {
+    const nextMode = normalizeEntityRenderMode(mode)
+
+    renderingSettings.entityRenderMode = nextMode
+    entityRenderModeField.select.value = nextMode
+    renderingCallbacks.onEntityRenderModeChange(nextMode)
+  }
+
   function setHeatmapRadius(radius) {
     const nextRadius = normalizeHeatmapRadius(radius, heatmapRadiusRange)
 
@@ -272,6 +293,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setTileOverlayScheme,
     setTileOverlayOpacity: setTileTypeOverlayOpacity,
     setTileTypeOverlayOpacity,
+    setEntityRenderMode,
     setHeatmapRadius,
     toggle: toggleDashboard,
     toggleRenderingOptions: toggleOverlayDashboard,
@@ -1121,6 +1143,31 @@ function createTileOverlaySchemeField(schemeId) {
   return { label, select }
 }
 
+function createEntityRenderModeField(mode) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const select = document.createElement('select')
+  const normalizedMode = normalizeEntityRenderMode(mode)
+
+  label.className = 'dashboard-field'
+  text.textContent = 'rendering'
+  select.dataset.entityRenderMode = 'true'
+
+  for (const option of ENTITY_RENDER_MODE_OPTIONS) {
+    const item = document.createElement('option')
+
+    item.value = option.id
+    item.textContent = option.label
+    select.appendChild(item)
+  }
+
+  select.value = normalizedMode
+  label.appendChild(text)
+  label.appendChild(select)
+
+  return { label, select }
+}
+
 function createTileTypeOverlayOpacityField(opacity, opacityRange) {
   return createRenderingOpacityField({
     labelText: 'tile opacity',
@@ -1232,6 +1279,14 @@ function normalizeHeatmapRadiusRange(range) {
 
 function normalizeHeatmapRadius(radius, range = SEIR_HEATMAP_CONFIG.radiusRange) {
   return Number(normalizeNumberInRange(radius, normalizeHeatmapRadiusRange(range)).toFixed(4))
+}
+
+function normalizeEntityRenderMode(mode) {
+  const id = String(mode || '')
+
+  return Object.prototype.hasOwnProperty.call(ENTITY_RENDER_MODES, id)
+    ? id
+    : ENTITY_RENDER_MODE_ID
 }
 
 function normalizeTileOverlayScheme(schemeId) {

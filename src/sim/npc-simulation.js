@@ -91,9 +91,10 @@ export function createNpcSimulation(city, entityLayer, config) {
     visibleTileCounts,
     visibleTileIndexes
   })
-  const graphics = npcRenderer.display
+  const display = npcRenderer.display
+  const graphics = npcRenderer.spriteDisplay || display
 
-  entityLayer.addChild(graphics)
+  entityLayer.addChild(display)
 
   function update(deltaSeconds) {
     if (destroyed) {
@@ -129,6 +130,13 @@ export function createNpcSimulation(city, entityLayer, config) {
     npcRenderer.render(npcs, infection)
   }
 
+  function setEntityRenderMode(mode) {
+    if (typeof npcRenderer.setRenderMode === 'function') {
+      npcRenderer.setRenderMode(mode)
+      render()
+    }
+  }
+
   render()
 
   return {
@@ -139,6 +147,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     graphics,
     update,
     render,
+    setEntityRenderMode,
     destroy() {
       destroyed = true
 

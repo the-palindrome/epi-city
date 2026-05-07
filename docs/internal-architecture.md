@@ -214,7 +214,9 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+
+Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car sprites. `geometric` draws NPCs as disks colored by infection state and cars as rectangles colored by the highest-priority infection state among passengers currently inside the car; empty cars keep their normal car color.
 
 The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
 
@@ -274,6 +276,7 @@ window.citySim.setCarCount(250)
 window.citySim.setInitialInfectiousCount(10)
 window.citySim.npcSimulation.infection.getStats()
 window.citySim.setDayNightOverlayEnabled(false)
+window.citySim.setEntityRenderMode('geometric')
 window.citySim.setHeatmapRadius(128)
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt

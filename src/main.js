@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js'
 import {
   CAR_CONFIG,
   DEFAULT_CITY_MAP_PATHS,
+  ENTITY_RENDER_MODE_ID,
   INFECTION_CONFIG,
   NPC_CONFIG,
   SEIR_HEATMAP_CONFIG,
@@ -104,6 +105,7 @@ async function main() {
       dayNightOverlayEnabled: SIMULATION_CONFIG.dayNightOverlayEnabled,
       mapTextureEnabled: true,
       mapTextureOpacity: 1,
+      entityRenderMode: ENTITY_RENDER_MODE_ID,
       heatmapRadius: SEIR_HEATMAP_CONFIG.radius
     }
     let npcSimulation = null
@@ -147,7 +149,8 @@ async function main() {
         infectionDays: simulationState.infectionDays,
         immunityDays: simulationState.immunityDays,
         clock: simulationClock,
-        random: createNpcRandom()
+        random: createNpcRandom(),
+        entityRenderMode: simulationState.entityRenderMode
       })
     }
 
@@ -157,7 +160,8 @@ async function main() {
         count: simulationState.carCount,
         clock: simulationClock,
         random: createCarRandom(),
-        npcs: npcSimulation ? npcSimulation.npcs : []
+        npcs: npcSimulation ? npcSimulation.npcs : [],
+        entityRenderMode: simulationState.entityRenderMode
       })
     }
 
@@ -309,6 +313,7 @@ async function main() {
       dayNightOverlayEnabled: simulationState.dayNightOverlayEnabled,
       mapTextureEnabled: simulationState.mapTextureEnabled,
       mapTextureOpacity: simulationState.mapTextureOpacity,
+      entityRenderMode: simulationState.entityRenderMode,
       heatmapRadius: simulationState.heatmapRadius,
       heatmapRadiusRange: SEIR_HEATMAP_CONFIG.radiusRange,
       onPlay: () => game.play(),
@@ -378,6 +383,12 @@ async function main() {
       onMapTextureOpacityChange: (opacity) => {
         simulationState.mapTextureOpacity = clampRenderingOpacity(opacity)
         mapTextures.setOpacity(simulationState.mapTextureOpacity)
+        game.render()
+      },
+      onEntityRenderModeChange: (mode) => {
+        simulationState.entityRenderMode = mode
+        npcSimulation?.setEntityRenderMode(mode)
+        carSimulation?.setEntityRenderMode(mode)
         game.render()
       },
       onHeatmapRadiusChange: (radius) => {
@@ -491,6 +502,10 @@ async function main() {
       dashboard.setMapTextureOpacity(opacity)
     }
 
+    function setEntityRenderMode(mode) {
+      dashboard.setEntityRenderMode(mode)
+    }
+
     function setHeatmapRadius(radius) {
       dashboard.setHeatmapRadius(radius)
     }
@@ -546,6 +561,7 @@ async function main() {
       setDayNightOverlayEnabled,
       setMapTextureEnabled,
       setMapTextureOpacity,
+      setEntityRenderMode,
       setHeatmapRadius,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),

@@ -1,4 +1,10 @@
-import { CAR_CONFIG, PIXEL_ART_SCALE_MODE } from '../core/constants.js'
+import {
+  CAR_CONFIG,
+  ENTITY_RENDER_MODE_ID,
+  ENTITY_RENDER_MODES,
+  INFECTION_CONFIG,
+  PIXEL_ART_SCALE_MODE
+} from '../core/constants.js'
 
 const CAR_SPRITE_BASE_LENGTH = 25
 const LONG_CAR_SPRITE_BASE_LENGTH = 32
@@ -54,10 +60,20 @@ export function getCarSpriteMetrics(car, city, config = {}) {
 
 export function createCarSpriteRenderer(cars, city, config = {}, options = {}) {
   const pixi = options.pixi
+  const Container = getPixiMember(pixi, 'Container')
+  const Sprite = getPixiMember(pixi, 'Sprite')
 
-  if (!pixi || typeof pixi.Container !== 'function' || typeof pixi.Sprite !== 'function') {
+  if (typeof Container !== 'function' || typeof Sprite !== 'function') {
     return createGraphicsCarSpriteRenderer(cars, city, config, pixi)
   }
+
+  const spriteRenderer = createSpriteCarSpriteRenderer(cars, city, config, options)
+
+  return createModeAwareCarRenderer(spriteRenderer, cars, city, config, options)
+}
+
+function createSpriteCarSpriteRenderer(cars, city, config = {}, options = {}) {
+  const pixi = options.pixi
 
   const textureFactory = options.textureFactory || createAtlasCarSpriteTextureFactory(cars, city, config, pixi)
   const container = new pixi.Container()
@@ -160,6 +176,72 @@ export function createCarSpriteRenderer(cars, city, config = {}, options = {}) {
   }
 }
 
+function createModeAwareCarRenderer(spriteRenderer, cars, city, config, options) {
+  const pixi = options.pixi
+  const Container = getPixiMember(pixi, 'Container')
+  const Graphics = getPixiMember(pixi, 'Graphics')
+
+  if (typeof Container !== 'function' || typeof Graphics !== 'function') {
+    return spriteRenderer
+  }
+
+  const container = new Container()
+  const geometricRenderer = createGeometricCarRenderer(cars, city, config, pixi)
+  let renderMode = normalizeEntityRenderMode(options.entityRenderMode ?? config.entityRenderMode)
+
+  container.eventMode = 'none'
+  container.zIndex = config.zorder
+  container.zorder = config.zorder
+  container.sortableChildren = false
+  container.addChild(spriteRenderer.display)
+  container.addChild(geometricRenderer.display)
+  applyCarRenderModeVisibility()
+
+  function applyCarRenderModeVisibility() {
+    spriteRenderer.display.visible = renderMode === 'sprite'
+    geometricRenderer.display.visible = renderMode === 'geometric'
+  }
+
+  function render(nextCars = cars) {
+    if (renderMode === 'geometric') {
+      geometricRenderer.render(nextCars)
+      return
+    }
+
+    spriteRenderer.render(nextCars)
+  }
+
+  function setRenderMode(mode) {
+    renderMode = normalizeEntityRenderMode(mode)
+    applyCarRenderModeVisibility()
+  }
+
+  function destroy() {
+    spriteRenderer.destroy()
+    geometricRenderer.destroy()
+
+    if (container.parent) {
+      container.parent.removeChild(container)
+    }
+
+    if (typeof container.destroy === 'function') {
+      container.destroy({ children: true })
+    }
+  }
+
+  return {
+    display: container,
+    spriteDisplay: spriteRenderer.display,
+    sprites: spriteRenderer.sprites || [],
+    render,
+    setRenderMode,
+    get renderMode() {
+      return renderMode
+    },
+    destroy
+  }
+}
+
 export function drawCarSprite(graphics, car, city, config = {}) {
   if (!graphics || !car?.position) {
     return
@@ -194,6 +276,59 @@ export function drawCarSprite(graphics, car, city, config = {}) {
     palette,
     metrics.longBody
   )
+}
+
+function createGeometricCarRenderer(cars, city, config, pixi) {
+  const graphics = new pixi.Graphics()
+
+  graphics.eventMode = 'none'
+  graphics.zIndex = config.zorder
+  graphics.zorder = config.zorder
+
+  return {
+    display: graphics,
+    render(nextCars = cars) {
+      graphics.clear()
+
+      for (const car of nextCars) {
+        drawGeometricCar(graphics, car, city, config)
+      }
+    },
+    destroy() {
+      if (graphics.parent) {
+        graphics.parent.removeChild(graphics)
+      }
+
+      graphics.destroy()
+    }
+  }
+}
+
+export function drawGeometricCar(graphics, car, city, config = {}) {
+  if (!graphics || !car?.position) {
+    return
+  }
+
+  const metrics = getCarSpriteMetrics(car, city, config)
+  const color = getCarPassengerInfectionColor(car, config.infectionColors)
+  const width = metrics.horizontal ? metrics.length : metrics.width
+  const height = metrics.horizontal ? metrics.width : metrics.length
+
+  graphics
+    .rect(
+      Math.round(car.position.x - width / 2),
+      Math.round(car.position.y - height / 2),
+      Math.round(width),
+      Math.round(height)
+    )
+    .fill({ color, alpha: 1 })
+}
+
+export function getCarPassengerInfectionColor(car, infectionColors = INFECTION_CONFIG.colors) {
+  const infection = getHighestPriorityPassengerInfection(car)
+  const colors = normalizeInfectionColors(infectionColors)
+
+  return infection ? colors[infection] : normalizeColor(car?.color)
 }
 
 export function getCarSpriteTextureKey(car, city, config = {}) {
@@ -624,6 +759,54 @@ function positiveNumberOrDefault(value, fallback) {
 
 function normalizeColor(color) {
   return Number.isInteger(color) ? color & 0xffffff : 0x3f6fd8
+}
+
+function getPixiMember(pixi, key) {
+  if (!pixi || !Object.prototype.hasOwnProperty.call(pixi, key)) {
+    return null
+  }
+
+  return pixi[key]
+}
+
+function normalizeInfectionColors(colors = {}) {
+  const palette = colors || {}
+  const fallback = INFECTION_CONFIG.colors
+
+  return {
+    susceptible: normalizeColor(palette.susceptible ?? fallback.susceptible),
+    exposed: normalizeColor(palette.exposed ?? fallback.exposed),
+    infectious: normalizeColor(palette.infectious ?? fallback.infectious),
+    recovered: normalizeColor(palette.recovered ?? fallback.recovered)
+  }
+}
+
+function getHighestPriorityPassengerInfection(car) {
+  const infections = new Set()
+
+  for (const owner of car?.riderOwners || []) {
+    const infection = owner?.npc?.infection
+
+    if (Object.prototype.hasOwnProperty.call(INFECTION_CONFIG.colors, infection)) {
+      infections.add(infection)
+    }
+  }
+
+  for (const infection of ['infectious', 'exposed', 'recovered', 'susceptible']) {
+    if (infections.has(infection)) {
+      return infection
+    }
+  }
+
+  return null
+}
+
+function normalizeEntityRenderMode(mode) {
+  const id = String(mode || '')
+
+  return Object.prototype.hasOwnProperty.call(ENTITY_RENDER_MODES, id)
+    ? id
+    : ENTITY_RENDER_MODE_ID
 }
 
 function mixColor(color, target, amount) {

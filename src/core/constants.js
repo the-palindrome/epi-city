@@ -212,6 +212,18 @@ export const SEIR_HEATMAP_CONFIG = Object.freeze({
   ])
 })
 
+export const ENTITY_RENDER_MODE_ID = 'sprite'
+
+export const ENTITY_RENDER_MODES = Object.freeze({
+  sprite: Object.freeze({ id: 'sprite', label: 'sprite' }),
+  geometric: Object.freeze({ id: 'geometric', label: 'geometric' })
+})
+
+export const ENTITY_RENDER_MODE_OPTIONS = Object.freeze([
+  ENTITY_RENDER_MODES.sprite,
+  ENTITY_RENDER_MODES.geometric
+])
+
 export const DASHBOARD_OVERLAYS = Object.freeze([
   Object.freeze({ id: 'tileType', label: 'tile overlay', kind: 'tileType' }),
   ...SEIR_HEATMAP_CONFIG.states.map((state) => Object.freeze({

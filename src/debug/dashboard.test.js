@@ -270,6 +270,7 @@ describe('debug dashboard overlays', () => {
     const overlayToggle = findByDataset(dashboard.overlayElement, 'overlayToggle')
     const mapTextureToggle = findByDataset(dashboard.overlayElement, 'mapTextureToggle')
     const mapTextureOpacity = findByDataset(dashboard.overlayElement, 'mapTextureOpacity')
+    const entityRenderMode = findByDataset(dashboard.overlayElement, 'entityRenderMode')
     const tileOverlayScheme = findByDataset(dashboard.overlayElement, 'tileOverlayScheme')
 
     expect(title.className).toBe('dashboard-title')
@@ -279,6 +280,11 @@ describe('debug dashboard overlays', () => {
     expect(findByDataset(dashboard.element, 'overlayToggle')).toBeNull()
     expect(mapTextureToggle.checked).toBe(true)
     expect(mapTextureOpacity.value).toBe('1')
+    expect(entityRenderMode.value).toBe('sprite')
+    expect(entityRenderMode.children.map((option) => option.value)).toEqual([
+      'sprite',
+      'geometric'
+    ])
     expect(overlayToggle).not.toBeNull()
     expect(overlayToggle.dataset.overlayToggle).toBe('tileType')
     expect(overlayToggle.parentNode.children[1].textContent).toBe('tile overlay')
@@ -506,6 +512,34 @@ describe('debug dashboard overlays', () => {
       ['enabled', true],
       ['opacity', 1]
     ])
+
+    dashboard.destroy()
+  })
+
+  it('updates entity rendering mode from rendering options controls', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      onEntityRenderModeChange(mode) {
+        changes.push(mode)
+      }
+    })
+    const entityRenderMode = findByDataset(dashboard.overlayElement, 'entityRenderMode')
+
+    entityRenderMode.value = 'geometric'
+    entityRenderMode.eventListeners.change()
+
+    expect(dashboard.rendering.entityRenderMode).toBe('geometric')
+    expect(changes).toEqual(['geometric'])
+
+    dashboard.setEntityRenderMode('sprite')
+
+    expect(entityRenderMode.value).toBe('sprite')
+    expect(changes).toEqual(['geometric', 'sprite'])
+
+    dashboard.setEntityRenderMode('unknown')
+
+    expect(dashboard.rendering.entityRenderMode).toBe('sprite')
+    expect(changes).toEqual(['geometric', 'sprite', 'sprite'])
 
     dashboard.destroy()
   })
