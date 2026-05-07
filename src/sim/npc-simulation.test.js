@@ -185,6 +185,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     infectionDays: options.infectionDays ?? 7,
     immunityDays: options.immunityDays ?? 90,
     infectionColors: options.infectionColors,
+    entityDebugOptions: options.entityDebugOptions,
     clock: options.clock,
     random: createSeededRandom(seed)
   })
@@ -484,6 +485,45 @@ describe('NPC simulation randomness', () => {
         targetState: 'exposed'
       })
     ])
+
+    simulation.destroy()
+  })
+
+  it('records recent contact events when contact edge display is enabled', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('contact-edges', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 0,
+      initialUpdate: false,
+      entityDebugOptions: {
+        contactEdgesVisible: true,
+        contactEdgeDurationSeconds: 60
+      }
+    })
+
+    simulation.npcs[0].position = { x: 16, y: 16 }
+    simulation.npcs[1].position = { x: 22, y: 16 }
+
+    simulation.update(1 / 60)
+
+    expect(simulation.infection.getRecentContactEvents()).toEqual([
+      expect.objectContaining({
+        id: 1,
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        sourcePosition: { x: 16, y: 16 },
+        targetPosition: { x: 22, y: 16 },
+        distance: 6
+      })
+    ])
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([])
 
     simulation.destroy()
   })

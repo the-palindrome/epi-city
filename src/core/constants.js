@@ -227,11 +227,18 @@ export const ENTITY_RENDER_MODE_OPTIONS = Object.freeze([
 export const ENTITY_RENDER_DEBUG_CONFIG = Object.freeze({
   infectionRadiusVisible: false,
   infectionEdgesVisible: false,
-  infectionEdgeDurationMinutes: 60,
+  contactEdgesVisible: false,
+  infectionEdgeDurationMinutes: 10,
+  contactEdgeDurationMinutes: 10,
   infectionEdgeDurationRange: Object.freeze({
-    min: 10,
+    min: 1,
     max: 120,
-    step: 5
+    step: 1
+  }),
+  contactEdgeDurationRange: Object.freeze({
+    min: 1,
+    max: 120,
+    step: 1
   }),
   pathTrailsVisible: false,
   pathTrailLength: 5,

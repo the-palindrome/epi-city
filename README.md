@@ -20,7 +20,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph.
 - Use rendering options to show or hide the map texture, tune texture opacity, switch NPC/car rendering between `sprite` and `geometric`, show the tile overlay, choose its color scheme, tune tile overlay opacity, enable optional SEIR heatmaps, and turn on entity debug overlays.
 - In `geometric` entity rendering, NPCs draw as infection-colored disks and cars draw as rectangles colored by any passengers inside them.
-- Entity debug overlays can show infectious NPC radius circles, recent infection arrows, and short NPC/car path trails. Infection arrows default to one game hour and can be tuned from 10 game minutes to 2 game hours.
+- Entity debug overlays can show infectious NPC radius circles, recent infection arrows, recent contact edges, and short NPC/car path trails. Infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp from 1 game minute to 2 game hours.
 - The tile overlay has `tile type`, `monochrome-light`, and `monochrome-dark` color schemes. The `tile type` scheme uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, blue residential buildings, and amber commercial buildings.
 - SEIR heatmaps use kernel density estimation for susceptible, exposed, infectious, and recovered NPC positions. The rendering panel includes a kernel-radius slider plus exact number input.
 - The epidemic graph plots S/E/I/R counts over simulated time, includes one tickbox per state, can be resized, labels its time/case axes, and supports drag-to-pan plus wheel-to-zoom on the time axis.
@@ -161,7 +161,9 @@ window.citySim.setDayNightOverlayEnabled(false)
 window.citySim.setEntityRenderMode('geometric')
 window.citySim.setInfectionRadiusVisible(true)
 window.citySim.setInfectionEdgesVisible(true)
-window.citySim.setInfectionEdgeDuration(60)
+window.citySim.setContactEdgesVisible(true)
+window.citySim.setInfectionEdgeDuration(10)
+window.citySim.setContactEdgeDuration(10)
 window.citySim.setPathTrailsVisible(true)
 window.citySim.setPathTrailLength(5)
 window.citySim.setHeatmapRadius(128)
@@ -180,7 +182,9 @@ window.citySim.dashboard.setMapTextureOpacity(0.45)
 window.citySim.dashboard.setEntityRenderMode('geometric')
 window.citySim.dashboard.setInfectionRadiusVisible(true)
 window.citySim.dashboard.setInfectionEdgesVisible(true)
-window.citySim.dashboard.setInfectionEdgeDuration(60)
+window.citySim.dashboard.setContactEdgesVisible(true)
+window.citySim.dashboard.setInfectionEdgeDuration(10)
+window.citySim.dashboard.setContactEdgeDuration(10)
 window.citySim.dashboard.setPathTrailsVisible(true)
 window.citySim.dashboard.setPathTrailLength(5)
 window.citySim.dashboard.setOverlay('tileType', true)

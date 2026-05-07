@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
+import { ENTITY_RENDER_DEBUG_CONFIG, INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
 import { hourInRange, normalizeHour } from '../core/time.js'
 import { createNpcSpriteRenderer } from '../render/npc-sprite-renderer.js'
@@ -19,6 +19,7 @@ const SECONDS_PER_HOUR = 3600
 const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
 const MAX_TRANSMISSION_EVENTS = 1024
 const MAX_TRANSMISSION_EVENT_AGE_SECONDS = 2 * SECONDS_PER_HOUR
+const DEFAULT_CONTACT_EVENT_RETENTION_SECONDS = ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationMinutes * SECONDS_PER_MINUTE
 const MIN_INFECTION_GRID_CELL_SIZE = 8
 const INFECTION_STATE_IDS = Object.freeze({
   susceptible: 0,
@@ -60,6 +61,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     config
   }
   let destroyed = false
+  let entityDebugOptions = { ...(config.entityDebugOptions || {}) }
 
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
@@ -89,13 +91,18 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
 
   const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
+  infection.setContactTracingEnabled(
+    Boolean(entityDebugOptions.contactEdgesVisible),
+    entityDebugOptions.contactEdgeDurationSeconds
+  )
   const npcRenderer = createNpcSpriteRenderer(npcs, city, config, infection, {
     pixi: PIXI,
     visibleTileCounts,
     visibleTileIndexes,
     clock,
+    getContactEvents: (options) => infection.getRecentContactEvents(options),
     getTransmissionEvents: (options) => infection.getRecentTransmissionEvents(options),
-    entityDebugOptions: config.entityDebugOptions
+    entityDebugOptions
   })
   const display = npcRenderer.display
   const graphics = npcRenderer.spriteDisplay || display
@@ -144,6 +151,12 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
 
   function setEntityDebugOptions(options) {
+    entityDebugOptions = {
+      ...entityDebugOptions,
+      ...(options || {})
+    }
+    infection.setContactTracingEnabled(Boolean(entityDebugOptions.contactEdgesVisible), entityDebugOptions.contactEdgeDurationSeconds)
+
     if (typeof npcRenderer.setDebugOptions === 'function') {
       npcRenderer.setDebugOptions(options)
       render()
@@ -371,7 +384,12 @@ class NpcInfectionDynamics {
     this.gridStamp = 0
     this.elapsedSimulationSeconds = 0
     this.transmissionEvents = []
+    this.contactEvents = []
+    this.contactEventsByPair = new Map()
     this.nextTransmissionEventId = 1
+    this.nextContactEventId = 1
+    this.contactTracingEnabled = false
+    this.contactEventRetentionSeconds = DEFAULT_CONTACT_EVENT_RETENTION_SECONDS
 
     this.counts[INFECTION_STATE_IDS.susceptible] = npcs.length
 
@@ -391,8 +409,10 @@ class NpcInfectionDynamics {
 
     this.elapsedSimulationSeconds += simulationDeltaSeconds
     this.advanceTimers(simulationDeltaSeconds)
+    this.recordRecentContacts()
     this.transmit(simulationDeltaSeconds)
     this.pruneTransmissionEvents(this.getElapsedSimulationSeconds() - MAX_TRANSMISSION_EVENT_AGE_SECONDS)
+    this.pruneContactEvents(this.getElapsedSimulationSeconds() - this.contactEventRetentionSeconds)
   }
 
   getStats() {
@@ -417,8 +437,38 @@ class NpcInfectionDynamics {
       .map(cloneTransmissionEvent)
   }
 
+  getRecentContactEvents(options = {}) {
+    const sinceId = Number(options.sinceId)
+    const maxAgeSeconds = Number(options.maxAgeSeconds)
+    const minId = Number.isFinite(sinceId) ? sinceId : 0
+    const minSeconds = Number.isFinite(maxAgeSeconds)
+      ? this.getElapsedSimulationSeconds() - Math.max(0, maxAgeSeconds)
+      : -Infinity
+
+    return this.contactEvents
+      .filter((event) => event.id > minId && event.simulationSeconds >= minSeconds)
+      .map(cloneContactEvent)
+  }
+
   clearTransmissionEvents() {
     this.transmissionEvents.length = 0
+  }
+
+  clearContactEvents() {
+    this.contactEvents.length = 0
+    this.contactEventsByPair.clear()
+  }
+
+  setContactTracingEnabled(enabled, retentionSeconds = null) {
+    this.contactTracingEnabled = Boolean(enabled)
+
+    if (Number.isFinite(Number(retentionSeconds)) && Number(retentionSeconds) > 0) {
+      this.contactEventRetentionSeconds = Number(retentionSeconds)
+    }
+
+    if (!this.contactTracingEnabled) {
+      this.clearContactEvents()
+    }
   }
 
   getNpcColor(npc) {
@@ -498,6 +548,31 @@ class NpcInfectionDynamics {
     }
   }
 
+  recordContactEvent(sourceNpc, targetNpc, dx, dy) {
+    const pairKey = contactPairKey(sourceNpc.id, targetNpc.id)
+    const existing = this.contactEventsByPair.get(pairKey)
+    const event = existing || {
+      id: this.nextContactEventId,
+      sourceNpcId: Math.min(sourceNpc.id, targetNpc.id),
+      targetNpcId: Math.max(sourceNpc.id, targetNpc.id)
+    }
+    const source = sourceNpc.id === event.sourceNpcId ? sourceNpc : targetNpc
+    const target = targetNpc.id === event.targetNpcId ? targetNpc : sourceNpc
+
+    event.simulationSeconds = this.getElapsedSimulationSeconds()
+    event.sourcePosition = clonePosition(source.position)
+    event.targetPosition = clonePosition(target.position)
+    event.sourceTile = cloneTile(source.tile)
+    event.targetTile = cloneTile(target.tile)
+    event.distance = Math.hypot(dx, dy)
+
+    if (!existing) {
+      this.nextContactEventId += 1
+      this.contactEvents.push(event)
+      this.contactEventsByPair.set(pairKey, event)
+    }
+  }
+
   pruneTransmissionEvents(minSimulationSeconds) {
     if (!Number.isFinite(minSimulationSeconds)) {
       return
@@ -515,6 +590,28 @@ class NpcInfectionDynamics {
     if (firstKept > 0) {
       this.transmissionEvents.splice(0, firstKept)
     }
+  }
+
+  pruneContactEvents(minSimulationSeconds) {
+    if (!Number.isFinite(minSimulationSeconds) || this.contactEvents.length === 0) {
+      return
+    }
+
+    let writeIndex = 0
+
+    for (let index = 0; index < this.contactEvents.length; index += 1) {
+      const event = this.contactEvents[index]
+
+      if (event.simulationSeconds < minSimulationSeconds) {
+        this.contactEventsByPair.delete(contactPairKey(event.sourceNpcId, event.targetNpcId))
+        continue
+      }
+
+      this.contactEvents[writeIndex] = event
+      writeIndex += 1
+    }
+
+    this.contactEvents.length = writeIndex
   }
 
   seedInitialInfections(initialInfectiousCount) {
@@ -645,6 +742,66 @@ class NpcInfectionDynamics {
           }
         }
       }
+    }
+  }
+
+  recordRecentContacts() {
+    if (!this.contactTracingEnabled || this.infectionDistance <= 0) {
+      return
+    }
+
+    this.gridStamp += 1
+
+    if (this.gridStamp === 0) {
+      this.gridStamps.fill(0)
+      this.gridStamp = 1
+    }
+
+    const infectionDistanceSquared = this.infectionDistance * this.infectionDistance
+
+    for (let index = 0; index < this.npcs.length; index += 1) {
+      const npc = this.npcs[index]
+
+      if (!canParticipateInInfection(npc)) {
+        continue
+      }
+
+      const cellX = this.cellXAt(npc.position.x)
+      const cellY = this.cellYAt(npc.position.y)
+
+      if (cellX < 0 || cellY < 0) {
+        continue
+      }
+
+      for (let neighborY = Math.max(0, cellY - 1); neighborY <= Math.min(this.gridRows - 1, cellY + 1); neighborY += 1) {
+        for (let neighborX = Math.max(0, cellX - 1); neighborX <= Math.min(this.gridColumns - 1, cellX + 1); neighborX += 1) {
+          const cellIndex = neighborY * this.gridColumns + neighborX
+
+          if (this.gridStamps[cellIndex] !== this.gridStamp) {
+            continue
+          }
+
+          for (let otherIndex = this.gridHeads[cellIndex]; otherIndex !== -1; otherIndex = this.gridNext[otherIndex]) {
+            const otherNpc = this.npcs[otherIndex]
+            const dx = otherNpc.position.x - npc.position.x
+            const dy = otherNpc.position.y - npc.position.y
+
+            if (dx * dx + dy * dy <= infectionDistanceSquared) {
+              this.recordContactEvent(otherNpc, npc, dx, dy)
+            }
+          }
+        }
+      }
+
+      const cellIndex = cellY * this.gridColumns + cellX
+
+      if (this.gridStamps[cellIndex] !== this.gridStamp) {
+        this.gridStamps[cellIndex] = this.gridStamp
+        this.gridHeads[cellIndex] = -1
+      }
+
+      this.gridNext[index] = this.gridHeads[cellIndex]
+      this.gridHeads[cellIndex] = index
     }
   }
 
@@ -1484,6 +1641,22 @@ function cloneTransmissionEvent(event) {
     sourceTile: event.sourceTile ? { ...event.sourceTile } : null,
     targetTile: event.targetTile ? { ...event.targetTile } : null
   }
+}
+
+function cloneContactEvent(event) {
+  return {
+    ...event,
+    sourcePosition: { ...event.sourcePosition },
+    targetPosition: { ...event.targetPosition },
+    sourceTile: event.sourceTile ? { ...event.sourceTile } : null,
+    targetTile: event.targetTile ? { ...event.targetTile } : null
+  }
+}
+
+function contactPairKey(firstNpcId, secondNpcId) {
+  return firstNpcId < secondNpcId
+    ? `${firstNpcId}:${secondNpcId}`
+    : `${secondNpcId}:${firstNpcId}`
 }
 
 function normalizeInfectionColors(colors = {}) {

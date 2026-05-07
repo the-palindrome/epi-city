@@ -246,7 +246,7 @@ describe('NPC sprite renderer', () => {
     renderer.destroy()
   })
 
-  it('draws infection radius, transmission edges, and NPC path trails as overlays', () => {
+  it('draws contact edges below infection edges and NPC path trails as overlays', () => {
     const city = {
       width: 2,
       height: 1,
@@ -280,10 +280,20 @@ describe('NPC sprite renderer', () => {
       entityDebugOptions: {
         infectionRadiusVisible: true,
         infectionEdgesVisible: true,
+        contactEdgesVisible: true,
         infectionEdgeDurationSeconds: 3600,
+        contactEdgeDurationSeconds: 60,
         pathTrailsVisible: true,
         pathTrailLength: 2
       },
+      getContactEvents: () => [{
+        id: 1,
+        simulationSeconds: 0,
+        sourceNpcId: 0,
+        targetNpcId: 1,
+        sourcePosition: { x: 16, y: 16 },
+        targetPosition: { x: 48, y: 16 }
+      }],
       getTransmissionEvents: () => [{
         id: 1,
         simulationSeconds: 0,
@@ -305,11 +315,20 @@ describe('NPC sprite renderer', () => {
     expect(overlay.circleStrokes).toEqual([
       expect.objectContaining({ x: 24, y: 16, radius: 24, color: colors[0] })
     ])
-    expect(overlay.strokes.some((stroke) => stroke.color === INFECTION_CONFIG.colors.infectious)).toBe(true)
+    const contactStrokeIndex = overlay.strokes.findIndex((stroke) => stroke.color === INFECTION_CONFIG.colors.susceptible)
+    const infectionStrokeIndex = overlay.strokes.findIndex((stroke) => (
+      stroke.color === INFECTION_CONFIG.colors.infectious &&
+      stroke.width === 3
+    ))
+
+    expect(contactStrokeIndex).toBeGreaterThanOrEqual(0)
+    expect(infectionStrokeIndex).toBeGreaterThan(contactStrokeIndex)
+    expect(overlay.strokes[contactStrokeIndex].width).toBe(3)
+    expect(overlay.strokes[infectionStrokeIndex].width).toBe(3)
     expect(overlay.strokes.some((stroke) => stroke.color === colors[0])).toBe(true)
     expect(overlay.strokes.some((stroke) => stroke.color === colors[1])).toBe(true)
 
-    renderer.setDebugOptions({ infectionRadiusVisible: false, infectionEdgesVisible: false, pathTrailsVisible: false })
+    renderer.setDebugOptions({ infectionRadiusVisible: false, infectionEdgesVisible: false, contactEdgesVisible: false, pathTrailsVisible: false })
     renderer.render()
 
     expect(overlay.circleStrokes).toEqual([])

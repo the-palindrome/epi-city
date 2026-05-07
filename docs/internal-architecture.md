@@ -166,7 +166,7 @@ NPC infection dynamics run inside the same system after movement updates. Each N
 
 Transmission indexes only infectious NPCs in a reusable world-space spatial hash sized from the infection distance. Susceptible NPCs check their own cell plus neighboring cells and then run exact squared-distance tests against the infectious candidates. This avoids an all-pairs contact scan at the 10,000-NPC dashboard limit. Infection randomness uses a dedicated seeded random stream derived from the NPC seed, so adding disease dynamics does not change movement or timetable repeatability.
 
-Successful transmissions append compact source/target snapshots to a bounded recent-event buffer. Rendering options read that buffer only when infection arrows are enabled, so normal simulation updates avoid extra rendering work and old events are pruned after the maximum display window.
+Successful transmissions append compact source/target snapshots to a bounded recent-event buffer. Contact tracing records recent close-contact pairs only while the contact-edge overlay is enabled, so normal simulation updates avoid the all-contact proximity scan. Old contact events are pruned after the configured edge display window.
 
 ## Car Simulation
 
@@ -220,7 +220,7 @@ Press `Space` to play or pause the simulation, press `s` to toggle the simulatio
 
 Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car sprites. `geometric` draws NPCs as disks colored by infection state and cars as rectangles colored by the highest-priority infection state among passengers currently inside the car; empty cars keep their normal car color.
 
-Entity debug overlays share the entity renderer pass and are only drawn when enabled. Infection radius renders outline-only circles around infectious NPCs, infection arrows reuse recorded transmission events from the infection dynamics, and path trails keep a bounded in-memory position history per visible NPC or car. Infection arrows default to a 60-minute game-time lifetime and clamp to 10-120 game minutes; path trails clamp to 1-100 past steps.
+Entity debug overlays share the entity renderer pass and are only drawn when enabled. Infection radius renders outline-only circles around infectious NPCs, infection arrows reuse recorded transmission events from the infection dynamics, contact edges show close-contact pairs from their own contact edge window, and path trails keep a bounded in-memory position history per visible NPC or car. Infection arrows render above contact edges; infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp to 1-120 game minutes. Path trails clamp to 1-100 past steps.
 
 The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
 
@@ -283,7 +283,9 @@ window.citySim.setDayNightOverlayEnabled(false)
 window.citySim.setEntityRenderMode('geometric')
 window.citySim.setInfectionRadiusVisible(true)
 window.citySim.setInfectionEdgesVisible(true)
-window.citySim.setInfectionEdgeDuration(60)
+window.citySim.setContactEdgesVisible(true)
+window.citySim.setInfectionEdgeDuration(10)
+window.citySim.setContactEdgeDuration(10)
 window.citySim.setPathTrailsVisible(true)
 window.citySim.setPathTrailLength(5)
 window.citySim.setHeatmapRadius(128)
@@ -299,7 +301,9 @@ window.citySim.setMapTextureEnabled(false)
 window.citySim.setMapTextureOpacity(0.45)
 window.citySim.dashboard.setInfectionRadiusVisible(true)
 window.citySim.dashboard.setInfectionEdgesVisible(true)
-window.citySim.dashboard.setInfectionEdgeDuration(60)
+window.citySim.dashboard.setContactEdgesVisible(true)
+window.citySim.dashboard.setInfectionEdgeDuration(10)
+window.citySim.dashboard.setContactEdgeDuration(10)
 window.citySim.dashboard.setPathTrailsVisible(true)
 window.citySim.dashboard.setPathTrailLength(5)
 window.citySim.dashboard.setOverlay('tileType', true)

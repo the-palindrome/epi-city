@@ -347,7 +347,11 @@ describe('debug dashboard overlays', () => {
     const entityRenderMode = findByDataset(dashboard.overlayElement, 'entityRenderMode')
     const infectionRadiusToggle = findByDataset(dashboard.overlayElement, 'infectionRadiusToggle')
     const infectionEdgesToggle = findByDataset(dashboard.overlayElement, 'infectionEdgesToggle')
+    const contactEdgesToggle = findByDataset(dashboard.overlayElement, 'contactEdgesToggle')
+    const infectionEdgeDurationSlider = findByDataset(dashboard.overlayElement, 'infectionEdgeDurationSlider')
     const infectionEdgeDuration = findByDataset(dashboard.overlayElement, 'infectionEdgeDuration')
+    const contactEdgeDurationSlider = findByDataset(dashboard.overlayElement, 'contactEdgeDurationSlider')
+    const contactEdgeDuration = findByDataset(dashboard.overlayElement, 'contactEdgeDuration')
     const pathTrailsToggle = findByDataset(dashboard.overlayElement, 'pathTrailsToggle')
     const pathTrailLength = findByDataset(dashboard.overlayElement, 'pathTrailLength')
     const tileOverlayScheme = findByDataset(dashboard.overlayElement, 'tileOverlayScheme')
@@ -366,7 +370,18 @@ describe('debug dashboard overlays', () => {
     ])
     expect(infectionRadiusToggle.checked).toBe(false)
     expect(infectionEdgesToggle.checked).toBe(false)
-    expect(infectionEdgeDuration.value).toBe('60')
+    expect(contactEdgesToggle.checked).toBe(false)
+    expect(infectionEdgeDurationSlider.min).toBe('1')
+    expect(infectionEdgeDuration.value).toBe('10')
+    expect(contactEdgeDurationSlider.min).toBe('1')
+    expect(contactEdgeDuration.value).toBe('10')
+    const entityControls = infectionEdgesToggle.parentNode.parentNode.children
+    const infectionEdgesIndex = entityControls.indexOf(infectionEdgesToggle.parentNode)
+    const infectionEdgeDurationIndex = entityControls.indexOf(infectionEdgeDuration.parentNode.parentNode)
+    const contactEdgesIndex = entityControls.indexOf(contactEdgesToggle.parentNode)
+
+    expect(infectionEdgeDurationIndex).toBe(infectionEdgesIndex + 1)
+    expect(contactEdgesIndex).toBe(infectionEdgeDurationIndex + 1)
     expect(pathTrailsToggle.checked).toBe(false)
     expect(pathTrailLength.value).toBe('5')
     expect(overlayToggle).not.toBeNull()
@@ -693,8 +708,14 @@ describe('debug dashboard overlays', () => {
       onInfectionEdgesVisibleChange(visible) {
         changes.push(['edges', visible])
       },
+      onContactEdgesVisibleChange(visible) {
+        changes.push(['contacts', visible])
+      },
       onInfectionEdgeDurationChange(duration) {
-        changes.push(['duration', duration])
+        changes.push(['infectionDuration', duration])
+      },
+      onContactEdgeDurationChange(duration) {
+        changes.push(['contactDuration', duration])
       },
       onPathTrailsVisibleChange(visible) {
         changes.push(['trails', visible])
@@ -706,8 +727,11 @@ describe('debug dashboard overlays', () => {
     const entityRenderMode = findByDataset(dashboard.overlayElement, 'entityRenderMode')
     const infectionRadiusToggle = findByDataset(dashboard.overlayElement, 'infectionRadiusToggle')
     const infectionEdgesToggle = findByDataset(dashboard.overlayElement, 'infectionEdgesToggle')
+    const contactEdgesToggle = findByDataset(dashboard.overlayElement, 'contactEdgesToggle')
     const infectionEdgeDurationSlider = findByDataset(dashboard.overlayElement, 'infectionEdgeDurationSlider')
     const infectionEdgeDuration = findByDataset(dashboard.overlayElement, 'infectionEdgeDuration')
+    const contactEdgeDurationSlider = findByDataset(dashboard.overlayElement, 'contactEdgeDurationSlider')
+    const contactEdgeDuration = findByDataset(dashboard.overlayElement, 'contactEdgeDuration')
     const pathTrailsToggle = findByDataset(dashboard.overlayElement, 'pathTrailsToggle')
     const pathTrailLengthSlider = findByDataset(dashboard.overlayElement, 'pathTrailLengthSlider')
     const pathTrailLength = findByDataset(dashboard.overlayElement, 'pathTrailLength')
@@ -718,8 +742,12 @@ describe('debug dashboard overlays', () => {
     infectionRadiusToggle.eventListeners.change()
     infectionEdgesToggle.checked = true
     infectionEdgesToggle.eventListeners.change()
-    infectionEdgeDurationSlider.value = '120'
+    contactEdgesToggle.checked = true
+    contactEdgesToggle.eventListeners.change()
+    infectionEdgeDurationSlider.value = '30'
     infectionEdgeDurationSlider.eventListeners.input()
+    contactEdgeDurationSlider.value = '120'
+    contactEdgeDurationSlider.eventListeners.input()
     pathTrailsToggle.checked = true
     pathTrailsToggle.eventListeners.change()
     pathTrailLength.value = '120'
@@ -728,8 +756,11 @@ describe('debug dashboard overlays', () => {
     expect(dashboard.rendering.entityRenderMode).toBe('geometric')
     expect(dashboard.rendering.infectionRadiusVisible).toBe(true)
     expect(dashboard.rendering.infectionEdgesVisible).toBe(true)
-    expect(dashboard.rendering.infectionEdgeDurationMinutes).toBe(120)
-    expect(infectionEdgeDuration.value).toBe('120')
+    expect(dashboard.rendering.contactEdgesVisible).toBe(true)
+    expect(dashboard.rendering.infectionEdgeDurationMinutes).toBe(30)
+    expect(dashboard.rendering.contactEdgeDurationMinutes).toBe(120)
+    expect(infectionEdgeDuration.value).toBe('30')
+    expect(contactEdgeDuration.value).toBe('120')
     expect(dashboard.rendering.pathTrailsVisible).toBe(true)
     expect(dashboard.rendering.pathTrailLength).toBe(100)
     expect(pathTrailLengthSlider.value).toBe('100')
@@ -737,20 +768,25 @@ describe('debug dashboard overlays', () => {
       ['mode', 'geometric'],
       ['radius', true],
       ['edges', true],
-      ['duration', 120],
+      ['contacts', true],
+      ['infectionDuration', 30],
+      ['contactDuration', 120],
       ['trails', true],
       ['trailLength', 100]
     ])
 
     dashboard.setEntityRenderMode('sprite')
     dashboard.setInfectionEdgeDuration(1)
+    dashboard.setContactEdgeDuration(1)
     dashboard.setPathTrailLength(1)
     dashboard.setInfectionRadiusVisible(false)
     dashboard.setInfectionEdgesVisible(false)
+    dashboard.setContactEdgesVisible(false)
     dashboard.setPathTrailsVisible(false)
 
     expect(entityRenderMode.value).toBe('sprite')
-    expect(infectionEdgeDuration.value).toBe('10')
+    expect(infectionEdgeDuration.value).toBe('1')
+    expect(contactEdgeDuration.value).toBe('1')
     expect(pathTrailLength.value).toBe('1')
 
     dashboard.setEntityRenderMode('unknown')
@@ -760,14 +796,18 @@ describe('debug dashboard overlays', () => {
       ['mode', 'geometric'],
       ['radius', true],
       ['edges', true],
-      ['duration', 120],
+      ['contacts', true],
+      ['infectionDuration', 30],
+      ['contactDuration', 120],
       ['trails', true],
       ['trailLength', 100],
       ['mode', 'sprite'],
-      ['duration', 10],
+      ['infectionDuration', 1],
+      ['contactDuration', 1],
       ['trailLength', 1],
       ['radius', false],
       ['edges', false],
+      ['contacts', false],
       ['trails', false],
       ['mode', 'sprite']
     ])

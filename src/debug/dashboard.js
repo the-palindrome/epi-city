@@ -47,6 +47,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const graphResizer = createGraphDashboardResizer(graphDashboard, graphResizeHandle, () => epidemicGraph.render())
   const heatmapRadiusRange = normalizeHeatmapRadiusRange(simulationControls.heatmapRadiusRange)
   const infectionEdgeDurationRange = normalizeInfectionEdgeDurationRange(simulationControls.infectionEdgeDurationRange)
+  const contactEdgeDurationRange = normalizeContactEdgeDurationRange(simulationControls.contactEdgeDurationRange)
   const pathTrailLengthRange = normalizePathTrailLengthRange(simulationControls.pathTrailLengthRange)
   const getNpcs = typeof simulationControls.getNpcs === 'function' ? simulationControls.getNpcs : () => []
   const renderingSettings = {
@@ -55,9 +56,14 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     entityRenderMode: normalizeEntityRenderMode(simulationControls.entityRenderMode),
     infectionRadiusVisible: Boolean(simulationControls.infectionRadiusVisible),
     infectionEdgesVisible: Boolean(simulationControls.infectionEdgesVisible),
+    contactEdgesVisible: Boolean(simulationControls.contactEdgesVisible),
     infectionEdgeDurationMinutes: normalizeInfectionEdgeDuration(
       simulationControls.infectionEdgeDurationMinutes ?? ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationMinutes,
       infectionEdgeDurationRange
+    ),
+    contactEdgeDurationMinutes: normalizeContactEdgeDuration(
+      simulationControls.contactEdgeDurationMinutes ?? ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationMinutes,
+      contactEdgeDurationRange
     ),
     pathTrailsVisible: Boolean(simulationControls.pathTrailsVisible),
     pathTrailLength: normalizePathTrailLength(
@@ -77,7 +83,9 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     onEntityRenderModeChange: simulationControls.onEntityRenderModeChange || noop,
     onInfectionRadiusVisibleChange: simulationControls.onInfectionRadiusVisibleChange || noop,
     onInfectionEdgesVisibleChange: simulationControls.onInfectionEdgesVisibleChange || noop,
+    onContactEdgesVisibleChange: simulationControls.onContactEdgesVisibleChange || noop,
     onInfectionEdgeDurationChange: simulationControls.onInfectionEdgeDurationChange || noop,
+    onContactEdgeDurationChange: simulationControls.onContactEdgeDurationChange || noop,
     onPathTrailsVisibleChange: simulationControls.onPathTrailsVisibleChange || noop,
     onPathTrailLengthChange: simulationControls.onPathTrailLengthChange || noop,
     onHeatmapRadiusChange: simulationControls.onHeatmapRadiusChange || noop
@@ -98,9 +106,18 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     dataset: 'infectionEdgesToggle',
     checked: renderingSettings.infectionEdgesVisible
   })
+  const contactEdgesToggle = createDashboardToggle({
+    labelText: 'display contacts',
+    dataset: 'contactEdgesToggle',
+    checked: renderingSettings.contactEdgesVisible
+  })
   const infectionEdgeDurationField = createInfectionEdgeDurationField(
     renderingSettings.infectionEdgeDurationMinutes,
     infectionEdgeDurationRange
+  )
+  const contactEdgeDurationField = createContactEdgeDurationField(
+    renderingSettings.contactEdgeDurationMinutes,
+    contactEdgeDurationRange
   )
   const pathTrailsToggle = createDashboardToggle({
     labelText: 'display path trails',
@@ -148,6 +165,8 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   entitySection.appendChild(infectionRadiusToggle.label)
   entitySection.appendChild(infectionEdgesToggle.label)
   entitySection.appendChild(infectionEdgeDurationField.label)
+  entitySection.appendChild(contactEdgesToggle.label)
+  entitySection.appendChild(contactEdgeDurationField.label)
   entitySection.appendChild(pathTrailsToggle.label)
   entitySection.appendChild(pathTrailLengthField.label)
   overlayDashboard.appendChild(entitySection)
@@ -194,12 +213,24 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setInfectionEdgesVisible(infectionEdgesToggle.input.checked)
   })
 
+  contactEdgesToggle.input.addEventListener('change', () => {
+    setContactEdgesVisible(contactEdgesToggle.input.checked)
+  })
+
   infectionEdgeDurationField.slider.addEventListener('input', () => {
     setInfectionEdgeDuration(infectionEdgeDurationField.slider.value)
   })
 
   infectionEdgeDurationField.input.addEventListener('change', () => {
     setInfectionEdgeDuration(infectionEdgeDurationField.input.value)
+  })
+
+  contactEdgeDurationField.slider.addEventListener('input', () => {
+    setContactEdgeDuration(contactEdgeDurationField.slider.value)
+  })
+
+  contactEdgeDurationField.input.addEventListener('change', () => {
+    setContactEdgeDuration(contactEdgeDurationField.input.value)
   })
 
   pathTrailsToggle.input.addEventListener('change', () => {
@@ -336,6 +367,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     renderingCallbacks.onInfectionEdgesVisibleChange(renderingSettings.infectionEdgesVisible)
   }
 
+  function setContactEdgesVisible(visible) {
+    renderingSettings.contactEdgesVisible = Boolean(visible)
+    contactEdgesToggle.input.checked = renderingSettings.contactEdgesVisible
+    renderingCallbacks.onContactEdgesVisibleChange(renderingSettings.contactEdgesVisible)
+  }
+
   function setInfectionEdgeDuration(durationMinutes) {
     const nextDuration = normalizeInfectionEdgeDuration(durationMinutes, infectionEdgeDurationRange)
 
@@ -343,6 +380,15 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     infectionEdgeDurationField.slider.value = String(nextDuration)
     infectionEdgeDurationField.input.value = formatNumberInput(nextDuration)
     renderingCallbacks.onInfectionEdgeDurationChange(nextDuration)
+  }
+
+  function setContactEdgeDuration(durationMinutes) {
+    const nextDuration = normalizeContactEdgeDuration(durationMinutes, contactEdgeDurationRange)
+
+    renderingSettings.contactEdgeDurationMinutes = nextDuration
+    contactEdgeDurationField.slider.value = String(nextDuration)
+    contactEdgeDurationField.input.value = formatNumberInput(nextDuration)
+    renderingCallbacks.onContactEdgeDurationChange(nextDuration)
   }
 
   function setPathTrailsVisible(visible) {
@@ -474,7 +520,9 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setEntityRenderMode,
     setInfectionRadiusVisible,
     setInfectionEdgesVisible,
+    setContactEdgesVisible,
     setInfectionEdgeDuration,
+    setContactEdgeDuration,
     setPathTrailsVisible,
     setPathTrailLength,
     setHeatmapRadius,
@@ -1747,13 +1795,26 @@ function createEntityRenderModeField(mode) {
 
 function createInfectionEdgeDurationField(durationMinutes, durationRange) {
   return createPairedRangeNumberField({
-    labelText: 'edge minutes',
+    labelText: 'infect edge min',
     className: 'dashboard-infection-edge-duration-field',
     sliderDataset: 'infectionEdgeDurationSlider',
     inputDataset: 'infectionEdgeDuration',
     value: durationMinutes,
     range: durationRange,
     normalize: normalizeInfectionEdgeDuration,
+    inputFormat: formatNumberInput
+  })
+}
+
+function createContactEdgeDurationField(durationMinutes, durationRange) {
+  return createPairedRangeNumberField({
+    labelText: 'contact edge min',
+    className: 'dashboard-contact-edge-duration-field',
+    sliderDataset: 'contactEdgeDurationSlider',
+    inputDataset: 'contactEdgeDuration',
+    value: durationMinutes,
+    range: durationRange,
+    normalize: normalizeContactEdgeDuration,
     inputFormat: formatNumberInput
   })
 }
@@ -2403,6 +2464,14 @@ function normalizeInfectionEdgeDurationRange(range) {
 
 function normalizeInfectionEdgeDuration(durationMinutes, range = ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange) {
   return Number(normalizeNumberInRange(durationMinutes, normalizeInfectionEdgeDurationRange(range)).toFixed(4))
+}
+
+function normalizeContactEdgeDurationRange(range) {
+  return normalizeNumberRange(range, ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationRange)
+}
+
+function normalizeContactEdgeDuration(durationMinutes, range = ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationRange) {
+  return Number(normalizeNumberInRange(durationMinutes, normalizeContactEdgeDurationRange(range)).toFixed(4))
 }
 
 function normalizePathTrailLengthRange(range) {

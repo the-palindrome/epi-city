@@ -25,6 +25,7 @@ const NPC_SPRITE_FACING_IDS = Object.freeze({
 })
 const NPC_TEXTURES_PER_FACING = NPC_SPRITE_FRAME_COUNT
 const NPC_TEXTURES_PER_COLOR = NPC_SPRITE_FACINGS.length * NPC_TEXTURES_PER_FACING
+const DEBUG_EDGE_WIDTH = 3
 
 export function createNpcSpriteRenderer(npcs, city, config = {}, infection = null, options = {}) {
   const pixi = options.pixi
@@ -70,6 +71,9 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
   const getTransmissionEvents = typeof options.getTransmissionEvents === 'function'
     ? options.getTransmissionEvents
     : () => []
+  const getContactEvents = typeof options.getContactEvents === 'function'
+    ? options.getContactEvents
+    : () => []
   const clock = options.clock || null
   let renderMode = normalizeEntityRenderMode(options.entityRenderMode ?? config.entityRenderMode)
   let debugOptions = normalizeEntityDebugOptions(options.entityDebugOptions ?? config.entityDebugOptions)
@@ -99,6 +103,7 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
       clock,
       config,
       debugOptions,
+      getContactEvents,
       getTransmissionEvents,
       trailHistories
     })
@@ -500,7 +505,7 @@ function drawNpcDebugOverlays(graphics, npcs, infection, context) {
 
   const options = context.debugOptions
 
-  if (!options.infectionRadiusVisible && !options.infectionEdgesVisible && !options.pathTrailsVisible) {
+  if (!options.infectionRadiusVisible && !options.infectionEdgesVisible && !options.contactEdgesVisible && !options.pathTrailsVisible) {
     return
   }
 
@@ -525,6 +530,10 @@ function drawNpcDebugOverlays(graphics, npcs, infection, context) {
 
   if (options.infectionRadiusVisible) {
     drawInfectionRadiusOverlays(graphics, visibleNpcs, infection)
+  }
+
+  if (options.contactEdgesVisible) {
+    drawContactEdges(graphics, npcById, context.getContactEvents, options.contactEdgeDurationSeconds, context.clock)
   }
 
   if (options.infectionEdgesVisible) {
@@ -566,6 +575,29 @@ function drawTransmissionEdges(graphics, npcById, getTransmissionEvents, duratio
 
     drawDirectedLine(graphics, from, to, {
       color: INFECTION_CONFIG.colors.infectious,
+      alpha,
+      width: DEBUG_EDGE_WIDTH
+    })
+  }
+}
+
+function drawContactEdges(graphics, npcById, getContactEvents, durationSeconds, clock) {
+  const events = getContactEvents({ maxAgeSeconds: durationSeconds })
+  const now = getElapsedSimulationSeconds(clock)
+
+  for (const event of events) {
+    const age = now === null ? 0 : Math.max(0, now - event.simulationSeconds)
+    const alpha = now === null ? 0.68 : Math.max(0.12, 0.68 * (1 - age / Math.max(durationSeconds, 1)))
+    const from = currentOrSnapshotPosition(npcById.get(event.sourceNpcId), event.sourcePosition)
+    const to = currentOrSnapshotPosition(npcById.get(event.targetNpcId), event.targetPosition)
+
+    if (!from || !to) {
+      continue
+    }
+
+    strokePolyline(graphics, [from, to], {
+      width: DEBUG_EDGE_WIDTH,
+      color: INFECTION_CONFIG.colors.susceptible,
       alpha
     })
   }
@@ -635,7 +667,7 @@ function drawDirectedLine(graphics, from, to, style) {
   const leftY = arrowY - unitY * arrowSize + unitX * arrowSize * 0.55
   const rightX = arrowX - unitX * arrowSize + unitY * arrowSize * 0.55
   const rightY = arrowY - unitY * arrowSize - unitX * arrowSize * 0.55
-  const strokeStyle = { width: 2, color: style.color, alpha: style.alpha }
+  const strokeStyle = { width: positiveNumberOrDefault(style.width, 2), color: style.color, alpha: style.alpha }
 
   graphics.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke(strokeStyle)
   graphics.moveTo(arrowX, arrowY).lineTo(leftX, leftY).moveTo(arrowX, arrowY).lineTo(rightX, rightY).stroke(strokeStyle)
@@ -965,9 +997,14 @@ function normalizeEntityDebugOptions(options = {}) {
   return {
     infectionRadiusVisible: Boolean(debugOptions.infectionRadiusVisible),
     infectionEdgesVisible: Boolean(debugOptions.infectionEdgesVisible),
+    contactEdgesVisible: Boolean(debugOptions.contactEdgesVisible),
     infectionEdgeDurationSeconds: positiveNumberOrDefault(
       debugOptions.infectionEdgeDurationSeconds,
       ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationMinutes * 60
+    ),
+    contactEdgeDurationSeconds: positiveNumberOrDefault(
+      debugOptions.contactEdgeDurationSeconds,
+      ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationMinutes * 60
     ),
     pathTrailsVisible: Boolean(debugOptions.pathTrailsVisible),
     pathTrailLength: positiveIntegerOrDefault(

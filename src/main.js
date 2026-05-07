@@ -109,7 +109,9 @@ async function main() {
       entityRenderMode: ENTITY_RENDER_MODE_ID,
       infectionRadiusVisible: ENTITY_RENDER_DEBUG_CONFIG.infectionRadiusVisible,
       infectionEdgesVisible: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgesVisible,
+      contactEdgesVisible: ENTITY_RENDER_DEBUG_CONFIG.contactEdgesVisible,
       infectionEdgeDurationMinutes: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationMinutes,
+      contactEdgeDurationMinutes: ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationMinutes,
       pathTrailsVisible: ENTITY_RENDER_DEBUG_CONFIG.pathTrailsVisible,
       pathTrailLength: ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength,
       heatmapRadius: SEIR_HEATMAP_CONFIG.radius
@@ -148,7 +150,9 @@ async function main() {
       return {
         infectionRadiusVisible: simulationState.infectionRadiusVisible,
         infectionEdgesVisible: simulationState.infectionEdgesVisible,
+        contactEdgesVisible: simulationState.contactEdgesVisible,
         infectionEdgeDurationSeconds: simulationState.infectionEdgeDurationMinutes * 60,
+        contactEdgeDurationSeconds: simulationState.contactEdgeDurationMinutes * 60,
         pathTrailsVisible: simulationState.pathTrailsVisible,
         pathTrailLength: simulationState.pathTrailLength
       }
@@ -255,6 +259,10 @@ async function main() {
       return clampRangeValue(durationMinutes, ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange)
     }
 
+    function clampContactEdgeDurationMinutes(durationMinutes) {
+      return clampRangeValue(durationMinutes, ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationRange)
+    }
+
     function clampPathTrailLength(length) {
       const { min, max } = ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange
       const value = Math.round(Number(length))
@@ -349,8 +357,11 @@ async function main() {
       entityRenderMode: simulationState.entityRenderMode,
       infectionRadiusVisible: simulationState.infectionRadiusVisible,
       infectionEdgesVisible: simulationState.infectionEdgesVisible,
+      contactEdgesVisible: simulationState.contactEdgesVisible,
       infectionEdgeDurationMinutes: simulationState.infectionEdgeDurationMinutes,
       infectionEdgeDurationRange: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange,
+      contactEdgeDurationMinutes: simulationState.contactEdgeDurationMinutes,
+      contactEdgeDurationRange: ENTITY_RENDER_DEBUG_CONFIG.contactEdgeDurationRange,
       pathTrailsVisible: simulationState.pathTrailsVisible,
       pathTrailLength: simulationState.pathTrailLength,
       pathTrailLengthRange: ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange,
@@ -439,8 +450,16 @@ async function main() {
         simulationState.infectionEdgesVisible = Boolean(visible)
         applyEntityDebugOptions()
       },
+      onContactEdgesVisibleChange: (visible) => {
+        simulationState.contactEdgesVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
       onInfectionEdgeDurationChange: (durationMinutes) => {
         simulationState.infectionEdgeDurationMinutes = clampInfectionEdgeDurationMinutes(durationMinutes)
+        applyEntityDebugOptions()
+      },
+      onContactEdgeDurationChange: (durationMinutes) => {
+        simulationState.contactEdgeDurationMinutes = clampContactEdgeDurationMinutes(durationMinutes)
         applyEntityDebugOptions()
       },
       onPathTrailsVisibleChange: (visible) => {
@@ -582,8 +601,16 @@ async function main() {
       dashboard.setInfectionEdgesVisible(visible)
     }
 
+    function setContactEdgesVisible(visible) {
+      dashboard.setContactEdgesVisible(visible)
+    }
+
     function setInfectionEdgeDuration(durationMinutes) {
       dashboard.setInfectionEdgeDuration(durationMinutes)
+    }
+
+    function setContactEdgeDuration(durationMinutes) {
+      dashboard.setContactEdgeDuration(durationMinutes)
     }
 
     function setPathTrailsVisible(visible) {
@@ -652,7 +679,9 @@ async function main() {
       setEntityRenderMode,
       setInfectionRadiusVisible,
       setInfectionEdgesVisible,
+      setContactEdgesVisible,
       setInfectionEdgeDuration,
+      setContactEdgeDuration,
       setPathTrailsVisible,
       setPathTrailLength,
       setHeatmapRadius,
