@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NPC_CONFIG } from '../core/constants.js'
+import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { NPC_SPRITE_FRAME_DISTANCE, createNpcSpriteState } from './npc-sprite.js'
 import { createNpcSpriteRenderer } from './npc-sprite-renderer.js'
 
@@ -58,19 +58,44 @@ function createRenderModeMockPixi() {
     Graphics: class {
       constructor() {
         this.circles = []
+        this.circleStrokes = []
+        this.strokes = []
+        this.path = []
         this.visible = true
       }
 
       clear() {
         this.circles = []
+        this.circleStrokes = []
+        this.strokes = []
+        this.path = []
       }
 
       circle(x, y, radius) {
         return {
           fill: (style) => {
             this.circles.push({ x, y, radius, ...style })
+          },
+          stroke: (style) => {
+            this.circleStrokes.push({ x, y, radius, ...style })
           }
         }
+      }
+
+      moveTo(x, y) {
+        this.path.push({ type: 'moveTo', x, y })
+        return this
+      }
+
+      lineTo(x, y) {
+        this.path.push({ type: 'lineTo', x, y })
+        return this
+      }
+
+      stroke(style) {
+        this.strokes.push({ path: [...this.path], ...style })
+        this.path = []
+        return this
       }
 
       destroy() {
@@ -217,6 +242,78 @@ describe('NPC sprite renderer', () => {
     expect(spriteDisplay.visible).toBe(true)
     expect(geometricDisplay.visible).toBe(false)
     expect(spriteDisplay.particleChildren).toHaveLength(2)
+
+    renderer.destroy()
+  })
+
+  it('draws infection radius, transmission edges, and NPC path trails as overlays', () => {
+    const city = {
+      width: 2,
+      height: 1,
+      tileSize: 32,
+      tiles: [{}, {}]
+    }
+    const colors = [0xdb3b34, 0xf0a33a]
+    const npcs = [
+      { ...createNpc(0, 16, 16), infection: 'infectious' },
+      { ...createNpc(1, 48, 16), infection: 'exposed' }
+    ]
+    const clock = {
+      seconds: 0,
+      getElapsedSimulationSeconds() {
+        return this.seconds
+      }
+    }
+    const infection = {
+      infectionDistance: 24,
+      getNpcColor(npc) {
+        return colors[npc.id]
+      }
+    }
+    const renderer = createNpcSpriteRenderer(npcs, city, {
+      ...NPC_CONFIG,
+      entityRenderMode: 'geometric'
+    }, infection, {
+      pixi: createRenderModeMockPixi(),
+      textureAtlas: createTextureAtlas(colors),
+      clock,
+      entityDebugOptions: {
+        infectionRadiusVisible: true,
+        infectionEdgesVisible: true,
+        infectionEdgeDurationSeconds: 3600,
+        pathTrailsVisible: true,
+        pathTrailLength: 2
+      },
+      getTransmissionEvents: () => [{
+        id: 1,
+        simulationSeconds: 0,
+        sourceNpcId: 0,
+        targetNpcId: 1,
+        sourcePosition: { x: 16, y: 16 },
+        targetPosition: { x: 48, y: 16 }
+      }]
+    })
+
+    renderer.render()
+    npcs[0].position = { x: 24, y: 16 }
+    npcs[1].position = { x: 56, y: 16 }
+    clock.seconds = 60
+    renderer.render()
+
+    const overlay = renderer.display.children[2]
+
+    expect(overlay.circleStrokes).toEqual([
+      expect.objectContaining({ x: 24, y: 16, radius: 24, color: colors[0] })
+    ])
+    expect(overlay.strokes.some((stroke) => stroke.color === INFECTION_CONFIG.colors.infectious)).toBe(true)
+    expect(overlay.strokes.some((stroke) => stroke.color === colors[0])).toBe(true)
+    expect(overlay.strokes.some((stroke) => stroke.color === colors[1])).toBe(true)
+
+    renderer.setDebugOptions({ infectionRadiusVisible: false, infectionEdgesVisible: false, pathTrailsVisible: false })
+    renderer.render()
+
+    expect(overlay.circleStrokes).toEqual([])
+    expect(overlay.strokes).toEqual([])
 
     renderer.destroy()
   })

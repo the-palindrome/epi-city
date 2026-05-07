@@ -59,11 +59,15 @@ function createRenderModePixi() {
     Graphics: class {
       constructor() {
         this.fills = []
+        this.strokes = []
+        this.path = []
         this.visible = true
       }
 
       clear() {
         this.fills = []
+        this.strokes = []
+        this.path = []
       }
 
       rect(x, y, width, height) {
@@ -72,6 +76,22 @@ function createRenderModePixi() {
             this.fills.push({ x, y, width, height, ...style })
           }
         }
+      }
+
+      moveTo(x, y) {
+        this.path.push({ type: 'moveTo', x, y })
+        return this
+      }
+
+      lineTo(x, y) {
+        this.path.push({ type: 'lineTo', x, y })
+        return this
+      }
+
+      stroke(style) {
+        this.strokes.push({ path: [...this.path], ...style })
+        this.path = []
+        return this
       }
 
       destroy() {
@@ -259,5 +279,52 @@ describe('car sprite rendering', () => {
 
     expect(getCarPassengerInfectionColor(car)).toBe(INFECTION_CONFIG.colors.exposed)
     expect(getCarPassengerInfectionColor({ color: 0x123456, riderOwners: [] })).toBe(0x123456)
+  })
+
+  it('draws car path trails in the debug overlay', () => {
+    const cars = [
+      {
+        id: 6,
+        color: 0x3f6fd8,
+        lengthTiles: 2,
+        direction: { dx: 1, dy: 0 },
+        position: { x: 96, y: 64 },
+        riderOwners: [
+          { npc: { infection: 'infectious' } }
+        ]
+      }
+    ]
+    const renderer = createCarSpriteRenderer(cars, city, CAR_CONFIG, {
+      pixi: createRenderModePixi(),
+      textureFactory: () => ({ texture: true }),
+      entityDebugOptions: {
+        pathTrailsVisible: true,
+        pathTrailLength: 2
+      }
+    })
+
+    renderer.render()
+    cars[0].position = { x: 112, y: 64 }
+    renderer.render()
+
+    const overlay = renderer.display.children[2]
+
+    expect(overlay.strokes).toEqual([
+      expect.objectContaining({
+        color: INFECTION_CONFIG.colors.infectious,
+        alpha: 0.5
+      })
+    ])
+    expect(overlay.strokes[0].path).toEqual([
+      { type: 'moveTo', x: 96, y: 64 },
+      { type: 'lineTo', x: 112, y: 64 }
+    ])
+
+    renderer.setDebugOptions({ pathTrailsVisible: false })
+    renderer.render()
+
+    expect(overlay.strokes).toEqual([])
+
+    renderer.destroy()
   })
 })

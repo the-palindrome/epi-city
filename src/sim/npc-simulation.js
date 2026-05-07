@@ -16,6 +16,8 @@ const STATIC_CLOCK = Object.freeze({
 const SECONDS_PER_MINUTE = 60
 const SECONDS_PER_HOUR = 3600
 const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
+const MAX_TRANSMISSION_EVENTS = 1024
+const MAX_TRANSMISSION_EVENT_AGE_SECONDS = 2 * SECONDS_PER_HOUR
 const MIN_INFECTION_GRID_CELL_SIZE = 8
 const INFECTION_STATE_IDS = Object.freeze({
   susceptible: 0,
@@ -89,7 +91,10 @@ export function createNpcSimulation(city, entityLayer, config) {
   const npcRenderer = createNpcSpriteRenderer(npcs, city, config, infection, {
     pixi: PIXI,
     visibleTileCounts,
-    visibleTileIndexes
+    visibleTileIndexes,
+    clock,
+    getTransmissionEvents: (options) => infection.getRecentTransmissionEvents(options),
+    entityDebugOptions: config.entityDebugOptions
   })
   const display = npcRenderer.display
   const graphics = npcRenderer.spriteDisplay || display
@@ -137,6 +142,13 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
   }
 
+  function setEntityDebugOptions(options) {
+    if (typeof npcRenderer.setDebugOptions === 'function') {
+      npcRenderer.setDebugOptions(options)
+      render()
+    }
+  }
+
   render()
 
   return {
@@ -148,6 +160,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     update,
     render,
     setEntityRenderMode,
+    setEntityDebugOptions,
     destroy() {
       destroyed = true
 
@@ -355,6 +368,9 @@ class NpcInfectionDynamics {
     this.gridStamps = new Uint32Array(this.gridHeads.length)
     this.gridNext = new Int32Array(npcs.length)
     this.gridStamp = 0
+    this.elapsedSimulationSeconds = 0
+    this.transmissionEvents = []
+    this.nextTransmissionEventId = 1
 
     this.counts[INFECTION_STATE_IDS.susceptible] = npcs.length
 
@@ -372,8 +388,10 @@ class NpcInfectionDynamics {
       return
     }
 
+    this.elapsedSimulationSeconds += simulationDeltaSeconds
     this.advanceTimers(simulationDeltaSeconds)
     this.transmit(simulationDeltaSeconds)
+    this.pruneTransmissionEvents(this.getElapsedSimulationSeconds() - MAX_TRANSMISSION_EVENT_AGE_SECONDS)
   }
 
   getStats() {
@@ -383,6 +401,23 @@ class NpcInfectionDynamics {
       infectious: this.counts[INFECTION_STATE_IDS.infectious],
       recovered: this.counts[INFECTION_STATE_IDS.recovered]
     }
+  }
+
+  getRecentTransmissionEvents(options = {}) {
+    const sinceId = Number(options.sinceId)
+    const maxAgeSeconds = Number(options.maxAgeSeconds)
+    const minId = Number.isFinite(sinceId) ? sinceId : 0
+    const minSeconds = Number.isFinite(maxAgeSeconds)
+      ? this.getElapsedSimulationSeconds() - Math.max(0, maxAgeSeconds)
+      : -Infinity
+
+    return this.transmissionEvents
+      .filter((event) => event.id > minId && event.simulationSeconds >= minSeconds)
+      .map(cloneTransmissionEvent)
+  }
+
+  clearTransmissionEvents() {
+    this.transmissionEvents.length = 0
   }
 
   getNpcColor(npc) {
@@ -426,6 +461,59 @@ class NpcInfectionDynamics {
     }
 
     this.setStateByIndex(index, state, timerSeconds ?? this.getDefaultTimerSeconds(state))
+  }
+
+  getElapsedSimulationSeconds() {
+    if (this.clock && typeof this.clock.getElapsedSimulationSeconds === 'function') {
+      const seconds = this.clock.getElapsedSimulationSeconds()
+
+      if (Number.isFinite(seconds)) {
+        return seconds
+      }
+    }
+
+    return this.elapsedSimulationSeconds
+  }
+
+  recordTransmissionEvent(sourceNpc, targetNpc, dx, dy) {
+    const event = {
+      id: this.nextTransmissionEventId,
+      simulationSeconds: this.getElapsedSimulationSeconds(),
+      sourceNpcId: sourceNpc.id,
+      targetNpcId: targetNpc.id,
+      sourcePosition: clonePosition(sourceNpc.position),
+      targetPosition: clonePosition(targetNpc.position),
+      sourceTile: cloneTile(sourceNpc.tile),
+      targetTile: cloneTile(targetNpc.tile),
+      distance: Math.hypot(dx, dy),
+      targetState: 'exposed'
+    }
+
+    this.nextTransmissionEventId += 1
+    this.transmissionEvents.push(event)
+
+    if (this.transmissionEvents.length > MAX_TRANSMISSION_EVENTS) {
+      this.transmissionEvents.splice(0, this.transmissionEvents.length - MAX_TRANSMISSION_EVENTS)
+    }
+  }
+
+  pruneTransmissionEvents(minSimulationSeconds) {
+    if (!Number.isFinite(minSimulationSeconds)) {
+      return
+    }
+
+    let firstKept = 0
+
+    while (
+      firstKept < this.transmissionEvents.length &&
+      this.transmissionEvents[firstKept].simulationSeconds < minSimulationSeconds
+    ) {
+      firstKept += 1
+    }
+
+    if (firstKept > 0) {
+      this.transmissionEvents.splice(0, firstKept)
+    }
   }
 
   seedInitialInfections(initialInfectiousCount) {
@@ -549,6 +637,7 @@ class NpcInfectionDynamics {
             }
 
             if (this.random.next() < transmissionProbability) {
+              this.recordTransmissionEvent(infectiousNpc, npc, dx, dy)
               this.setStateByIndex(index, INFECTION_STATE_IDS.exposed, this.incubationSeconds)
               continue susceptibleLoop
             }
@@ -1418,6 +1507,33 @@ function canParticipateInInfection(npc) {
     Number.isFinite(npc.position.x) &&
     Number.isFinite(npc.position.y)
   )
+}
+
+function clonePosition(position) {
+  return {
+    x: Number(position && position.x) || 0,
+    y: Number(position && position.y) || 0
+  }
+}
+
+function cloneTile(tile) {
+  return tile
+    ? {
+        x: tile.x,
+        y: tile.y,
+        index: tile.index
+      }
+    : null
+}
+
+function cloneTransmissionEvent(event) {
+  return {
+    ...event,
+    sourcePosition: { ...event.sourcePosition },
+    targetPosition: { ...event.targetPosition },
+    sourceTile: event.sourceTile ? { ...event.sourceTile } : null,
+    targetTile: event.targetTile ? { ...event.targetTile } : null
+  }
 }
 
 function normalizeInfectionColors(colors = {}) {

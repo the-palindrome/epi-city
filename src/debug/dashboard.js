@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js'
 import {
   DASHBOARD_OVERLAYS,
+  ENTITY_RENDER_DEBUG_CONFIG,
   ENTITY_RENDER_MODE_ID,
   ENTITY_RENDER_MODE_OPTIONS,
   ENTITY_RENDER_MODES,
@@ -24,11 +25,24 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const layers = new Map()
   const simulation = createSimulationControls(simulationControls)
   const heatmapRadiusRange = normalizeHeatmapRadiusRange(simulationControls.heatmapRadiusRange)
+  const infectionEdgeDurationRange = normalizeInfectionEdgeDurationRange(simulationControls.infectionEdgeDurationRange)
+  const pathTrailLengthRange = normalizePathTrailLengthRange(simulationControls.pathTrailLengthRange)
   const getNpcs = typeof simulationControls.getNpcs === 'function' ? simulationControls.getNpcs : () => []
   const renderingSettings = {
     mapTextureEnabled: simulationControls.mapTextureEnabled !== false,
     mapTextureOpacity: normalizeRenderingOpacity(simulationControls.mapTextureOpacity ?? 1),
     entityRenderMode: normalizeEntityRenderMode(simulationControls.entityRenderMode),
+    infectionRadiusVisible: Boolean(simulationControls.infectionRadiusVisible),
+    infectionEdgesVisible: Boolean(simulationControls.infectionEdgesVisible),
+    infectionEdgeDurationMinutes: normalizeInfectionEdgeDuration(
+      simulationControls.infectionEdgeDurationMinutes ?? ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationMinutes,
+      infectionEdgeDurationRange
+    ),
+    pathTrailsVisible: Boolean(simulationControls.pathTrailsVisible),
+    pathTrailLength: normalizePathTrailLength(
+      simulationControls.pathTrailLength ?? ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength,
+      pathTrailLengthRange
+    ),
     tileOverlayScheme: normalizeTileOverlayScheme(simulationControls.tileOverlayScheme),
     tileTypeOpacity: normalizeTileTypeOverlayOpacity(TILE_TYPE_OVERLAY_COLORS.alpha),
     heatmapRadius: normalizeHeatmapRadius(
@@ -40,6 +54,11 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     onMapTextureEnabledChange: simulationControls.onMapTextureEnabledChange || noop,
     onMapTextureOpacityChange: simulationControls.onMapTextureOpacityChange || noop,
     onEntityRenderModeChange: simulationControls.onEntityRenderModeChange || noop,
+    onInfectionRadiusVisibleChange: simulationControls.onInfectionRadiusVisibleChange || noop,
+    onInfectionEdgesVisibleChange: simulationControls.onInfectionEdgesVisibleChange || noop,
+    onInfectionEdgeDurationChange: simulationControls.onInfectionEdgeDurationChange || noop,
+    onPathTrailsVisibleChange: simulationControls.onPathTrailsVisibleChange || noop,
+    onPathTrailLengthChange: simulationControls.onPathTrailLengthChange || noop,
     onHeatmapRadiusChange: simulationControls.onHeatmapRadiusChange || noop
   }
   const overlaySection = createDashboardSection('Map')
@@ -48,6 +67,29 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const mapTextureToggle = createMapTextureToggle(renderingSettings.mapTextureEnabled)
   const mapTextureOpacityField = createMapTextureOpacityField(renderingSettings.mapTextureOpacity)
   const entityRenderModeField = createEntityRenderModeField(renderingSettings.entityRenderMode)
+  const infectionRadiusToggle = createDashboardToggle({
+    labelText: 'infection radius',
+    dataset: 'infectionRadiusToggle',
+    checked: renderingSettings.infectionRadiusVisible
+  })
+  const infectionEdgesToggle = createDashboardToggle({
+    labelText: 'display infections',
+    dataset: 'infectionEdgesToggle',
+    checked: renderingSettings.infectionEdgesVisible
+  })
+  const infectionEdgeDurationField = createInfectionEdgeDurationField(
+    renderingSettings.infectionEdgeDurationMinutes,
+    infectionEdgeDurationRange
+  )
+  const pathTrailsToggle = createDashboardToggle({
+    labelText: 'display path trails',
+    dataset: 'pathTrailsToggle',
+    checked: renderingSettings.pathTrailsVisible
+  })
+  const pathTrailLengthField = createPathTrailLengthField(
+    renderingSettings.pathTrailLength,
+    pathTrailLengthRange
+  )
   const tileOverlaySchemeField = createTileOverlaySchemeField(renderingSettings.tileOverlayScheme)
   const tileTypeOpacityField = createTileTypeOverlayOpacityField(
     renderingSettings.tileTypeOpacity,
@@ -78,6 +120,11 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   overlaySection.appendChild(tileTypeOpacityField.label)
   overlayDashboard.appendChild(overlaySection)
   entitySection.appendChild(entityRenderModeField.label)
+  entitySection.appendChild(infectionRadiusToggle.label)
+  entitySection.appendChild(infectionEdgesToggle.label)
+  entitySection.appendChild(infectionEdgeDurationField.label)
+  entitySection.appendChild(pathTrailsToggle.label)
+  entitySection.appendChild(pathTrailLengthField.label)
   overlayDashboard.appendChild(entitySection)
 
   for (const overlay of heatmapOverlays) {
@@ -112,6 +159,34 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   entityRenderModeField.select.addEventListener('change', () => {
     setEntityRenderMode(entityRenderModeField.select.value)
+  })
+
+  infectionRadiusToggle.input.addEventListener('change', () => {
+    setInfectionRadiusVisible(infectionRadiusToggle.input.checked)
+  })
+
+  infectionEdgesToggle.input.addEventListener('change', () => {
+    setInfectionEdgesVisible(infectionEdgesToggle.input.checked)
+  })
+
+  infectionEdgeDurationField.slider.addEventListener('input', () => {
+    setInfectionEdgeDuration(infectionEdgeDurationField.slider.value)
+  })
+
+  infectionEdgeDurationField.input.addEventListener('change', () => {
+    setInfectionEdgeDuration(infectionEdgeDurationField.input.value)
+  })
+
+  pathTrailsToggle.input.addEventListener('change', () => {
+    setPathTrailsVisible(pathTrailsToggle.input.checked)
+  })
+
+  pathTrailLengthField.slider.addEventListener('input', () => {
+    setPathTrailLength(pathTrailLengthField.slider.value)
+  })
+
+  pathTrailLengthField.input.addEventListener('change', () => {
+    setPathTrailLength(pathTrailLengthField.input.value)
   })
 
   heatmapRadiusField.slider.addEventListener('input', () => {
@@ -223,6 +298,42 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     renderingCallbacks.onEntityRenderModeChange(nextMode)
   }
 
+  function setInfectionRadiusVisible(visible) {
+    renderingSettings.infectionRadiusVisible = Boolean(visible)
+    infectionRadiusToggle.input.checked = renderingSettings.infectionRadiusVisible
+    renderingCallbacks.onInfectionRadiusVisibleChange(renderingSettings.infectionRadiusVisible)
+  }
+
+  function setInfectionEdgesVisible(visible) {
+    renderingSettings.infectionEdgesVisible = Boolean(visible)
+    infectionEdgesToggle.input.checked = renderingSettings.infectionEdgesVisible
+    renderingCallbacks.onInfectionEdgesVisibleChange(renderingSettings.infectionEdgesVisible)
+  }
+
+  function setInfectionEdgeDuration(durationMinutes) {
+    const nextDuration = normalizeInfectionEdgeDuration(durationMinutes, infectionEdgeDurationRange)
+
+    renderingSettings.infectionEdgeDurationMinutes = nextDuration
+    infectionEdgeDurationField.slider.value = String(nextDuration)
+    infectionEdgeDurationField.input.value = formatNumberInput(nextDuration)
+    renderingCallbacks.onInfectionEdgeDurationChange(nextDuration)
+  }
+
+  function setPathTrailsVisible(visible) {
+    renderingSettings.pathTrailsVisible = Boolean(visible)
+    pathTrailsToggle.input.checked = renderingSettings.pathTrailsVisible
+    renderingCallbacks.onPathTrailsVisibleChange(renderingSettings.pathTrailsVisible)
+  }
+
+  function setPathTrailLength(length) {
+    const nextLength = normalizePathTrailLength(length, pathTrailLengthRange)
+
+    renderingSettings.pathTrailLength = nextLength
+    pathTrailLengthField.slider.value = String(nextLength)
+    pathTrailLengthField.input.value = String(nextLength)
+    renderingCallbacks.onPathTrailLengthChange(nextLength)
+  }
+
   function setHeatmapRadius(radius) {
     const nextRadius = normalizeHeatmapRadius(radius, heatmapRadiusRange)
 
@@ -294,6 +405,11 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setTileOverlayOpacity: setTileTypeOverlayOpacity,
     setTileTypeOverlayOpacity,
     setEntityRenderMode,
+    setInfectionRadiusVisible,
+    setInfectionEdgesVisible,
+    setInfectionEdgeDuration,
+    setPathTrailsVisible,
+    setPathTrailLength,
     setHeatmapRadius,
     toggle: toggleDashboard,
     toggleRenderingOptions: toggleOverlayDashboard,
@@ -1075,14 +1191,24 @@ function formatStatCount(count) {
 }
 
 function createOverlayToggle(overlay) {
+  return createDashboardToggle({
+    labelText: overlay.label,
+    dataset: 'overlayToggle',
+    datasetValue: overlay.id,
+    checked: false
+  })
+}
+
+function createDashboardToggle({ labelText, dataset, datasetValue = 'true', checked = false }) {
   const label = document.createElement('label')
   const input = document.createElement('input')
   const text = document.createElement('span')
 
   label.className = 'dashboard-toggle'
   input.type = 'checkbox'
-  input.dataset.overlayToggle = overlay.id
-  text.textContent = overlay.label
+  input.dataset[dataset] = datasetValue
+  input.checked = Boolean(checked)
+  text.textContent = labelText
 
   label.appendChild(input)
   label.appendChild(text)
@@ -1166,6 +1292,64 @@ function createEntityRenderModeField(mode) {
   label.appendChild(select)
 
   return { label, select }
+}
+
+function createInfectionEdgeDurationField(durationMinutes, durationRange) {
+  return createPairedRangeNumberField({
+    labelText: 'edge minutes',
+    className: 'dashboard-infection-edge-duration-field',
+    sliderDataset: 'infectionEdgeDurationSlider',
+    inputDataset: 'infectionEdgeDuration',
+    value: durationMinutes,
+    range: durationRange,
+    normalize: normalizeInfectionEdgeDuration,
+    inputFormat: formatNumberInput
+  })
+}
+
+function createPathTrailLengthField(length, lengthRange) {
+  return createPairedRangeNumberField({
+    labelText: 'trail steps',
+    className: 'dashboard-path-trail-length-field',
+    sliderDataset: 'pathTrailLengthSlider',
+    inputDataset: 'pathTrailLength',
+    value: length,
+    range: lengthRange,
+    normalize: normalizePathTrailLength,
+    inputFormat: String
+  })
+}
+
+function createPairedRangeNumberField({ labelText, className, sliderDataset, inputDataset, value, range, normalize, inputFormat }) {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const controls = document.createElement('div')
+  const slider = document.createElement('input')
+  const input = document.createElement('input')
+  const normalizedValue = normalize(value, range)
+
+  label.className = `dashboard-field ${className}`
+  text.textContent = labelText
+  controls.className = 'dashboard-paired-inputs'
+  slider.type = 'range'
+  slider.min = String(range.min)
+  slider.max = String(range.max)
+  slider.step = String(range.step)
+  slider.value = String(normalizedValue)
+  slider.dataset[sliderDataset] = 'true'
+  input.type = 'number'
+  input.min = String(range.min)
+  input.max = String(range.max)
+  input.step = String(range.step)
+  input.value = inputFormat(normalizedValue)
+  input.dataset[inputDataset] = 'true'
+
+  controls.appendChild(slider)
+  controls.appendChild(input)
+  label.appendChild(text)
+  label.appendChild(controls)
+
+  return { label, slider, input }
 }
 
 function createTileTypeOverlayOpacityField(opacity, opacityRange) {
@@ -1281,6 +1465,22 @@ function normalizeHeatmapRadius(radius, range = SEIR_HEATMAP_CONFIG.radiusRange)
   return Number(normalizeNumberInRange(radius, normalizeHeatmapRadiusRange(range)).toFixed(4))
 }
 
+function normalizeInfectionEdgeDurationRange(range) {
+  return normalizeNumberRange(range, ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange)
+}
+
+function normalizeInfectionEdgeDuration(durationMinutes, range = ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange) {
+  return Number(normalizeNumberInRange(durationMinutes, normalizeInfectionEdgeDurationRange(range)).toFixed(4))
+}
+
+function normalizePathTrailLengthRange(range) {
+  return normalizeIntegerRange(range, ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange)
+}
+
+function normalizePathTrailLength(length, range = ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange) {
+  return normalizeIntegerInRange(length, normalizePathTrailLengthRange(range))
+}
+
 function normalizeEntityRenderMode(mode) {
   const id = String(mode || '')
 
@@ -1306,6 +1506,16 @@ function normalizeTileTypeOverlayOpacity(opacity) {
   }
 
   return Number(Math.min(Math.max(number, range.min), range.max).toFixed(4))
+}
+
+function normalizeIntegerInRange(value, range) {
+  const number = Math.round(Number(value))
+
+  if (!Number.isFinite(number)) {
+    return range.min
+  }
+
+  return Math.min(Math.max(number, range.min), range.max)
 }
 
 function formatOpacity(opacity) {

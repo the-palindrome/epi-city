@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js'
 import {
   CAR_CONFIG,
   DEFAULT_CITY_MAP_PATHS,
+  ENTITY_RENDER_DEBUG_CONFIG,
   ENTITY_RENDER_MODE_ID,
   INFECTION_CONFIG,
   NPC_CONFIG,
@@ -106,6 +107,11 @@ async function main() {
       mapTextureEnabled: true,
       mapTextureOpacity: 1,
       entityRenderMode: ENTITY_RENDER_MODE_ID,
+      infectionRadiusVisible: ENTITY_RENDER_DEBUG_CONFIG.infectionRadiusVisible,
+      infectionEdgesVisible: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgesVisible,
+      infectionEdgeDurationMinutes: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationMinutes,
+      pathTrailsVisible: ENTITY_RENDER_DEBUG_CONFIG.pathTrailsVisible,
+      pathTrailLength: ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength,
       heatmapRadius: SEIR_HEATMAP_CONFIG.radius
     }
     let npcSimulation = null
@@ -138,6 +144,16 @@ async function main() {
         : createSystemRandom()
     }
 
+    function getEntityDebugOptions() {
+      return {
+        infectionRadiusVisible: simulationState.infectionRadiusVisible,
+        infectionEdgesVisible: simulationState.infectionEdgesVisible,
+        infectionEdgeDurationSeconds: simulationState.infectionEdgeDurationMinutes * 60,
+        pathTrailsVisible: simulationState.pathTrailsVisible,
+        pathTrailLength: simulationState.pathTrailLength
+      }
+    }
+
     function createConfiguredNpcSimulation() {
       return createNpcSimulation(city, entityLayer, {
         ...NPC_CONFIG,
@@ -150,7 +166,8 @@ async function main() {
         immunityDays: simulationState.immunityDays,
         clock: simulationClock,
         random: createNpcRandom(),
-        entityRenderMode: simulationState.entityRenderMode
+        entityRenderMode: simulationState.entityRenderMode,
+        entityDebugOptions: getEntityDebugOptions()
       })
     }
 
@@ -161,7 +178,8 @@ async function main() {
         clock: simulationClock,
         random: createCarRandom(),
         npcs: npcSimulation ? npcSimulation.npcs : [],
-        entityRenderMode: simulationState.entityRenderMode
+        entityRenderMode: simulationState.entityRenderMode,
+        entityDebugOptions: getEntityDebugOptions()
       })
     }
 
@@ -231,6 +249,21 @@ async function main() {
 
     function clampRenderingOpacity(opacity) {
       return clampRangeValue(opacity, { min: 0, max: 1 })
+    }
+
+    function clampInfectionEdgeDurationMinutes(durationMinutes) {
+      return clampRangeValue(durationMinutes, ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange)
+    }
+
+    function clampPathTrailLength(length) {
+      const { min, max } = ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange
+      const value = Math.round(Number(length))
+
+      if (!Number.isFinite(value)) {
+        return min
+      }
+
+      return Math.min(Math.max(value, min), max)
     }
 
     function clampRangeValue(value, range) {
@@ -314,6 +347,13 @@ async function main() {
       mapTextureEnabled: simulationState.mapTextureEnabled,
       mapTextureOpacity: simulationState.mapTextureOpacity,
       entityRenderMode: simulationState.entityRenderMode,
+      infectionRadiusVisible: simulationState.infectionRadiusVisible,
+      infectionEdgesVisible: simulationState.infectionEdgesVisible,
+      infectionEdgeDurationMinutes: simulationState.infectionEdgeDurationMinutes,
+      infectionEdgeDurationRange: ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationRange,
+      pathTrailsVisible: simulationState.pathTrailsVisible,
+      pathTrailLength: simulationState.pathTrailLength,
+      pathTrailLengthRange: ENTITY_RENDER_DEBUG_CONFIG.pathTrailLengthRange,
       heatmapRadius: simulationState.heatmapRadius,
       heatmapRadiusRange: SEIR_HEATMAP_CONFIG.radiusRange,
       onPlay: () => game.play(),
@@ -391,6 +431,26 @@ async function main() {
         carSimulation?.setEntityRenderMode(mode)
         game.render()
       },
+      onInfectionRadiusVisibleChange: (visible) => {
+        simulationState.infectionRadiusVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
+      onInfectionEdgesVisibleChange: (visible) => {
+        simulationState.infectionEdgesVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
+      onInfectionEdgeDurationChange: (durationMinutes) => {
+        simulationState.infectionEdgeDurationMinutes = clampInfectionEdgeDurationMinutes(durationMinutes)
+        applyEntityDebugOptions()
+      },
+      onPathTrailsVisibleChange: (visible) => {
+        simulationState.pathTrailsVisible = Boolean(visible)
+        applyEntityDebugOptions()
+      },
+      onPathTrailLengthChange: (length) => {
+        simulationState.pathTrailLength = clampPathTrailLength(length)
+        applyEntityDebugOptions()
+      },
       onHeatmapRadiusChange: (radius) => {
         simulationState.heatmapRadius = clampRangeValue(radius, SEIR_HEATMAP_CONFIG.radiusRange)
         game.render()
@@ -409,6 +469,14 @@ async function main() {
     game.addSystem(pathSelection)
     game.addSystem({ render: applyCameraFollow })
     game.start()
+
+    function applyEntityDebugOptions() {
+      const options = getEntityDebugOptions()
+
+      npcSimulation?.setEntityDebugOptions(options)
+      carSimulation?.setEntityDebugOptions(options)
+      game.render()
+    }
 
     function playSimulation() {
       game.play()
@@ -506,6 +574,26 @@ async function main() {
       dashboard.setEntityRenderMode(mode)
     }
 
+    function setInfectionRadiusVisible(visible) {
+      dashboard.setInfectionRadiusVisible(visible)
+    }
+
+    function setInfectionEdgesVisible(visible) {
+      dashboard.setInfectionEdgesVisible(visible)
+    }
+
+    function setInfectionEdgeDuration(durationMinutes) {
+      dashboard.setInfectionEdgeDuration(durationMinutes)
+    }
+
+    function setPathTrailsVisible(visible) {
+      dashboard.setPathTrailsVisible(visible)
+    }
+
+    function setPathTrailLength(length) {
+      dashboard.setPathTrailLength(length)
+    }
+
     function setHeatmapRadius(radius) {
       dashboard.setHeatmapRadius(radius)
     }
@@ -562,6 +650,11 @@ async function main() {
       setMapTextureEnabled,
       setMapTextureOpacity,
       setEntityRenderMode,
+      setInfectionRadiusVisible,
+      setInfectionEdgesVisible,
+      setInfectionEdgeDuration,
+      setPathTrailsVisible,
+      setPathTrailLength,
       setHeatmapRadius,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),

@@ -1,5 +1,6 @@
 import {
   CAR_CONFIG,
+  ENTITY_RENDER_DEBUG_CONFIG,
   ENTITY_RENDER_MODE_ID,
   ENTITY_RENDER_MODES,
   INFECTION_CONFIG,
@@ -187,14 +188,21 @@ function createModeAwareCarRenderer(spriteRenderer, cars, city, config, options)
 
   const container = new Container()
   const geometricRenderer = createGeometricCarRenderer(cars, city, config, pixi)
+  const overlayGraphics = new Graphics()
+  const trailHistories = new Map()
   let renderMode = normalizeEntityRenderMode(options.entityRenderMode ?? config.entityRenderMode)
+  let debugOptions = normalizeEntityDebugOptions(options.entityDebugOptions ?? config.entityDebugOptions)
 
   container.eventMode = 'none'
   container.zIndex = config.zorder
   container.zorder = config.zorder
   container.sortableChildren = false
+  overlayGraphics.eventMode = 'none'
+  overlayGraphics.zIndex = config.zorder
+  overlayGraphics.zorder = config.zorder
   container.addChild(spriteRenderer.display)
   container.addChild(geometricRenderer.display)
+  container.addChild(overlayGraphics)
   applyCarRenderModeVisibility()
 
   function applyCarRenderModeVisibility() {
@@ -205,10 +213,11 @@ function createModeAwareCarRenderer(spriteRenderer, cars, city, config, options)
   function render(nextCars = cars) {
     if (renderMode === 'geometric') {
       geometricRenderer.render(nextCars)
-      return
+    } else {
+      spriteRenderer.render(nextCars)
     }
 
-    spriteRenderer.render(nextCars)
+    drawCarDebugOverlays(overlayGraphics, nextCars, debugOptions, trailHistories)
   }
 
   function setRenderMode(mode) {
@@ -216,9 +225,21 @@ function createModeAwareCarRenderer(spriteRenderer, cars, city, config, options)
     applyCarRenderModeVisibility()
   }
 
+  function setDebugOptions(options) {
+    debugOptions = normalizeEntityDebugOptions({
+      ...debugOptions,
+      ...options
+    })
+
+    if (!debugOptions.pathTrailsVisible) {
+      trailHistories.clear()
+    }
+  }
+
   function destroy() {
     spriteRenderer.destroy()
     geometricRenderer.destroy()
+    overlayGraphics.destroy()
 
     if (container.parent) {
       container.parent.removeChild(container)
@@ -235,6 +256,7 @@ function createModeAwareCarRenderer(spriteRenderer, cars, city, config, options)
     sprites: spriteRenderer.sprites || [],
     render,
     setRenderMode,
+    setDebugOptions,
     get renderMode() {
       return renderMode
     },
@@ -329,6 +351,85 @@ export function getCarPassengerInfectionColor(car, infectionColors = INFECTION_C
   const colors = normalizeInfectionColors(infectionColors)
 
   return infection ? colors[infection] : normalizeColor(car?.color)
+}
+
+function drawCarDebugOverlays(graphics, cars, debugOptions, trailHistories) {
+  graphics.clear()
+
+  if (!debugOptions.pathTrailsVisible) {
+    return
+  }
+
+  drawEntityTrails(graphics, cars || [], trailHistories, debugOptions.pathTrailLength, (car) => (
+    getCarPassengerInfectionColor(car, debugOptions.infectionColors)
+  ))
+}
+
+function drawEntityTrails(graphics, entities, trailHistories, trailLength, colorForEntity) {
+  const activeIds = new Set()
+  const maxPoints = Math.max(2, trailLength + 1)
+
+  for (const entity of entities) {
+    const point = finitePosition(entity?.position)
+
+    if (!point) {
+      continue
+    }
+
+    activeIds.add(entity.id)
+
+    const history = trailHistories.get(entity.id) || []
+    const last = history[history.length - 1]
+
+    if (!last || last.x !== point.x || last.y !== point.y) {
+      history.push(point)
+    }
+
+    while (history.length > maxPoints) {
+      history.shift()
+    }
+
+    trailHistories.set(entity.id, history)
+
+    if (history.length > 1) {
+      strokePolyline(graphics, history, {
+        width: 2,
+        color: colorForEntity(entity),
+        alpha: 0.5
+      })
+    }
+  }
+
+  for (const id of trailHistories.keys()) {
+    if (!activeIds.has(id)) {
+      trailHistories.delete(id)
+    }
+  }
+}
+
+function strokePolyline(graphics, points, style) {
+  if (points.length < 2 || typeof graphics.moveTo !== 'function') {
+    return
+  }
+
+  graphics.moveTo(points[0].x, points[0].y)
+
+  for (let index = 1; index < points.length; index += 1) {
+    graphics.lineTo(points[index].x, points[index].y)
+  }
+
+  graphics.stroke(style)
+}
+
+function finitePosition(position) {
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    return null
+  }
+
+  return {
+    x: Math.round(position.x),
+    y: Math.round(position.y)
+  }
 }
 
 export function getCarSpriteTextureKey(car, city, config = {}) {
@@ -757,6 +858,10 @@ function positiveNumberOrDefault(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
+function positiveIntegerOrDefault(value, fallback) {
+  return Number.isInteger(value) && value > 0 ? value : fallback
+}
+
 function normalizeColor(color) {
   return Number.isInteger(color) ? color & 0xffffff : 0x3f6fd8
 }
@@ -807,6 +912,19 @@ function normalizeEntityRenderMode(mode) {
   return Object.prototype.hasOwnProperty.call(ENTITY_RENDER_MODES, id)
     ? id
     : ENTITY_RENDER_MODE_ID
+}
+
+function normalizeEntityDebugOptions(options = {}) {
+  const debugOptions = options || {}
+
+  return {
+    pathTrailsVisible: Boolean(debugOptions.pathTrailsVisible),
+    pathTrailLength: positiveIntegerOrDefault(
+      debugOptions.pathTrailLength,
+      ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength
+    ),
+    infectionColors: debugOptions.infectionColors || INFECTION_CONFIG.colors
+  }
 }
 
 function mixColor(color, target, amount) {

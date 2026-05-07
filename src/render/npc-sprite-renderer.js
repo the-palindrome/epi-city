@@ -1,4 +1,5 @@
 import {
+  ENTITY_RENDER_DEBUG_CONFIG,
   ENTITY_RENDER_MODE_ID,
   ENTITY_RENDER_MODES,
   INFECTION_CONFIG,
@@ -63,12 +64,21 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
 
   const container = new Container()
   const geometricRenderer = createGeometricNpcRenderer(npcs, city, config, infection, options)
+  const overlayGraphics = new Graphics()
+  const trailHistories = new Map()
+  const getTransmissionEvents = typeof options.getTransmissionEvents === 'function'
+    ? options.getTransmissionEvents
+    : () => []
+  const clock = options.clock || null
   let renderMode = normalizeEntityRenderMode(options.entityRenderMode ?? config.entityRenderMode)
+  let debugOptions = normalizeEntityDebugOptions(options.entityDebugOptions ?? config.entityDebugOptions)
 
   configureDisplay(container, config)
+  configureDisplay(overlayGraphics, config)
   container.sortableChildren = false
   container.addChild(spriteRenderer.display)
   container.addChild(geometricRenderer.display)
+  container.addChild(overlayGraphics)
   applyNpcRenderModeVisibility()
 
   function applyNpcRenderModeVisibility() {
@@ -79,10 +89,18 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
   function render(nextNpcs = npcs, nextInfection = infection) {
     if (renderMode === 'geometric') {
       geometricRenderer.render(nextNpcs, nextInfection)
-      return
+    } else {
+      spriteRenderer.render(nextNpcs, nextInfection)
     }
 
-    spriteRenderer.render(nextNpcs, nextInfection)
+    drawNpcDebugOverlays(overlayGraphics, nextNpcs, nextInfection, {
+      city,
+      clock,
+      config,
+      debugOptions,
+      getTransmissionEvents,
+      trailHistories
+    })
   }
 
   function setRenderMode(mode) {
@@ -90,9 +108,21 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
     applyNpcRenderModeVisibility()
   }
 
+  function setDebugOptions(options) {
+    debugOptions = normalizeEntityDebugOptions({
+      ...debugOptions,
+      ...options
+    })
+
+    if (!debugOptions.pathTrailsVisible) {
+      trailHistories.clear()
+    }
+  }
+
   function destroy() {
     spriteRenderer.destroy()
     geometricRenderer.destroy()
+    overlayGraphics.destroy()
 
     if (container.parent) {
       container.parent.removeChild(container)
@@ -111,6 +141,7 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
     textureAtlas: spriteRenderer.textureAtlas,
     render,
     setRenderMode,
+    setDebugOptions,
     get renderMode() {
       return renderMode
     },
@@ -463,6 +494,195 @@ export function drawGeometricNpc(graphics, npc, options = {}) {
     .fill({ color, alpha: 1 })
 }
 
+function drawNpcDebugOverlays(graphics, npcs, infection, context) {
+  graphics.clear()
+
+  const options = context.debugOptions
+
+  if (!options.infectionRadiusVisible && !options.infectionEdgesVisible && !options.pathTrailsVisible) {
+    return
+  }
+
+  const visibleNpcs = []
+  const npcById = new Map()
+
+  for (const npc of npcs || []) {
+    if (!npc || !npc.position) {
+      continue
+    }
+
+    npcById.set(npc.id, npc)
+
+    if (npc.present) {
+      visibleNpcs.push(npc)
+    }
+  }
+
+  if (options.pathTrailsVisible) {
+    drawEntityTrails(graphics, visibleNpcs, context.trailHistories, options.pathTrailLength, (npc) => getNpcRenderColor(infection, npc))
+  }
+
+  if (options.infectionRadiusVisible) {
+    drawInfectionRadiusOverlays(graphics, visibleNpcs, infection)
+  }
+
+  if (options.infectionEdgesVisible) {
+    drawTransmissionEdges(graphics, npcById, context.getTransmissionEvents, options.infectionEdgeDurationSeconds, context.clock)
+  }
+}
+
+function drawInfectionRadiusOverlays(graphics, npcs, infection) {
+  const radius = Number(infection && infection.infectionDistance)
+
+  if (!Number.isFinite(radius) || radius <= 0 || typeof graphics.circle !== 'function') {
+    return
+  }
+
+  for (const npc of npcs) {
+    if (npc.infection !== 'infectious') {
+      continue
+    }
+
+    graphics
+      .circle(npc.position.x, npc.position.y, radius)
+      .stroke({ width: 2, color: getNpcRenderColor(infection, npc), alpha: 0.44 })
+  }
+}
+
+function drawTransmissionEdges(graphics, npcById, getTransmissionEvents, durationSeconds, clock) {
+  const events = getTransmissionEvents({ maxAgeSeconds: durationSeconds })
+  const now = getElapsedSimulationSeconds(clock)
+
+  for (const event of events) {
+    const age = now === null ? 0 : Math.max(0, now - event.simulationSeconds)
+    const alpha = now === null ? 0.86 : Math.max(0.18, 1 - age / Math.max(durationSeconds, 1))
+    const from = currentOrSnapshotPosition(npcById.get(event.sourceNpcId), event.sourcePosition)
+    const to = currentOrSnapshotPosition(npcById.get(event.targetNpcId), event.targetPosition)
+
+    if (!from || !to) {
+      continue
+    }
+
+    drawDirectedLine(graphics, from, to, {
+      color: INFECTION_CONFIG.colors.infectious,
+      alpha
+    })
+  }
+}
+
+function drawEntityTrails(graphics, entities, trailHistories, trailLength, colorForEntity) {
+  const activeIds = new Set()
+  const maxPoints = Math.max(2, trailLength + 1)
+
+  for (const entity of entities) {
+    const point = finitePosition(entity.position)
+
+    if (!point) {
+      continue
+    }
+
+    activeIds.add(entity.id)
+
+    const history = trailHistories.get(entity.id) || []
+    const last = history[history.length - 1]
+
+    if (!last || last.x !== point.x || last.y !== point.y) {
+      history.push(point)
+    }
+
+    while (history.length > maxPoints) {
+      history.shift()
+    }
+
+    trailHistories.set(entity.id, history)
+
+    if (history.length > 1) {
+      strokePolyline(graphics, history, {
+        width: 2,
+        color: colorForEntity(entity),
+        alpha: 0.52
+      })
+    }
+  }
+
+  for (const id of trailHistories.keys()) {
+    if (!activeIds.has(id)) {
+      trailHistories.delete(id)
+    }
+  }
+}
+
+function drawDirectedLine(graphics, from, to, style) {
+  if (typeof graphics.moveTo !== 'function') {
+    return
+  }
+
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy)
+
+  if (length <= 0) {
+    return
+  }
+
+  const unitX = dx / length
+  const unitY = dy / length
+  const arrowSize = 9
+  const arrowX = to.x - unitX * 5
+  const arrowY = to.y - unitY * 5
+  const leftX = arrowX - unitX * arrowSize - unitY * arrowSize * 0.55
+  const leftY = arrowY - unitY * arrowSize + unitX * arrowSize * 0.55
+  const rightX = arrowX - unitX * arrowSize + unitY * arrowSize * 0.55
+  const rightY = arrowY - unitY * arrowSize - unitX * arrowSize * 0.55
+  const strokeStyle = { width: 2, color: style.color, alpha: style.alpha }
+
+  graphics.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke(strokeStyle)
+  graphics.moveTo(arrowX, arrowY).lineTo(leftX, leftY).moveTo(arrowX, arrowY).lineTo(rightX, rightY).stroke(strokeStyle)
+}
+
+function strokePolyline(graphics, points, style) {
+  if (points.length < 2 || typeof graphics.moveTo !== 'function') {
+    return
+  }
+
+  graphics.moveTo(points[0].x, points[0].y)
+
+  for (let index = 1; index < points.length; index += 1) {
+    graphics.lineTo(points[index].x, points[index].y)
+  }
+
+  graphics.stroke(style)
+}
+
+function currentOrSnapshotPosition(entity, snapshot) {
+  const currentPosition = entity && entity.present !== false
+    ? finitePosition(entity.position)
+    : null
+
+  return currentPosition || finitePosition(snapshot)
+}
+
+function finitePosition(position) {
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    return null
+  }
+
+  return {
+    x: Math.round(position.x),
+    y: Math.round(position.y)
+  }
+}
+
+function getElapsedSimulationSeconds(clock) {
+  if (clock && typeof clock.getElapsedSimulationSeconds === 'function') {
+    const seconds = clock.getElapsedSimulationSeconds()
+
+    return Number.isFinite(seconds) ? seconds : null
+  }
+
+  return null
+}
+
 export function createNpcSpriteAtlas(npcs, config = {}, infection = null, pixi = null) {
   const Texture = getPixiMember(pixi, 'Texture')
   const Rectangle = getPixiMember(pixi, 'Rectangle')
@@ -736,6 +956,24 @@ function normalizeEntityRenderMode(mode) {
   return Object.prototype.hasOwnProperty.call(ENTITY_RENDER_MODES, id)
     ? id
     : ENTITY_RENDER_MODE_ID
+}
+
+function normalizeEntityDebugOptions(options = {}) {
+  const debugOptions = options || {}
+
+  return {
+    infectionRadiusVisible: Boolean(debugOptions.infectionRadiusVisible),
+    infectionEdgesVisible: Boolean(debugOptions.infectionEdgesVisible),
+    infectionEdgeDurationSeconds: positiveNumberOrDefault(
+      debugOptions.infectionEdgeDurationSeconds,
+      ENTITY_RENDER_DEBUG_CONFIG.infectionEdgeDurationMinutes * 60
+    ),
+    pathTrailsVisible: Boolean(debugOptions.pathTrailsVisible),
+    pathTrailLength: positiveIntegerOrDefault(
+      debugOptions.pathTrailLength,
+      ENTITY_RENDER_DEBUG_CONFIG.pathTrailLength
+    )
+  }
 }
 
 function createCanvas(width, height) {

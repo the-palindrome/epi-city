@@ -224,6 +224,24 @@ export const ENTITY_RENDER_MODE_OPTIONS = Object.freeze([
   ENTITY_RENDER_MODES.geometric
 ])
 
+export const ENTITY_RENDER_DEBUG_CONFIG = Object.freeze({
+  infectionRadiusVisible: false,
+  infectionEdgesVisible: false,
+  infectionEdgeDurationMinutes: 60,
+  infectionEdgeDurationRange: Object.freeze({
+    min: 10,
+    max: 120,
+    step: 5
+  }),
+  pathTrailsVisible: false,
+  pathTrailLength: 5,
+  pathTrailLengthRange: Object.freeze({
+    min: 1,
+    max: 100,
+    step: 1
+  })
+})
+
 export const DASHBOARD_OVERLAYS = Object.freeze([
   Object.freeze({ id: 'tileType', label: 'tile overlay', kind: 'tileType' }),
   ...SEIR_HEATMAP_CONFIG.states.map((state) => Object.freeze({

@@ -473,6 +473,17 @@ describe('NPC simulation randomness', () => {
       infectious: 1,
       recovered: 0
     })
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([
+      expect.objectContaining({
+        id: 1,
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        sourcePosition: { x: 16, y: 16 },
+        targetPosition: { x: 22, y: 16 },
+        distance: 6,
+        targetState: 'exposed'
+      })
+    ])
 
     simulation.destroy()
   })

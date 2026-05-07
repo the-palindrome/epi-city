@@ -110,7 +110,10 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     cars.push(car)
   }
 
-  const carRenderer = createCarSpriteRenderer(cars, city, resolvedConfig, { pixi: PIXI })
+  const carRenderer = createCarSpriteRenderer(cars, city, resolvedConfig, {
+    pixi: PIXI,
+    entityDebugOptions: resolvedConfig.entityDebugOptions
+  })
   const display = carRenderer.display
   const graphics = carRenderer.spriteDisplay || display
 
@@ -161,6 +164,13 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     }
   }
 
+  function setEntityDebugOptions(options) {
+    if (typeof carRenderer.setDebugOptions === 'function') {
+      carRenderer.setDebugOptions(options)
+      render()
+    }
+  }
+
   render()
 
   return {
@@ -171,6 +181,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     update,
     render,
     setEntityRenderMode,
+    setEntityDebugOptions,
     destroy() {
       destroyed = true
       trafficReservations.clear()

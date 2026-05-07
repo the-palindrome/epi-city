@@ -166,6 +166,8 @@ NPC infection dynamics run inside the same system after movement updates. Each N
 
 Transmission indexes only infectious NPCs in a reusable world-space spatial hash sized from the infection distance. Susceptible NPCs check their own cell plus neighboring cells and then run exact squared-distance tests against the infectious candidates. This avoids an all-pairs contact scan at the 10,000-NPC dashboard limit. Infection randomness uses a dedicated seeded random stream derived from the NPC seed, so adding disease dynamics does not change movement or timetable repeatability.
 
+Successful transmissions append compact source/target snapshots to a bounded recent-event buffer. Rendering options read that buffer only when infection arrows are enabled, so normal simulation updates avoid extra rendering work and old events are pruned after the maximum display window.
+
 ## Car Simulation
 
 `createCarSimulation()` builds cars after the map renders. Each car receives one or two real NPC owner records, and all owners for one car share the same residential home building. A commuting owner waits inside the origin building while the car is pending, rides hidden inside the car, and is dropped into the destination building when the car parks. If a car is used to reach work, the same car remains parked near work until the evening return window sends it home.
@@ -214,9 +216,11 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, entity debug overlays, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
 Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car sprites. `geometric` draws NPCs as disks colored by infection state and cars as rectangles colored by the highest-priority infection state among passengers currently inside the car; empty cars keep their normal car color.
+
+Entity debug overlays share the entity renderer pass and are only drawn when enabled. Infection radius renders outline-only circles around infectious NPCs, infection arrows reuse recorded transmission events from the infection dynamics, and path trails keep a bounded in-memory position history per visible NPC or car. Infection arrows default to a 60-minute game-time lifetime and clamp to 10-120 game minutes; path trails clamp to 1-100 past steps.
 
 The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
 
@@ -277,6 +281,11 @@ window.citySim.setInitialInfectiousCount(10)
 window.citySim.npcSimulation.infection.getStats()
 window.citySim.setDayNightOverlayEnabled(false)
 window.citySim.setEntityRenderMode('geometric')
+window.citySim.setInfectionRadiusVisible(true)
+window.citySim.setInfectionEdgesVisible(true)
+window.citySim.setInfectionEdgeDuration(60)
+window.citySim.setPathTrailsVisible(true)
+window.citySim.setPathTrailLength(5)
 window.citySim.setHeatmapRadius(128)
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt
@@ -288,6 +297,11 @@ window.citySim.npcs[0].movement.target
 window.citySim.centerCameraOnCity()
 window.citySim.setMapTextureEnabled(false)
 window.citySim.setMapTextureOpacity(0.45)
+window.citySim.dashboard.setInfectionRadiusVisible(true)
+window.citySim.dashboard.setInfectionEdgesVisible(true)
+window.citySim.dashboard.setInfectionEdgeDuration(60)
+window.citySim.dashboard.setPathTrailsVisible(true)
+window.citySim.dashboard.setPathTrailLength(5)
 window.citySim.dashboard.setOverlay('tileType', true)
 window.citySim.dashboard.setTileOverlayScheme('monochrome-dark')
 window.citySim.dashboard.setTileOverlayOpacity(0.5)
