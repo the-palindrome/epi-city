@@ -75,16 +75,26 @@ class FakeElement {
 
 function createDashboardDocument() {
   const dashboard = new FakeElement('div')
+  const overlayDashboard = new FakeElement('div')
   const eventListeners = {}
 
   return {
     dashboard,
+    overlayDashboard,
     eventListeners,
     createElement(tagName) {
       return new FakeElement(tagName)
     },
     getElementById(id) {
-      return id === 'debug-dashboard' ? dashboard : null
+      if (id === 'debug-dashboard') {
+        return dashboard
+      }
+
+      if (id === 'overlay-dashboard') {
+        return overlayDashboard
+      }
+
+      return null
     },
     addEventListener(type, listener) {
       eventListeners[type] = listener
@@ -181,6 +191,101 @@ describe('debug dashboard overlays', () => {
 
   afterEach(() => {
     globalThis.document = originalDocument
+  })
+
+  it('renders the simulation title and s shortcut', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const title = dashboard.element.children[0]
+    const shortcut = title.children[0]
+
+    expect(title.className).toBe('dashboard-title')
+    expect(title.textContent).toBe('simulation')
+    expect(shortcut.className).toBe('dashboard-shortcut')
+    expect(shortcut.textContent).toBe('s')
+
+    dashboard.destroy()
+  })
+
+  it('renders the overlays title and o shortcut on the overlay dashboard', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const title = dashboard.overlayElement.children[0]
+    const shortcut = title.children[0]
+
+    expect(title.className).toBe('dashboard-title')
+    expect(title.textContent).toBe('overlays')
+    expect(shortcut.className).toBe('dashboard-shortcut')
+    expect(shortcut.textContent).toBe('o')
+    expect(findByDataset(dashboard.element, 'overlayToggle')).toBeNull()
+    expect(findByDataset(dashboard.overlayElement, 'overlayToggle')).not.toBeNull()
+
+    dashboard.destroy()
+  })
+
+  it('toggles the dashboard with the s hotkey', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const keydown = globalThis.document.eventListeners.keydown
+
+    const hideEvent = createKeydownEvent({ key: 's', code: 'KeyS' })
+    keydown(hideEvent)
+
+    expect(hideEvent.defaultPrevented).toBe(true)
+    expect(dashboard.element.classList.contains('hidden')).toBe(true)
+
+    const showEvent = createKeydownEvent({ key: 'S', code: 'KeyS' })
+    keydown(showEvent)
+
+    expect(showEvent.defaultPrevented).toBe(true)
+    expect(dashboard.element.classList.contains('hidden')).toBe(false)
+
+    dashboard.destroy()
+  })
+
+  it('toggles the overlay dashboard with the o hotkey', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const keydown = globalThis.document.eventListeners.keydown
+
+    const hideEvent = createKeydownEvent({ key: 'o', code: 'KeyO' })
+    keydown(hideEvent)
+
+    expect(hideEvent.defaultPrevented).toBe(true)
+    expect(dashboard.overlayElement.classList.contains('hidden')).toBe(true)
+    expect(dashboard.element.classList.contains('hidden')).toBe(false)
+
+    const showEvent = createKeydownEvent({ key: 'O', code: 'KeyO' })
+    keydown(showEvent)
+
+    expect(showEvent.defaultPrevented).toBe(true)
+    expect(dashboard.overlayElement.classList.contains('hidden')).toBe(false)
+
+    dashboard.destroy()
+  })
+
+  it('does not toggle the dashboard with the s hotkey inside editable controls', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const keydown = globalThis.document.eventListeners.keydown
+    const seedInput = findByDataset(dashboard.element, 'simulationSeed')
+
+    const inputEvent = createKeydownEvent({ key: 's', code: 'KeyS', target: seedInput })
+    keydown(inputEvent)
+
+    expect(inputEvent.defaultPrevented).toBe(false)
+    expect(dashboard.element.classList.contains('hidden')).toBe(false)
+
+    dashboard.destroy()
+  })
+
+  it('does not toggle the overlay dashboard with the o hotkey inside editable controls', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const keydown = globalThis.document.eventListeners.keydown
+    const seedInput = findByDataset(dashboard.element, 'simulationSeed')
+
+    const inputEvent = createKeydownEvent({ key: 'o', code: 'KeyO', target: seedInput })
+    keydown(inputEvent)
+
+    expect(inputEvent.defaultPrevented).toBe(false)
+    expect(dashboard.overlayElement.classList.contains('hidden')).toBe(false)
+
+    dashboard.destroy()
   })
 
   it('renders overlay chunks at the z-order of their covered tiles', () => {

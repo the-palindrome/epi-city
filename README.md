@@ -17,15 +17,15 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `Space` to play or pause the simulation, and press `d` to toggle the debug dashboard in the top-right corner.
-- Use the dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
-- Use `overlay tile type` to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
-- Use the dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
-- Use the dashboard car control to restart the simulation with the selected number of cars. The default is 500.
-- Use the dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
+- Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `o` to toggle the overlays dashboard.
+- Use the overlays dashboard toggles to overlay `walkable`, `parkable`, and `drivable` behavior layers. Green tiles have the selected behavior, and red tiles do not.
+- Use `overlay tile type` in the overlays dashboard to tint semantic tile categories: sidewalk gray, road black, crosswalk black with white strips, park green, water blue, building slate, and obstacle red.
+- Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
+- Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 500.
+- Use the simulation dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
 - Hover an NPC to inspect its infection status, contagiousness, immunity, and phase timer.
 - Right-click an NPC and choose `infect` to manually make that NPC infectious.
-- The dashboard shows the simulated day/time, can run up to 24x speed, and can toggle the darker day-night overlay.
+- The simulation dashboard shows the simulated day/time, can run up to 24x speed, and can toggle the darker day-night overlay.
 - Use the browser console to inspect `window.citySim`.
 
 ## Project Structure
@@ -100,7 +100,7 @@ Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at 
 
 Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. NPCs interpolate smoothly between anchor positions.
 
-The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The day-night clock advances one simulated hour per real minute at `1x` speed, and pedestrian and vehicle movement use that same simulated-time delta. The debug dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time.
+The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The simulation dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time.
 
 ## Car Prototype
 
@@ -158,10 +158,11 @@ window.citySim.setDayNightOverlayEnabled(false)
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
 
-The debug dashboard is available through `window.citySim.dashboard`. It exposes simulation controls plus `setOverlay(id, enabled)`, `toggle(force)`, and `render()` for quick checks from the console:
+The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setOverlay(id, enabled)`, `toggle(force)`, `toggleOverlays(force)`, and `render()` for quick checks from the console:
 
 ```js
 window.citySim.dashboard.toggle(true)
+window.citySim.dashboard.toggleOverlays(true)
 window.citySim.dashboard.setOverlay('walkable', true)
 window.citySim.dashboard.setOverlay('drivable', true)
 ```

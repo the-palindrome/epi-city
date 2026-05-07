@@ -8,15 +8,18 @@ import { fillRect } from '../render/pixi-rendering.js'
 
 export function installDebugDashboard(city, entityLayer, simulationControls = {}) {
   const dashboard = document.getElementById('debug-dashboard')
+  const overlayDashboard = document.getElementById('overlay-dashboard')
   const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]))
   const controls = new Map()
   const layers = new Map()
   const simulation = createSimulationControls(simulationControls)
-  const overlaySection = createDashboardSection('Overlays')
+  const overlaySection = createDashboardSection('Map')
 
   dashboard.innerHTML = ''
-  dashboard.appendChild(createDashboardTitle())
+  overlayDashboard.innerHTML = ''
+  dashboard.appendChild(createDashboardTitle('simulation', 's'))
   dashboard.appendChild(simulation.element)
+  overlayDashboard.appendChild(createDashboardTitle('overlays', 'o'))
 
   for (const overlay of DASHBOARD_OVERLAYS) {
     const control = createOverlayToggle(overlay)
@@ -29,7 +32,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     })
   }
 
-  dashboard.appendChild(overlaySection)
+  overlayDashboard.appendChild(overlaySection)
 
   function render() {
     simulation.render()
@@ -75,6 +78,11 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     dashboard.classList.toggle('hidden', shouldHide)
   }
 
+  function toggleOverlayDashboard(force) {
+    const shouldHide = typeof force === 'boolean' ? !force : !overlayDashboard.classList.contains('hidden')
+    overlayDashboard.classList.toggle('hidden', shouldHide)
+  }
+
   function onKeyDown(event) {
     if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
       return
@@ -82,9 +90,15 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
     const key = typeof event.key === 'string' ? event.key.toLowerCase() : ''
 
-    if (key === 'd' && !isEditableTarget(event.target)) {
+    if (key === 's' && !isEditableTarget(event.target)) {
       event.preventDefault()
       toggleDashboard()
+      return
+    }
+
+    if (key === 'o' && !isEditableTarget(event.target)) {
+      event.preventDefault()
+      toggleOverlayDashboard()
       return
     }
 
@@ -100,10 +114,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   return {
     element: dashboard,
+    overlayElement: overlayDashboard,
     overlays: overlayState,
     simulation,
     setOverlay,
     toggle: toggleDashboard,
+    toggleOverlays: toggleOverlayDashboard,
     render,
     destroy() {
       document.removeEventListener('keydown', onKeyDown)
@@ -112,19 +128,20 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
       }
 
       dashboard.innerHTML = ''
+      overlayDashboard.innerHTML = ''
       layers.clear()
     }
   }
 }
 
-function createDashboardTitle() {
+function createDashboardTitle(titleText, shortcutText) {
   const title = document.createElement('div')
   const shortcut = document.createElement('span')
 
   title.className = 'dashboard-title'
-  title.textContent = 'Dashboard'
+  title.textContent = titleText
   shortcut.className = 'dashboard-shortcut'
-  shortcut.textContent = 'D'
+  shortcut.textContent = shortcutText
   title.appendChild(shortcut)
 
   return title

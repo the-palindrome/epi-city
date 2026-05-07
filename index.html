@@ -138,10 +138,20 @@
         flex: 0 0 auto;
       }
 
-	      #debug-dashboard {
-	        position: fixed;
-	        top: 16px;
-	        right: 16px;
+      #dashboard-layer {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        display: flex;
+        flex-direction: row-reverse;
+        align-items: flex-start;
+        gap: 12px;
+        max-width: calc(100vw - 32px);
+        pointer-events: none;
+        z-index: 2;
+      }
+
+	      .debug-dashboard {
 	        width: min(280px, calc(100vw - 32px));
 	        padding: 12px;
 	        border: 1px solid rgba(40, 48, 36, 0.28);
@@ -154,11 +164,24 @@
 	        box-sizing: border-box;
         max-height: calc(100vh - 32px);
         overflow: auto;
-	        z-index: 2;
+        pointer-events: auto;
 	      }
 
-      #debug-dashboard.hidden {
+      .debug-dashboard.hidden {
         display: none;
+      }
+
+      @media (max-width: 620px) {
+        #dashboard-layer {
+          flex-direction: column;
+          align-items: flex-end;
+          max-height: calc(100vh - 32px);
+          overflow: auto;
+        }
+
+        .debug-dashboard {
+          max-height: none;
+        }
       }
 
 	      .dashboard-title {
@@ -328,7 +351,10 @@
   </head>
   <body>
     <div id="status">Loading city...</div>
-    <div id="debug-dashboard" class="hidden" aria-label="Debug dashboard"></div>
+    <div id="dashboard-layer">
+      <div id="debug-dashboard" class="debug-dashboard hidden" aria-label="Simulation dashboard"></div>
+      <div id="overlay-dashboard" class="debug-dashboard hidden" aria-label="Overlays dashboard"></div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
