@@ -2,6 +2,7 @@ export const NPC_SPRITE_FRAME_DISTANCE = 4
 export const NPC_SPRITE_FRAME_COUNT = 4
 
 const NPC_SPRITE_CYCLE_DISTANCE = NPC_SPRITE_FRAME_DISTANCE * NPC_SPRITE_FRAME_COUNT
+const NPC_SPRITE_DIAGONAL_FACING_HYSTERESIS = 1.2
 const DEFAULT_NPC_SIZE = 9
 const MIN_SPRITE_PIXEL = 1
 const NPC_SPRITE_DRAW_SCALE = 1.28
@@ -34,7 +35,7 @@ export function createNpcSpriteState(id = 0) {
 
 export function faceNpcSprite(npc, directionX, directionY) {
   const sprite = ensureNpcSpriteState(npc)
-  const facing = npcSpriteFacingFromVector(directionX, directionY)
+  const facing = stableNpcSpriteFacingFromVector(directionX, directionY, sprite.facing)
 
   if (facing) {
     sprite.facing = facing
@@ -95,6 +96,37 @@ export function npcSpriteFacingFromVector(directionX, directionY) {
   }
 
   return directionY >= 0 ? 'south' : 'north'
+}
+
+function stableNpcSpriteFacingFromVector(directionX, directionY, currentFacing) {
+  if (!Number.isFinite(directionX) || !Number.isFinite(directionY)) {
+    return null
+  }
+
+  const absX = Math.abs(directionX)
+  const absY = Math.abs(directionY)
+
+  if (absX < 0.001 && absY < 0.001) {
+    return null
+  }
+
+  if (currentFacing === 'east' && directionX > 0 && absY <= absX * NPC_SPRITE_DIAGONAL_FACING_HYSTERESIS) {
+    return currentFacing
+  }
+
+  if (currentFacing === 'west' && directionX < 0 && absY <= absX * NPC_SPRITE_DIAGONAL_FACING_HYSTERESIS) {
+    return currentFacing
+  }
+
+  if (currentFacing === 'south' && directionY > 0 && absX <= absY * NPC_SPRITE_DIAGONAL_FACING_HYSTERESIS) {
+    return currentFacing
+  }
+
+  if (currentFacing === 'north' && directionY < 0 && absX <= absY * NPC_SPRITE_DIAGONAL_FACING_HYSTERESIS) {
+    return currentFacing
+  }
+
+  return npcSpriteFacingFromVector(directionX, directionY)
 }
 
 export function drawNpcSprite(graphics, npc, { color, size = DEFAULT_NPC_SIZE } = {}) {
