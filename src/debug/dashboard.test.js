@@ -75,6 +75,24 @@ class FakeElement {
     this.eventListeners[type] = listener
   }
 
+  removeEventListener(type, listener) {
+    if (this.eventListeners[type] === listener) {
+      delete this.eventListeners[type]
+    }
+  }
+
+  focus() {
+    globalThis.document.activeElement = this
+  }
+
+  blur() {
+    this.blurred = true
+
+    if (globalThis.document.activeElement === this) {
+      globalThis.document.activeElement = null
+    }
+  }
+
   set innerHTML(value) {
     this.children = []
     this._innerHTML = value
@@ -94,6 +112,7 @@ function createDashboardDocument() {
     dashboard,
     overlayDashboard,
     eventListeners,
+    activeElement: null,
     createElement(tagName) {
       return new FakeElement(tagName)
     },
@@ -372,6 +391,27 @@ describe('debug dashboard overlays', () => {
 
     expect(inputEvent.defaultPrevented).toBe(false)
     expect(dashboard.overlayElement.classList.contains('hidden')).toBe(false)
+
+    dashboard.destroy()
+  })
+
+  it('keeps dashboard hotkeys available from non-text dashboard controls', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const keydown = globalThis.document.eventListeners.keydown
+    const entityRenderMode = findByDataset(dashboard.overlayElement, 'entityRenderMode')
+    const playButton = findByDataset(dashboard.element, 'simulationAction')
+
+    const renderEvent = createKeydownEvent({ key: 'r', code: 'KeyR', target: entityRenderMode })
+    keydown(renderEvent)
+
+    expect(renderEvent.defaultPrevented).toBe(true)
+    expect(dashboard.overlayElement.classList.contains('hidden')).toBe(true)
+
+    const simulationEvent = createKeydownEvent({ key: 's', code: 'KeyS', target: playButton })
+    keydown(simulationEvent)
+
+    expect(simulationEvent.defaultPrevented).toBe(true)
+    expect(dashboard.element.classList.contains('hidden')).toBe(true)
 
     dashboard.destroy()
   })
@@ -925,6 +965,51 @@ describe('debug dashboard overlays', () => {
     expect(buttonEvent.defaultPrevented).toBe(false)
     expect(dashboard.simulation.state.paused).toBe(false)
     expect(changes).toEqual([])
+
+    dashboard.destroy()
+  })
+
+  it('releases non-text dashboard control focus after mouse interactions so Space works again', () => {
+    const changes = []
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      paused: false,
+      onPlay() {
+        changes.push('play')
+      },
+      onPause() {
+        changes.push('pause')
+      }
+    })
+    const keydown = globalThis.document.eventListeners.keydown
+    const mapTextureToggle = findByDataset(dashboard.overlayElement, 'mapTextureToggle')
+    const entityRenderMode = findByDataset(dashboard.overlayElement, 'entityRenderMode')
+
+    mapTextureToggle.focus()
+    dashboard.overlayElement.eventListeners.click({
+      type: 'click',
+      target: mapTextureToggle,
+      currentTarget: dashboard.overlayElement
+    })
+
+    expect(mapTextureToggle.blurred).toBe(true)
+    expect(globalThis.document.activeElement).toBeNull()
+
+    entityRenderMode.focus()
+    dashboard.overlayElement.eventListeners.change({
+      type: 'change',
+      target: entityRenderMode,
+      currentTarget: dashboard.overlayElement
+    })
+
+    expect(entityRenderMode.blurred).toBe(true)
+    expect(globalThis.document.activeElement).toBeNull()
+
+    const pauseEvent = createKeydownEvent()
+    keydown(pauseEvent)
+
+    expect(pauseEvent.defaultPrevented).toBe(true)
+    expect(dashboard.simulation.state.paused).toBe(true)
+    expect(changes).toEqual(['pause'])
 
     dashboard.destroy()
   })

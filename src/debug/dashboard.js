@@ -370,13 +370,13 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
     const key = typeof event.key === 'string' ? event.key.toLowerCase() : ''
 
-    if (key === 's' && !isEditableTarget(event.target)) {
+    if (key === 's' && !isTextEntryTarget(event.target)) {
       event.preventDefault()
       toggleDashboard()
       return
     }
 
-    if (key === 'r' && !isEditableTarget(event.target)) {
+    if (key === 'r' && !isTextEntryTarget(event.target)) {
       event.preventDefault()
       toggleOverlayDashboard()
       return
@@ -391,6 +391,29 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   }
 
   document.addEventListener('keydown', onKeyDown)
+  dashboard.addEventListener('click', releaseDashboardShortcutFocus)
+  dashboard.addEventListener('change', releaseDashboardShortcutFocus)
+  overlayDashboard.addEventListener('click', releaseDashboardShortcutFocus)
+  overlayDashboard.addEventListener('change', releaseDashboardShortcutFocus)
+
+  function releaseDashboardShortcutFocus(event) {
+    const control = findDashboardShortcutControl(event.currentTarget, event.target)
+
+    if (!control || !shouldReleaseDashboardShortcutFocus(control, event.type)) {
+      return
+    }
+
+    if (typeof control.blur === 'function') {
+      control.blur()
+    }
+  }
+
+  function removeDashboardShortcutFocusListeners(root) {
+    if (root && typeof root.removeEventListener === 'function') {
+      root.removeEventListener('click', releaseDashboardShortcutFocus)
+      root.removeEventListener('change', releaseDashboardShortcutFocus)
+    }
+  }
 
   return {
     element: dashboard,
@@ -417,6 +440,9 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     render,
     destroy() {
       document.removeEventListener('keydown', onKeyDown)
+      removeDashboardShortcutFocusListeners(dashboard)
+      removeDashboardShortcutFocusListeners(overlayDashboard)
+
       for (const layer of layers.values()) {
         destroyOverlayLayer(layer)
       }
@@ -1421,16 +1447,33 @@ function createRenderingOpacityField({ labelText, inputDataset, valueDataset, op
   return { label, input, value }
 }
 
-function isEditableTarget(target) {
+function isTextEntryTarget(target) {
   if (!target || !target.tagName) {
     return false
   }
 
-  if (target.tagName === 'INPUT' && target.type === 'checkbox') {
+  if (target.isContentEditable || target.tagName === 'TEXTAREA') {
+    return true
+  }
+
+  if (target.tagName !== 'INPUT') {
     return false
   }
 
-  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+  const type = String(target.type || 'text').toLowerCase()
+
+  return ![
+    'button',
+    'checkbox',
+    'color',
+    'file',
+    'hidden',
+    'image',
+    'radio',
+    'range',
+    'reset',
+    'submit'
+  ].includes(type)
 }
 
 function isInteractiveTarget(target) {
@@ -1439,6 +1482,60 @@ function isInteractiveTarget(target) {
   }
 
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+}
+
+function findDashboardShortcutControl(root, target) {
+  const activeElement = document.activeElement
+
+  if (isDashboardControl(activeElement) && containsNode(root, activeElement)) {
+    return activeElement
+  }
+
+  let node = target
+
+  while (node && node !== root) {
+    if (isDashboardControl(node)) {
+      return node
+    }
+
+    node = node.parentNode
+  }
+
+  return isDashboardControl(root) ? root : null
+}
+
+function shouldReleaseDashboardShortcutFocus(control, eventType) {
+  if (!control || isTextEntryTarget(control)) {
+    return false
+  }
+
+  if (control.tagName === 'SELECT') {
+    return eventType === 'change'
+  }
+
+  return eventType === 'click' || eventType === 'change'
+}
+
+function isDashboardControl(target) {
+  return Boolean(
+    target &&
+    target.tagName &&
+    (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName))
+  )
+}
+
+function containsNode(root, node) {
+  let current = node
+
+  while (current) {
+    if (current === root) {
+      return true
+    }
+
+    current = current.parentNode
+  }
+
+  return false
 }
 
 function isSpaceHotkey(event) {
