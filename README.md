@@ -17,12 +17,13 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options.
+- Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph.
 - Use rendering options to show or hide the map texture, tune texture opacity, switch NPC/car rendering between `sprite` and `geometric`, show the tile overlay, choose its color scheme, tune tile overlay opacity, enable optional SEIR heatmaps, and turn on entity debug overlays.
 - In `geometric` entity rendering, NPCs draw as infection-colored disks and cars draw as rectangles colored by any passengers inside them.
 - Entity debug overlays can show infectious NPC radius circles, recent infection arrows, and short NPC/car path trails. Infection arrows default to one game hour and can be tuned from 10 game minutes to 2 game hours.
 - The tile overlay has `tile type`, `monochrome-light`, and `monochrome-dark` color schemes. The `tile type` scheme uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, blue residential buildings, and amber commercial buildings.
 - SEIR heatmaps use kernel density estimation for susceptible, exposed, infectious, and recovered NPC positions. The rendering panel includes a kernel-radius slider plus exact number input.
+- The epidemic graph plots S/E/I/R counts over simulated time, includes one tickbox per state, can be resized, labels its time/case axes, and supports drag-to-pan plus wheel-to-zoom on the time axis.
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 500.
 - Use the simulation dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
@@ -168,11 +169,12 @@ window.citySim.setHeatmapRadius(128)
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
 
-The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setMapTextureEnabled(enabled)`, `setMapTextureOpacity(opacity)`, `setEntityRenderMode(mode)`, entity debug overlay setters, `setOverlay(id, enabled)`, `setTileOverlayScheme(schemeId)`, `setTileOverlayOpacity(opacity)`, `setHeatmapRadius(radius)`, `toggle(force)`, `toggleRenderingOptions(force)`, and `render()` for quick checks from the console:
+The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setMapTextureEnabled(enabled)`, `setMapTextureOpacity(opacity)`, `setEntityRenderMode(mode)`, entity debug overlay setters, `setOverlay(id, enabled)`, `setTileOverlayScheme(schemeId)`, `setTileOverlayOpacity(opacity)`, `setHeatmapRadius(radius)`, `toggle(force)`, `toggleRenderingOptions(force)`, `toggleGraph(force)`, and `render()` for quick checks from the console:
 
 ```js
 window.citySim.dashboard.toggle(true)
 window.citySim.dashboard.toggleRenderingOptions(true)
+window.citySim.dashboard.toggleGraph(true)
 window.citySim.dashboard.setMapTextureEnabled(false)
 window.citySim.dashboard.setMapTextureOpacity(0.45)
 window.citySim.dashboard.setEntityRenderMode('geometric')

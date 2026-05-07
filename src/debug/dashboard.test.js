@@ -62,8 +62,10 @@ class FakeElement {
     this.children = []
     this.classList = new FakeClassList()
     this.dataset = {}
+    this.attributes = {}
     this.eventListeners = {}
     this.isContentEditable = false
+    this.style = {}
   }
 
   appendChild(child) {
@@ -73,6 +75,31 @@ class FakeElement {
 
   addEventListener(type, listener) {
     this.eventListeners[type] = listener
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value)
+  }
+
+  getAttribute(name) {
+    return this.attributes[name]
+  }
+
+  getBoundingClientRect() {
+    return this.rect || {
+      left: 0,
+      top: 0,
+      width: 336,
+      height: 176
+    }
+  }
+
+  setPointerCapture(pointerId) {
+    this.capturedPointerId = pointerId
+  }
+
+  releasePointerCapture(pointerId) {
+    this.releasedPointerId = pointerId
   }
 
   removeEventListener(type, listener) {
@@ -106,14 +133,21 @@ class FakeElement {
 function createDashboardDocument() {
   const dashboard = new FakeElement('div')
   const overlayDashboard = new FakeElement('div')
+  const graphDashboard = new FakeElement('div')
   const eventListeners = {}
+
+  graphDashboard.classList.toggle('hidden', true)
 
   return {
     dashboard,
     overlayDashboard,
+    graphDashboard,
     eventListeners,
     activeElement: null,
     createElement(tagName) {
+      return new FakeElement(tagName)
+    },
+    createElementNS(_namespace, tagName) {
       return new FakeElement(tagName)
     },
     getElementById(id) {
@@ -123,6 +157,10 @@ function createDashboardDocument() {
 
       if (id === 'overlay-dashboard') {
         return overlayDashboard
+      }
+
+      if (id === 'graph-dashboard') {
+        return graphDashboard
       }
 
       return null
@@ -258,6 +296,23 @@ function createKeydownEvent(overrides = {}) {
   }
 }
 
+function createGraphMouseEvent(overrides = {}) {
+  return {
+    button: 0,
+    pointerId: 1,
+    clientX: 168,
+    clientY: 88,
+    deltaY: 0,
+    shiftKey: false,
+    altKey: false,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true
+    },
+    ...overrides
+  }
+}
+
 describe('debug dashboard overlays', () => {
   const originalDocument = globalThis.document
 
@@ -328,6 +383,45 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
+  it('renders the epidemic graph title, g shortcut, toggles, and plot', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const title = dashboard.graphElement.children[0]
+    const shortcut = title.children[0]
+    const toggles = findAllByDataset(dashboard.graphElement, 'epidemicGraphToggle')
+    const plot = findByDataset(dashboard.graphElement, 'epidemicGraphPlot')
+    const grid = findByDataset(dashboard.graphElement, 'epidemicGraphGrid')
+    const ticks = findByDataset(dashboard.graphElement, 'epidemicGraphTicks')
+    const xAxisLabel = findByDataset(dashboard.graphElement, 'epidemicGraphXAxisLabel')
+    const yAxisLabel = findByDataset(dashboard.graphElement, 'epidemicGraphYAxisLabel')
+    const resizeHandle = findByDataset(dashboard.graphElement, 'graphResizeHandle')
+
+    expect(title.className).toBe('dashboard-title')
+    expect(title.textContent).toBe('epidemic')
+    expect(shortcut.className).toBe('dashboard-shortcut')
+    expect(shortcut.textContent).toBe('g')
+    expect(toggles.map((toggle) => [toggle.dataset.epidemicGraphToggle, toggle.checked])).toEqual([
+      ['susceptible', true],
+      ['exposed', true],
+      ['infectious', true],
+      ['recovered', true]
+    ])
+    expect(plot.getAttribute('class')).toBe('epidemic-graph-plot')
+    expect(plot.getAttribute('viewBox')).toBe('0 0 336 176')
+    expect(grid).not.toBeNull()
+    expect(ticks).not.toBeNull()
+    expect(xAxisLabel.textContent).toBe('time (h)')
+    expect(yAxisLabel.textContent).toBe('cases')
+    expect(resizeHandle.className).toBe('graph-dashboard-resize-handle')
+
+    plot.rect = { left: 0, top: 0, width: 514, height: 367.16 }
+    dashboard.graph.render()
+
+    expect(plot.getAttribute('viewBox')).toBe('0 0 514 367.16')
+    expect(xAxisLabel.getAttribute('font-size')).toBe('12')
+
+    dashboard.destroy()
+  })
+
   it('toggles the dashboard with the s hotkey', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const keydown = globalThis.document.eventListeners.keydown
@@ -363,6 +457,27 @@ describe('debug dashboard overlays', () => {
 
     expect(showEvent.defaultPrevented).toBe(true)
     expect(dashboard.overlayElement.classList.contains('hidden')).toBe(false)
+
+    dashboard.destroy()
+  })
+
+  it('toggles the epidemic graph with the g hotkey', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const keydown = globalThis.document.eventListeners.keydown
+
+    expect(dashboard.graphElement.classList.contains('hidden')).toBe(true)
+
+    const showEvent = createKeydownEvent({ key: 'g', code: 'KeyG' })
+    keydown(showEvent)
+
+    expect(showEvent.defaultPrevented).toBe(true)
+    expect(dashboard.graphElement.classList.contains('hidden')).toBe(false)
+
+    const hideEvent = createKeydownEvent({ key: 'G', code: 'KeyG' })
+    keydown(hideEvent)
+
+    expect(hideEvent.defaultPrevented).toBe(true)
+    expect(dashboard.graphElement.classList.contains('hidden')).toBe(true)
 
     dashboard.destroy()
   })
@@ -861,6 +976,129 @@ describe('debug dashboard overlays', () => {
 
     expect(immunityDays.value).toBe('30')
     expect(initialInfectiousCount.value).toBe('5')
+
+    dashboard.destroy()
+  })
+
+  it('samples infection stats and plots selected epidemic graph states over time', () => {
+    const clock = {
+      seconds: 0,
+      getElapsedSimulationSeconds() {
+        return this.seconds
+      }
+    }
+    let stats = { susceptible: 8, exposed: 1, infectious: 2, recovered: 0 }
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      clock,
+      getInfectionStats() {
+        return stats
+      }
+    })
+
+    dashboard.render()
+    clock.seconds = 3600
+    stats = { susceptible: 6, exposed: 2, infectious: 3, recovered: 0 }
+    dashboard.render()
+
+    const lines = findAllByDataset(dashboard.graphElement, 'epidemicGraphLine')
+    const susceptibleLine = lines.find((line) => line.dataset.epidemicGraphLine === 'susceptible')
+    const exposedLine = lines.find((line) => line.dataset.epidemicGraphLine === 'exposed')
+    const exposedToggle = findAllByDataset(dashboard.graphElement, 'epidemicGraphToggle')
+      .find((toggle) => toggle.dataset.epidemicGraphToggle === 'exposed')
+
+    expect(dashboard.graph.samples).toEqual([
+      expect.objectContaining({ timeSeconds: 0, susceptible: 8, exposed: 1, infectious: 2, recovered: 0 }),
+      expect.objectContaining({ timeSeconds: 3600, susceptible: 6, exposed: 2, infectious: 3, recovered: 0 })
+    ])
+    expect(susceptibleLine.getAttribute('points').split(' ')).toHaveLength(2)
+    expect(exposedLine.getAttribute('points')).not.toBe('')
+
+    exposedToggle.checked = false
+    exposedToggle.eventListeners.change()
+
+    expect(dashboard.graph.visibleStates.exposed).toBe(false)
+    expect(exposedLine.getAttribute('points')).toBe('')
+
+    dashboard.destroy()
+  })
+
+  it('zooms and pans only the epidemic graph time axis with plot mouse interactions', () => {
+    const clock = {
+      seconds: 0,
+      getElapsedSimulationSeconds() {
+        return this.seconds
+      }
+    }
+    let stats = { susceptible: 8, exposed: 1, infectious: 2, recovered: 0 }
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      clock,
+      getInfectionStats() {
+        return stats
+      }
+    })
+
+    dashboard.render()
+    clock.seconds = 3600
+    stats = { susceptible: 6, exposed: 2, infectious: 3, recovered: 1 }
+    dashboard.render()
+
+    const line = findAllByDataset(dashboard.graphElement, 'epidemicGraphLine')
+      .find((item) => item.dataset.epidemicGraphLine === 'susceptible')
+    const initialPoints = line.getAttribute('points')
+    const wheelEvent = createGraphMouseEvent({ deltaY: -240, clientX: 168, clientY: 88 })
+
+    dashboard.graph.plot.eventListeners.wheel(wheelEvent)
+
+    const zoomedPoints = line.getAttribute('points')
+
+    expect(wheelEvent.defaultPrevented).toBe(true)
+    expect(zoomedPoints).not.toBe(initialPoints)
+    expect(dashboard.graph.view.timeStartSeconds).toBeGreaterThanOrEqual(0)
+    expect(dashboard.graph.view.timeEndSeconds).toBeLessThan(3600)
+    expect(dashboard.graph.view).not.toHaveProperty('valueMin')
+    expect(dashboard.graph.view).not.toHaveProperty('valueMax')
+
+    const verticalPointerDown = createGraphMouseEvent({ clientX: 168, clientY: 88 })
+    dashboard.graph.plot.eventListeners.pointerdown(verticalPointerDown)
+    globalThis.document.eventListeners.pointermove(createGraphMouseEvent({ clientX: 168, clientY: 130 }))
+    globalThis.document.eventListeners.pointerup(createGraphMouseEvent({ clientX: 168, clientY: 130 }))
+
+    expect(verticalPointerDown.defaultPrevented).toBe(true)
+    expect(line.getAttribute('points')).toBe(zoomedPoints)
+
+    const horizontalPointerDown = createGraphMouseEvent({ clientX: 168, clientY: 88 })
+    dashboard.graph.plot.eventListeners.pointerdown(horizontalPointerDown)
+    globalThis.document.eventListeners.pointermove(createGraphMouseEvent({ clientX: 220, clientY: 88 }))
+    globalThis.document.eventListeners.pointerup(createGraphMouseEvent({ clientX: 220, clientY: 88 }))
+
+    expect(horizontalPointerDown.defaultPrevented).toBe(true)
+    expect(line.getAttribute('points')).not.toBe(zoomedPoints)
+    expect(dashboard.graph.plot.capturedPointerId).toBe(1)
+    expect(dashboard.graph.plot.releasedPointerId).toBe(1)
+
+    dashboard.destroy()
+  })
+
+  it('resizes the epidemic graph from the upper-right handle', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const resizeHandle = findByDataset(dashboard.graphElement, 'graphResizeHandle')
+    const pointerDown = createGraphMouseEvent({ clientX: 300, clientY: 60 })
+
+    dashboard.graphElement.rect = {
+      left: 16,
+      top: 320,
+      width: 380,
+      height: 260
+    }
+    resizeHandle.eventListeners.pointerdown(pointerDown)
+    resizeHandle.eventListeners.pointermove(createGraphMouseEvent({ clientX: 460, clientY: 10 }))
+    resizeHandle.eventListeners.pointerup(createGraphMouseEvent({ clientX: 460, clientY: 10 }))
+
+    expect(pointerDown.defaultPrevented).toBe(true)
+    expect(dashboard.graphElement.style.width).toBe('540px')
+    expect(dashboard.graphElement.style.height).toBe('310px')
+    expect(resizeHandle.capturedPointerId).toBe(1)
+    expect(resizeHandle.releasedPointerId).toBe(1)
 
     dashboard.destroy()
   })

@@ -16,7 +16,7 @@ Startup follows this sequence:
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
 7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
-9. `installDebugDashboard()` adds simulation controls, the clock display, map texture rendering controls, a keyboard-controlled tile overlay, and a cached overlay layer after its first build.
+9. `installDebugDashboard()` adds simulation controls, the clock display, map texture rendering controls, graphing controls, keyboard-controlled overlays, and cached overlay layers after their first build.
 10. `SimulationClock`, `createNpcSimulation()`, and `createCarSimulation()` create the clock and entity systems with their configured random sources, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
 
 ## Map Schema
@@ -216,7 +216,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, and press `r` to toggle rendering options. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, entity debug overlays, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, entity debug overlays, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. The bottom-left epidemic graph samples S/E/I/R counts against simulation time, has one visibility tickbox per state, labels the time and case axes, can be resized, and lets users drag to pan or wheel to zoom the time axis while the case axis auto-fits visible data. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
 Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car sprites. `geometric` draws NPCs as disks colored by infection state and cars as rectangles colored by the highest-priority infection state among passengers currently inside the car; empty cars keep their normal car color.
 

@@ -171,6 +171,57 @@
         display: none;
       }
 
+      #graph-dashboard {
+        position: fixed;
+        left: 16px;
+        bottom: 16px;
+        width: min(380px, calc(100vw - 32px));
+        height: 260px;
+        min-width: 260px;
+        min-height: 190px;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100vh - 32px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: rgba(248, 250, 244, 0.9);
+        z-index: 2;
+      }
+
+      #graph-dashboard .dashboard-title {
+        padding-right: 22px;
+      }
+
+      #graph-dashboard.hidden {
+        display: none;
+      }
+
+      .graph-dashboard-resize-handle {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 18px;
+        height: 18px;
+        border-top: 2px solid rgba(40, 48, 36, 0.42);
+        border-right: 2px solid rgba(40, 48, 36, 0.42);
+        border-radius: 2px;
+        box-sizing: border-box;
+        cursor: nesw-resize;
+        touch-action: none;
+      }
+
+      .graph-dashboard-resize-handle::after {
+        content: "";
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 7px;
+        height: 7px;
+        border-top: 2px solid rgba(40, 48, 36, 0.28);
+        border-right: 2px solid rgba(40, 48, 36, 0.28);
+        box-sizing: border-box;
+      }
+
       @media (max-width: 620px) {
         #dashboard-layer {
           flex-direction: column;
@@ -349,7 +400,58 @@
 	        padding: 4px 6px;
 	        cursor: pointer;
 	      }
-	    </style>
+
+      .epidemic-graph-controls {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+        margin-bottom: 8px;
+        flex: 0 0 auto;
+      }
+
+      .epidemic-graph {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .epidemic-graph-toggle {
+        justify-content: center;
+        padding: 4px 0;
+        border: 1px solid rgba(40, 48, 36, 0.16);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.42);
+      }
+
+      .epidemic-graph-plot {
+        display: block;
+        width: 100%;
+        height: auto;
+        min-height: 96px;
+        flex: 1 1 auto;
+        border: 1px solid rgba(40, 48, 36, 0.24);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.68);
+        box-sizing: border-box;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      .epidemic-graph-plot:active {
+        cursor: grabbing;
+      }
+
+      .epidemic-graph-grid,
+      .epidemic-graph-ticks,
+      .epidemic-graph-axis-labels {
+        pointer-events: none;
+      }
+
+      .epidemic-graph-line {
+        opacity: 0.94;
+      }
+    </style>
   </head>
   <body>
     <div id="status">Loading city...</div>
@@ -357,6 +459,7 @@
       <div id="debug-dashboard" class="debug-dashboard hidden" aria-label="Simulation dashboard"></div>
       <div id="overlay-dashboard" class="debug-dashboard hidden" aria-label="Rendering options"></div>
     </div>
+    <div id="graph-dashboard" class="debug-dashboard hidden" aria-label="Epidemic graph"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

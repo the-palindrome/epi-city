@@ -5,6 +5,7 @@ import {
   ENTITY_RENDER_MODE_ID,
   ENTITY_RENDER_MODE_OPTIONS,
   ENTITY_RENDER_MODES,
+  INFECTION_CONFIG,
   SEIR_HEATMAP_CONFIG,
   TILE_TYPE_OVERLAY_COLOR_SCHEMES,
   TILE_TYPE_OVERLAY_COLORS,
@@ -14,16 +15,37 @@ import {
 import { fillRect } from '../render/pixi-rendering.js'
 
 const RENDERING_OPACITY_RANGE = Object.freeze({ min: 0, max: 1, step: 0.05 })
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+const EPIDEMIC_GRAPH_CONFIG = Object.freeze({
+  width: 336,
+  height: 176,
+  padding: Object.freeze({ top: 12, right: 14, bottom: 36, left: 46 }),
+  sampleIntervalSeconds: 5 * 60,
+  maxSamples: 720,
+  minTimeSpanSeconds: 60,
+  minValueSpan: 1
+})
+const EPIDEMIC_GRAPH_STATES = Object.freeze([
+  Object.freeze({ id: 'susceptible', label: 'S', color: INFECTION_CONFIG.colors.susceptible }),
+  Object.freeze({ id: 'exposed', label: 'E', color: INFECTION_CONFIG.colors.exposed }),
+  Object.freeze({ id: 'infectious', label: 'I', color: INFECTION_CONFIG.colors.infectious }),
+  Object.freeze({ id: 'recovered', label: 'R', color: INFECTION_CONFIG.colors.recovered })
+])
+let epidemicGraphSequence = 0
 
 export function installDebugDashboard(city, entityLayer, simulationControls = {}) {
   const dashboard = document.getElementById('debug-dashboard')
   const overlayDashboard = document.getElementById('overlay-dashboard')
+  const graphDashboard = document.getElementById('graph-dashboard')
   const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]))
   const mapOverlays = DASHBOARD_OVERLAYS.filter((overlay) => overlay.kind !== 'heatmap')
   const heatmapOverlays = DASHBOARD_OVERLAYS.filter((overlay) => overlay.kind === 'heatmap')
   const controls = new Map()
   const layers = new Map()
   const simulation = createSimulationControls(simulationControls)
+  const epidemicGraph = createEpidemicGraph(simulationControls)
+  const graphResizeHandle = createGraphResizeHandle()
+  const graphResizer = createGraphDashboardResizer(graphDashboard, graphResizeHandle, () => epidemicGraph.render())
   const heatmapRadiusRange = normalizeHeatmapRadiusRange(simulationControls.heatmapRadiusRange)
   const infectionEdgeDurationRange = normalizeInfectionEdgeDurationRange(simulationControls.infectionEdgeDurationRange)
   const pathTrailLengthRange = normalizePathTrailLengthRange(simulationControls.pathTrailLengthRange)
@@ -99,9 +121,13 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   dashboard.innerHTML = ''
   overlayDashboard.innerHTML = ''
+  graphDashboard.innerHTML = ''
   dashboard.appendChild(createDashboardTitle('simulation', 's'))
   dashboard.appendChild(simulation.element)
   overlayDashboard.appendChild(createDashboardTitle('rendering options', 'r'))
+  graphDashboard.appendChild(createDashboardTitle('epidemic', 'g'))
+  graphDashboard.appendChild(epidemicGraph.element)
+  graphDashboard.appendChild(graphResizeHandle)
   overlaySection.appendChild(mapTextureToggle.label)
   overlaySection.appendChild(mapTextureOpacityField.label)
 
@@ -199,6 +225,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   function render() {
     simulation.render()
+    epidemicGraph.render()
     let currentHeatmapNpcsByState
 
     for (const overlay of DASHBOARD_OVERLAYS) {
@@ -363,6 +390,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     overlayDashboard.classList.toggle('hidden', shouldHide)
   }
 
+  function toggleGraphDashboard(force) {
+    const shouldHide = typeof force === 'boolean' ? !force : !graphDashboard.classList.contains('hidden')
+    graphDashboard.classList.toggle('hidden', shouldHide)
+    epidemicGraph.render()
+  }
+
   function onKeyDown(event) {
     if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
       return
@@ -382,6 +415,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
       return
     }
 
+    if (key === 'g' && !isTextEntryTarget(event.target)) {
+      event.preventDefault()
+      toggleGraphDashboard()
+      return
+    }
+
     if (!isSpaceHotkey(event) || isInteractiveTarget(event.target)) {
       return
     }
@@ -395,6 +434,8 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   dashboard.addEventListener('change', releaseDashboardShortcutFocus)
   overlayDashboard.addEventListener('click', releaseDashboardShortcutFocus)
   overlayDashboard.addEventListener('change', releaseDashboardShortcutFocus)
+  graphDashboard.addEventListener('click', releaseDashboardShortcutFocus)
+  graphDashboard.addEventListener('change', releaseDashboardShortcutFocus)
 
   function releaseDashboardShortcutFocus(event) {
     const control = findDashboardShortcutControl(event.currentTarget, event.target)
@@ -415,11 +456,16 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     }
   }
 
+  epidemicGraph.installInteractions()
+  graphResizer.install()
+
   return {
     element: dashboard,
     overlayElement: overlayDashboard,
+    graphElement: graphDashboard,
     overlays: overlayState,
     rendering: renderingSettings,
+    graph: epidemicGraph,
     simulation,
     setOverlay,
     setMapTextureEnabled,
@@ -437,11 +483,15 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     toggle: toggleDashboard,
     toggleRenderingOptions: toggleOverlayDashboard,
     toggleOverlays: toggleOverlayDashboard,
+    toggleGraph: toggleGraphDashboard,
     render,
     destroy() {
       document.removeEventListener('keydown', onKeyDown)
       removeDashboardShortcutFocusListeners(dashboard)
       removeDashboardShortcutFocusListeners(overlayDashboard)
+      removeDashboardShortcutFocusListeners(graphDashboard)
+      epidemicGraph.destroy()
+      graphResizer.destroy()
 
       for (const layer of layers.values()) {
         destroyOverlayLayer(layer)
@@ -449,6 +499,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
       dashboard.innerHTML = ''
       overlayDashboard.innerHTML = ''
+      graphDashboard.innerHTML = ''
       layers.clear()
     }
   }
@@ -477,6 +528,94 @@ function createDashboardSection(titleText) {
   section.appendChild(title)
 
   return section
+}
+
+function createGraphResizeHandle() {
+  const handle = document.createElement('div')
+
+  handle.className = 'graph-dashboard-resize-handle'
+  handle.dataset.graphResizeHandle = 'true'
+  handle.setAttribute('aria-hidden', 'true')
+
+  return handle
+}
+
+function createGraphDashboardResizer(panel, handle, onResize = noop) {
+  let resizeState = null
+  let installed = false
+
+  function install() {
+    if (installed) {
+      return
+    }
+
+    installed = true
+    handle.addEventListener('pointerdown', onPointerDown)
+    handle.addEventListener('pointermove', onPointerMove)
+    handle.addEventListener('pointerup', onPointerUp)
+    handle.addEventListener('pointercancel', onPointerUp)
+  }
+
+  function onPointerDown(event) {
+    if (Number(event.button || 0) !== 0) {
+      return
+    }
+
+    event.preventDefault()
+
+    const rect = getElementRect(panel)
+
+    resizeState = {
+      pointerId: event.pointerId,
+      clientX: Number(event.clientX) || 0,
+      clientY: Number(event.clientY) || 0,
+      width: Math.max(1, rect.width),
+      height: Math.max(1, rect.height)
+    }
+
+    setElementPointerCapture(handle, event.pointerId)
+  }
+
+  function onPointerMove(event) {
+    if (!resizeState || (Number.isFinite(resizeState.pointerId) && event.pointerId !== resizeState.pointerId)) {
+      return
+    }
+
+    event.preventDefault()
+
+    const bounds = getGraphResizeBounds()
+    const dx = (Number(event.clientX) || 0) - resizeState.clientX
+    const dy = (Number(event.clientY) || 0) - resizeState.clientY
+    const width = Math.min(Math.max(resizeState.width + dx, bounds.minWidth), bounds.maxWidth)
+    const height = Math.min(Math.max(resizeState.height - dy, bounds.minHeight), bounds.maxHeight)
+
+    panel.style.width = `${Math.round(width)}px`
+    panel.style.height = `${Math.round(height)}px`
+    onResize()
+  }
+
+  function onPointerUp(event) {
+    if (!resizeState || (Number.isFinite(resizeState.pointerId) && event.pointerId !== resizeState.pointerId)) {
+      return
+    }
+
+    releaseElementPointerCapture(handle, resizeState.pointerId)
+
+    resizeState = null
+  }
+
+  function destroy() {
+    handle.removeEventListener('pointerdown', onPointerDown)
+    handle.removeEventListener('pointermove', onPointerMove)
+    handle.removeEventListener('pointerup', onPointerUp)
+    handle.removeEventListener('pointercancel', onPointerUp)
+    resizeState = null
+  }
+
+  return {
+    install,
+    destroy
+  }
 }
 
 function createSimulationControls(options) {
@@ -776,6 +915,326 @@ function createSimulationControls(options) {
     setInfectionDays,
     setImmunityDays,
     togglePlayback
+  }
+}
+
+function createEpidemicGraph(options = {}) {
+  const element = document.createElement('section')
+  const controls = document.createElement('div')
+  const plot = createSvgElement('svg')
+  const defs = createSvgElement('defs')
+  const clipPath = createSvgElement('clipPath')
+  const clipRect = createSvgElement('rect')
+  const plotArea = createSvgElement('rect')
+  const grid = createSvgElement('g')
+  const axis = createSvgElement('polyline')
+  const ticks = createSvgElement('g')
+  const dataLayer = createSvgElement('g')
+  const labels = createSvgElement('g')
+  const xAxisLabel = createSvgElement('text')
+  const yAxisLabel = createSvgElement('text')
+  const lines = new Map()
+  const visibleStates = Object.fromEntries(EPIDEMIC_GRAPH_STATES.map((state) => [state.id, true]))
+  const samples = []
+  const view = {
+    timeStartSeconds: null,
+    timeEndSeconds: null
+  }
+  const plotLayout = getEpidemicGraphLayout()
+  const plotBounds = plotLayout.bounds
+  const clipId = `epidemic-graph-clip-${++epidemicGraphSequence}`
+  let dragState = null
+  let interactionsInstalled = false
+
+  element.className = 'epidemic-graph'
+  controls.className = 'epidemic-graph-controls'
+  plot.setAttribute('class', 'epidemic-graph-plot')
+  plot.dataset.epidemicGraphPlot = 'true'
+  plot.setAttribute('viewBox', formatEpidemicGraphViewBox(plotLayout))
+  plot.setAttribute('role', 'img')
+  plot.setAttribute('preserveAspectRatio', 'none')
+  plot.setAttribute('aria-label', 'Epidemic state counts over simulation time')
+  clipPath.setAttribute('id', clipId)
+  clipRect.setAttribute('x', formatSvgNumber(plotBounds.left))
+  clipRect.setAttribute('y', formatSvgNumber(plotBounds.top))
+  clipRect.setAttribute('width', formatSvgNumber(plotBounds.width))
+  clipRect.setAttribute('height', formatSvgNumber(plotBounds.height))
+  clipPath.appendChild(clipRect)
+  defs.appendChild(clipPath)
+  plotArea.setAttribute('class', 'epidemic-graph-plot-area')
+  plotArea.setAttribute('x', formatSvgNumber(plotBounds.left))
+  plotArea.setAttribute('y', formatSvgNumber(plotBounds.top))
+  plotArea.setAttribute('width', formatSvgNumber(plotBounds.width))
+  plotArea.setAttribute('height', formatSvgNumber(plotBounds.height))
+  plotArea.setAttribute('fill', 'rgba(255, 255, 255, 0.72)')
+  plotArea.setAttribute('stroke', 'rgba(32, 38, 29, 0.12)')
+  plotArea.setAttribute('stroke-width', '1')
+  plotArea.setAttribute('vector-effect', 'non-scaling-stroke')
+  grid.setAttribute('class', 'epidemic-graph-grid')
+  grid.dataset.epidemicGraphGrid = 'true'
+  axis.setAttribute('class', 'epidemic-graph-axis')
+  axis.dataset.epidemicGraphAxis = 'true'
+  axis.setAttribute('points', createEpidemicGraphAxisPoints())
+  axis.setAttribute('fill', 'none')
+  axis.setAttribute('stroke', 'rgba(32, 38, 29, 0.62)')
+  axis.setAttribute('stroke-width', '1')
+  axis.setAttribute('vector-effect', 'non-scaling-stroke')
+  ticks.setAttribute('class', 'epidemic-graph-ticks')
+  ticks.dataset.epidemicGraphTicks = 'true'
+  dataLayer.setAttribute('class', 'epidemic-graph-data')
+  dataLayer.setAttribute('clip-path', `url(#${clipId})`)
+  labels.setAttribute('class', 'epidemic-graph-axis-labels')
+  xAxisLabel.setAttribute('class', 'epidemic-graph-axis-label')
+  xAxisLabel.dataset.epidemicGraphXAxisLabel = 'true'
+  xAxisLabel.setAttribute('x', formatSvgNumber(plotBounds.left + plotBounds.width / 2))
+  xAxisLabel.setAttribute('y', formatSvgNumber(plotLayout.height - 4))
+  xAxisLabel.setAttribute('text-anchor', 'middle')
+  xAxisLabel.setAttribute('fill', 'rgba(32, 38, 29, 0.82)')
+  xAxisLabel.setAttribute('font-size', '12')
+  xAxisLabel.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace')
+  xAxisLabel.setAttribute('font-weight', '700')
+  xAxisLabel.setAttribute('pointer-events', 'none')
+  xAxisLabel.textContent = 'time (h)'
+  yAxisLabel.setAttribute('class', 'epidemic-graph-axis-label')
+  yAxisLabel.dataset.epidemicGraphYAxisLabel = 'true'
+  yAxisLabel.setAttribute('x', formatSvgNumber(-(plotBounds.top + plotBounds.height / 2)))
+  yAxisLabel.setAttribute('y', '11')
+  yAxisLabel.setAttribute('text-anchor', 'middle')
+  yAxisLabel.setAttribute('transform', 'rotate(-90)')
+  yAxisLabel.setAttribute('fill', 'rgba(32, 38, 29, 0.82)')
+  yAxisLabel.setAttribute('font-size', '12')
+  yAxisLabel.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace')
+  yAxisLabel.setAttribute('font-weight', '700')
+  yAxisLabel.setAttribute('pointer-events', 'none')
+  yAxisLabel.textContent = 'cases'
+  labels.appendChild(xAxisLabel)
+  labels.appendChild(yAxisLabel)
+  plot.appendChild(defs)
+  plot.appendChild(plotArea)
+  plot.appendChild(grid)
+  plot.appendChild(dataLayer)
+  plot.appendChild(axis)
+  plot.appendChild(ticks)
+  plot.appendChild(labels)
+
+  for (const state of EPIDEMIC_GRAPH_STATES) {
+    const toggle = createDashboardToggle({
+      labelText: state.label,
+      dataset: 'epidemicGraphToggle',
+      datasetValue: state.id,
+      checked: true
+    })
+    const line = createSvgElement('polyline')
+
+    toggle.label.className = 'dashboard-toggle epidemic-graph-toggle'
+    toggle.input.addEventListener('change', () => {
+      setStateVisible(state.id, toggle.input.checked)
+    })
+    line.setAttribute('class', 'epidemic-graph-line')
+    line.dataset.epidemicGraphLine = state.id
+    line.setAttribute('fill', 'none')
+    line.setAttribute('stroke', formatCssColor(state.color))
+    line.setAttribute('stroke-width', '1.85')
+    line.setAttribute('stroke-linecap', 'round')
+    line.setAttribute('stroke-linejoin', 'round')
+    line.setAttribute('vector-effect', 'non-scaling-stroke')
+    line.setAttribute('points', '')
+    lines.set(state.id, line)
+    controls.appendChild(toggle.label)
+    dataLayer.appendChild(line)
+  }
+
+  element.appendChild(controls)
+  element.appendChild(plot)
+
+  function render() {
+    sample()
+    draw()
+  }
+
+  function sample() {
+    const stats = normalizeEpidemicStats(
+      typeof options.getInfectionStats === 'function' ? options.getInfectionStats() : null
+    )
+
+    if (!stats) {
+      return
+    }
+
+    const seconds = getEpidemicGraphTimeSeconds(options.clock, samples)
+    const last = samples[samples.length - 1]
+
+    if (last && seconds < last.timeSeconds) {
+      samples.length = 0
+    }
+
+    const currentLast = samples[samples.length - 1]
+
+    if (!currentLast) {
+      appendSample(seconds, stats)
+      return
+    }
+
+    if (seconds === currentLast.timeSeconds) {
+      Object.assign(currentLast, stats)
+      return
+    }
+
+    if (
+      seconds - currentLast.timeSeconds >= EPIDEMIC_GRAPH_CONFIG.sampleIntervalSeconds ||
+      hasEpidemicStatsChanged(currentLast, stats)
+    ) {
+      appendSample(seconds, stats)
+    }
+  }
+
+  function appendSample(timeSeconds, stats) {
+    samples.push({
+      timeSeconds,
+      ...stats
+    })
+
+    while (samples.length > EPIDEMIC_GRAPH_CONFIG.maxSamples) {
+      samples.shift()
+    }
+  }
+
+  function draw() {
+    const layout = updateEpidemicGraphPlotLayout(plot, {
+      clipRect,
+      plotArea,
+      axis,
+      xAxisLabel,
+      yAxisLabel
+    })
+    const ranges = getEpidemicGraphRanges(samples, view, visibleStates)
+    const pointsByState = buildEpidemicGraphPoints(samples, ranges, layout)
+
+    drawEpidemicGraphAxes(grid, ticks, ranges, layout)
+
+    for (const state of EPIDEMIC_GRAPH_STATES) {
+      const line = lines.get(state.id)
+      const points = visibleStates[state.id] ? pointsByState[state.id] : ''
+
+      line.setAttribute('points', points)
+    }
+  }
+
+  function setStateVisible(stateId, visible) {
+    if (!Object.prototype.hasOwnProperty.call(visibleStates, stateId)) {
+      throw new Error(`Unknown epidemic graph state "${stateId}".`)
+    }
+
+    visibleStates[stateId] = Boolean(visible)
+    draw()
+  }
+
+  function installInteractions() {
+    if (interactionsInstalled) {
+      return
+    }
+
+    interactionsInstalled = true
+    plot.addEventListener('wheel', handleWheel, { passive: false })
+    plot.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('pointermove', handlePointerMove)
+    document.addEventListener('pointerup', handlePointerUp)
+    document.addEventListener('pointercancel', handlePointerUp)
+  }
+
+  function handleWheel(event) {
+    if (samples.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+
+    const ranges = getEpidemicGraphRanges(samples, view, visibleStates)
+    const pointer = getEpidemicGraphPointerFractions(plot, event)
+    const zoomScale = Math.exp((Number(event.deltaY) || 0) * 0.001)
+    const timeRange = zoomRange(
+      ranges.timeStartSeconds,
+      ranges.timeEndSeconds,
+      pointer.x,
+      zoomScale,
+      EPIDEMIC_GRAPH_CONFIG.minTimeSpanSeconds
+    )
+    const nextTimeRange = normalizeEpidemicGraphTimeRange(timeRange.start, timeRange.end)
+
+    setEpidemicGraphView(view, {
+      timeStartSeconds: nextTimeRange.timeStartSeconds,
+      timeEndSeconds: nextTimeRange.timeEndSeconds
+    })
+    draw()
+  }
+
+  function handlePointerDown(event) {
+    if (samples.length === 0 || Number(event.button || 0) !== 0) {
+      return
+    }
+
+    event.preventDefault()
+    dragState = {
+      pointerId: event.pointerId,
+      clientX: Number(event.clientX) || 0,
+      ranges: getEpidemicGraphRanges(samples, view, visibleStates)
+    }
+
+    setElementPointerCapture(plot, event.pointerId)
+  }
+
+  function handlePointerMove(event) {
+    if (!dragState || (Number.isFinite(dragState.pointerId) && event.pointerId !== dragState.pointerId)) {
+      return
+    }
+
+    event.preventDefault()
+
+    const plotWidth = getEpidemicGraphPlotDisplayWidth(plot)
+    const dx = (Number(event.clientX) || 0) - dragState.clientX
+    const ranges = dragState.ranges
+    const timeSpan = ranges.timeEndSeconds - ranges.timeStartSeconds
+    const timeShift = -dx / plotWidth * timeSpan
+    const nextTimeRange = normalizeEpidemicGraphTimeRange(
+      ranges.timeStartSeconds + timeShift,
+      ranges.timeEndSeconds + timeShift
+    )
+
+    setEpidemicGraphView(view, {
+      timeStartSeconds: nextTimeRange.timeStartSeconds,
+      timeEndSeconds: nextTimeRange.timeEndSeconds
+    })
+    draw()
+  }
+
+  function handlePointerUp(event) {
+    if (!dragState || (Number.isFinite(dragState.pointerId) && event.pointerId !== dragState.pointerId)) {
+      return
+    }
+
+    releaseElementPointerCapture(plot, dragState.pointerId)
+
+    dragState = null
+  }
+
+  function destroy() {
+    plot.removeEventListener('wheel', handleWheel)
+    plot.removeEventListener('pointerdown', handlePointerDown)
+    document.removeEventListener('pointermove', handlePointerMove)
+    document.removeEventListener('pointerup', handlePointerUp)
+    document.removeEventListener('pointercancel', handlePointerUp)
+  }
+
+  return {
+    element,
+    plot,
+    samples,
+    visibleStates,
+    view,
+    installInteractions,
+    render,
+    setStateVisible,
+    destroy
   }
 }
 
@@ -1445,6 +1904,435 @@ function createRenderingOpacityField({ labelText, inputDataset, valueDataset, op
   label.appendChild(value)
 
   return { label, input, value }
+}
+
+function createSvgElement(tagName) {
+  if (typeof document.createElementNS === 'function') {
+    return document.createElementNS(SVG_NAMESPACE, tagName)
+  }
+
+  return document.createElement(tagName)
+}
+
+function createEpidemicGraphAxisPoints(layout = getEpidemicGraphLayout()) {
+  const { left, right, top, bottom } = layout.bounds
+
+  return `${formatSvgNumber(left)},${formatSvgNumber(top)} ${formatSvgNumber(left)},${formatSvgNumber(bottom)} ${formatSvgNumber(right)},${formatSvgNumber(bottom)}`
+}
+
+function getEpidemicGraphLayout(plot = null) {
+  const rect = plot ? getElementRect(plot) : null
+  const width = rect && rect.width > 0 ? rect.width : EPIDEMIC_GRAPH_CONFIG.width
+  const height = rect && rect.height > 0 ? rect.height : EPIDEMIC_GRAPH_CONFIG.height
+
+  return {
+    width,
+    height,
+    bounds: getEpidemicGraphPlotBounds(width, height)
+  }
+}
+
+function formatEpidemicGraphViewBox(layout) {
+  return `0 0 ${formatSvgNumber(layout.width)} ${formatSvgNumber(layout.height)}`
+}
+
+function getEpidemicGraphPlotBounds(width = EPIDEMIC_GRAPH_CONFIG.width, height = EPIDEMIC_GRAPH_CONFIG.height) {
+  const { padding } = EPIDEMIC_GRAPH_CONFIG
+  const left = padding.left
+  const top = padding.top
+  const right = Math.max(left + 1, width - padding.right)
+  const bottom = Math.max(top + 1, height - padding.bottom)
+
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top
+  }
+}
+
+function updateEpidemicGraphPlotLayout(plot, elements) {
+  const layout = getEpidemicGraphLayout(plot)
+  const bounds = layout.bounds
+
+  plot.setAttribute('viewBox', formatEpidemicGraphViewBox(layout))
+  elements.clipRect.setAttribute('x', formatSvgNumber(bounds.left))
+  elements.clipRect.setAttribute('y', formatSvgNumber(bounds.top))
+  elements.clipRect.setAttribute('width', formatSvgNumber(bounds.width))
+  elements.clipRect.setAttribute('height', formatSvgNumber(bounds.height))
+  elements.plotArea.setAttribute('x', formatSvgNumber(bounds.left))
+  elements.plotArea.setAttribute('y', formatSvgNumber(bounds.top))
+  elements.plotArea.setAttribute('width', formatSvgNumber(bounds.width))
+  elements.plotArea.setAttribute('height', formatSvgNumber(bounds.height))
+  elements.axis.setAttribute('points', createEpidemicGraphAxisPoints(layout))
+  elements.xAxisLabel.setAttribute('x', formatSvgNumber(bounds.left + bounds.width / 2))
+  elements.xAxisLabel.setAttribute('y', formatSvgNumber(layout.height - 4))
+  elements.yAxisLabel.setAttribute('x', formatSvgNumber(-(bounds.top + bounds.height / 2)))
+
+  return layout
+}
+
+function normalizeEpidemicStats(stats) {
+  if (!stats) {
+    return null
+  }
+
+  const normalized = {}
+
+  for (const state of EPIDEMIC_GRAPH_STATES) {
+    const count = Math.max(0, Math.round(Number(stats[state.id]) || 0))
+
+    normalized[state.id] = count
+  }
+
+  return normalized
+}
+
+function getEpidemicGraphTimeSeconds(clock, samples) {
+  if (clock && typeof clock.getElapsedSimulationSeconds === 'function') {
+    const seconds = Number(clock.getElapsedSimulationSeconds())
+
+    if (Number.isFinite(seconds)) {
+      return Math.max(0, seconds)
+    }
+  }
+
+  const last = samples[samples.length - 1]
+
+  return last ? last.timeSeconds + EPIDEMIC_GRAPH_CONFIG.sampleIntervalSeconds : 0
+}
+
+function hasEpidemicStatsChanged(sample, stats) {
+  return EPIDEMIC_GRAPH_STATES.some((state) => sample[state.id] !== stats[state.id])
+}
+
+function getEpidemicGraphRanges(samples, view = {}, visibleStates = null) {
+  const first = samples[0]
+  const last = samples[samples.length - 1]
+  const dataStart = first ? first.timeSeconds : 0
+  const dataEnd = last ? Math.max(last.timeSeconds, dataStart + 1) : 1
+  const timeRange = normalizeEpidemicGraphTimeRange(
+    Number.isFinite(view.timeStartSeconds) ? view.timeStartSeconds : dataStart,
+    Number.isFinite(view.timeEndSeconds) ? view.timeEndSeconds : dataEnd
+  )
+  const visibleSamples = samples.filter((sample) => (
+    sample.timeSeconds >= timeRange.timeStartSeconds &&
+    sample.timeSeconds <= timeRange.timeEndSeconds
+  ))
+  const valueSamples = visibleSamples.length > 0 ? visibleSamples : samples
+  const valueStates = EPIDEMIC_GRAPH_STATES.filter((state) => (
+    !visibleStates || visibleStates[state.id] !== false
+  ))
+  const rangeStates = valueStates.length > 0 ? valueStates : EPIDEMIC_GRAPH_STATES
+  const dataMax = Math.max(
+    1,
+    ...valueSamples.flatMap((sample) => rangeStates.map((state) => sample[state.id]))
+  )
+
+  return {
+    timeStartSeconds: timeRange.timeStartSeconds,
+    timeEndSeconds: timeRange.timeEndSeconds,
+    valueMin: 0,
+    valueMax: getNiceEpidemicGraphValueMax(dataMax)
+  }
+}
+
+function setEpidemicGraphView(view, next) {
+  const timeRange = normalizeEpidemicGraphTimeRange(next.timeStartSeconds, next.timeEndSeconds)
+
+  view.timeStartSeconds = timeRange.timeStartSeconds
+  view.timeEndSeconds = timeRange.timeEndSeconds
+}
+
+function normalizeEpidemicGraphTimeRange(start, end) {
+  const safeStart = Number.isFinite(Number(start)) ? Number(start) : 0
+  const safeEnd = Number.isFinite(Number(end)) ? Number(end) : safeStart + EPIDEMIC_GRAPH_CONFIG.minTimeSpanSeconds
+  const span = Math.max(EPIDEMIC_GRAPH_CONFIG.minTimeSpanSeconds, safeEnd - safeStart)
+  const timeStartSeconds = Math.max(0, safeStart)
+
+  return {
+    timeStartSeconds,
+    timeEndSeconds: timeStartSeconds + span
+  }
+}
+
+function getNiceEpidemicGraphValueMax(value) {
+  const safeValue = Math.max(EPIDEMIC_GRAPH_CONFIG.minValueSpan, Number(value) || 0)
+
+  if (safeValue <= 5) {
+    return Math.ceil(safeValue)
+  }
+
+  const step = getNiceEpidemicGraphStep(safeValue / 4)
+
+  return Math.max(EPIDEMIC_GRAPH_CONFIG.minValueSpan, Math.ceil(safeValue / step) * step)
+}
+
+function getNiceEpidemicGraphStep(rawStep) {
+  const safeStep = Math.max(Number(rawStep) || 0, Number.EPSILON)
+  const magnitude = 10 ** Math.floor(Math.log10(safeStep))
+  const normalized = safeStep / magnitude
+  const multiplier = normalized <= 1
+    ? 1
+    : normalized <= 2
+      ? 2
+      : normalized <= 2.5
+        ? 2.5
+        : normalized <= 5
+          ? 5
+          : 10
+
+  return multiplier * magnitude
+}
+
+function drawEpidemicGraphAxes(grid, ticks, ranges, layout = getEpidemicGraphLayout()) {
+  grid.innerHTML = ''
+  ticks.innerHTML = ''
+
+  const bounds = layout.bounds
+  const timeSpan = Math.max(EPIDEMIC_GRAPH_CONFIG.minTimeSpanSeconds, ranges.timeEndSeconds - ranges.timeStartSeconds)
+  const valueSpan = Math.max(EPIDEMIC_GRAPH_CONFIG.minValueSpan, ranges.valueMax - ranges.valueMin)
+  const timeTicks = createEpidemicGraphTicks(ranges.timeStartSeconds, ranges.timeEndSeconds, 5)
+  const valueTicks = createEpidemicGraphValueTicks(ranges.valueMax)
+
+  for (const value of valueTicks) {
+    const valueAmount = (value - ranges.valueMin) / valueSpan
+    const y = bounds.top + (1 - valueAmount) * bounds.height
+
+    appendEpidemicGraphLine(grid, bounds.left, y, bounds.right, y, 'rgba(32, 38, 29, 0.1)', '1')
+    appendEpidemicGraphLine(ticks, bounds.left - 4, y, bounds.left, y, 'rgba(32, 38, 29, 0.62)', '1')
+    appendEpidemicGraphText(ticks, bounds.left - 7, y, formatEpidemicGraphValueTick(value), {
+      anchor: 'end',
+      baseline: 'middle'
+    })
+  }
+
+  for (const value of timeTicks) {
+    const timeAmount = (value - ranges.timeStartSeconds) / timeSpan
+    const x = bounds.left + timeAmount * bounds.width
+
+    appendEpidemicGraphLine(grid, x, bounds.top, x, bounds.bottom, 'rgba(32, 38, 29, 0.08)', '1')
+    appendEpidemicGraphLine(ticks, x, bounds.bottom, x, bounds.bottom + 4, 'rgba(32, 38, 29, 0.62)', '1')
+    appendEpidemicGraphText(ticks, x, bounds.bottom + 13, formatEpidemicGraphTimeTick(value), {
+      anchor: 'middle',
+      baseline: 'middle'
+    })
+  }
+}
+
+function createEpidemicGraphTicks(start, end, count) {
+  const safeCount = Math.max(2, Math.round(Number(count) || 2))
+  const safeStart = Number(start) || 0
+  const span = Math.max(Number(end) - safeStart, Number.EPSILON)
+
+  return Array.from({ length: safeCount }, (_item, index) => safeStart + span * index / (safeCount - 1))
+}
+
+function createEpidemicGraphValueTicks(maxValue) {
+  const safeMax = Math.max(EPIDEMIC_GRAPH_CONFIG.minValueSpan, Number(maxValue) || 0)
+  const step = safeMax <= 5 ? 1 : getNiceEpidemicGraphStep(safeMax / 4)
+  const ticks = []
+
+  for (let value = 0; value <= safeMax + step * 0.5; value += step) {
+    ticks.push(value)
+  }
+
+  if (ticks[ticks.length - 1] < safeMax) {
+    ticks.push(safeMax)
+  }
+
+  return ticks
+}
+
+function appendEpidemicGraphLine(parent, x1, y1, x2, y2, stroke, strokeWidth) {
+  const line = createSvgElement('line')
+
+  line.setAttribute('x1', formatSvgNumber(x1))
+  line.setAttribute('y1', formatSvgNumber(y1))
+  line.setAttribute('x2', formatSvgNumber(x2))
+  line.setAttribute('y2', formatSvgNumber(y2))
+  line.setAttribute('stroke', stroke)
+  line.setAttribute('stroke-width', strokeWidth)
+  line.setAttribute('vector-effect', 'non-scaling-stroke')
+  parent.appendChild(line)
+}
+
+function appendEpidemicGraphText(parent, x, y, text, options = {}) {
+  const label = createSvgElement('text')
+
+  label.setAttribute('x', formatSvgNumber(x))
+  label.setAttribute('y', formatSvgNumber(y))
+  label.setAttribute('fill', 'rgba(32, 38, 29, 0.72)')
+  label.setAttribute('font-size', '11')
+  label.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace')
+  label.setAttribute('text-anchor', options.anchor || 'middle')
+  label.setAttribute('dominant-baseline', options.baseline || 'auto')
+  label.setAttribute('pointer-events', 'none')
+  label.textContent = text
+  parent.appendChild(label)
+}
+
+function formatEpidemicGraphTimeTick(seconds) {
+  return formatCompactGraphNumber((Number(seconds) || 0) / 3600)
+}
+
+function formatEpidemicGraphValueTick(value) {
+  return formatCompactGraphNumber(value)
+}
+
+function formatCompactGraphNumber(value) {
+  const number = Number(value) || 0
+
+  if (Math.abs(number - Math.round(number)) < 0.001) {
+    return String(Math.round(number))
+  }
+
+  if (Math.abs(number) >= 10) {
+    return number.toFixed(1).replace(/\.0$/, '')
+  }
+
+  return number.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function getEpidemicGraphPlotDisplayWidth(plot) {
+  const rect = getElementRect(plot)
+  const layout = getEpidemicGraphLayout(plot)
+  const bounds = layout.bounds
+
+  return Math.max(1, rect.width * bounds.width / layout.width)
+}
+
+function setElementPointerCapture(element, pointerId) {
+  if (!element || typeof element.setPointerCapture !== 'function' || !Number.isFinite(pointerId)) {
+    return
+  }
+
+  try {
+    element.setPointerCapture(pointerId)
+  } catch (_error) {
+    // Browser-created PointerEvents can lack an active pointer during scripted smoke checks.
+  }
+}
+
+function releaseElementPointerCapture(element, pointerId) {
+  if (!element || typeof element.releasePointerCapture !== 'function' || !Number.isFinite(pointerId)) {
+    return
+  }
+
+  try {
+    element.releasePointerCapture(pointerId)
+  } catch (_error) {
+    // Matching the capture guard keeps cleanup quiet for synthetic pointer events.
+  }
+}
+
+function getEpidemicGraphPointerFractions(plot, event) {
+  const rect = getElementRect(plot)
+  const layout = getEpidemicGraphLayout(plot)
+  const bounds = layout.bounds
+  const viewBoxX = rect.width > 0
+    ? (Number(event.clientX) - rect.left) / rect.width * layout.width
+    : bounds.left + bounds.width / 2
+  const viewBoxY = rect.height > 0
+    ? (Number(event.clientY) - rect.top) / rect.height * layout.height
+    : bounds.top + bounds.height / 2
+  const x = bounds.width > 0
+    ? (viewBoxX - bounds.left) / bounds.width
+    : 0.5
+  const y = bounds.height > 0
+    ? (viewBoxY - bounds.top) / bounds.height
+    : 0.5
+
+  return {
+    x: Math.min(Math.max(Number.isFinite(x) ? x : 0.5, 0), 1),
+    y: Math.min(Math.max(Number.isFinite(y) ? y : 0.5, 0), 1)
+  }
+}
+
+function getElementRect(element) {
+  if (element && typeof element.getBoundingClientRect === 'function') {
+    const rect = element.getBoundingClientRect()
+
+    if (rect && Number.isFinite(rect.width) && Number.isFinite(rect.height)) {
+      return rect
+    }
+  }
+
+  return {
+    left: 0,
+    top: 0,
+    width: EPIDEMIC_GRAPH_CONFIG.width,
+    height: EPIDEMIC_GRAPH_CONFIG.height
+  }
+}
+
+function zoomRange(start, end, anchorAmount, scale, minSpan) {
+  const safeStart = Number(start)
+  const safeEnd = Number(end)
+  const span = Math.max(minSpan, safeEnd - safeStart)
+  const nextSpan = Math.max(minSpan, span * Math.max(0.05, Number(scale) || 1))
+  const anchor = Math.min(Math.max(Number(anchorAmount) || 0.5, 0), 1)
+  const anchorValue = safeStart + anchor * span
+
+  return {
+    start: anchorValue - anchor * nextSpan,
+    end: anchorValue + (1 - anchor) * nextSpan
+  }
+}
+
+function getGraphResizeBounds() {
+  const viewportWidth = Number(globalThis.innerWidth || globalThis.window?.innerWidth)
+  const viewportHeight = Number(globalThis.innerHeight || globalThis.window?.innerHeight)
+  const minWidth = 260
+  const minHeight = 190
+  const maxWidth = Number.isFinite(viewportWidth) ? Math.max(minWidth, viewportWidth - 32) : 4096
+  const maxHeight = Number.isFinite(viewportHeight) ? Math.max(minHeight, viewportHeight - 32) : 4096
+
+  return {
+    minWidth,
+    minHeight,
+    maxWidth,
+    maxHeight
+  }
+}
+
+function buildEpidemicGraphPoints(samples, ranges, layout = getEpidemicGraphLayout()) {
+  const points = Object.fromEntries(EPIDEMIC_GRAPH_STATES.map((state) => [state.id, '']))
+
+  if (samples.length === 0) {
+    return points
+  }
+
+  const bounds = layout.bounds
+  const timeSpan = Math.max(EPIDEMIC_GRAPH_CONFIG.minTimeSpanSeconds, ranges.timeEndSeconds - ranges.timeStartSeconds)
+  const valueSpan = Math.max(EPIDEMIC_GRAPH_CONFIG.minValueSpan, ranges.valueMax - ranges.valueMin)
+
+  for (const state of EPIDEMIC_GRAPH_STATES) {
+    points[state.id] = samples
+      .map((sample) => {
+        const timeAmount = (sample.timeSeconds - ranges.timeStartSeconds) / timeSpan
+        const valueAmount = (sample[state.id] - ranges.valueMin) / valueSpan
+        const x = bounds.left + timeAmount * bounds.width
+        const y = bounds.top + (1 - valueAmount) * bounds.height
+
+        return `${formatSvgNumber(x)},${formatSvgNumber(y)}`
+      })
+      .join(' ')
+  }
+
+  return points
+}
+
+function formatSvgNumber(value) {
+  return Number(value).toFixed(2).replace(/\.?0+$/, '')
+}
+
+function formatCssColor(color) {
+  const number = Number.isInteger(color) ? color & 0xffffff : 0x20261d
+
+  return `#${number.toString(16).padStart(6, '0')}`
 }
 
 function isTextEntryTarget(target) {
