@@ -45,6 +45,25 @@ export const DEFAULT_CITY_MAP_PATHS = Object.freeze({
 
 export const BUILDING_LAYOUT_ENCODING = 'row-spans-v1'
 export const DEFAULT_BUILDING_TYPE = 'residential'
+export const DEFAULT_BUILDING_TYPES = Object.freeze([DEFAULT_BUILDING_TYPE])
+export const BUILDING_TYPES = Object.freeze([
+  'residential',
+  'commercial',
+  'school',
+  'restaurant',
+  'supermarket',
+  'mall',
+  'nightclub'
+])
+export const HOME_BUILDING_TYPES = Object.freeze(['residential'])
+export const WORK_BUILDING_TYPES = Object.freeze([
+  'commercial',
+  'school',
+  'restaurant',
+  'supermarket',
+  'mall',
+  'nightclub'
+])
 export const PIXEL_ART_SCALE_MODE = 'nearest'
 
 export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
@@ -272,6 +291,11 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     building: Object.freeze({
       residential: 0x3f6fa7,
       commercial: 0xe09b2d,
+      school: 0x5fa85f,
+      restaurant: 0xd85f45,
+      supermarket: 0x42a88f,
+      mall: 0xb06bb6,
+      nightclub: 0x6d63d8,
       default: 0x8c8f94
     }),
     obstacle: 0xd1495b,
@@ -287,6 +311,11 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     building: Object.freeze({
       residential: 0xa8ada7,
       commercial: 0x8f9690,
+      school: 0x9da69d,
+      restaurant: 0xa59b96,
+      supermarket: 0x96a6a0,
+      mall: 0xa197a7,
+      nightclub: 0x9898a8,
       default: 0xb7bcb6
     }),
     obstacle: 0xaeb4ae,
@@ -302,6 +331,11 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     building: Object.freeze({
       residential: 0x6f7871,
       commercial: 0x838c84,
+      school: 0x6f846f,
+      restaurant: 0x846f68,
+      supermarket: 0x668178,
+      mall: 0x7e6f84,
+      nightclub: 0x6f7088,
       default: 0x606861
     }),
     obstacle: 0x202522,
@@ -324,6 +358,11 @@ export const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
   building: Object.freeze({
     residential: 0x3f6fa7,
     commercial: 0xe09b2d,
+    school: 0x5fa85f,
+    restaurant: 0xd85f45,
+    supermarket: 0x42a88f,
+    mall: 0xb06bb6,
+    nightclub: 0x6d63d8,
     default: 0x8c8f94
   }),
   obstacle: 0xd1495b,

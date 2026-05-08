@@ -39,11 +39,11 @@ Startup follows this sequence:
   },
   "buildings": {
     "encoding": "row-spans-v1",
-    "defaultType": "residential",
+    "defaultTypes": ["residential"],
     "items": [
       {
         "id": "building-0001",
-        "type": "residential",
+        "types": ["residential", "restaurant"],
         "spans": [[0, 0, 3]]
       }
     ]
@@ -65,7 +65,7 @@ Startup follows this sequence:
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
-The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a string `type`, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint.
+The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a non-empty `types` string array, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint. Legacy `type` strings or arrays normalize to `types`.
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
@@ -88,7 +88,7 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType, buildingEntrance }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType, buildingTypes, buildingEntrance }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getBuildingId(x, y)`, `getBuilding(x, y)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
@@ -156,7 +156,7 @@ NPC entities expose the state the simulation needs:
 
 The simulation owns movement decisions and tile occupancy bookkeeping. NPC movement speeds are applied against the simulation clock delta, so the default one-hour-per-real-minute clock compression also compresses walking time. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
 
-The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn anchor selection, and speed assignment repeat when the simulation restarts with the same seed. NPCs without an active goal stay idle instead of choosing random adjacent path tiles.
+The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from buildings whose type sets include `residential` for home and any work-capable public type (`commercial`, `school`, `restaurant`, `supermarket`, `mall`, or `nightclub`) for work, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn anchor selection, and speed assignment repeat when the simulation restarts with the same seed. NPCs without an active goal stay idle instead of choosing random adjacent path tiles.
 
 NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
 
@@ -222,7 +222,7 @@ Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car
 
 Entity debug overlays share the entity renderer pass and are only drawn when enabled. Infection radius renders outline-only circles around infectious NPCs, infection arrows reuse recorded transmission events from the infection dynamics, contact edges show close-contact pairs from their own contact edge window, and path trails keep a bounded in-memory position history per visible NPC or car. Infection arrows render above contact edges; infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp to 1-120 game minutes. Path trails clamp to 1-100 past steps.
 
-The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
+The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, known building types by their primary type, and unknown building types neutral gray.
 
 The tile overlay layer is built lazily the first time it is enabled. Visibility toggles only change layer visibility, while opacity and color-scheme changes rebuild the cached layer with the new fill styles. The overlay builder uses the same 16x16 chunk pattern as the city renderer so large masks remain inspectable without covering NPCs.
 
@@ -230,13 +230,13 @@ SEIR heatmaps are built only while their overlay checkbox is enabled. Each activ
 
 ## Map Editor
 
-The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
+The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server that starts on port `5174` and tries the next port if that one is already in use.
 
 The browser owns the editable map state. Startup asks `/api/config` for an empty semantic tile configuration and the current Liberty City texture rows, then loads the default atlas plus texture manifest for immediate preview. `Load Map Folder` opens a package folder containing `tile-layout.json`, `texture-layout.json`, `manifest.json`, and the atlas named by the manifest. `Reset to defaults` rebuilds the empty semantic state with the current visual layer. `Save Map Folder` writes the editable semantic rows/buildings and visual assignment layer back to `tile-layout.json` and `texture-layout.json` together.
 
 Texture rows loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded folder assets or is waiting for one of those assets.
 
-The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer. The building layer edits the selected connected building component's `type` in the top-level `buildings` metadata.
+The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer. The building layer edits the selected connected building component's `types` in the top-level `buildings` metadata.
 
 The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from `texture-layout.json`, the editor directs users to `Save Map Folder` after texture painting.
 

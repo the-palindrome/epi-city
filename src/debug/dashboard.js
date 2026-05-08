@@ -2766,16 +2766,23 @@ function drawTileTypeOverlay(city, layer, options) {
 
 function getTileTypeOverlayColor(variant, scheme) {
   if (variant.category === 'building') {
-    return getBuildingTypeOverlayColor(variant.buildingType, scheme)
+    return getBuildingTypeOverlayColor(variant.buildingTypes || variant.buildingType, scheme)
   }
 
   return scheme[variant.category] || scheme.obstacle
 }
 
-function getBuildingTypeOverlayColor(buildingType, scheme) {
+function getBuildingTypeOverlayColor(buildingTypes, scheme) {
   const buildingColors = scheme.building
+  const types = Array.isArray(buildingTypes) ? buildingTypes : [buildingTypes]
 
-  return buildingColors[buildingType] || buildingColors.default
+  for (const type of types) {
+    if (buildingColors[type]) {
+      return buildingColors[type]
+    }
+  }
+
+  return buildingColors.default
 }
 
 function drawCrosswalkTileTypeOverlay(graphics, city, x, y, alpha, scheme) {

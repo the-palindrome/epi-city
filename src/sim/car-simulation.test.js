@@ -150,7 +150,7 @@ function createTrafficCity() {
       defaultType: 'residential',
       items: [
         { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+        { id: 'work', types: ['restaurant'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
     rows: [

@@ -2,7 +2,6 @@ import {
   BUILDING_LAYOUT_ENCODING,
   CATEGORY_TO_TILE,
   CROSSWALK_SIGNAL_PHASES,
-  DEFAULT_BUILDING_TYPE,
   DIRECTIONS,
   MOVEMENT_PROPERTY_BY_MODE,
   TILE_NAMES,
@@ -10,6 +9,12 @@ import {
 } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { clamp, indexOf, octileDistance } from '../core/math.js'
+import {
+  CityBuilding,
+  normalizeBuildingTypes,
+  normalizeDefaultBuildingTypes,
+  primaryBuildingType
+} from './buildings.js'
 import { compileLaneGraphLayout, normalizeLaneGraphLayout } from './lane-graph.js'
 
 const FNV_OFFSET_BASIS = 0x811c9dc5
@@ -166,7 +171,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
   if (buildings === undefined) {
     return {
       encoding: BUILDING_LAYOUT_ENCODING,
-      defaultType: DEFAULT_BUILDING_TYPE,
+      defaultTypes: normalizeDefaultBuildingTypes({}),
       items: []
     }
   }
@@ -179,9 +184,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
     throw new Error(`Map JSON buildings.encoding must be "${BUILDING_LAYOUT_ENCODING}".`)
   }
 
-  if (buildings.defaultType !== undefined && (typeof buildings.defaultType !== 'string' || buildings.defaultType.length === 0)) {
-    throw new Error('Map JSON buildings.defaultType must be a non-empty string when present.')
-  }
+  const defaultTypes = normalizeDefaultBuildingTypes(buildings)
 
   if (!Array.isArray(buildings.items)) {
     throw new Error('Map JSON buildings.items must be an array.')
@@ -216,9 +219,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
       throw new Error(`Map JSON buildings has duplicate id "${building.id}".`)
     }
 
-    if (typeof building.type !== 'string' || building.type.length === 0) {
-      throw new Error(`Map JSON building "${building.id}" must include a non-empty type string.`)
-    }
+    const types = normalizeBuildingTypes(building, `Map JSON building "${building.id}"`, defaultTypes)
 
     if (!Array.isArray(building.spans) || building.spans.length === 0) {
       throw new Error(`Map JSON building "${building.id}" must include non-empty spans.`)
@@ -268,7 +269,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
 
     return {
       id: building.id,
-      type: building.type,
+      types,
       entrance,
       spans
     }
@@ -290,7 +291,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
 
   return {
     encoding: buildings.encoding,
-    defaultType: buildings.defaultType || DEFAULT_BUILDING_TYPE,
+    defaultTypes,
     items
   }
 }
@@ -449,12 +450,12 @@ export function compileCityMap(data) {
   }
 
   const buildings = data.buildings.items.map((building, buildingIndex) => {
-    const runtimeBuilding = {
+    const runtimeBuilding = new CityBuilding({
       id: building.id,
-      type: building.type,
-      entrance: building.entrance ? { ...building.entrance } : null,
-      spans: building.spans.map((span) => [...span])
-    }
+      types: building.types,
+      entrance: building.entrance,
+      spans: building.spans
+    })
 
     for (const [y, x, length] of building.spans) {
       for (let offset = 0; offset < length; offset += 1) {
@@ -510,7 +511,8 @@ export function compileCityMap(data) {
       textureId: tileTextureIds[tileIndex],
       zorder: tileZOrders[tileIndex],
       buildingId: building ? building.id : null,
-      buildingType: building ? building.type : null,
+      buildingType: primaryBuildingType(building),
+      buildingTypes: building ? building.types : [],
       buildingEntrance
     }
   }

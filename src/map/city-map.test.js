@@ -175,7 +175,8 @@ describe('city map validation and compile', () => {
       textureId: 1,
       zorder: 2,
       buildingId: 'building-0001',
-      buildingType: 'residential'
+      buildingType: 'residential',
+      buildingTypes: ['residential']
     })
     expect(city.getTileVariant(0, 0)).toMatchObject({
       category: 'sidewalk',
@@ -185,6 +186,46 @@ describe('city map validation and compile', () => {
     expect(city.tileZOrders[city.index(0, 0)]).toBe(0)
     expect(city.isWalkable(0, 0)).toBe(true)
     expect(city.isDrivable(0, 2)).toBe(true)
+  })
+
+  it('normalizes buildings with multiple types into runtime building objects', () => {
+    const map = validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultTypes: ['residential'],
+        items: [
+          { id: 'building-0001', types: ['residential', 'restaurant'], spans: [[1, 1, 1]] }
+        ]
+      }
+    }))
+    const city = compileCityMap(map)
+    const building = city.getBuilding(1, 1)
+
+    expect(map.buildings.defaultTypes).toEqual(['residential'])
+    expect(map.buildings.items[0].types).toEqual(['residential', 'restaurant'])
+    expect(building.types).toEqual(['residential', 'restaurant'])
+    expect(building.primaryType).toBe('residential')
+    expect(building.hasType('restaurant')).toBe(true)
+    expect(city.getTileVariant(1, 1)).toMatchObject({
+      buildingType: 'residential',
+      buildingTypes: ['residential', 'restaurant']
+    })
+  })
+
+  it('accepts legacy building type fields while normalizing to type arrays', () => {
+    const city = compileCityMap(validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultType: 'residential',
+        items: [
+          { id: 'building-0001', type: ['commercial', 'mall'], spans: [[1, 1, 1]] }
+        ]
+      }
+    })))
+    const building = city.getBuilding(1, 1)
+
+    expect(building.types).toEqual(['commercial', 'mall'])
+    expect(building.hasType('mall')).toBe(true)
   })
 
   it('normalizes and compiles fixed vehicle lane graph metadata', () => {

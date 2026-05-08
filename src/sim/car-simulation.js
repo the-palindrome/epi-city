@@ -1,8 +1,9 @@
 import * as PIXI from 'pixi.js'
-import { CAR_CONFIG } from '../core/constants.js'
+import { CAR_CONFIG, HOME_BUILDING_TYPES, WORK_BUILDING_TYPES } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
 import { hourInRange } from '../core/time.js'
+import { buildingHasAnyType } from '../map/buildings.js'
 import { createCarSpriteRenderer } from '../render/car-sprite.js'
 import { toSimulationSeconds } from './simulation-clock.js'
 
@@ -77,8 +78,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   const router = createCarRoutePlanner(city, network)
   const parking = new ParkingManager(city, network, resolvedConfig)
   const trafficReservations = new TrafficSignalReservationManager(city)
-  const residentialBuildings = collectBuildings(city, 'residential')
-  const commercialBuildings = collectBuildings(city, 'commercial')
+  const homeBuildings = collectBuildings(city, HOME_BUILDING_TYPES)
+  const workBuildings = collectBuildings(city, WORK_BUILDING_TYPES)
   const buildingsById = new Map((city.buildings || []).map((building) => [building.id, building]))
   const ownerPools = collectCarOwnerPools(resolvedConfig.npcs, buildingsById)
   const cars = []
@@ -101,7 +102,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   entityLayer.sortableChildren = true
 
   for (let id = 0; id < resolvedConfig.count; id += 1) {
-    const car = createCarEntity(id, city, residentialBuildings, commercialBuildings, buildingsById, ownerPools, parking, random, resolvedConfig)
+    const car = createCarEntity(id, city, homeBuildings, workBuildings, buildingsById, ownerPools, parking, random, resolvedConfig)
 
     if (!car) {
       break
@@ -907,11 +908,11 @@ class TrafficSignalReservationManager {
   }
 }
 
-function createCarEntity(id, city, residentialBuildings, commercialBuildings, buildingsById, ownerPools, parking, random, config) {
+function createCarEntity(id, city, homeBuildings, workBuildings, buildingsById, ownerPools, parking, random, config) {
   const ownerHome = takeOwnerHome(ownerPools, random)
   const home = ownerHome
     ? buildingsById.get(ownerHome.homeBuildingId)
-    : takeRandomItem(residentialBuildings, random)
+    : takeRandomItem(homeBuildings, random)
 
   if (!home) {
     return null
@@ -926,7 +927,7 @@ function createCarEntity(id, city, residentialBuildings, commercialBuildings, bu
 
   const owners = ownerHome
     ? takeNpcOwnersForCar(id, ownerHome.homeBuildingId, ownerPools, random, config)
-    : createSyntheticOwnersForCar(id, home, commercialBuildings, random, config)
+    : createSyntheticOwnersForCar(id, home, workBuildings, random, config)
 
   if (owners.length === 0) {
     parking.releaseParkingReservation(parkingSpot.tileIndexes, id)
@@ -1032,14 +1033,14 @@ function takeNpcOwnersForCar(carId, homeBuildingId, ownerPools, random, config) 
   return owners
 }
 
-function createSyntheticOwnersForCar(carId, home, commercialBuildings, random, config) {
+function createSyntheticOwnersForCar(carId, home, workBuildings, random, config) {
   const maxOwners = Math.min(2, positiveIntegerOrDefault(config.maxOwners, CAR_CONFIG.maxOwners))
   const ownerCount = maxOwners >= 2 && random.next() < positiveNumberOrDefault(config.twoOwnerChance, CAR_CONFIG.twoOwnerChance) ? 2 : 1
   const commuteOwnerIndex = random.int(ownerCount)
   const owners = []
 
   for (let ownerIndex = 0; ownerIndex < ownerCount; ownerIndex += 1) {
-    const work = takeRandomItem(commercialBuildings, random)
+    const work = takeRandomItem(workBuildings, random)
     owners.push({
       id: `car-${carId}-owner-${ownerIndex}`,
       npcId: null,
@@ -2223,8 +2224,8 @@ function precomputeEdgeFootprints(network, lengthTiles) {
   return footprints
 }
 
-function collectBuildings(city, type) {
-  return (city.buildings || []).filter((building) => building.type === type && building.entrance)
+function collectBuildings(city, types) {
+  return (city.buildings || []).filter((building) => buildingHasAnyType(building, types) && building.entrance)
 }
 
 function takeRandomItem(items, random) {

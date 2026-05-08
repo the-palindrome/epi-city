@@ -16,17 +16,28 @@ const SOURCE_IMAGE_PATH = path.join(REPO_ROOT, 'process_gta_map/source/gta1-libe
 const DEFAULT_TEXTURE_LAYOUT_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/texture-layout.json');
 const DEFAULT_TEXTURE_MANIFEST_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/manifest.json');
 const DEFAULT_ATLAS_PATH = path.join(REPO_ROOT, 'public/maps/liberty-city/liberty-city-atlas.webp');
-const PORT = Number(process.env.PORT || 5174);
+const DEFAULT_PORT = 5174;
+const START_PORT = Number(process.env.PORT || DEFAULT_PORT);
+const MAX_PORT = 65535;
 const GRID_SIZE = 256;
 const DEFAULT_TILE_SIZE = 32;
 const TEXTURE_SET_NAME = 'liberty-city';
 const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
 const DEFAULT_BUILDING_TYPE = 'residential';
+const DEFAULT_BUILDING_TYPES = Object.freeze([DEFAULT_BUILDING_TYPE]);
 const MAX_JSON_BODY_BYTES = 64 * 1024 * 1024;
 const MAX_TRAINER_OUTPUT_BYTES = 5 * 1024 * 1024;
 
 const TYPE_LABEL_OPTIONS = Object.freeze(['road', 'sidewalk', 'park', 'water', 'building', 'obstacle', 'crosswalk']);
-const BUILDING_TYPE_OPTIONS = Object.freeze(['residential', 'commercial', 'hospital']);
+const BUILDING_TYPE_OPTIONS = Object.freeze([
+  'residential',
+  'commercial',
+  'school',
+  'restaurant',
+  'supermarket',
+  'mall',
+  'nightclub'
+]);
 const BEHAVIOR_LABEL_OPTIONS = Object.freeze(['walkable', 'parkable', 'drivable']);
 
 class HttpError extends Error {
@@ -194,7 +205,7 @@ function createDefaultTileConfiguration() {
     },
     buildings: {
       encoding: BUILDING_LAYOUT_ENCODING,
-      defaultType: DEFAULT_BUILDING_TYPE,
+      defaultTypes: DEFAULT_BUILDING_TYPES,
       items: []
     },
     rows: Array.from({ length: GRID_SIZE }, () => emptySymbol.repeat(GRID_SIZE))
@@ -419,8 +430,32 @@ function displayPath(filePath) {
   return path.isAbsolute(filePath) ? path.relative(REPO_ROOT, filePath) : filePath;
 }
 
-createServer(handleRequest).listen(PORT, '0.0.0.0', () => {
-  console.log(`Map editor running at http://localhost:${PORT}`);
-  console.log('Map state loads/saves in the browser; /api/train accepts posted rows/behaviorRows and optional texture features.');
-  console.log(`Training Python: ${displayPath(trainerPythonPath())}`);
-});
+function listenOnAvailablePort(server, port) {
+  const onError = (error) => {
+    server.off('listening', onListening);
+
+    if (error.code === 'EADDRINUSE' && Number.isInteger(port) && port > 0 && port < MAX_PORT) {
+      const nextPort = port + 1;
+      console.warn(`Port ${port} is in use; trying ${nextPort}.`);
+      listenOnAvailablePort(server, nextPort);
+      return;
+    }
+
+    throw error;
+  };
+
+  const onListening = () => {
+    server.off('error', onError);
+    const address = server.address();
+    const boundPort = address && typeof address === 'object' ? address.port : port;
+    console.log(`Map editor running at http://localhost:${boundPort}`);
+    console.log('Map state loads/saves in the browser; /api/train accepts posted rows/behaviorRows and optional texture features.');
+    console.log(`Training Python: ${displayPath(trainerPythonPath())}`);
+  };
+
+  server.once('error', onError);
+  server.once('listening', onListening);
+  server.listen(port, '0.0.0.0');
+}
+
+listenOnAvailablePort(createServer(handleRequest), START_PORT);

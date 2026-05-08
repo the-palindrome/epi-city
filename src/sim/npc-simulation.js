@@ -1,7 +1,14 @@
 import * as PIXI from 'pixi.js'
-import { ENTITY_RENDER_DEBUG_CONFIG, INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
+import {
+  ENTITY_RENDER_DEBUG_CONFIG,
+  HOME_BUILDING_TYPES,
+  INFECTION_CONFIG,
+  NPC_CONFIG,
+  WORK_BUILDING_TYPES
+} from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
 import { hourInRange, normalizeHour } from '../core/time.js'
+import { buildingHasAnyType } from '../map/buildings.js'
 import { createNpcSpriteRenderer } from '../render/npc-sprite-renderer.js'
 import {
   createNpcSpriteState,
@@ -46,7 +53,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   const visibleTileIndexes = []
   const slotOffsets = createNpcSlotOffsets(city, config)
   const spawnTiles = collectNpcSpawnTiles(city)
-  const buildingsByType = collectBuildingsByType(city)
+  const buildingsByPurpose = collectBuildingsByPurpose(city)
   const unlimitedCapacityTiles = collectBuildingEntranceTiles(city)
   const routePlanner = new NpcRoutePlanner(config)
   const npcs = []
@@ -67,7 +74,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   entityLayer.sortableChildren = true
 
   for (let id = 0; id < config.count; id += 1) {
-    const buildingAssignment = createNpcBuildingAssignment(buildingsByType, random)
+    const buildingAssignment = createNpcBuildingAssignment(buildingsByPurpose, random)
     const timetable = createNpcTimetable(city, buildingAssignment, random, config)
     const spawnState = createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets)
 
@@ -909,19 +916,27 @@ class NpcInfectionDynamics {
   }
 }
 
-function collectBuildingsByType(city) {
-  const buildingsByType = {
-    residential: [],
-    commercial: []
+function collectBuildingsByPurpose(city) {
+  const buildingsByPurpose = {
+    home: [],
+    work: []
   }
 
   for (const building of city.buildings || []) {
-    if (Object.prototype.hasOwnProperty.call(buildingsByType, building.type) && building.entrance) {
-      buildingsByType[building.type].push(building)
+    if (!building.entrance) {
+      continue
+    }
+
+    if (buildingHasAnyType(building, HOME_BUILDING_TYPES)) {
+      buildingsByPurpose.home.push(building)
+    }
+
+    if (buildingHasAnyType(building, WORK_BUILDING_TYPES)) {
+      buildingsByPurpose.work.push(building)
     }
   }
 
-  return buildingsByType
+  return buildingsByPurpose
 }
 
 function collectBuildingEntranceTiles(city) {
@@ -936,10 +951,10 @@ function collectBuildingEntranceTiles(city) {
   return entranceTiles
 }
 
-function createNpcBuildingAssignment(buildingsByType, random) {
+function createNpcBuildingAssignment(buildingsByPurpose, random) {
   return {
-    home: takeRandomItem(buildingsByType.residential, random),
-    work: takeRandomItem(buildingsByType.commercial, random)
+    home: takeRandomItem(buildingsByPurpose.home, random),
+    work: takeRandomItem(buildingsByPurpose.work, random)
   }
 }
 

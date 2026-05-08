@@ -21,7 +21,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Use rendering options to show or hide the map texture, tune texture opacity, switch NPC/car rendering between `sprite` and `geometric`, show the tile overlay, choose its color scheme, tune tile overlay opacity, enable optional SEIR heatmaps, and turn on entity debug overlays.
 - In `geometric` entity rendering, NPCs draw as infection-colored disks and cars draw as rectangles colored by any passengers inside them.
 - Entity debug overlays can show infectious NPC radius circles, recent infection arrows, recent contact edges, and short NPC/car path trails. Infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp from 1 game minute to 2 game hours.
-- The tile overlay has `tile type`, `monochrome-light`, and `monochrome-dark` color schemes. The `tile type` scheme uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, blue residential buildings, and amber commercial buildings.
+- The tile overlay has `tile type`, `monochrome-light`, and `monochrome-dark` color schemes. The `tile type` scheme uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, and primary building-type colors.
 - SEIR heatmaps use kernel density estimation for susceptible, exposed, infectious, and recovered NPC positions. The rendering panel includes a kernel-radius slider plus exact number input.
 - The epidemic graph plots S/E/I/R counts over simulated time, includes one tickbox per state, can be resized, labels its time/case axes, and supports drag-to-pan plus wheel-to-zoom on the time axis.
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
@@ -65,11 +65,11 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
   },
   "buildings": {
     "encoding": "row-spans-v1",
-    "defaultType": "residential",
+    "defaultTypes": ["residential"],
     "items": [
       {
         "id": "building-0001",
-        "type": "residential",
+        "types": ["residential", "restaurant"],
         "entrance": { "x": 1, "y": 0 },
         "spans": [[0, 0, 3]]
       }
@@ -88,7 +88,7 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `type`, and optional `entrance` coordinate on the building footprint.
+The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `mall`, and `nightclub`; legacy singular `type` maps still load.
 
 ## Movement Rules
 
@@ -96,7 +96,7 @@ Vehicles use the directed lane graph when it exists and park on tiles marked `pa
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a work building id chosen from commercial, school, restaurant, supermarket, mall, or nightclub buildings when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
 
 Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 48 world-unit infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
 
@@ -203,7 +203,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open the local URL printed by the command; it starts at `http://localhost:5174` and tries the next port if that one is already in use. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
 
 ## Texture Sets
 

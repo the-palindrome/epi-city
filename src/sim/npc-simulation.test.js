@@ -68,12 +68,12 @@ function createCityWithBuildingTypes() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home-1', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'home-2', type: 'residential', entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
-        { id: 'work-1', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] },
-        { id: 'work-2', type: 'commercial', entrance: { x: 7, y: 1 }, spans: [[1, 7, 1]] }
+        { id: 'home-1', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'home-2', types: ['residential'], entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
+        { id: 'work-1', types: ['school'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] },
+        { id: 'work-2', types: ['supermarket'], entrance: { x: 7, y: 1 }, spans: [[1, 7, 1]] }
       ]
     },
     rows: [
@@ -618,7 +618,7 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
-  it('assigns each NPC a residential home and commercial work building', () => {
+  it('assigns each NPC a residential home and public-place work building from type sets', () => {
     const city = createCityWithBuildingTypes()
     const simulation = createSimulation('building-assignments', city)
     const repeated = createSimulation('building-assignments', city)
