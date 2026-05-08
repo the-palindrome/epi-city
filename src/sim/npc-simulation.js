@@ -4,6 +4,7 @@ import {
   HOME_BUILDING_TYPES,
   INFECTION_CONFIG,
   NPC_CONFIG,
+  SCHOOL_BUILDING_TYPES,
   WORK_BUILDING_TYPES
 } from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
@@ -43,6 +44,15 @@ const INFECTION_STATE_NAMES = Object.freeze([
 const NPC_MOVEMENT_CURVE_SAMPLE_COUNT = 12
 const NPC_MOVEMENT_CURVE_TANGENT_SCALE = 0.36
 const NPC_MOVEMENT_CURVE_MAX_TANGENT_TILES = 0.5
+const ADULT_MIN_AGE = 18
+const ADULT_MAX_AGE = 99
+const SCHOOL_MIN_AGE = 6
+const SCHOOL_MAX_AGE_EXCLUSIVE = 18
+const CHILD_MIN_AGE = 0
+const CHILD_MAX_AGE = 17
+const MAX_PARTNER_AGE_DIFFERENCE = 6
+const MIN_PARENT_AGE_GAP = 18
+const MAX_PARENT_AGE_GAP = 45
 
 export function createNpcSimulation(city, entityLayer, config) {
   const random = config.random || createSystemRandom()
@@ -69,13 +79,14 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
   let destroyed = false
   let entityDebugOptions = { ...(config.entityDebugOptions || {}) }
+  const npcProfiles = createNpcFamilyProfiles(buildingsByPurpose, random, config.count, config)
 
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
 
-  for (let id = 0; id < config.count; id += 1) {
-    const buildingAssignment = createNpcBuildingAssignment(buildingsByPurpose, random)
-    const timetable = createNpcTimetable(city, buildingAssignment, random, config)
+  for (let id = 0; id < npcProfiles.length; id += 1) {
+    const profile = npcProfiles[id]
+    const timetable = createNpcTimetable(city, profile.buildingAssignment, profile.age, random, config)
     const spawnState = createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets)
 
     if (!spawnState) {
@@ -89,7 +100,8 @@ export function createNpcSimulation(city, entityLayer, config) {
       slot: spawnState.slot,
       present: spawnState.present,
       locationState: spawnState.locationState,
-      buildingAssignment,
+      buildingAssignment: profile.buildingAssignment,
+      age: profile.age,
       timetable,
       random,
       zorder,
@@ -191,9 +203,10 @@ export function createNpcSimulation(city, entityLayer, config) {
 }
 
 class NpcEntity {
-  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, timetable, random, zorder, config }) {
+  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, age, timetable, random, zorder, config }) {
     this.id = id
     this.zorder = zorder
+    this.age = age
     this.home = buildingAssignment.home ? buildingAssignment.home.id : null
     this.work = buildingAssignment.work ? buildingAssignment.work.id : null
     this.timetable = timetable
@@ -919,6 +932,7 @@ class NpcInfectionDynamics {
 function collectBuildingsByPurpose(city) {
   const buildingsByPurpose = {
     home: [],
+    school: [],
     work: []
   }
 
@@ -933,6 +947,10 @@ function collectBuildingsByPurpose(city) {
 
     if (buildingHasAnyType(building, WORK_BUILDING_TYPES)) {
       buildingsByPurpose.work.push(building)
+    }
+
+    if (buildingHasAnyType(building, SCHOOL_BUILDING_TYPES)) {
+      buildingsByPurpose.school.push(building)
     }
   }
 
@@ -951,13 +969,6 @@ function collectBuildingEntranceTiles(city) {
   return entranceTiles
 }
 
-function createNpcBuildingAssignment(buildingsByPurpose, random) {
-  return {
-    home: takeRandomItem(buildingsByPurpose.home, random),
-    work: takeRandomItem(buildingsByPurpose.work, random)
-  }
-}
-
 function takeRandomItem(items, random) {
   if (!items || items.length === 0) {
     return null
@@ -966,22 +977,222 @@ function takeRandomItem(items, random) {
   return items[random.int(items.length)]
 }
 
-function createNpcTimetable(city, buildingAssignment, random, config) {
-  if (!buildingAssignment.home || !buildingAssignment.work) {
+function createNpcFamilyProfiles(buildingsByPurpose, random, count, config) {
+  const profiles = []
+  const targetCount = nonNegativeIntegerOrDefault(count, NPC_CONFIG.count)
+
+  while (profiles.length < targetCount) {
+    const remaining = targetCount - profiles.length
+    const home = takeRandomItem(buildingsByPurpose.home, random)
+    const familySize = chooseFamilySize(remaining, random, config)
+    const ages = createFamilyAges(familySize, random)
+
+    for (const age of ages) {
+      profiles.push({
+        age,
+        buildingAssignment: createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, random)
+      })
+    }
+  }
+
+  return profiles
+}
+
+function createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, random) {
+  return {
+    home,
+    school: isSchoolAge(age) ? takeRandomItem(buildingsByPurpose.school, random) : null,
+    work: isAdultAge(age) ? takeRandomItem(buildingsByPurpose.work, random) : null
+  }
+}
+
+function chooseFamilySize(remaining, random, config) {
+  if (remaining <= 1) {
+    return 1
+  }
+
+  const choices = familyTypeChoicesForRemaining(remaining, config, false)
+  const type = weightedChoice(choices.length > 0 ? choices : familyTypeChoicesForRemaining(remaining, config, true), random)
+
+  if (!type || type.id === 'single') {
+    return 1
+  }
+
+  if (type.id === 'marriedWithoutChildren') {
+    return 2
+  }
+
+  const childCount = chooseFamilyChildCount(remaining - 2, random, config)
+
+  return 2 + childCount
+}
+
+function familyTypeChoicesForRemaining(remaining, config, useDefaults) {
+  const weights = useDefaults ? NPC_CONFIG.familyTypeWeights : (config.familyTypeWeights || NPC_CONFIG.familyTypeWeights)
+  const choices = []
+
+  appendWeightedChoice(choices, 'single', weights?.single)
+
+  if (remaining >= 2) {
+    appendWeightedChoice(choices, 'marriedWithoutChildren', weights?.marriedWithoutChildren)
+  }
+
+  if (remaining >= 3) {
+    appendWeightedChoice(choices, 'marriedWithChildren', weights?.marriedWithChildren)
+  }
+
+  return choices
+}
+
+function appendWeightedChoice(choices, id, weight) {
+  if (Number.isFinite(weight) && weight > 0) {
+    choices.push({ id, weight })
+  }
+}
+
+function chooseFamilyChildCount(maxChildren, random, config) {
+  const choices = familyChildCountChoicesForRemaining(maxChildren, config, false)
+  const choice = weightedChoice(choices.length > 0 ? choices : familyChildCountChoicesForRemaining(maxChildren, config, true), random)
+
+  return choice ? choice.count : 1
+}
+
+function familyChildCountChoicesForRemaining(maxChildren, config, useDefaults) {
+  const weights = useDefaults
+    ? NPC_CONFIG.familyChildCountWeights
+    : (config.familyChildCountWeights || NPC_CONFIG.familyChildCountWeights)
+  const choices = []
+
+  for (const option of weights || []) {
+    if (Number.isInteger(option?.count) && option.count >= 1 && option.count <= maxChildren &&
+        Number.isFinite(option.weight) && option.weight > 0) {
+      choices.push({ count: option.count, weight: option.weight })
+    }
+  }
+
+  return choices
+}
+
+function weightedChoice(choices, random) {
+  let totalWeight = 0
+
+  for (const choice of choices || []) {
+    totalWeight += choice.weight
+  }
+
+  if (totalWeight <= 0) {
+    return null
+  }
+
+  let threshold = random.next() * totalWeight
+
+  for (const choice of choices) {
+    threshold -= choice.weight
+
+    if (threshold <= 0) {
+      return choice
+    }
+  }
+
+  return choices[choices.length - 1]
+}
+
+function createFamilyAges(familySize, random) {
+  if (familySize <= 1) {
+    return [randomIntegerInclusive(ADULT_MIN_AGE, ADULT_MAX_AGE, random)]
+  }
+
+  if (familySize === 2) {
+    return createPartnerAges(random)
+  }
+
+  const childAges = []
+
+  for (let index = 0; index < familySize - 2; index += 1) {
+    childAges.push(randomIntegerInclusive(CHILD_MIN_AGE, CHILD_MAX_AGE, random))
+  }
+
+  const oldestChildAge = Math.max(...childAges)
+  const minParentAge = Math.max(ADULT_MIN_AGE, oldestChildAge + MIN_PARENT_AGE_GAP)
+  const maxParentAge = Math.min(ADULT_MAX_AGE, oldestChildAge + MAX_PARENT_AGE_GAP)
+  const firstParentAge = randomIntegerInclusive(minParentAge, maxParentAge, random)
+  const secondParentAge = createPartnerAge(firstParentAge, random, minParentAge, ADULT_MAX_AGE)
+
+  return [firstParentAge, secondParentAge, ...childAges]
+}
+
+function createPartnerAges(random) {
+  const firstAge = randomIntegerInclusive(ADULT_MIN_AGE, ADULT_MAX_AGE, random)
+
+  return [
+    firstAge,
+    createPartnerAge(firstAge, random, ADULT_MIN_AGE, ADULT_MAX_AGE)
+  ]
+}
+
+function createPartnerAge(firstAge, random, minAge, maxAge) {
+  return randomIntegerInclusive(
+    Math.max(minAge, firstAge - MAX_PARTNER_AGE_DIFFERENCE),
+    Math.min(maxAge, firstAge + MAX_PARTNER_AGE_DIFFERENCE),
+    random
+  )
+}
+
+function randomIntegerInclusive(min, max, random) {
+  const safeMin = Math.ceil(min)
+  const safeMax = Math.floor(Math.max(min, max))
+
+  return safeMin + random.int(safeMax - safeMin + 1)
+}
+
+function isSchoolAge(age) {
+  return Number.isInteger(age) && age >= SCHOOL_MIN_AGE && age < SCHOOL_MAX_AGE_EXCLUSIVE
+}
+
+function isAdultAge(age) {
+  return Number.isInteger(age) && age >= ADULT_MIN_AGE && age <= ADULT_MAX_AGE
+}
+
+function createNpcTimetable(city, buildingAssignment, age, random, config) {
+  if (!buildingAssignment.home) {
+    return new NpcTimetable([])
+  }
+
+  if (isSchoolAge(age)) {
+    return buildingAssignment.school
+      ? createCommuteTimetable(city, buildingAssignment.home, buildingAssignment.school, 'school', random, config)
+      : createHomeOnlyTimetable(city, buildingAssignment.home)
+  }
+
+  if (isAdultAge(age) && buildingAssignment.work) {
+    return createCommuteTimetable(city, buildingAssignment.home, buildingAssignment.work, 'work', random, config)
+  }
+
+  return createHomeOnlyTimetable(city, buildingAssignment.home)
+}
+
+function createHomeOnlyTimetable(city, home) {
+  return new NpcTimetable([
+    createTimetableElement('home', home, 0, 0, city)
+  ])
+}
+
+function createCommuteTimetable(city, home, destination, destinationId, random, config) {
+  if (!home || !destination) {
     return new NpcTimetable([])
   }
 
   const variationHours = finiteNumberOrDefault(config.scheduleVariationHours, NPC_CONFIG.scheduleVariationHours)
-  const workStartHour = normalizeHour(
+  const commuteStartHour = normalizeHour(
     finiteNumberOrDefault(config.workStartHour, NPC_CONFIG.workStartHour) + random.between(-variationHours, variationHours)
   )
-  const workEndHour = normalizeHour(
+  const commuteEndHour = normalizeHour(
     finiteNumberOrDefault(config.workEndHour, NPC_CONFIG.workEndHour) + random.between(-variationHours, variationHours)
   )
 
   return new NpcTimetable([
-    createTimetableElement('home', buildingAssignment.home, workEndHour, workStartHour, city),
-    createTimetableElement('work', buildingAssignment.work, workStartHour, workEndHour, city)
+    createTimetableElement('home', home, commuteEndHour, commuteStartHour, city),
+    createTimetableElement(destinationId, destination, commuteStartHour, commuteEndHour, city)
   ])
 }
 
@@ -1585,6 +1796,10 @@ function finiteNumberOrDefault(value, fallback) {
 
 function positiveIntegerOrDefault(value, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback
+}
+
+function nonNegativeIntegerOrDefault(value, fallback) {
+  return Number.isInteger(value) && value >= 0 ? value : fallback
 }
 
 function nonNegativeNumberOrDefault(value, fallback) {

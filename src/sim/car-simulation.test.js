@@ -661,6 +661,28 @@ describe('car simulation', () => {
     npcSimulation.destroy()
   })
 
+  it('excludes minor NPCs from real car owner pools', () => {
+    const city = createTrafficCity()
+    const adult = { id: 1, age: 18, home: 'home', work: 'work', carId: null }
+    const minor = { id: 2, age: 17, home: 'home', work: 'work', carId: null }
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      random: createSeededRandom('minor-owner-pool'),
+      npcs: [minor, adult],
+      commuteChance: 0,
+      twoOwnerChance: 1,
+      twoTileChance: 1
+    })
+    const car = simulation.cars[0]
+
+    expect(car.owners).toHaveLength(1)
+    expect(car.owners[0].npc).toBe(adult)
+    expect(adult.carId).toBe(car.id)
+    expect(minor.carId).toBeNull()
+
+    simulation.destroy()
+  })
+
   it('waits before entering a red crosswalk and can leave after entering', () => {
     const city = createTrafficCity()
     const simulation = createCarSimulation(city, createEntityLayer(), {

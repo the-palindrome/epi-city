@@ -116,8 +116,28 @@ describe('NPC hover menu', () => {
     globalThis.cancelAnimationFrame = originalCancelAnimationFrame
   })
 
-  it('renders full infection status for the hovered NPC and hides off NPCs', () => {
-    const npc = { id: 2 }
+  it('renders full status for the hovered NPC and hides off NPCs', () => {
+    const npc = {
+      id: 2,
+      age: 12,
+      home: 'home-7',
+      work: null,
+      timetable: {
+        elements: [
+          { id: 'home', buildingId: 'home-7' },
+          { id: 'school', buildingId: 'school-3' }
+        ]
+      },
+      present: false,
+      locationState: {
+        buildingId: 'school-3'
+      },
+      goal: {
+        id: 'school',
+        buildingId: 'school-3'
+      },
+      carId: null
+    }
     const car = { id: 4 }
     const canvas = new FakeElement('canvas')
     const menu = installNpcHoverMenu({
@@ -150,12 +170,27 @@ describe('NPC hover menu', () => {
     expect(menu.targetId).toBe(2)
     expect(menu.element.hidden).toBe(false)
     expect(menu.element.textContent).toContain('NPC 2')
-    expect(menu.element.textContent).toContain('infection')
-    expect(menu.element.textContent).toContain('exposed')
-    expect(menu.element.textContent).toContain('contagious')
-    expect(menu.element.textContent).toContain('can be infected')
-    expect(menu.element.textContent).toContain('infectious in')
+    expect(menu.element.textContent).toContain('age')
+    expect(menu.element.textContent).toContain('12')
+    expect(menu.element.textContent).toContain('home')
+    expect(menu.element.textContent).toContain('home-7')
+    expect(menu.element.textContent).toContain('work')
+    expect(menu.element.textContent).toContain('school')
+    expect(menu.element.textContent).toContain('school-3')
+    expect(menu.element.textContent).toContain('current')
+    expect(menu.element.textContent).toContain('inside school-3')
+    expect(menu.element.textContent).toContain('goal')
+    expect(menu.element.textContent).toContain('school school-3')
+    expect(menu.element.textContent).toContain('car')
+    expect(menu.element.textContent).toContain('health')
+    expect(menu.element.textContent).toContain('Exposed')
+    expect(menu.element.textContent).toContain('health note')
+    expect(menu.element.textContent).toContain('Incubating; not contagious yet')
+    expect(menu.element.textContent).toContain('next change')
+    expect(menu.element.textContent).toContain('Infectious in')
     expect(menu.element.textContent).toContain('2 days')
+    expect(menu.element.textContent).not.toContain('can be infected')
+    expect(menu.element.textContent).not.toContain('phase timer')
 
     selectionState.hit = { kind: 'car', entity: car }
     canvas.eventListeners.mousemove(mouseEvent())

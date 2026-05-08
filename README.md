@@ -96,7 +96,7 @@ Vehicles use the directed lane graph when it exists and park on tiles marked `pa
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a work building id chosen from commercial, school, restaurant, supermarket, hospital, mall, or nightclub buildings when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `age`, `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable goals. NPC generation samples transient families, assigns every member of one family to the same residential home building, then stores only the per-NPC fields. Ages drive schedules: ages 0-5 stay home, ages 6-17 commute to a `school` building when the map has one, and ages 18-99 commute to a work building chosen from commercial, school, restaurant, supermarket, hospital, mall, or nightclub buildings. The default runtime uses the `epi-city` seed so family composition, building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
 
 Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 48 world-unit infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
 
@@ -108,7 +108,7 @@ The runtime uses a single browser animation loop with the game-development shape
 
 ## Car Prototype
 
-The app creates 500 cars by default. Cars have one or two real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
+The app creates 500 cars by default. Cars have one or two adult real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
 
 Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
 
@@ -137,6 +137,7 @@ window.citySim.simulationClock.formatTimeOfDay()
 window.citySim.npcs.length
 window.citySim.npcSimulation.infection.getStats()
 window.citySim.cars.length
+window.citySim.npcs[0].age
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
 window.citySim.npcs[0].infection

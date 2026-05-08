@@ -161,9 +161,25 @@ function createMutableClock(hour) {
   }
 }
 
+const SINGLE_ADULT_FAMILIES = Object.freeze({
+  single: 1,
+  marriedWithoutChildren: 0,
+  marriedWithChildren: 0
+})
+
+const MARRIED_WITH_CHILDREN_FAMILIES = Object.freeze({
+  single: 0,
+  marriedWithoutChildren: 0,
+  marriedWithChildren: 1
+})
+
+const TWO_CHILDREN_FAMILY = Object.freeze([
+  Object.freeze({ count: 2, weight: 1 })
+])
+
 function createSimulation(seed, city = createCity(), options = {}) {
   const simulation = createNpcSimulation(city, createActorLayer(), {
-    count: options.count || 8,
+    count: options.count ?? 8,
     zorder: 1,
     tileCapacity: options.tileCapacity ?? NPC_CONFIG.tileCapacity,
     maxVisiblePerTile: options.maxVisiblePerTile ?? NPC_CONFIG.maxVisiblePerTile,
@@ -175,6 +191,8 @@ function createSimulation(seed, city = createCity(), options = {}) {
     workStartHour: 9,
     workEndHour: 17,
     scheduleVariationHours: options.scheduleVariationHours ?? 0.75,
+    familyTypeWeights: options.familyTypeWeights,
+    familyChildCountWeights: options.familyChildCountWeights,
     routePlanBudget: options.routePlanBudget || 24,
     routeRetrySeconds: 1,
     routeBlockedReplanSeconds: 2,
@@ -200,6 +218,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
 function snapshot(simulation) {
   return simulation.npcs.map((npc) => ({
     zorder: npc.zorder,
+    age: npc.age,
     home: npc.home,
     work: npc.work,
     position: { ...npc.position },
@@ -214,6 +233,21 @@ function snapshot(simulation) {
         }
       : null
   }))
+}
+
+function createSimulationWithNpc(seedPrefix, city, options, predicate) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const simulation = createSimulation(`${seedPrefix}-${attempt}`, city, options)
+    const npc = simulation.npcs.find(predicate)
+
+    if (npc) {
+      return { simulation, npc }
+    }
+
+    simulation.destroy()
+  }
+
+  throw new Error(`Could not generate matching NPC for ${seedPrefix}.`)
 }
 
 describe('NPC simulation randomness', () => {
@@ -618,26 +652,71 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
-  it('assigns each NPC a residential home and public-place work building from type sets', () => {
+  it('assigns adult NPCs a residential home and public-place work building from type sets', () => {
     const city = createCityWithBuildingTypes()
-    const simulation = createSimulation('building-assignments', city)
-    const repeated = createSimulation('building-assignments', city)
+    const options = { familyTypeWeights: SINGLE_ADULT_FAMILIES }
+    const simulation = createSimulation('building-assignments', city, options)
+    const repeated = createSimulation('building-assignments', city, options)
     const homeIds = new Set(['home-1', 'home-2'])
     const workIds = new Set(['work-1', 'work-2'])
-    const assignments = simulation.npcs.map((npc) => ({ home: npc.home, work: npc.work }))
+    const assignments = simulation.npcs.map((npc) => ({ age: npc.age, home: npc.home, work: npc.work }))
 
+    expect(simulation.npcs.every((npc) => npc.age >= 18 && npc.age <= 99)).toBe(true)
     expect(simulation.npcs.every((npc) => homeIds.has(npc.home))).toBe(true)
     expect(simulation.npcs.every((npc) => workIds.has(npc.work))).toBe(true)
-    expect(assignments).toEqual(repeated.npcs.map((npc) => ({ home: npc.home, work: npc.work })))
+    expect(assignments).toEqual(repeated.npcs.map((npc) => ({ age: npc.age, home: npc.home, work: npc.work })))
 
     simulation.destroy()
     repeated.destroy()
+  })
+
+  it('generates whole families under one home and stores only per-NPC attributes', () => {
+    const city = createCityWithBuildingTypes()
+    const simulation = createSimulation('family-household', city, {
+      count: 4,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: TWO_CHILDREN_FAMILY,
+      initialUpdate: false
+    })
+    const homes = new Set(simulation.npcs.map((npc) => npc.home))
+    const adults = simulation.npcs.filter((npc) => npc.age >= 18)
+    const children = simulation.npcs.filter((npc) => npc.age < 18)
+
+    expect(simulation.npcs).toHaveLength(4)
+    expect(homes.size).toBe(1)
+    expect(adults).toHaveLength(2)
+    expect(children).toHaveLength(2)
+    expect(simulation.npcs.every((npc) => Number.isInteger(npc.age))).toBe(true)
+    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'familyType'))).toBe(true)
+    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'familyId'))).toBe(true)
+    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'children'))).toBe(true)
+
+    simulation.destroy()
+  })
+
+  it('keeps the requested NPC count when the final family must fit remaining slots', () => {
+    const city = createCityWithBuildingTypes()
+    const simulation = createSimulation('family-exact-count', city, {
+      count: 5,
+      familyTypeWeights: {
+        single: 0,
+        marriedWithoutChildren: 1,
+        marriedWithChildren: 0
+      },
+      initialUpdate: false
+    })
+
+    expect(simulation.npcs).toHaveLength(5)
+    expect(simulation.npcs.every((npc) => npc.age >= 18 && npc.age <= 99)).toBe(true)
+
+    simulation.destroy()
   })
 
   it('creates timetable elements that target home and work entrances', () => {
     const city = createCityWithBuildingTypes()
     const simulation = createSimulation('timetable', city, {
       count: 1,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
       scheduleVariationHours: 0,
       initialUpdate: false
     })
@@ -656,6 +735,75 @@ describe('NPC simulation randomness', () => {
       location: { x: work.entrance.x, y: work.entrance.y },
       startHour: 9,
       endHour: 17
+    })
+
+    simulation.destroy()
+  })
+
+  it('routes school-age NPCs between home and school when a school exists', () => {
+    const city = createCityWithBuildingTypes()
+    const { simulation, npc } = createSimulationWithNpc('school-age', city, {
+      count: 6,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 4, weight: 1 }
+      ],
+      scheduleVariationHours: 0,
+      initialUpdate: false
+    }, (candidate) => candidate.age >= 6 && candidate.age < 18)
+    const schoolElement = npc.timetable.elements.find((element) => element.id === 'school')
+
+    expect(npc.work).toBeNull()
+    expect(schoolElement).toMatchObject({
+      buildingId: 'work-1',
+      startHour: 9,
+      endHour: 17
+    })
+
+    simulation.destroy()
+  })
+
+  it('keeps preschool NPCs home-only', () => {
+    const city = createCityWithBuildingTypes()
+    const { simulation, npc } = createSimulationWithNpc('preschool-age', city, {
+      count: 6,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 4, weight: 1 }
+      ],
+      initialUpdate: false
+    }, (candidate) => candidate.age >= 0 && candidate.age < 6)
+
+    expect(npc.work).toBeNull()
+    expect(npc.timetable.elements).toEqual([
+      expect.objectContaining({
+        id: 'home',
+        buildingId: npc.home,
+        startHour: 0,
+        endHour: 0
+      })
+    ])
+
+    simulation.destroy()
+  })
+
+  it('keeps school-age NPCs home-only when the map has no school buildings', () => {
+    const city = createCityWithSharedBuildings()
+    const { simulation, npc } = createSimulationWithNpc('no-school-age', city, {
+      count: 6,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 4, weight: 1 }
+      ],
+      initialUpdate: false
+    }, (candidate) => candidate.age >= 6 && candidate.age < 18)
+
+    expect(npc.work).toBeNull()
+    expect(npc.timetable.elements.map((element) => element.id)).toEqual(['home'])
+    expect(npc.timetable.elements[0]).toMatchObject({
+      buildingId: npc.home,
+      startHour: 0,
+      endHour: 0
     })
 
     simulation.destroy()
@@ -743,6 +891,7 @@ describe('NPC simulation randomness', () => {
     const simulation = createSimulation('shared-entrances', city, {
       count: 4,
       clock,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
       scheduleVariationHours: 0,
       initialUpdate: false
     })

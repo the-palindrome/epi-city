@@ -968,7 +968,13 @@ function collectCarOwnerPools(npcs, buildingsById) {
   const homeIds = []
 
   for (const npc of npcs || []) {
-    if (!npc || npc.carId !== null || !npc.home || !npc.work || !buildingsById.has(npc.home)) {
+    if (!npc ||
+        npc.carId !== null ||
+        !npc.home ||
+        !npc.work ||
+        !Number.isInteger(npc.age) ||
+        npc.age < 18 ||
+        !buildingsById.has(npc.home)) {
       continue
     }
 

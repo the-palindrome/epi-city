@@ -66,6 +66,7 @@ export const WORK_BUILDING_TYPES = Object.freeze([
   'mall',
   'nightclub'
 ])
+export const SCHOOL_BUILDING_TYPES = Object.freeze(['school'])
 export const PIXEL_ART_SCALE_MODE = 'nearest'
 
 export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
@@ -86,6 +87,17 @@ export const NPC_CONFIG = Object.freeze({
   workStartHour: 9,
   workEndHour: 17,
   scheduleVariationHours: 0.75,
+  familyTypeWeights: Object.freeze({
+    single: 0.35,
+    marriedWithoutChildren: 0.3,
+    marriedWithChildren: 0.35
+  }),
+  familyChildCountWeights: Object.freeze([
+    Object.freeze({ count: 1, weight: 0.45 }),
+    Object.freeze({ count: 2, weight: 0.35 }),
+    Object.freeze({ count: 3, weight: 0.15 }),
+    Object.freeze({ count: 4, weight: 0.05 })
+  ]),
   routePlanBudget: 24,
   routeRetrySeconds: 1,
   routeBlockedReplanSeconds: 2
