@@ -3,8 +3,11 @@ import {
   ENTITY_RENDER_DEBUG_CONFIG,
   HOME_BUILDING_TYPES,
   INFECTION_CONFIG,
+  NIGHTCLUB_BUILDING_TYPES,
   NPC_CONFIG,
+  RESTAURANT_BUILDING_TYPES,
   SCHOOL_BUILDING_TYPES,
+  SHOPPING_BUILDING_TYPES,
   WORK_BUILDING_TYPES
 } from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
@@ -932,7 +935,10 @@ class NpcInfectionDynamics {
 function collectBuildingsByPurpose(city) {
   const buildingsByPurpose = {
     home: [],
+    nightclub: [],
+    restaurant: [],
     school: [],
+    shopping: [],
     work: []
   }
 
@@ -951,6 +957,18 @@ function collectBuildingsByPurpose(city) {
 
     if (buildingHasAnyType(building, SCHOOL_BUILDING_TYPES)) {
       buildingsByPurpose.school.push(building)
+    }
+
+    if (buildingHasAnyType(building, RESTAURANT_BUILDING_TYPES)) {
+      buildingsByPurpose.restaurant.push(building)
+    }
+
+    if (buildingHasAnyType(building, SHOPPING_BUILDING_TYPES)) {
+      buildingsByPurpose.shopping.push(building)
+    }
+
+    if (buildingHasAnyType(building, NIGHTCLUB_BUILDING_TYPES)) {
+      buildingsByPurpose.nightclub.push(building)
     }
   }
 
@@ -986,11 +1004,12 @@ function createNpcFamilyProfiles(buildingsByPurpose, random, count, config) {
     const home = takeRandomItem(buildingsByPurpose.home, random)
     const familySize = chooseFamilySize(remaining, random, config)
     const ages = createFamilyAges(familySize, random)
+    const familyHasChildren = familySize > 2
 
     for (const age of ages) {
       profiles.push({
         age,
-        buildingAssignment: createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, random)
+        buildingAssignment: createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, !familyHasChildren, random, config)
       })
     }
   }
@@ -998,12 +1017,51 @@ function createNpcFamilyProfiles(buildingsByPurpose, random, count, config) {
   return profiles
 }
 
-function createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, random) {
+function createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, adultWithoutChildren, random, config) {
+  const work = isAdultAge(age) ? takeRandomItem(buildingsByPurpose.work, random) : null
+
   return {
     home,
     school: isSchoolAge(age) ? takeRandomItem(buildingsByPurpose.school, random) : null,
-    work: isAdultAge(age) ? takeRandomItem(buildingsByPurpose.work, random) : null
+    work,
+    lunch: work ? takeNearbyBuilding(buildingsByPurpose.restaurant, work, random, config) : null,
+    shopping: work && random.next() < unitIntervalOrDefault(config.shoppingChance, NPC_CONFIG.shoppingChance)
+      ? takeRandomItem(buildingsByPurpose.shopping, random)
+      : null,
+    nightclub: work && adultWithoutChildren && random.next() < unitIntervalOrDefault(config.nightclubChance, NPC_CONFIG.nightclubChance)
+      ? takeRandomItem(buildingsByPurpose.nightclub, random)
+      : null
   }
+}
+
+function takeNearbyBuilding(buildings, originBuilding, random, config) {
+  if (!buildings || buildings.length === 0 || !originBuilding?.entrance) {
+    return null
+  }
+
+  const candidateCount = Math.min(
+    buildings.length,
+    positiveIntegerOrDefault(config.lunchRestaurantCandidateCount, NPC_CONFIG.lunchRestaurantCandidateCount)
+  )
+  const nearby = buildings
+    .map((building) => ({
+      building,
+      distance: squaredEntranceDistance(originBuilding, building)
+    }))
+    .sort((a, b) => a.distance - b.distance || String(a.building.id).localeCompare(String(b.building.id)))
+
+  return nearby[random.int(candidateCount)].building
+}
+
+function squaredEntranceDistance(first, second) {
+  if (!first?.entrance || !second?.entrance) {
+    return Infinity
+  }
+
+  const dx = first.entrance.x - second.entrance.x
+  const dy = first.entrance.y - second.entrance.y
+
+  return dx * dx + dy * dy
 }
 
 function chooseFamilySize(remaining, random, config) {
@@ -1165,7 +1223,7 @@ function createNpcTimetable(city, buildingAssignment, age, random, config) {
   }
 
   if (isAdultAge(age) && buildingAssignment.work) {
-    return createCommuteTimetable(city, buildingAssignment.home, buildingAssignment.work, 'work', random, config)
+    return createAdultTimetable(city, buildingAssignment, random, config)
   }
 
   return createHomeOnlyTimetable(city, buildingAssignment.home)
@@ -1182,18 +1240,87 @@ function createCommuteTimetable(city, home, destination, destinationId, random, 
     return new NpcTimetable([])
   }
 
-  const variationHours = finiteNumberOrDefault(config.scheduleVariationHours, NPC_CONFIG.scheduleVariationHours)
-  const commuteStartHour = normalizeHour(
-    finiteNumberOrDefault(config.workStartHour, NPC_CONFIG.workStartHour) + random.between(-variationHours, variationHours)
-  )
-  const commuteEndHour = normalizeHour(
-    finiteNumberOrDefault(config.workEndHour, NPC_CONFIG.workEndHour) + random.between(-variationHours, variationHours)
-  )
+  const { startHour, endHour } = createWorkHours(random, config)
 
   return new NpcTimetable([
-    createTimetableElement('home', home, commuteEndHour, commuteStartHour, city),
-    createTimetableElement(destinationId, destination, commuteStartHour, commuteEndHour, city)
+    createTimetableElement(destinationId, destination, startHour, endHour, city),
+    createTimetableElement('home', home, 0, 0, city)
   ])
+}
+
+function createAdultTimetable(city, buildingAssignment, random, config) {
+  const { home, work } = buildingAssignment
+  const { startHour, endHour } = createWorkHours(random, config)
+  const elements = []
+
+  if (buildingAssignment.lunch) {
+    const lunchHours = createLunchHours(random, config)
+
+    if (lunchHours) {
+      elements.push(createTimetableElement('lunch', buildingAssignment.lunch, lunchHours.startHour, lunchHours.endHour, city))
+    }
+  }
+
+  if (buildingAssignment.shopping) {
+    elements.push(createTimetableElement(
+      'shopping',
+      buildingAssignment.shopping,
+      endHour,
+      normalizeHour(endHour + positiveNumberOrDefault(config.shoppingDurationHours, NPC_CONFIG.shoppingDurationHours)),
+      city
+    ))
+  }
+
+  if (buildingAssignment.nightclub) {
+    const nightclubStartHour = random.between(
+      finiteNumberOrDefault(config.nightclubStartHour, NPC_CONFIG.nightclubStartHour),
+      finiteNumberOrDefault(config.nightclubLatestStartHour, NPC_CONFIG.nightclubLatestStartHour)
+    )
+
+    elements.push(createTimetableElement(
+      'nightclub',
+      buildingAssignment.nightclub,
+      normalizeHour(nightclubStartHour),
+      normalizeHour(nightclubStartHour + positiveNumberOrDefault(config.nightclubDurationHours, NPC_CONFIG.nightclubDurationHours)),
+      city
+    ))
+  }
+
+  elements.push(createTimetableElement('work', work, startHour, endHour, city))
+  elements.push(createTimetableElement('home', home, 0, 0, city))
+
+  return new NpcTimetable(elements)
+}
+
+function createWorkHours(random, config) {
+  const variationHours = finiteNumberOrDefault(config.scheduleVariationHours, NPC_CONFIG.scheduleVariationHours)
+
+  return {
+    startHour: normalizeHour(
+      finiteNumberOrDefault(config.workStartHour, NPC_CONFIG.workStartHour) + random.between(-variationHours, variationHours)
+    ),
+    endHour: normalizeHour(
+      finiteNumberOrDefault(config.workEndHour, NPC_CONFIG.workEndHour) + random.between(-variationHours, variationHours)
+    )
+  }
+}
+
+function createLunchHours(random, config) {
+  const lunchStartHour = finiteNumberOrDefault(config.lunchStartHour, NPC_CONFIG.lunchStartHour)
+  const lunchEndHour = finiteNumberOrDefault(config.lunchEndHour, NPC_CONFIG.lunchEndHour)
+  const lunchDurationHours = positiveNumberOrDefault(config.lunchDurationHours, NPC_CONFIG.lunchDurationHours)
+  const latestStartHour = lunchEndHour - lunchDurationHours
+
+  if (latestStartHour < lunchStartHour) {
+    return null
+  }
+
+  const startHour = random.between(lunchStartHour, latestStartHour)
+
+  return {
+    startHour: normalizeHour(startHour),
+    endHour: normalizeHour(startHour + lunchDurationHours)
+  }
 }
 
 function createTimetableElement(id, building, startHour, endHour, city) {
@@ -1798,6 +1925,10 @@ function positiveIntegerOrDefault(value, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback
 }
 
+function positiveNumberOrDefault(value, fallback) {
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
 function nonNegativeIntegerOrDefault(value, fallback) {
   return Number.isInteger(value) && value >= 0 ? value : fallback
 }
@@ -1813,6 +1944,16 @@ function clampUnitInterval(value) {
 
   if (!Number.isFinite(number)) {
     return INFECTION_CONFIG.infectionProbability
+  }
+
+  return Math.min(Math.max(number, 0), 1)
+}
+
+function unitIntervalOrDefault(value, fallback) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return fallback
   }
 
   return Math.min(Math.max(number, 0), 1)

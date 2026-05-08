@@ -171,6 +171,46 @@ function createTrafficCity() {
   }))
 }
 
+function createTrafficCityWithShopping() {
+  return compileCityMap(validateCityMap({
+    width: 7,
+    height: 5,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      p: { category: 'sidewalk', walkable: true, drivable: false, parkable: true },
+      r: { category: 'road', walkable: false, drivable: true, parkable: false },
+      c: { category: 'crosswalk', walkable: true, drivable: true, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultType: 'residential',
+      items: [
+        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'shop', type: 'supermarket', entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
+        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+      ]
+    },
+    rows: [
+      'sssssss',
+      'sbsbsbs',
+      'ppppppp',
+      'rrrcrrr',
+      'sssssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0, 0],
+      [0, 1, 0, 1, 0, 1, 0],
+      [0, 0, 0, 0, 0, 0, 0],
+      [2, 2, 2, 3, 2, 2, 2],
+      [0, 0, 0, 0, 0, 0, 0]
+    ],
+    laneGraph: createLineLaneGraph(7, 3)
+  }))
+}
+
 function createFirstEdgeCrosswalkCity() {
   return compileCityMap(validateCityMap({
     width: 7,
@@ -655,6 +695,66 @@ describe('car simulation', () => {
     expect(npc.locationState).toMatchObject({
       timetableElementId: 'work',
       buildingId: npc.work
+    })
+
+    simulation.destroy()
+    npcSimulation.destroy()
+  })
+
+  it('drives real NPC owners to their active timetable destination', () => {
+    const city = createTrafficCityWithShopping()
+    const clock = createClock(17.5)
+    const npcSimulation = createNpcSimulationForTraffic(city, clock)
+    const npc = npcSimulation.npcs[0]
+    const shop = city.buildings.find((building) => building.id === 'shop')
+
+    npc.home = 'home'
+    npc.work = 'work'
+    npc.locationState = {
+      timetableElementId: 'home',
+      buildingId: 'home',
+      location: {
+        x: 1,
+        y: 1,
+        index: city.index(1, 1)
+      }
+    }
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'shopping',
+        buildingId: 'shop',
+        location: {
+          x: shop.entrance.x,
+          y: shop.entrance.y,
+          index: city.index(shop.entrance.x, shop.entrance.y)
+        }
+      })
+    }
+
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock,
+      random: createSeededRandom('real-owner-shopping'),
+      npcs: npcSimulation.npcs,
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const car = simulation.cars[0]
+
+    city.setCrosswalkSignalState('green')
+    simulation.update(0.1)
+    npcSimulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.destinationKind).toBe('shopping')
+    expect(car.destinationBuildingId).toBe('shop')
+    expect(npc.vehicleTrip).toMatchObject({
+      carId: car.id,
+      destinationKind: 'shopping',
+      destinationBuildingId: 'shop'
     })
 
     simulation.destroy()

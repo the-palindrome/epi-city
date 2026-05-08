@@ -1078,6 +1078,32 @@ function maybeStartCarTrip(car, hour, context) {
     return
   }
 
+  if (owner.npc) {
+    maybeStartNpcScheduleCarTrip(car, owner, hour, context)
+    return
+  }
+
+  maybeStartSyntheticCarTrip(car, owner, hour, context)
+}
+
+function maybeStartNpcScheduleCarTrip(car, owner, hour, context) {
+  const activeElement = typeof owner.npc.getActiveTimetableElement === 'function'
+    ? owner.npc.getActiveTimetableElement(hour)
+    : null
+
+  if (!activeElement || !activeElement.buildingId || activeElement.buildingId === car.parkedBuildingId) {
+    return
+  }
+
+  const destinationBuilding = context.buildingsById.get(activeElement.buildingId)
+
+  if (destinationBuilding && isOwnerReadyForCarTrip(owner, activeElement.id, car.parkedBuildingId, destinationBuilding.id, hour)) {
+    markOwnerWaitingForCar(owner)
+    startCarTrip(car, destinationBuilding, activeElement.id, owner, context)
+  }
+}
+
+function maybeStartSyntheticCarTrip(car, owner, hour, context) {
   if (car.parkedAt === 'home' && hourInRange(hour, context.config.workDepartureHour, context.config.workDepartureEndHour)) {
     const workBuilding = context.buildingsById.get(owner.workBuildingId)
 

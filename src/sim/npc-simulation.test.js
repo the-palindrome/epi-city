@@ -118,6 +118,40 @@ function createCityWithSharedBuildings() {
   })
 }
 
+function createCityWithDailyLifeBuildings() {
+  return createCity({
+    width: 15,
+    height: 3,
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultTypes: ['residential'],
+      items: [
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'office', types: ['commercial'], entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
+        { id: 'diner', types: ['restaurant'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] },
+        { id: 'bistro', types: ['restaurant'], entrance: { x: 7, y: 1 }, spans: [[1, 7, 1]] },
+        { id: 'market', types: ['supermarket'], entrance: { x: 9, y: 1 }, spans: [[1, 9, 1]] },
+        { id: 'mall', types: ['mall'], entrance: { x: 11, y: 1 }, spans: [[1, 11, 1]] },
+        { id: 'club', types: ['nightclub'], entrance: { x: 13, y: 1 }, spans: [[1, 13, 1]] }
+      ]
+    },
+    rows: [
+      'sssssssssssssss',
+      'sbsbsbsbsbsbsbs',
+      'sssssssssssssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]
+  })
+}
+
 function createCornerCity() {
   return createCity({
     width: 3,
@@ -191,6 +225,16 @@ function createSimulation(seed, city = createCity(), options = {}) {
     workStartHour: 9,
     workEndHour: 17,
     scheduleVariationHours: options.scheduleVariationHours ?? 0.75,
+    lunchStartHour: options.lunchStartHour,
+    lunchEndHour: options.lunchEndHour,
+    lunchDurationHours: options.lunchDurationHours,
+    lunchRestaurantCandidateCount: options.lunchRestaurantCandidateCount,
+    shoppingChance: options.shoppingChance,
+    shoppingDurationHours: options.shoppingDurationHours,
+    nightclubChance: options.nightclubChance,
+    nightclubStartHour: options.nightclubStartHour,
+    nightclubLatestStartHour: options.nightclubLatestStartHour,
+    nightclubDurationHours: options.nightclubDurationHours,
     familyTypeWeights: options.familyTypeWeights,
     familyChildCountWeights: options.familyChildCountWeights,
     routePlanBudget: options.routePlanBudget || 24,
@@ -248,6 +292,30 @@ function createSimulationWithNpc(seedPrefix, city, options, predicate) {
   }
 
   throw new Error(`Could not generate matching NPC for ${seedPrefix}.`)
+}
+
+function buildingsWithType(city, type) {
+  return city.buildings.filter((building) => (
+    typeof building.hasType === 'function'
+      ? building.hasType(type)
+      : (building.types || [building.type]).includes(type)
+  ))
+}
+
+function nearestBuildingByEntrance(origin, buildings) {
+  return buildings
+    .map((building) => ({
+      building,
+      distance: squaredEntranceDistance(origin, building)
+    }))
+    .sort((a, b) => a.distance - b.distance || String(a.building.id).localeCompare(String(b.building.id)))[0]?.building || null
+}
+
+function squaredEntranceDistance(first, second) {
+  const dx = first.entrance.x - second.entrance.x
+  const dy = first.entrance.y - second.entrance.y
+
+  return dx * dx + dy * dy
 }
 
 describe('NPC simulation randomness', () => {
@@ -738,6 +806,98 @@ describe('NPC simulation randomness', () => {
     })
 
     simulation.destroy()
+  })
+
+  it('adds an adult lunch break at a nearby restaurant around midday', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const simulation = createSimulation('adult-lunch', city, {
+      count: 1,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      scheduleVariationHours: 0,
+      lunchRestaurantCandidateCount: 1,
+      shoppingChance: 0,
+      nightclubChance: 0,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const work = city.buildings.find((building) => building.id === npc.work)
+    const nearestRestaurant = nearestBuildingByEntrance(work, buildingsWithType(city, 'restaurant'))
+    const lunchElement = npc.timetable.elements.find((element) => element.id === 'lunch')
+
+    expect(lunchElement).toBeTruthy()
+    expect(lunchElement.buildingId).toBe(nearestRestaurant.id)
+    expect(lunchElement.startHour).toBeGreaterThanOrEqual(11)
+    expect(lunchElement.endHour).toBeLessThanOrEqual(13)
+
+    simulation.destroy()
+  })
+
+  it('randomly sends adults shopping after work before home', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const simulation = createSimulation('adult-shopping', city, {
+      count: 1,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      scheduleVariationHours: 0,
+      shoppingChance: 1,
+      shoppingDurationHours: 1.25,
+      nightclubChance: 0,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const shoppingElement = npc.timetable.elements.find((element) => element.id === 'shopping')
+    const shoppingBuilding = city.buildings.find((building) => building.id === shoppingElement?.buildingId)
+
+    expect(shoppingElement).toMatchObject({
+      startHour: 17,
+      endHour: 18.25
+    })
+    expect(
+      (typeof shoppingBuilding?.hasAnyType === 'function' && shoppingBuilding.hasAnyType(['supermarket', 'mall'])) ||
+      buildingsWithType(city, 'supermarket').includes(shoppingBuilding) ||
+      buildingsWithType(city, 'mall').includes(shoppingBuilding)
+    ).toBe(true)
+
+    simulation.destroy()
+  })
+
+  it('only gives nightclub plans to adults from childless households', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const childless = createSimulation('childless-nightclub', city, {
+      count: 1,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      scheduleVariationHours: 0,
+      shoppingChance: 0,
+      nightclubChance: 1,
+      nightclubStartHour: 22,
+      nightclubLatestStartHour: 22,
+      nightclubDurationHours: 3,
+      initialUpdate: false
+    })
+    const withChildren = createSimulation('parent-nightclub', city, {
+      count: 3,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 1, weight: 1 }
+      ],
+      scheduleVariationHours: 0,
+      shoppingChance: 0,
+      nightclubChance: 1,
+      initialUpdate: false
+    })
+    const childlessAdult = childless.npcs[0]
+    const parents = withChildren.npcs.filter((npc) => npc.age >= 18)
+    const nightclubElement = childlessAdult.timetable.elements.find((element) => element.id === 'nightclub')
+
+    expect(nightclubElement).toMatchObject({
+      buildingId: 'club',
+      startHour: 22,
+      endHour: 1
+    })
+    expect(parents).toHaveLength(2)
+    expect(parents.every((npc) => !npc.timetable.elements.some((element) => element.id === 'nightclub'))).toBe(true)
+
+    childless.destroy()
+    withChildren.destroy()
   })
 
   it('routes school-age NPCs between home and school when a school exists', () => {

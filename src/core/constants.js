@@ -67,6 +67,9 @@ export const WORK_BUILDING_TYPES = Object.freeze([
   'nightclub'
 ])
 export const SCHOOL_BUILDING_TYPES = Object.freeze(['school'])
+export const RESTAURANT_BUILDING_TYPES = Object.freeze(['restaurant'])
+export const SHOPPING_BUILDING_TYPES = Object.freeze(['supermarket', 'mall'])
+export const NIGHTCLUB_BUILDING_TYPES = Object.freeze(['nightclub'])
 export const PIXEL_ART_SCALE_MODE = 'nearest'
 
 export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
@@ -87,6 +90,16 @@ export const NPC_CONFIG = Object.freeze({
   workStartHour: 9,
   workEndHour: 17,
   scheduleVariationHours: 0.75,
+  lunchStartHour: 11,
+  lunchEndHour: 13,
+  lunchDurationHours: 1,
+  lunchRestaurantCandidateCount: 4,
+  shoppingChance: 0.35,
+  shoppingDurationHours: 1.25,
+  nightclubChance: 0.12,
+  nightclubStartHour: 21,
+  nightclubLatestStartHour: 23,
+  nightclubDurationHours: 3,
   familyTypeWeights: Object.freeze({
     single: 0.35,
     marriedWithoutChildren: 0.3,
