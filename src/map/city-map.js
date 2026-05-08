@@ -822,15 +822,7 @@ export function compileCityMap(data) {
     }
 
     const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
-    const field = navigation.routeFields.get(endIndex, stepMasks.cacheKey, stepMasks.incoming)
-
-    return {
-      endIndex,
-      movementCacheKey: stepMasks.cacheKey,
-      nextDirection: field.nextDirection,
-      nextIndex: field.nextIndex,
-      offsets: navigation.offsets
-    }
+    return navigation.routeFields.getHandle(endIndex, stepMasks.cacheKey, stepMasks.incoming)
   }
 
   function getRouteFieldNextIndex(field, fromIndex) {
@@ -1269,6 +1261,21 @@ function createRouteFieldCache(length, offsets) {
       }
 
       return field
+    },
+    getHandle(endIndex, movementCacheKey, incomingMasks) {
+      const field = cache.get(endIndex, movementCacheKey, incomingMasks)
+
+      if (!field.handle) {
+        field.handle = {
+          endIndex,
+          movementCacheKey,
+          nextDirection: field.nextDirection,
+          nextIndex: field.nextIndex,
+          offsets
+        }
+      }
+
+      return field.handle
     }
   }
 
