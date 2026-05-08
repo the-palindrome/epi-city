@@ -761,6 +761,68 @@ describe('car simulation', () => {
     npcSimulation.destroy()
   })
 
+  it('drives real NPC owners to their active desire destination', () => {
+    const city = createTrafficCityWithShopping()
+    const clock = createClock(18)
+    const npcSimulation = createNpcSimulationForTraffic(city, clock)
+    const npc = npcSimulation.npcs[0]
+    const home = city.buildings.find((building) => building.id === 'home')
+    const shop = city.buildings.find((building) => building.id === 'shop')
+    const homeLocation = {
+      x: home.entrance.x,
+      y: home.entrance.y,
+      index: city.index(home.entrance.x, home.entrance.y)
+    }
+
+    Object.assign(npc.desires, {
+      hunger: 5,
+      energy: 80,
+      fun: 80,
+      social: 80
+    })
+    npc.locationState = {
+      timetableElementId: 'home',
+      buildingId: 'home',
+      location: homeLocation
+    }
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'home',
+        buildingId: 'home',
+        location: homeLocation
+      })
+    }
+
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock,
+      random: createSeededRandom('real-owner-desire'),
+      npcs: npcSimulation.npcs,
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const car = simulation.cars[0]
+
+    city.setCrosswalkSignalState('green')
+    simulation.update(0.1)
+    npcSimulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.destinationKind).toBe('desire:hunger')
+    expect(car.destinationBuildingId).toBe(shop.id)
+    expect(npc.vehicleTrip).toMatchObject({
+      carId: car.id,
+      destinationKind: 'desire:hunger',
+      destinationBuildingId: shop.id
+    })
+
+    simulation.destroy()
+    npcSimulation.destroy()
+  })
+
   it('excludes minor NPCs from real car owner pools', () => {
     const city = createTrafficCity()
     const adult = { id: 1, age: 18, home: 'home', work: 'work', carId: null }

@@ -96,6 +96,7 @@ export function installNpcHoverMenu({
     menu.appendChild(createRow('current', currentNpcStatus(npc)))
     menu.appendChild(createRow('goal', npcGoalStatus(npc)))
     menu.appendChild(createRow('car', npcCarStatus(npc)))
+    appendDesireRows(menu, npc)
     menu.appendChild(createStatusRow('health', formatInfectionState(status.infection), status.color))
     menu.appendChild(createRow('health note', infectionSummary(status)))
 
@@ -194,11 +195,22 @@ function currentNpcStatus(npc) {
 }
 
 function npcGoalStatus(npc) {
+  if (npc.activeDesire) {
+    return desireGoalStatus(npc.activeDesire)
+  }
+
   if (!npc.goal) {
     return 'none'
   }
 
   return [npc.goal.id, npc.goal.buildingId].filter(Boolean).join(' ') || 'none'
+}
+
+function desireGoalStatus(activeDesire) {
+  const action = activeDesire.action || activeDesire.need || 'need'
+  const buildingId = activeDesire.buildingId || activeDesire.element?.buildingId
+
+  return buildingId ? `${action} at ${buildingId}` : action
 }
 
 function npcCarStatus(npc) {
@@ -207,6 +219,42 @@ function npcCarStatus(npc) {
   }
 
   return npc.commuteByCar ? `${npc.carId} commute` : String(npc.carId)
+}
+
+function appendDesireRows(menu, npc) {
+  if (!npc.desires) {
+    return
+  }
+
+  for (const need of ['hunger', 'energy', 'fun', 'social']) {
+    menu.appendChild(createRow(need, formatDesireScore(npc.desires[need])))
+  }
+}
+
+function formatDesireScore(score) {
+  const value = Number(score)
+
+  if (!Number.isFinite(value)) {
+    return 'unknown'
+  }
+
+  return `${Math.round(value)}% ${desireStatusLabel(value)}`
+}
+
+function desireStatusLabel(score) {
+  if (score < 20) {
+    return 'urgent'
+  }
+
+  if (score < 35) {
+    return 'low'
+  }
+
+  if (score < 70) {
+    return 'okay'
+  }
+
+  return 'good'
 }
 
 function formatTile(tile) {

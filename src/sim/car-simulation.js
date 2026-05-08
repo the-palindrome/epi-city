@@ -1087,9 +1087,7 @@ function maybeStartCarTrip(car, hour, context) {
 }
 
 function maybeStartNpcScheduleCarTrip(car, owner, hour, context) {
-  const activeElement = typeof owner.npc.getActiveTimetableElement === 'function'
-    ? owner.npc.getActiveTimetableElement(hour)
-    : null
+  const activeElement = activeNpcDestinationElement(owner.npc, hour)
 
   if (!activeElement || !activeElement.buildingId || activeElement.buildingId === car.parkedBuildingId) {
     return
@@ -1144,9 +1142,7 @@ function isOwnerReadyForCarTrip(owner, destinationKind, originBuildingId, destin
     return false
   }
 
-  const activeElement = typeof owner.npc.getActiveTimetableElement === 'function'
-    ? owner.npc.getActiveTimetableElement(hour)
-    : null
+  const activeElement = activeNpcDestinationElement(owner.npc, hour)
 
   return Boolean(
     activeElement &&
@@ -1155,6 +1151,18 @@ function isOwnerReadyForCarTrip(owner, destinationKind, originBuildingId, destin
     owner.npc.locationState &&
     owner.npc.locationState.buildingId === originBuildingId
   )
+}
+
+function activeNpcDestinationElement(npc, hour) {
+  if (typeof npc?.getActiveDestinationElement === 'function') {
+    return npc.getActiveDestinationElement(hour)
+  }
+
+  if (typeof npc?.getActiveTimetableElement === 'function') {
+    return npc.getActiveTimetableElement(hour)
+  }
+
+  return null
 }
 
 function startCarTrip(car, destinationBuilding, destinationKind, owner, context) {

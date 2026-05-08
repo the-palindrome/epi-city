@@ -100,6 +100,43 @@ export const NPC_CONFIG = Object.freeze({
   nightclubStartHour: 21,
   nightclubLatestStartHour: 23,
   nightclubDurationHours: 3,
+  desires: Object.freeze({
+    initialMin: 55,
+    initialMax: 95,
+    lowThreshold: 35,
+    urgentThreshold: 20,
+    satisfiedThreshold: 70,
+    tripCooldownHours: 1,
+    destinationCandidateCount: 4,
+    decayPerHour: Object.freeze({
+      hunger: 4,
+      energy: 3,
+      fun: 2,
+      social: 1.5
+    }),
+    satisfactionPerHour: Object.freeze({
+      home: Object.freeze({
+        hunger: 2,
+        energy: 12,
+        fun: 1,
+        social: 1
+      }),
+      restaurant: Object.freeze({
+        hunger: 45
+      }),
+      supermarket: Object.freeze({
+        hunger: 25
+      }),
+      mall: Object.freeze({
+        fun: 18,
+        social: 12
+      }),
+      nightclub: Object.freeze({
+        fun: 28,
+        social: 28
+      })
+    })
+  }),
   familyTypeWeights: Object.freeze({
     single: 0.35,
     marriedWithoutChildren: 0.3,

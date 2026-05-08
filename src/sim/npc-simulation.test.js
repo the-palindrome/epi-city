@@ -235,6 +235,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     nightclubStartHour: options.nightclubStartHour,
     nightclubLatestStartHour: options.nightclubLatestStartHour,
     nightclubDurationHours: options.nightclubDurationHours,
+    desires: options.desires,
     familyTypeWeights: options.familyTypeWeights,
     familyChildCountWeights: options.familyChildCountWeights,
     routePlanBudget: options.routePlanBudget || 24,
@@ -316,6 +317,17 @@ function squaredEntranceDistance(first, second) {
   const dy = first.entrance.y - second.entrance.y
 
   return dx * dx + dy * dy
+}
+
+function setNpcDesires(npc, overrides) {
+  Object.assign(npc.desires, {
+    hunger: 80,
+    energy: 80,
+    fun: 80,
+    social: 80,
+    ...overrides
+  })
+  npc.activeDesire = null
 }
 
 describe('NPC simulation randomness', () => {
@@ -716,6 +728,274 @@ describe('NPC simulation randomness', () => {
     expect(drawnColors.filter((color) => color === colors.exposed)).toHaveLength(1)
     expect(drawnColors.filter((color) => color === colors.infectious)).toHaveLength(1)
     expect(drawnColors.filter((color) => color === colors.recovered)).toHaveLength(1)
+
+    simulation.destroy()
+  })
+
+  it('initializes deterministic desire scores for seeded NPCs', () => {
+    const simulation = createSimulation('desire-seed', createCityWithDailyLifeBuildings(), {
+      count: 4,
+      initialUpdate: false
+    })
+    const repeated = createSimulation('desire-seed', createCityWithDailyLifeBuildings(), {
+      count: 4,
+      initialUpdate: false
+    })
+    const desires = simulation.npcs.map((npc) => ({ ...npc.desires }))
+
+    expect(desires).toEqual(repeated.npcs.map((npc) => ({ ...npc.desires })))
+    expect(simulation.desires).toBeTruthy()
+    expect(simulation.npcs.every((npc) => npc.activeDesire === null)).toBe(true)
+    expect(simulation.npcs.every((npc) => (
+      ['hunger', 'energy', 'fun', 'social'].every((need) => npc.desires[need] >= 55 && npc.desires[need] <= 95)
+    ))).toBe(true)
+
+    simulation.destroy()
+    repeated.destroy()
+  })
+
+  it('decays desire scores using simulation time', () => {
+    const simulation = createSimulation('desire-decay', createCityWithDailyLifeBuildings(), {
+      count: 1,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    setNpcDesires(npc, {})
+    npc.locationState = null
+    simulation.desires.update(3600)
+
+    expect(npc.desires.hunger).toBe(76)
+    expect(npc.desires.energy).toBe(77)
+    expect(npc.desires.fun).toBe(78)
+    expect(npc.desires.social).toBe(78.5)
+
+    simulation.destroy()
+  })
+
+  it('satisfies desires at home and typed venues', () => {
+    const simulation = createSimulation('desire-satisfaction', createCityWithDailyLifeBuildings(), {
+      count: 1,
+      desires: {
+        decayPerHour: {
+          hunger: 0,
+          energy: 0,
+          fun: 0,
+          social: 0
+        }
+      },
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    function satisfyAt(buildingId) {
+      setNpcDesires(npc, {
+        hunger: 50,
+        energy: 50,
+        fun: 50,
+        social: 50
+      })
+      npc.locationState = {
+        timetableElementId: 'test',
+        buildingId,
+        location: { x: 0, y: 0, index: 0 }
+      }
+      simulation.desires.update(3600)
+      return { ...npc.desires }
+    }
+
+    expect(satisfyAt(npc.home)).toMatchObject({
+      hunger: 52,
+      energy: 62,
+      fun: 51,
+      social: 51
+    })
+    expect(satisfyAt('diner').hunger).toBe(95)
+    expect(satisfyAt('market').hunger).toBe(75)
+    expect(satisfyAt('mall')).toMatchObject({
+      fun: 68,
+      social: 62
+    })
+    expect(satisfyAt('club')).toMatchObject({
+      fun: 78,
+      social: 78
+    })
+
+    simulation.destroy()
+  })
+
+  it('uses low desires as flexible home-time destinations', () => {
+    const city = createCityWithDailyLifeBuildings()
+
+    function activeElementFor(need, hour = 18) {
+      const clock = createMutableClock(hour)
+      const simulation = createSimulation(`desire-destination-${need}`, city, {
+        count: 1,
+        familyTypeWeights: SINGLE_ADULT_FAMILIES,
+        clock,
+        scheduleVariationHours: 0,
+        shoppingChance: 0,
+        nightclubChance: 0,
+        desires: {
+          destinationCandidateCount: 1
+        },
+        initialUpdate: false
+      })
+      const npc = simulation.npcs[0]
+
+      setNpcDesires(npc, { [need]: 10 })
+
+      const element = npc.getActiveDestinationElement(hour)
+      const result = {
+        id: element.id,
+        buildingId: element.buildingId,
+        activeDesire: npc.activeDesire
+          ? {
+              need: npc.activeDesire.need,
+              action: npc.activeDesire.action,
+              buildingId: npc.activeDesire.buildingId
+            }
+          : null,
+        home: npc.home
+      }
+
+      simulation.destroy()
+      return result
+    }
+
+    expect(activeElementFor('hunger')).toMatchObject({
+      id: 'desire:hunger',
+      buildingId: 'diner',
+      activeDesire: { need: 'hunger', action: 'eat', buildingId: 'diner' }
+    })
+    expect(activeElementFor('energy')).toMatchObject({
+      id: 'desire:energy',
+      buildingId: 'home'
+    })
+    expect(activeElementFor('fun')).toMatchObject({
+      id: 'desire:fun',
+      buildingId: 'mall'
+    })
+    expect(activeElementFor('social', 21)).toMatchObject({
+      id: 'desire:social',
+      buildingId: 'club'
+    })
+  })
+
+  it('keeps hard timetable stops ahead of desires', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const simulation = createSimulation('desire-hard-stops', city, {
+      count: 1,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+    const office = city.buildings.find((building) => building.id === 'office')
+    const location = {
+      x: office.entrance.x,
+      y: office.entrance.y,
+      index: city.index(office.entrance.x, office.entrance.y)
+    }
+
+    setNpcDesires(npc, { hunger: 5 })
+
+    for (const id of ['work', 'school', 'lunch', 'shopping', 'nightclub']) {
+      const hardStop = { id, buildingId: office.id, location }
+
+      npc.timetable = {
+        getActiveElement: () => hardStop
+      }
+
+      expect(npc.getActiveDestinationElement(12)).toBe(hardStop)
+      expect(npc.activeDesire).toBeNull()
+    }
+
+    simulation.destroy()
+  })
+
+  it('keeps preschoolers home-only and blocks minors from nightclub desire trips', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const preschool = createSimulationWithNpc('desire-preschool', city, {
+      count: 6,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 4, weight: 1 }
+      ],
+      initialUpdate: false
+    }, (candidate) => candidate.age >= 0 && candidate.age < 6)
+    const schoolAge = createSimulationWithNpc('desire-school-age', city, {
+      count: 6,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 4, weight: 1 }
+      ],
+      initialUpdate: false
+    }, (candidate) => candidate.age >= 6 && candidate.age < 18)
+
+    setNpcDesires(preschool.npc, { hunger: 5 })
+    setNpcDesires(schoolAge.npc, { social: 5 })
+
+    expect(preschool.npc.getActiveDestinationElement(21)).toMatchObject({
+      id: 'home',
+      buildingId: preschool.npc.home
+    })
+    expect(preschool.npc.activeDesire).toBeNull()
+    expect(schoolAge.npc.getActiveDestinationElement(21)).toMatchObject({
+      id: 'desire:social',
+      buildingId: 'mall'
+    })
+
+    preschool.simulation.destroy()
+    schoolAge.simulation.destroy()
+  })
+
+  it('continues desire trips until satisfied and falls back home after route failure', () => {
+    const clock = createMutableClock(18)
+    const simulation = createSimulation('desire-lifecycle', createCityWithDailyLifeBuildings(), {
+      count: 1,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      clock,
+      scheduleVariationHours: 0,
+      shoppingChance: 0,
+      nightclubChance: 0,
+      desires: {
+        destinationCandidateCount: 1
+      },
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    setNpcDesires(npc, { hunger: 5 })
+
+    expect(npc.getActiveDestinationElement(18)).toMatchObject({
+      id: 'desire:hunger',
+      buildingId: 'diner'
+    })
+
+    npc.desires.hunger = 69
+    expect(npc.getActiveDestinationElement(18)).toMatchObject({
+      id: 'desire:hunger',
+      buildingId: 'diner'
+    })
+
+    npc.desires.hunger = 70
+    expect(npc.getActiveDestinationElement(18)).toMatchObject({
+      id: 'home',
+      buildingId: npc.home
+    })
+    expect(npc.activeDesire).toBeNull()
+
+    npc.desires.hunger = 5
+    simulation.desires.update(3600)
+    expect(npc.getActiveDestinationElement(18)).toMatchObject({
+      id: 'desire:hunger'
+    })
+    simulation.desires.handleRouteFailure(npc)
+    expect(npc.activeDesire).toBeNull()
+    expect(npc.getActiveDestinationElement(18)).toMatchObject({
+      id: 'home',
+      buildingId: npc.home
+    })
 
     simulation.destroy()
   })

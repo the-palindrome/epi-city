@@ -56,10 +56,26 @@ const CHILD_MAX_AGE = 17
 const MAX_PARTNER_AGE_DIFFERENCE = 6
 const MIN_PARENT_AGE_GAP = 18
 const MAX_PARENT_AGE_GAP = 45
+const DESIRE_NAMES = Object.freeze(['hunger', 'energy', 'fun', 'social'])
+const DESIRE_DESTINATION_IDS = Object.freeze({
+  hunger: 'desire:hunger',
+  energy: 'desire:energy',
+  fun: 'desire:fun',
+  social: 'desire:social'
+})
+const DESIRE_ACTIONS = Object.freeze({
+  hunger: 'eat',
+  energy: 'rest',
+  fun: 'have fun',
+  social: 'socialize'
+})
+const NIGHTCLUB_DESIRE_START_HOUR = 20
+const NIGHTCLUB_DESIRE_END_HOUR = 4
 
 export function createNpcSimulation(city, entityLayer, config) {
   const random = config.random || createSystemRandom()
   const infectionRandom = config.infectionRandom || (random.seed ? createSeededRandom(`${random.seed}:infection`) : createSystemRandom())
+  const desireRandom = config.desireRandom || (random.seed ? createSeededRandom(`${random.seed}:desires`) : createSystemRandom())
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
   const clock = config.clock || STATIC_CLOCK
   const visibleTileCounts = new Uint8Array(city.tiles.length)
@@ -112,6 +128,8 @@ export function createNpcSimulation(city, entityLayer, config) {
     }))
   }
 
+  const desires = new NpcDesireDynamics(npcs, city, buildingsByPurpose, config, desireRandom, clock)
+  context.desires = desires
   const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
   infection.setContactTracingEnabled(
     Boolean(entityDebugOptions.contactEdgesVisible),
@@ -154,6 +172,7 @@ export function createNpcSimulation(city, entityLayer, config) {
       updateNpcMovement(npc, movementDelta, context)
     }
 
+    desires.update(safeDelta)
     infection.update(safeDelta)
   }
 
@@ -191,6 +210,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     npcs,
     tileCapacity: config.tileCapacity,
     routePlanner,
+    desires,
     infection,
     graphics,
     update,
@@ -232,10 +252,16 @@ class NpcEntity {
     this.carId = null
     this.commuteByCar = false
     this.infection = 'susceptible'
+    this.desires = null
+    this.activeDesire = null
   }
 
   getActiveTimetableElement(timeOfDayHours) {
     return this.timetable.getActiveElement(timeOfDayHours)
+  }
+
+  getActiveDestinationElement(timeOfDayHours) {
+    return this.getActiveTimetableElement(timeOfDayHours)
   }
 
   setGoal(element) {
@@ -253,8 +279,11 @@ class NpcEntity {
     return Boolean(
       this.goal &&
       this.locationState &&
-      this.locationState.timetableElementId === this.goal.id &&
-      this.locationState.buildingId === this.goal.buildingId
+      this.locationState.buildingId === this.goal.buildingId &&
+      (
+        this.locationState.timetableElementId === this.goal.id ||
+        isDesireElementId(this.goal.id)
+      )
     )
   }
 
@@ -380,6 +409,310 @@ class NpcRoutePlanner {
       this.queue.splice(0, this.head)
       this.head = 0
     }
+  }
+}
+
+class NpcDesireDynamics {
+  constructor(npcs, city, buildingsByPurpose, config, random, clock) {
+    this.npcs = npcs
+    this.city = city
+    this.buildingsByPurpose = buildingsByPurpose
+    this.config = normalizeDesireConfig(config.desires)
+    this.random = random
+    this.clock = clock
+    this.elapsedSimulationSeconds = 0
+    this.cooldowns = npcs.map(() => createNeedValues(0))
+    this.buildingsById = new Map((city.buildings || []).map((building) => [building.id, building]))
+    this.homesWithMinors = collectHomesWithMinors(npcs)
+
+    for (const npc of npcs) {
+      npc.desires = this.createInitialNeeds()
+      npc.activeDesire = null
+      Object.defineProperty(npc, 'getActiveDestinationElement', {
+        value: (timeOfDayHours) => this.getActiveDestinationElement(npc, timeOfDayHours),
+        configurable: true,
+        writable: true
+      })
+    }
+  }
+
+  update(deltaSeconds) {
+    const simulationDeltaSeconds = toSimulationSeconds(this.clock, deltaSeconds)
+
+    if (!Number.isFinite(simulationDeltaSeconds) || simulationDeltaSeconds <= 0) {
+      return
+    }
+
+    this.elapsedSimulationSeconds += simulationDeltaSeconds
+    const deltaHours = simulationDeltaSeconds / SECONDS_PER_HOUR
+
+    for (const npc of this.npcs) {
+      this.decayNeeds(npc, deltaHours)
+      this.satisfyNeeds(npc, deltaHours)
+    }
+  }
+
+  getActiveDestinationElement(npc, timeOfDayHours) {
+    const scheduledElement = npc.getActiveTimetableElement(timeOfDayHours)
+
+    if (!this.canUseDesireDestination(npc, scheduledElement)) {
+      this.clearActiveDesire(npc)
+      return scheduledElement
+    }
+
+    this.refreshActiveDesire(npc, timeOfDayHours)
+
+    return npc.activeDesire?.element || scheduledElement
+  }
+
+  handleRouteFailure(npc) {
+    if (!npc.activeDesire) {
+      return
+    }
+
+    this.startCooldown(npc, npc.activeDesire.need)
+    this.clearActiveDesire(npc)
+  }
+
+  createInitialNeeds() {
+    const needs = {}
+
+    for (const need of DESIRE_NAMES) {
+      needs[need] = clampNeedScore(this.random.between(this.config.initialMin, this.config.initialMax))
+    }
+
+    return needs
+  }
+
+  decayNeeds(npc, deltaHours) {
+    if (!npc.desires) {
+      return
+    }
+
+    for (const need of DESIRE_NAMES) {
+      const decay = nonNegativeNumberOrDefault(this.config.decayPerHour[need], NPC_CONFIG.desires.decayPerHour[need])
+
+      npc.desires[need] = clampNeedScore(npc.desires[need] - decay * deltaHours)
+    }
+  }
+
+  satisfyNeeds(npc, deltaHours) {
+    if (!npc.desires || !npc.locationState?.buildingId) {
+      return
+    }
+
+    const building = this.buildingsById.get(npc.locationState.buildingId)
+
+    if (!building) {
+      return
+    }
+
+    if (building.id === npc.home) {
+      this.applySatisfaction(npc, this.config.satisfactionPerHour.home, deltaHours)
+    }
+
+    if (buildingHasAnyType(building, RESTAURANT_BUILDING_TYPES)) {
+      this.applySatisfaction(npc, this.config.satisfactionPerHour.restaurant, deltaHours)
+    }
+
+    if (buildingHasAnyType(building, ['supermarket'])) {
+      this.applySatisfaction(npc, this.config.satisfactionPerHour.supermarket, deltaHours)
+    }
+
+    if (buildingHasAnyType(building, ['mall'])) {
+      this.applySatisfaction(npc, this.config.satisfactionPerHour.mall, deltaHours)
+    }
+
+    if (buildingHasAnyType(building, NIGHTCLUB_BUILDING_TYPES)) {
+      this.applySatisfaction(npc, this.config.satisfactionPerHour.nightclub, deltaHours)
+    }
+  }
+
+  applySatisfaction(npc, rates, deltaHours) {
+    for (const need of DESIRE_NAMES) {
+      const rate = rates?.[need]
+
+      if (Number.isFinite(rate) && rate > 0) {
+        npc.desires[need] = clampNeedScore(npc.desires[need] + rate * deltaHours)
+      }
+    }
+  }
+
+  canUseDesireDestination(npc, scheduledElement) {
+    return Boolean(
+      scheduledElement &&
+      scheduledElement.id === 'home' &&
+      Number.isInteger(npc.age) &&
+      npc.age >= SCHOOL_MIN_AGE &&
+      npc.desires
+    )
+  }
+
+  refreshActiveDesire(npc, timeOfDayHours) {
+    if (npc.activeDesire) {
+      if (this.shouldContinueActiveDesire(npc)) {
+        return
+      }
+
+      this.startCooldown(npc, npc.activeDesire.need)
+      this.clearActiveDesire(npc)
+    }
+
+    const nextDesire = this.chooseNextDesire(npc, timeOfDayHours)
+
+    if (nextDesire) {
+      npc.activeDesire = nextDesire
+    }
+  }
+
+  shouldContinueActiveDesire(npc) {
+    const need = npc.activeDesire?.need
+
+    return Boolean(
+      need &&
+      npc.desires &&
+      npc.desires[need] < this.config.satisfiedThreshold
+    )
+  }
+
+  chooseNextDesire(npc, timeOfDayHours) {
+    let selected = null
+
+    for (const need of DESIRE_NAMES) {
+      const score = npc.desires[need]
+
+      if (score >= this.config.lowThreshold || this.isInCooldown(npc, need)) {
+        continue
+      }
+
+      const destination = this.createDestinationForNeed(npc, need, timeOfDayHours)
+
+      if (!destination) {
+        continue
+      }
+
+      if (!selected || score < selected.score) {
+        selected = {
+          score,
+          ...destination
+        }
+      }
+    }
+
+    if (!selected) {
+      return null
+    }
+
+    return {
+      need: selected.need,
+      action: DESIRE_ACTIONS[selected.need],
+      buildingId: selected.building.id,
+      element: selected.element,
+      startedAtSeconds: this.getElapsedSimulationSeconds()
+    }
+  }
+
+  createDestinationForNeed(npc, need, timeOfDayHours) {
+    const building = this.chooseBuildingForNeed(npc, need, timeOfDayHours)
+
+    if (!building?.entrance) {
+      return null
+    }
+
+    const element = createTimetableElement(DESIRE_DESTINATION_IDS[need], building, 0, 0, this.city)
+
+    element.desire = need
+    element.action = DESIRE_ACTIONS[need]
+
+    return { need, building, element }
+  }
+
+  chooseBuildingForNeed(npc, need, timeOfDayHours) {
+    const home = this.buildingsById.get(npc.home) || null
+    const origin = this.buildingsById.get(npc.locationState?.buildingId) || home
+
+    if (need === 'energy') {
+      return home
+    }
+
+    if (need === 'hunger') {
+      return this.takeNearbyBuilding(this.buildingsByPurpose.restaurant, origin) ||
+        this.takeNearbyBuilding(this.buildingsByPurpose.supermarket, origin) ||
+        home
+    }
+
+    if (need === 'fun') {
+      return this.takeNearbyBuilding(this.buildingsByPurpose.mall, origin) ||
+        (this.canUseNightclub(npc, timeOfDayHours) ? this.takeNearbyBuilding(this.buildingsByPurpose.nightclub, origin) : null) ||
+        home
+    }
+
+    if (need === 'social') {
+      return (this.canUseNightclub(npc, timeOfDayHours) ? this.takeNearbyBuilding(this.buildingsByPurpose.nightclub, origin) : null) ||
+        this.takeNearbyBuilding(this.buildingsByPurpose.mall, origin) ||
+        home
+    }
+
+    return null
+  }
+
+  canUseNightclub(npc, timeOfDayHours) {
+    return Boolean(
+      isAdultAge(npc.age) &&
+      !this.homesWithMinors.has(npc.home) &&
+      hourInRange(normalizeHour(timeOfDayHours), NIGHTCLUB_DESIRE_START_HOUR, NIGHTCLUB_DESIRE_END_HOUR)
+    )
+  }
+
+  takeNearbyBuilding(buildings, originBuilding) {
+    if (!buildings || buildings.length === 0) {
+      return null
+    }
+
+    const candidateCount = Math.min(buildings.length, this.config.destinationCandidateCount)
+
+    if (!originBuilding?.entrance) {
+      return buildings[this.random.int(candidateCount)]
+    }
+
+    const nearby = buildings
+      .map((building) => ({
+        building,
+        distance: squaredEntranceDistance(originBuilding, building)
+      }))
+      .sort((a, b) => a.distance - b.distance || String(a.building.id).localeCompare(String(b.building.id)))
+
+    return nearby[this.random.int(candidateCount)].building
+  }
+
+  isInCooldown(npc, need) {
+    const cooldowns = this.cooldowns[npc.id]
+
+    return Boolean(cooldowns && cooldowns[need] > this.getElapsedSimulationSeconds())
+  }
+
+  startCooldown(npc, need) {
+    const cooldowns = this.cooldowns[npc.id]
+
+    if (cooldowns) {
+      cooldowns[need] = this.getElapsedSimulationSeconds() + this.config.tripCooldownHours * SECONDS_PER_HOUR
+    }
+  }
+
+  clearActiveDesire(npc) {
+    npc.activeDesire = null
+  }
+
+  getElapsedSimulationSeconds() {
+    if (this.clock && typeof this.clock.getElapsedSimulationSeconds === 'function') {
+      const seconds = this.clock.getElapsedSimulationSeconds()
+
+      if (Number.isFinite(seconds)) {
+        return seconds
+      }
+    }
+
+    return this.elapsedSimulationSeconds
   }
 }
 
@@ -935,10 +1268,12 @@ class NpcInfectionDynamics {
 function collectBuildingsByPurpose(city) {
   const buildingsByPurpose = {
     home: [],
+    mall: [],
     nightclub: [],
     restaurant: [],
     school: [],
     shopping: [],
+    supermarket: [],
     work: []
   }
 
@@ -967,12 +1302,81 @@ function collectBuildingsByPurpose(city) {
       buildingsByPurpose.shopping.push(building)
     }
 
+    if (buildingHasAnyType(building, ['mall'])) {
+      buildingsByPurpose.mall.push(building)
+    }
+
+    if (buildingHasAnyType(building, ['supermarket'])) {
+      buildingsByPurpose.supermarket.push(building)
+    }
+
     if (buildingHasAnyType(building, NIGHTCLUB_BUILDING_TYPES)) {
       buildingsByPurpose.nightclub.push(building)
     }
   }
 
   return buildingsByPurpose
+}
+
+function collectHomesWithMinors(npcs) {
+  const homes = new Set()
+
+  for (const npc of npcs) {
+    if (npc.home && Number.isInteger(npc.age) && npc.age < ADULT_MIN_AGE) {
+      homes.add(npc.home)
+    }
+  }
+
+  return homes
+}
+
+function createNeedValues(value) {
+  const needs = {}
+
+  for (const need of DESIRE_NAMES) {
+    needs[need] = value
+  }
+
+  return needs
+}
+
+function normalizeDesireConfig(overrides = {}) {
+  const fallback = NPC_CONFIG.desires
+  const config = overrides || {}
+  const initialMin = clampNeedScore(config.initialMin ?? fallback.initialMin)
+  const initialMax = clampNeedScore(config.initialMax ?? fallback.initialMax)
+
+  return {
+    initialMin: Math.min(initialMin, initialMax),
+    initialMax: Math.max(initialMin, initialMax),
+    lowThreshold: clampNeedScore(config.lowThreshold ?? fallback.lowThreshold),
+    urgentThreshold: clampNeedScore(config.urgentThreshold ?? fallback.urgentThreshold),
+    satisfiedThreshold: clampNeedScore(config.satisfiedThreshold ?? fallback.satisfiedThreshold),
+    tripCooldownHours: nonNegativeNumberOrDefault(config.tripCooldownHours, fallback.tripCooldownHours),
+    destinationCandidateCount: positiveIntegerOrDefault(
+      config.destinationCandidateCount,
+      fallback.destinationCandidateCount
+    ),
+    decayPerHour: normalizeNeedRates(config.decayPerHour, fallback.decayPerHour),
+    satisfactionPerHour: {
+      home: normalizeNeedRates(config.satisfactionPerHour?.home, fallback.satisfactionPerHour.home),
+      restaurant: normalizeNeedRates(config.satisfactionPerHour?.restaurant, fallback.satisfactionPerHour.restaurant),
+      supermarket: normalizeNeedRates(config.satisfactionPerHour?.supermarket, fallback.satisfactionPerHour.supermarket),
+      mall: normalizeNeedRates(config.satisfactionPerHour?.mall, fallback.satisfactionPerHour.mall),
+      nightclub: normalizeNeedRates(config.satisfactionPerHour?.nightclub, fallback.satisfactionPerHour.nightclub)
+    }
+  }
+}
+
+function normalizeNeedRates(overrides = {}, fallback = {}) {
+  const rates = {}
+  const source = overrides || {}
+
+  for (const need of DESIRE_NAMES) {
+    rates[need] = nonNegativeNumberOrDefault(source[need], fallback[need] ?? 0)
+  }
+
+  return rates
 }
 
 function collectBuildingEntranceTiles(city) {
@@ -1211,6 +1615,10 @@ function isAdultAge(age) {
   return Number.isInteger(age) && age >= ADULT_MIN_AGE && age <= ADULT_MAX_AGE
 }
 
+function isDesireElementId(id) {
+  return typeof id === 'string' && id.startsWith('desire:')
+}
+
 function createNpcTimetable(city, buildingAssignment, age, random, config) {
   if (!buildingAssignment.home) {
     return new NpcTimetable([])
@@ -1392,7 +1800,9 @@ function refreshNpcGoal(npc, timeOfDayHours, context) {
     return
   }
 
-  const activeElement = npc.getActiveTimetableElement(timeOfDayHours)
+  const activeElement = typeof npc.getActiveDestinationElement === 'function'
+    ? npc.getActiveDestinationElement(timeOfDayHours)
+    : npc.getActiveTimetableElement(timeOfDayHours)
 
   if (!activeElement) {
     if (npc.goal) {
@@ -1581,6 +1991,7 @@ function planRouteForNpc(npc, context) {
   if (!routeField || (npc.tile.index !== npc.goal.location.index && nextIndex === -1)) {
     npc.routing.routeField = null
     npc.routing.retrySeconds = finiteNumberOrDefault(context.config.routeRetrySeconds, NPC_CONFIG.routeRetrySeconds)
+    context.desires?.handleRouteFailure(npc)
     return
   }
 
@@ -1967,6 +2378,16 @@ function clampInteger(value, min, max) {
   }
 
   return Math.min(Math.max(number, min), max)
+}
+
+function clampNeedScore(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return 0
+  }
+
+  return Math.min(Math.max(number, 0), 100)
 }
 
 function daysToSeconds(days) {
