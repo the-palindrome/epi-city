@@ -1045,6 +1045,49 @@ describe('car simulation', () => {
     simulation.destroy()
   })
 
+  it('waits before entering an unsignalized turn when the maneuver clearance is blocked', () => {
+    const city = createTrafficSignalCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      clock: createClock(8.5),
+      random: createSeededRandom('unsignalized-turn-clearance'),
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const network = simulation.router.network
+    const [entryEdgeIndex, turnEdgeIndex, exitEdgeIndex] = routeIndexesByEdgeId(network, [
+      'east-2',
+      'north-3',
+      'north-2'
+    ])
+    const car = createManualDrivingCar({
+      id: 1,
+      routeEdges: [entryEdgeIndex, turnEdgeIndex, exitEdgeIndex],
+      currentNode: network.edgeFrom[entryEdgeIndex],
+      destinationNode: network.edgeTo[exitEdgeIndex],
+      position: tileCenterPosition(city, 2, 3)
+    })
+    const blocker = { id: 999, occupiedTiles: [] }
+
+    city.trafficSignals.groups[0].enabled = false
+    city.setCrosswalkSignalState('green')
+    simulation.cars.push(car)
+    simulation.parking.occupyTiles(car, [city.index(2, 3), city.index(1, 3)])
+    simulation.parking.occupyTiles(blocker, [city.index(3, 2)])
+    simulation.update(0.01)
+
+    expect(car.movement).toBeNull()
+    expect(car.occupiedTiles).not.toContain(city.index(3, 3))
+
+    simulation.parking.releaseOccupiedTiles(blocker)
+    simulation.update(0.01)
+
+    expect(car.movement?.edge.id).toBe('east-2')
+    expect(car.occupiedTiles).toContain(city.index(3, 3))
+
+    simulation.destroy()
+  })
+
   it('uses the right-hand rule so a left turn yields to oncoming straight traffic', () => {
     const city = createTrafficSignalCity()
     const simulation = createCarSimulation(city, createEntityLayer(), {
@@ -1102,6 +1145,42 @@ describe('car simulation', () => {
     expect(leftTurningCar.occupiedTiles).not.toContain(city.index(3, 3))
     expect(straightCar.movement?.edge.id).toBe('west-4')
     expect(straightCar.occupiedTiles).toContain(city.index(3, 3))
+
+    simulation.destroy()
+  })
+
+  it('lets a reserved signal car clear the intersection before checking later maneuver clearance', () => {
+    const city = createTrafficSignalCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      clock: createClock(8.5),
+      random: createSeededRandom('reserved-signal-clearance'),
+      maxSpeed: 1,
+      speedLimitScale: 1
+    })
+    const network = simulation.router.network
+    const [exitEdgeIndex, laterTurnEdgeIndex] = routeIndexesByEdgeId(network, ['west-3', 'north-3'])
+    const car = createManualDrivingCar({
+      id: 10,
+      routeEdges: [exitEdgeIndex, laterTurnEdgeIndex],
+      currentNode: network.edgeFrom[exitEdgeIndex],
+      destinationNode: network.edgeTo[laterTurnEdgeIndex],
+      position: tileCenterPosition(city, 3, 3)
+    })
+    const blocker = { id: 999, occupiedTiles: [] }
+
+    car.lengthTiles = 1
+    car.direction = { dx: -1, dy: 0 }
+    car.trafficSignalReservation = 'traffic-signal-3-3'
+    city.trafficSignals.groups[0].enabled = false
+    city.setCrosswalkSignalState('green')
+    simulation.cars.push(car)
+    simulation.parking.occupyTiles(car, [city.index(3, 3)])
+    simulation.parking.occupyTiles(blocker, [city.index(3, 2)])
+    simulation.update(0.01)
+
+    expect(car.movement?.edgeIndex).toBe(exitEdgeIndex)
+    expect(car.occupiedTiles).toContain(city.index(2, 3))
 
     simulation.destroy()
   })
@@ -1254,6 +1333,64 @@ describe('generated lane-change maneuver routing', () => {
 
     expect(car.movement?.edgeIndex).toBe(forwardEdgeIndex)
     expect(car.route.destinationNode).toBe(destinationNode)
+
+    simulation.destroy()
+  })
+
+  it('releases stale signal exit reservations when a blocked lane-change route is rewritten', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      maxSpeed: 1000,
+      speedLimitScale: 100,
+      movingLaneChangeWaitSeconds: 0.001
+    })
+    const network = simulation.router.network
+    const nodeIndexes = new Map(network.laneGraph.nodes.map((node, index) => [node.id, index]))
+    const startNode = nodeIndexes.get('upper-0')
+    const destinationNode = nodeIndexes.get('lower-5')
+    const laneChangeEdgeIndex = network.edges.findIndex((edge) => edge.id === 'generated-lane-change-upper-0-lower-3')
+    const forwardEdgeIndex = network.edges.findIndex((edge) => edge.id === 'upper-0-1')
+    const tail = simulation.router.findRoute(nodeIndexes.get('lower-3'), destinationNode)
+    const car = createManualDrivingCar({
+      id: 1,
+      routeEdges: [laneChangeEdgeIndex, ...tail],
+      currentNode: startNode,
+      destinationNode,
+      position: tileCenterPosition(city, 0, 0)
+    })
+    const [waitingEdgeIndex, waitingExitEdgeIndex] = routeIndexesByEdgeId(network, ['lower-3-4', 'lower-4-5'])
+    const waitingCar = createManualDrivingCar({
+      id: 3,
+      routeEdges: [waitingEdgeIndex, waitingExitEdgeIndex],
+      currentNode: nodeIndexes.get('lower-3'),
+      destinationNode,
+      position: tileCenterPosition(city, 3, 1)
+    })
+    const blocker = { id: 2, occupiedTiles: [] }
+    const syntheticSignalGroup = { id: 'synthetic-signal' }
+    const syntheticSignalTileIndex = city.index(0, 0)
+    const staleReservedTileIndex = city.index(4, 1)
+
+    expect(laneChangeEdgeIndex).toBeGreaterThanOrEqual(0)
+    expect(forwardEdgeIndex).toBeGreaterThanOrEqual(0)
+    expect(isGeneratedLaneChangeEdge(network.edges[laneChangeEdgeIndex])).toBe(true)
+
+    simulation.cars.push(car, waitingCar)
+    simulation.parking.occupyTiles(car, [syntheticSignalTileIndex])
+    simulation.parking.occupyTiles(waitingCar, [city.index(3, 1), city.index(2, 1)])
+    simulation.parking.occupyTiles(blocker, [city.index(1, 1)])
+    simulation.trafficReservations.tileIndexesByGroupId.set(syntheticSignalGroup.id, new Set([syntheticSignalTileIndex]))
+    simulation.trafficReservations.reserve(syntheticSignalGroup, [staleReservedTileIndex], car)
+
+    expect(simulation.trafficReservations.tileReservations[staleReservedTileIndex]).toBe(car.id)
+    simulation.update(0.01)
+
+    expect(car.movement?.edgeIndex).toBe(forwardEdgeIndex)
+    expect(car.trafficSignalReservation).toBe(syntheticSignalGroup.id)
+    expect(simulation.trafficReservations.groupReservations.get(syntheticSignalGroup.id)).toBe(car.id)
+    expect(simulation.trafficReservations.tileReservations[staleReservedTileIndex]).toBe(-1)
+    expect(waitingCar.movement?.edgeIndex).toBe(waitingEdgeIndex)
 
     simulation.destroy()
   })

@@ -35,6 +35,7 @@ const LANE_CHANGE_AHEAD_GAP_TILES = 0.5
 const MIN_EDGE_DURATION_SECONDS = 0.05
 const TRAFFIC_SIGNAL_CLEARANCE_GAP_TILES = 1
 const RIGHT_HAND_LOOKAHEAD_EDGES = 6
+const MANEUVER_CLEARANCE_LOOKAHEAD_EDGES = 2
 
 const RIGHT_TURN_DIRECTION = Object.freeze({
   north: 'east',
@@ -53,12 +54,6 @@ const OPPOSITE_DIRECTION = Object.freeze({
   east: 'west',
   south: 'north',
   west: 'east'
-})
-const DIRECTION_FROM_RIGHT = Object.freeze({
-  north: 'west',
-  east: 'north',
-  south: 'east',
-  west: 'south'
 })
 const TURN_PRIORITY = Object.freeze({
   right: 3,
@@ -94,6 +89,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     cars,
     buildingsById,
     yieldIndex: null,
+    nextTrafficYieldTicket: 1,
     config: resolvedConfig
   }
   let destroyed = false
@@ -178,6 +174,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     cars,
     graphics,
     parking,
+    trafficReservations,
     router,
     update,
     render,
@@ -214,6 +211,20 @@ class CarRoutePlanner {
 
     const field = this.getRouteField(endNodeIndex)
     return extractLaneRoute(field, startNodeIndex, endNodeIndex, this.network)
+  }
+
+  findRouteAvoidingEdges(startNodeIndex, endNodeIndex, blockedEdgeIndexes) {
+    if (!Number.isInteger(startNodeIndex) ||
+        !Number.isInteger(endNodeIndex) ||
+        startNodeIndex < 0 ||
+        endNodeIndex < 0 ||
+        startNodeIndex >= this.network.nodeCount ||
+        endNodeIndex >= this.network.nodeCount ||
+        startNodeIndex === endNodeIndex) {
+      return []
+    }
+
+    return findLaneRouteAvoidingEdges(this.network, startNodeIndex, endNodeIndex, blockedEdgeIndexes)
   }
 
   getRouteField(endNodeIndex) {
@@ -609,6 +620,84 @@ function extractLaneRoute(field, startNodeIndex, endNodeIndex, network) {
   return route
 }
 
+function findLaneRouteAvoidingEdges(network, startNodeIndex, endNodeIndex, blockedEdgeIndexes) {
+  const blocked = blockedEdgeIndexes instanceof Set
+    ? blockedEdgeIndexes
+    : new Set(blockedEdgeIndexes || [])
+  const distance = new Float64Array(network.nodeCount)
+  const previousEdge = new Int32Array(network.nodeCount)
+  const visited = new Uint8Array(network.nodeCount)
+  const heap = new IndexPriorityQueue(Math.max(network.nodeCount, 16))
+
+  distance.fill(Infinity)
+  previousEdge.fill(-1)
+  distance[startNodeIndex] = 0
+  heap.push(startNodeIndex, 0)
+
+  while (heap.length > 0) {
+    const currentNode = heap.pop()
+
+    if (visited[currentNode]) {
+      continue
+    }
+
+    if (currentNode === endNodeIndex) {
+      break
+    }
+
+    visited[currentNode] = 1
+
+    for (let cursor = network.outgoingOffsets[currentNode]; cursor < network.outgoingOffsets[currentNode + 1]; cursor += 1) {
+      const edgeIndex = network.outgoingEdges[cursor]
+
+      if (blocked.has(edgeIndex)) {
+        continue
+      }
+
+      const nextNode = network.edgeTo[edgeIndex]
+
+      if (visited[nextNode]) {
+        continue
+      }
+
+      const tentative = distance[currentNode] + network.edgeCosts[edgeIndex]
+
+      if (tentative < distance[nextNode]) {
+        distance[nextNode] = tentative
+        previousEdge[nextNode] = edgeIndex
+        heap.push(nextNode, tentative)
+      }
+    }
+  }
+
+  if (previousEdge[endNodeIndex] < 0) {
+    return []
+  }
+
+  const route = []
+  let currentNode = endNodeIndex
+  let guard = 0
+
+  while (currentNode !== startNodeIndex && guard < network.nodeCount) {
+    const edgeIndex = previousEdge[currentNode]
+
+    if (edgeIndex < 0) {
+      return []
+    }
+
+    route.push(edgeIndex)
+    currentNode = network.edgeFrom[edgeIndex]
+    guard += 1
+  }
+
+  if (currentNode !== startNodeIndex) {
+    return []
+  }
+
+  route.reverse()
+  return route
+}
+
 function edgeBaseCost(edge) {
   return Math.max(1, Math.round(edge.length * 1000))
 }
@@ -623,6 +712,20 @@ function measureTilePolyline(path) {
   return length
 }
 
+function buildTravelLaneTileSet(network) {
+  const tileIndexes = new Set()
+
+  for (const lengthTiles of [1, 2, 3]) {
+    for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
+      for (const tileIndex of edgeDrivingFootprint(network, edgeIndex, lengthTiles)) {
+        tileIndexes.add(tileIndex)
+      }
+    }
+  }
+
+  return tileIndexes
+}
+
 class ParkingManager {
   constructor(city, network, config) {
     this.city = city
@@ -631,6 +734,7 @@ class ParkingManager {
     this.occupancy = new Int32Array(city.tiles.length)
     this.reservations = new Int32Array(city.tiles.length)
     this.candidateCache = new Map()
+    this.travelLaneTiles = buildTravelLaneTileSet(network)
     this.occupancy.fill(-1)
     this.reservations.fill(-1)
   }
@@ -681,7 +785,7 @@ class ParkingManager {
       for (let x = minX; x <= maxX; x += 1) {
         const tileIndex = city.index(x, y)
 
-        if (city.tileParkable[tileIndex] !== 1) {
+        if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTiles.has(tileIndex)) {
           continue
         }
 
@@ -722,7 +826,7 @@ class ParkingManager {
 
       const tileIndex = city.index(x, y)
 
-      if (city.tileParkable[tileIndex] !== 1) {
+      if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTiles.has(tileIndex)) {
         return null
       }
 
@@ -953,6 +1057,7 @@ function createCarEntity(id, city, homeBuildings, workBuildings, buildingsById, 
     movement: null,
     adaptiveSpeed: createCarAdaptiveSpeed(random, config),
     trafficSignalReservation: null,
+    trafficYield: null,
     driverOwnerId: null,
     riderOwners: []
   }
@@ -1193,6 +1298,7 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
   }
   car.movement = null
   car.trafficSignalReservation = null
+  car.trafficYield = null
   car.driverOwnerId = owner.id
   car.riderOwners = [owner]
   car.position = laneNodePosition(context.network, startNode)
@@ -1287,6 +1393,20 @@ function startNextDrivingEdge(car, context, attemptDeltaSeconds = 0) {
     return false
   }
 
+  const maneuverClearanceTiles = !trafficSignalGroup && !car.trafficSignalReservation && rightHandMovement
+    ? rightHandMovement.clearanceTileIndexes
+    : null
+
+  if (maneuverClearanceTiles && !context.parking.canOccupy(maneuverClearanceTiles, car.id)) {
+    if (rerouteAroundStaticManeuverBlock(car, context, rightHandMovement)) {
+      return startNextDrivingEdge(car, context, attemptDeltaSeconds)
+    }
+
+    if (hasStaticOccupancyBlocker(car, context, maneuverClearanceTiles)) {
+      return false
+    }
+  }
+
   if (!trafficSignalGroup &&
       !car.trafficSignalReservation &&
       isBlockedByCrosswalkSignal(context.city, context.network, fromNodeIndex, toNodeIndex)) {
@@ -1313,6 +1433,7 @@ function startNextDrivingEdge(car, context, attemptDeltaSeconds = 0) {
   }
 
   resetLaneChangeWait(car)
+  clearTrafficYieldState(car)
   context.parking.occupyTiles(car, nextFootprint)
   car.direction = DIRECTION_OFFSET[edge.direction] || car.direction
   car.route.cursor += 1
@@ -1422,6 +1543,8 @@ function deferBlockedLaneChange(car, context, blockedEdgeIndex) {
     return false
   }
 
+  releaseStaleTrafficReservationTilesForRouteRewrite(car, context)
+
   car.route = {
     ...car.route,
     edges: bestEdges,
@@ -1431,6 +1554,118 @@ function deferBlockedLaneChange(car, context, blockedEdgeIndex) {
   }
 
   return true
+}
+
+function rerouteAroundStaticManeuverBlock(car, context, movement) {
+  if (!movement || !car.route) {
+    return false
+  }
+
+  const blockedEdgeIndexes = staticBlockedManeuverEdgeIndexes(car, context, movement)
+
+  if (blockedEdgeIndexes.size === 0) {
+    return false
+  }
+
+  const currentEdgeIndex = car.route.edges[car.route.cursor]
+  const currentNode = context.network.edgeFrom[currentEdgeIndex]
+  const destinationNode = routeDestinationNode(car.route, context.network)
+
+  if (!Number.isInteger(currentNode) ||
+      !Number.isInteger(destinationNode) ||
+      currentNode < 0 ||
+      destinationNode < 0 ||
+      currentNode >= context.network.nodeCount ||
+      destinationNode >= context.network.nodeCount) {
+    return false
+  }
+
+  const route = context.router.findRouteAvoidingEdges(currentNode, destinationNode, blockedEdgeIndexes)
+
+  if (route.length === 0 || routesMatch(route, car.route.edges, car.route.cursor)) {
+    return false
+  }
+
+  releaseStaleTrafficReservationTilesForRouteRewrite(car, context)
+  clearTrafficYieldState(car)
+
+  car.route = {
+    ...car.route,
+    edges: route,
+    cursor: 0,
+    currentNode,
+    destinationNode
+  }
+
+  return true
+}
+
+function staticBlockedManeuverEdgeIndexes(car, context, movement) {
+  const blockedEdgeIndexes = new Set()
+
+  for (const edgeIndex of movement.clearanceEdgeIndexes || []) {
+    const footprint = edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles)
+
+    if (hasStaticOccupancyBlocker(car, context, footprint)) {
+      blockedEdgeIndexes.add(edgeIndex)
+    }
+  }
+
+  return blockedEdgeIndexes
+}
+
+function hasStaticOccupancyBlocker(car, context, tileIndexes) {
+  const occupancy = context.parking.occupancy
+
+  if (!occupancy) {
+    return false
+  }
+
+  for (const tileIndex of tileIndexes || []) {
+    const carId = occupancy[tileIndex]
+
+    if (carId === -1 || carId === car.id) {
+      continue
+    }
+
+    const blocker = findCarById(context, carId)
+
+    if (!blocker || blocker.state !== 'driving') {
+      return true
+    }
+  }
+
+  return false
+}
+
+function routesMatch(nextEdges, currentEdges, currentCursor) {
+  const remainingLength = currentEdges.length - currentCursor
+
+  if (nextEdges.length !== remainingLength) {
+    return false
+  }
+
+  for (let index = 0; index < nextEdges.length; index += 1) {
+    if (nextEdges[index] !== currentEdges[currentCursor + index]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function releaseStaleTrafficReservationTilesForRouteRewrite(car, context) {
+  if (!car.trafficSignalReservation) {
+    return
+  }
+
+  const groupTileIndexes = context.trafficReservations.groupTileIndexes(car.trafficSignalReservation)
+
+  context.trafficReservations.releaseReservedTiles(car.id)
+
+  if (!groupTileIndexes || !(car.occupiedTiles || []).some((tileIndex) => groupTileIndexes.has(tileIndex))) {
+    context.trafficReservations.releaseForCar(car)
+  }
 }
 
 function routeDestinationNode(route, network) {
@@ -1610,6 +1845,7 @@ function parkCarAtDestination(car, context) {
   car.destinationParkingSpot = null
   car.route = null
   car.movement = null
+  car.trafficYield = null
   car.driverOwnerId = null
   car.riderOwners = []
   car.direction = car.parkingSpot.direction
@@ -1670,6 +1906,8 @@ function createRightHandMovement(car, context) {
     ? context.trafficReservations.groupTileIndexes(signalGroup.id)
     : null
   const tileIndexes = []
+  const clearanceTileIndexes = []
+  const clearanceEdgeIndexes = []
   let explicitTurn = normalizeMovementTurn(startEdge.turn)
   let lastDirection = startDirection
   let sawDirectionChange = false
@@ -1681,8 +1919,14 @@ function createRightHandMovement(car, context) {
     const edge = context.network.edges[edgeIndex]
     const toNodeIndex = context.network.edgeTo[edgeIndex]
     const toTileIndex = context.network.nodeTileIndexes[toNodeIndex]
+    const footprint = edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles)
 
-    appendUniqueTileIndexes(tileIndexes, edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles))
+    appendUniqueTileIndexes(tileIndexes, footprint)
+
+    if (cursor < startCursor + MANEUVER_CLEARANCE_LOOKAHEAD_EDGES) {
+      appendUniqueTileIndexes(clearanceTileIndexes, footprint)
+      clearanceEdgeIndexes.push(edgeIndex)
+    }
 
     if (edge.direction !== startDirection) {
       sawDirectionChange = true
@@ -1728,7 +1972,9 @@ function createRightHandMovement(car, context) {
     turn,
     priority: TURN_PRIORITY[turn] ?? TURN_PRIORITY.straight,
     signalGroupId: signalGroup?.id || null,
-    tileIndexes: uniqueTileIndexes(tileIndexes)
+    tileIndexes: uniqueTileIndexes(tileIndexes),
+    clearanceTileIndexes: uniqueTileIndexes(clearanceTileIndexes),
+    clearanceEdgeIndexes
   }
 }
 
@@ -1739,15 +1985,18 @@ function createTrafficYieldIndex(context) {
 
   for (const car of context.cars) {
     if (car.state !== 'driving' || car.movement || !car.route || car.route.cursor >= car.route.edges.length) {
+      clearTrafficYieldState(car)
       continue
     }
 
     const movement = createRightHandMovement(car, context)
 
     if (!movement) {
+      clearTrafficYieldState(car)
       continue
     }
 
+    syncTrafficYieldState(car, movement, context)
     movementByCarId.set(car.id, movement)
 
     if (movement.signalGroupId) {
@@ -1775,6 +2024,30 @@ function appendIndexedCar(index, key, car) {
   }
 
   cars.push(car)
+}
+
+function syncTrafficYieldState(car, movement, context) {
+  const key = trafficYieldKey(movement)
+
+  if (car.trafficYield?.key === key && Number.isInteger(car.trafficYield.ticket)) {
+    return
+  }
+
+  car.trafficYield = {
+    key,
+    ticket: context.nextTrafficYieldTicket
+  }
+  context.nextTrafficYieldTicket += 1
+}
+
+function clearTrafficYieldState(car) {
+  if (car.trafficYield) {
+    car.trafficYield = null
+  }
+}
+
+function trafficYieldKey(movement) {
+  return `${movement.signalGroupId || 'free'}:${movement.edgeIndex}:${movement.approachDirection}:${movement.turn}`
 }
 
 function getRightHandMovementForCar(car, context) {
@@ -1866,6 +2139,14 @@ function rightHandCandidateCanEnter(car, movement, context) {
     return false
   }
 
+  const maneuverClearanceTiles = !trafficSignalGroup && !car.trafficSignalReservation
+    ? movement.clearanceTileIndexes
+    : null
+
+  if (maneuverClearanceTiles && hasStaticOccupancyBlocker(car, context, maneuverClearanceTiles)) {
+    return false
+  }
+
   if (clearanceTiles &&
       (!context.parking.canOccupy(clearanceTiles, car.id) ||
        !context.trafficReservations.canOccupy(clearanceTiles, car.id))) {
@@ -1893,39 +2174,37 @@ function rightHandMovementsConflict(a, b) {
 }
 
 function rightHandMovementMustYield(car, movement, other, otherMovement) {
-  const oncoming = OPPOSITE_DIRECTION[movement.approachDirection] === otherMovement.approachDirection
+  return compareTrafficYieldPriority(other, otherMovement, car, movement) > 0
+}
 
-  if (oncoming) {
-    const myLeftTurnYields = movement.turn === 'left' &&
-      otherMovement.turn !== 'left' &&
-      otherMovement.turn !== 'u-turn'
+function compareTrafficYieldPriority(aCar, aMovement, bCar, bMovement) {
+  const aClearing = aCar.trafficSignalReservation ? 1 : 0
+  const bClearing = bCar.trafficSignalReservation ? 1 : 0
 
-    if (myLeftTurnYields) {
-      return true
-    }
-
-    const otherLeftTurnYields = otherMovement.turn === 'left' &&
-      movement.turn !== 'left' &&
-      movement.turn !== 'u-turn'
-
-    if (otherLeftTurnYields) {
-      return false
-    }
+  if (aClearing !== bClearing) {
+    return aClearing - bClearing
   }
 
-  if (movement.priority !== otherMovement.priority) {
-    return movement.priority < otherMovement.priority
+  if (aMovement.priority !== bMovement.priority) {
+    return aMovement.priority - bMovement.priority
   }
 
-  if (otherMovement.approachDirection === DIRECTION_FROM_RIGHT[movement.approachDirection]) {
-    return true
+  const aTicket = trafficYieldTicket(aCar)
+  const bTicket = trafficYieldTicket(bCar)
+
+  if (aTicket !== bTicket) {
+    return bTicket - aTicket
   }
 
-  if (movement.approachDirection === DIRECTION_FROM_RIGHT[otherMovement.approachDirection]) {
-    return false
+  return bCar.id - aCar.id
+}
+
+function trafficYieldTicket(car) {
+  if (Number.isInteger(car.trafficYield?.ticket)) {
+    return car.trafficYield.ticket
   }
 
-  return car.id > other.id
+  return Number.MAX_SAFE_INTEGER
 }
 
 function normalizeMovementTurn(turn) {
