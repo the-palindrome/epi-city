@@ -78,7 +78,7 @@ The editor always displays the current editable map state. There is no separate 
 Use the `Paint layer` selector to choose what the brush updates:
 
 - `tile type` sets the tile to empty, `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, or `obstacle`.
-- `building` sets the clicked connected building component to one or more of `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `mall`, or `nightclub`.
+- `building` sets the clicked connected building component to one or more of `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, or `nightclub`.
 - `texture` picks and paints manifest frame IDs in `textureRows`.
 - `walkable` sets the current tile's walkable value to empty, `true`, or `false`.
 - `parkable` sets the current tile's parkable value to empty, `true`, or `false`.
@@ -131,7 +131,7 @@ The saved `tile-layout.json` preserves `textureSet`, `width`, `height`, `tileSiz
 - Right drag, middle drag, or hold `Space` to pan.
 - Mouse wheel zooms around the cursor.
 - For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` building, `6` obstacle, `7` crosswalk, `e` empty.
-- For building type: `r` residential, `c` commercial, `s` school, `t` restaurant, `u` supermarket, `m` mall, `n` nightclub.
+- For building type: `r` residential, `c` commercial, `s` school, `t` restaurant, `u` supermarket, `h` hospital, `m` mall, `n` nightclub.
 - For texture: `p` switches back to the texture picker.
 - For behavior layers: `t` true, `f` false, and `e` empty.
 - `Ctrl+S` saves the current map folder.

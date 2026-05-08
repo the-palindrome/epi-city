@@ -52,6 +52,7 @@ export const BUILDING_TYPES = Object.freeze([
   'school',
   'restaurant',
   'supermarket',
+  'hospital',
   'mall',
   'nightclub'
 ])
@@ -61,6 +62,7 @@ export const WORK_BUILDING_TYPES = Object.freeze([
   'school',
   'restaurant',
   'supermarket',
+  'hospital',
   'mall',
   'nightclub'
 ])
@@ -294,6 +296,7 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
       school: 0x5fa85f,
       restaurant: 0xd85f45,
       supermarket: 0x42a88f,
+      hospital: 0xd9578c,
       mall: 0xb06bb6,
       nightclub: 0x6d63d8,
       default: 0x8c8f94
@@ -314,6 +317,7 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
       school: 0x9da69d,
       restaurant: 0xa59b96,
       supermarket: 0x96a6a0,
+      hospital: 0xa8959f,
       mall: 0xa197a7,
       nightclub: 0x9898a8,
       default: 0xb7bcb6
@@ -334,6 +338,7 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
       school: 0x6f846f,
       restaurant: 0x846f68,
       supermarket: 0x668178,
+      hospital: 0x856a78,
       mall: 0x7e6f84,
       nightclub: 0x6f7088,
       default: 0x606861
@@ -361,6 +366,7 @@ export const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
     school: 0x5fa85f,
     restaurant: 0xd85f45,
     supermarket: 0x42a88f,
+    hospital: 0xd9578c,
     mall: 0xb06bb6,
     nightclub: 0x6d63d8,
     default: 0x8c8f94

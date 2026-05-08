@@ -35,6 +35,7 @@ const BUILDING_TYPE_OPTIONS = Object.freeze([
   'school',
   'restaurant',
   'supermarket',
+  'hospital',
   'mall',
   'nightclub'
 ]);

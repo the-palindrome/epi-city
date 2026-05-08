@@ -88,7 +88,7 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `mall`, and `nightclub`; legacy singular `type` maps still load.
+The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, and `nightclub`; legacy singular `type` maps still load.
 
 ## Movement Rules
 
@@ -96,7 +96,7 @@ Vehicles use the directed lane graph when it exists and park on tiles marked `pa
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a work building id chosen from commercial, school, restaurant, supermarket, mall, or nightclub buildings when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a work building id chosen from commercial, school, restaurant, supermarket, hospital, mall, or nightclub buildings when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
 
 Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 48 world-unit infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
 
