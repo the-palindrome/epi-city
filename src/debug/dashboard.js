@@ -672,7 +672,7 @@ function createSimulationControls(options) {
     npcCount: normalizeNpcCount(options.npcCount ?? 1000, options.npcCountRange),
     carCount: normalizeCarCount(options.carCount ?? 200, options.carCountRange),
     initialInfectiousCount: normalizeInitialInfectiousCount(options.initialInfectiousCount ?? 4, options.initialInfectiousCountRange),
-    infectionDistance: normalizeInfectionDistance(options.infectionDistance ?? 48, options.infectionDistanceRange),
+    infectionDistance: normalizeInfectionDistance(options.infectionDistance ?? INFECTION_CONFIG.infectionDistance, options.infectionDistanceRange),
     infectionProbability: normalizeInfectionProbability(options.infectionProbability ?? 0.03, options.infectionProbabilityRange),
     incubationDays: normalizeIncubationDays(options.incubationDays ?? 1, options.incubationDaysRange),
     infectionDays: normalizeInfectionDays(options.infectionDays ?? 7, options.infectionDaysRange),

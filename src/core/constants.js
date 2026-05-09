@@ -1,3 +1,9 @@
+import {
+  metersPerSecondToWorldUnitsPerSecond,
+  metersToWorldUnits,
+  milesPerHourToWorldUnitsPerSecond
+} from './scale.js'
+
 const TILE_TYPES = Object.freeze({
   road: 0,
   sidewalk: 1,
@@ -74,8 +80,9 @@ export const NPC_CONFIG = Object.freeze({
   slotSpacing: 11,
   color: 0xe5c748,
   size: 9,
-  minSpeed: 1.9,
-  maxSpeed: 2.25,
+  minSpeed: metersPerSecondToWorldUnitsPerSecond(1.1),
+  maxSpeed: metersPerSecondToWorldUnitsPerSecond(1.4),
+  movementTimeScale: 4,
   workStartHour: 9,
   workEndHour: 17,
   scheduleVariationHours: 0.75,
@@ -147,7 +154,7 @@ export const NPC_CONFIG = Object.freeze({
 
 export const INFECTION_CONFIG = Object.freeze({
   initialInfectiousCount: 4,
-  infectionDistance: 48,
+  infectionDistance: metersToWorldUnits(2),
   infectionProbability: 0.03,
   incubationDays: 1,
   infectionDays: 7,
@@ -165,8 +172,8 @@ export const INFECTION_CONFIG = Object.freeze({
   }),
   infectionDistanceRange: Object.freeze({
     min: 0,
-    max: 256,
-    step: 1
+    max: metersToWorldUnits(25),
+    step: metersToWorldUnits(1)
   }),
   infectionProbabilityRange: Object.freeze({
     min: 0,
@@ -202,8 +209,10 @@ export const CAR_CONFIG = Object.freeze({
   workDepartureEndHour: 10,
   homeDepartureHour: 17,
   homeDepartureEndHour: 20,
-  maxSpeed: 18,
-  speedLimitScale: 0.4,
+  maxSpeed: milesPerHourToWorldUnitsPerSecond(35),
+  speedLimitUnit: 'mph',
+  speedLimitScale: 1,
+  movementTimeScale: 2,
   minCruiseSpeedScale: 0.72,
   maxCruiseSpeedScale: 0.96,
   minAdaptiveSpeedScale: 0.45,
@@ -212,9 +221,9 @@ export const CAR_CONFIG = Object.freeze({
   speedAdjustmentRate: 1.8,
   movingLaneChangeWaitSeconds: 0.7,
   parkingSearchRadius: 64,
-  bodyWidth: 18,
-  roadBodyLength: 34,
-  longBodyLength: 44,
+  bodyWidth: metersToWorldUnits(1.85),
+  roadBodyLength: metersToWorldUnits(3.45),
+  longBodyLength: metersToWorldUnits(4.5),
   parkedRoadOffset: 0.24
 })
 
@@ -250,11 +259,11 @@ export const TILE_ZORDERS = Object.freeze({
 })
 
 export const SEIR_HEATMAP_CONFIG = Object.freeze({
-  radius: 96,
+  radius: metersToWorldUnits(10),
   radiusRange: Object.freeze({
-    min: 16,
-    max: 512,
-    step: 16
+    min: metersToWorldUnits(2),
+    max: metersToWorldUnits(50),
+    step: metersToWorldUnits(1)
   }),
   alpha: 0.72,
   minimumNormalizedDensity: 0.02,

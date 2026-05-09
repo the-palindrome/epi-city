@@ -90,6 +90,10 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 
 The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, and `nightclub`.
 
+## Real-World Scale
+
+The map still renders at 32 world units per tile, but simulation defaults now treat one tile as 3.25 meters. One world unit is therefore 0.1015625 meters, and the default 256x256 map spans 832 meters on each side. Runtime defaults for walking speed, car speed limits, car body size, infection radius, and heatmap radius are derived from that scale. Visible locomotion uses a smaller presentation movement scale than the day clock, so realistic speeds do not get multiplied by the full one-hour-per-minute clock compression. `window.citySim.scale` exposes the conversion constants for console work.
+
 ## Movement Rules
 
 Vehicles use the directed lane graph when it exists and park on tiles marked `parkable`. Pedestrians use tiles marked `walkable`. Crosswalks are both walkable and drivable, and their shared signal cycles through `red`, `green`, and `yellow`; NPCs and cars enter only on green, but entities already on a crosswalk can keep moving or step off at any signal. Vehicle traffic signals are generated from lane graph intersections and can be overridden from the map editor. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
@@ -98,7 +102,7 @@ Vehicles use the directed lane graph when it exists and park on tiles marked `pa
 
 The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `age`, `home`, `school`, `work`, `friendIds`, `timetable`, `goal`, `desires`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable or flexible desire goals. NPC generation samples transient families, assigns every member of one family to the same residential home building, then creates a bounded reciprocal friendship graph biased toward household, school/work, and age-peer connections. Ages drive schedules: ages 0-5 stay home, ages 6-17 commute to a `school` building when the map has one, and ages 18-99 commute to a work building chosen from commercial, school, restaurant, supermarket, hospital, mall, or nightclub buildings. Adult schedules can include a one-hour lunch at a nearby restaurant between 11:00 and 13:00, a probabilistic after-work shopping stop at a supermarket or mall, and occasional nighttime nightclub plans for adults from childless households. NPC desires track hunger, energy, fun, and social satisfaction from 0-100; low needs can redirect flexible home time toward restaurants, supermarkets, malls, nightclubs, or home without overriding hard timetable stops. Socializing trips invite available friends to the same mall, restaurant, or nightclub destination. The default runtime uses the `epi-city` seed so family composition, building assignments, friendship links, timetable variation, spawn anchors, NPC speeds, desire scores, and infection events can repeat after a restart. Route extraction is deterministic.
 
-Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 48 world-unit infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
+Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 2-meter infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover, while SEIR heatmaps render above map tiles and below the day-night overlay.
 
@@ -110,15 +114,17 @@ The runtime uses a single browser animation loop with the game-development shape
 
 The app creates 200 cars by default. Cars have one or two adult real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Real NPC owners can drive to active timetable stops such as work, lunch, shopping, or home. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
 
-Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
+Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. Authored lane speed limits are interpreted as mph and converted through the real-world scale before movement. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
 
 ## Debugging From The Console
 
 After the app loads, `window.citySim.city` exposes the main runtime API:
 
 ```js
-const { city } = window.citySim
+const { city, scale } = window.citySim
 
+scale.metersPerTile
+scale.worldUnitsPerMeter
 city.getTile(10, 10)
 city.getTileVariant(10, 10)
 city.getTextureId(10, 10)
@@ -153,7 +159,7 @@ window.citySim.setSpeed(4)
 window.citySim.setNpcCount(2500)
 window.citySim.setCarCount(250)
 window.citySim.setInitialInfectiousCount(10)
-window.citySim.setInfectionDistance(64)
+window.citySim.setInfectionDistance(scale.worldUnitsPerMeter * 2)
 window.citySim.setInfectionProbability(0.05)
 window.citySim.setIncubationDays(4)
 window.citySim.setInfectionDays(8)
@@ -167,7 +173,7 @@ window.citySim.setInfectionEdgeDuration(10)
 window.citySim.setContactEdgeDuration(10)
 window.citySim.setPathTrailsVisible(true)
 window.citySim.setPathTrailLength(5)
-window.citySim.setHeatmapRadius(128)
+window.citySim.setHeatmapRadius(scale.worldUnitsPerMeter * 10)
 ```
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
@@ -192,7 +198,7 @@ window.citySim.dashboard.setOverlay('tileType', true)
 window.citySim.dashboard.setOverlay('heatmapInfectious', true)
 window.citySim.dashboard.setTileOverlayScheme('monochrome-dark')
 window.citySim.dashboard.setTileOverlayOpacity(0.5)
-window.citySim.dashboard.setHeatmapRadius(128)
+window.citySim.dashboard.setHeatmapRadius(window.citySim.scale.worldUnitsPerMeter * 10)
 ```
 
 ## Map Editor

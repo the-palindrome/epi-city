@@ -20,7 +20,7 @@ import {
   idleNpcSprite,
   stepNpcSpriteAnimation
 } from '../render/npc-sprite.js'
-import { toSimulationSeconds } from './simulation-clock.js'
+import { toMovementSeconds, toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -182,7 +182,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
 
     const safeDelta = Math.min(Math.max(deltaSeconds, 0), 0.1)
-    const movementDelta = toSimulationSeconds(clock, safeDelta)
+    const movementDelta = toMovementSeconds(safeDelta, config.movementTimeScale)
     const timeOfDayHours = clock.getTimeOfDayHours()
 
     for (const npc of npcs) {

@@ -113,7 +113,7 @@ describe('entity keyboard control', () => {
     const event = keyEvent('KeyS')
 
     globalThis.document.eventListeners.keydown(event)
-    control.update(1)
+    control.update(1 / 60)
 
     expect(event.preventDefault).toHaveBeenCalled()
     expect(event.stopImmediatePropagation).toHaveBeenCalled()
@@ -195,7 +195,7 @@ describe('entity keyboard control', () => {
     expect(parking.releaseParkingReservation).toHaveBeenCalledWith([city.index(3, 1)], 3)
 
     globalThis.document.eventListeners.keydown(keyEvent('KeyD'))
-    control.update(1)
+    control.update(0.05)
 
     expect(car.position.x).toBeGreaterThan(15)
     expect(car.direction).toEqual({ dx: 1, dy: 0 })

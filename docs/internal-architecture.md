@@ -125,7 +125,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
 
-The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, car movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes NPC and car counts as sliders plus exact number inputs, and includes a checkbox for the day-night overlay. Changing either entity count restarts the population systems with clamped counts; the NPC default remains 1000, and the car default is 200.
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, car movement, and crosswalk signals advance together. Entity locomotion has its own presentation movement scale before physical speeds are applied, which keeps meter-derived movement readable under the compressed day clock. The dashboard displays the current simulated day/time, exposes NPC and car counts as sliders plus exact number inputs, and includes a checkbox for the day-night overlay. Changing either entity count restarts the population systems with clamped counts; the NPC default remains 1000, and the car default is 200.
 
 `SimulationClock` advances one simulated hour for every 60 game seconds. Since `Game` applies speed before fixed updates reach systems, `1x` speed makes one real minute equal one simulation hour, and higher speeds multiply that rate. Restarting the simulation resets the clock to the configured start hour.
 
@@ -157,7 +157,9 @@ NPC entities expose the state the simulation needs:
 }
 ```
 
-The simulation owns movement decisions and tile occupancy bookkeeping. NPC movement speeds are applied against the simulation clock delta, so the default one-hour-per-real-minute clock compression also compresses walking time. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
+The simulation owns movement decisions and tile occupancy bookkeeping. NPC movement speeds are authored as physical meters per second and then applied through the NPC presentation movement scale, while schedules, needs, infection timers, and the day-night display continue to use the compressed simulation clock. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
+
+The simulation scale is centralized in `src/core/scale.js`: a 32-world-unit tile represents 3.25 meters, so one world unit represents 0.1015625 meters and one meter is about 9.846 world units. The default Liberty City map is 256 tiles wide, or 832 meters at this scale. Movement speeds, infection radii, heatmap radii, and car dimensions should be authored in physical units and converted through this module instead of hard-coded as raw world units. Movement presentation speed is controlled separately through `movementTimeScale` on NPC and car config.
 
 The NPC system receives a random source through config. At creation time, it samples transient family shapes until it reaches the requested people count, then flattens those households into NPCs. Family type is not stored. The lasting state is each NPC's `age`, shared residential `home`, optional adult `work`, timetable, and existing movement/infection data. Default family weights are 35% single, 30% married without children, and 35% married with children; child counts for families with children use weights of 45% for one child, 35% for two, 15% for three, and 5% for four.
 
@@ -169,7 +171,7 @@ NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor 
 
 Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
 
-NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses defaults of 48 world units of infection distance, `0.03` per-minute transmission probability, 1 day of incubation, 7 days infectious, and 90 days of recovered immunity.
+NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses defaults of 2 meters of infection distance, `0.03` per-minute transmission probability, 1 day of incubation, 7 days infectious, and 90 days of recovered immunity.
 
 Transmission indexes only infectious NPCs in a reusable world-space spatial hash sized from the infection distance. Susceptible NPCs check their own cell plus neighboring cells and then run exact squared-distance tests against the infectious candidates. This avoids an all-pairs contact scan at the 10,000-NPC dashboard limit. Infection randomness uses a dedicated seeded random stream derived from the NPC seed, so adding disease dynamics does not change movement or timetable repeatability.
 
@@ -183,7 +185,7 @@ Cars park on `tileParkable` cells near the relevant building entrance. The parki
 
 Moving cars use the authored `city.laneGraph`. The runtime compiles that graph into compact arrays for node tile indexes, directed edge endpoints, reverse adjacency, edge costs, tile-to-node lookup, and nearest lane node by tile. It also adds generated lane-change maneuver edges wherever same-direction lanes are one tile laterally apart and three to six tiles forward. A generated lane change excludes crosswalk tiles and stores a sampled Bezier world path plus swept road tiles for clearance checks. The lane graph compiler also detects intersection signal groups from nodes that carry both north-south and east-west lane movements. This precomputed network is cached by the compiled lane graph object, so loading a changed map folder produces a new lane graph object and recomputes the car traffic structures.
 
-Car routing follows the same destination-field idea as pedestrian routing. `createCarRoutePlanner()` builds reverse Dijkstra route fields keyed by destination lane node, stores the next edge for each reachable start node, and caches exact extracted routes by start node. Edge cost uses lane distance only, so cars choose the shortest lane route even if it includes authored merge or generated lane-change edges. Speed limits affect movement duration after routing, and movement is applied in simulation-clock seconds. Cars keep an individual cruise speed below the lane cap and adjust toward slower or faster targets when a moving car blocks an upcoming generated lane-change gap. During a generated lane change, the swept tiles must be clear before the maneuver starts, but the car keeps occupying only its normal two- or three-tile body footprint. Traffic signals are evaluated when a car starts the next lane edge, so signal changes do not invalidate route caches. Cars may enter a controlled intersection only on the green phase for that edge's movement axis, and cars already inside the group can leave. Cars only enter crosswalk lane nodes while the shared crosswalk signal is green, but cars already on a crosswalk can continue out at any signal.
+Car routing follows the same destination-field idea as pedestrian routing. `createCarRoutePlanner()` builds reverse Dijkstra route fields keyed by destination lane node, stores the next edge for each reachable start node, and caches exact extracted routes by start node. Edge cost uses lane distance only, so cars choose the shortest lane route even if it includes authored merge or generated lane-change edges. Lane speed limits are interpreted as mph, converted into world units per second through `src/core/scale.js`, and then applied to movement duration after routing. Cars keep an individual cruise speed below the lane cap and adjust toward slower or faster targets when a moving car blocks an upcoming generated lane-change gap. During a generated lane change, the swept tiles must be clear before the maneuver starts, but the car keeps occupying only its normal two- or three-tile body footprint. Traffic signals are evaluated when a car starts the next lane edge, so signal changes do not invalidate route caches. Cars may enter a controlled intersection only on the green phase for that edge's movement axis, and cars already inside the group can leave. Cars only enter crosswalk lane nodes while the shared crosswalk signal is green, but cars already on a crosswalk can continue out at any signal.
 
 ## Texture Sets
 
@@ -274,6 +276,8 @@ Useful console checks:
 window.citySim.city.getTile(100, 100)
 window.citySim.city.getTileVariant(100, 100)
 window.citySim.city.getTextureId(100, 100)
+window.citySim.scale.metersPerTile
+window.citySim.scale.worldUnitsPerMeter
 window.citySim.city.nearestPassableTile(120, 140, 'pedestrian')
 window.citySim.city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
@@ -295,7 +299,7 @@ window.citySim.setInfectionEdgeDuration(10)
 window.citySim.setContactEdgeDuration(10)
 window.citySim.setPathTrailsVisible(true)
 window.citySim.setPathTrailLength(5)
-window.citySim.setHeatmapRadius(128)
+window.citySim.setHeatmapRadius(window.citySim.scale.worldUnitsPerMeter * 10)
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt
 window.citySim.npcs[0].age

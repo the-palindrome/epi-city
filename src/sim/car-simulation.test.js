@@ -629,6 +629,7 @@ describe('car simulation', () => {
       twoOwnerChance: 0,
       twoTileChance: 1,
       maxSpeed: 1000,
+      movementTimeScale: 1,
       speedLimitScale: 100
     })
     const car = simulation.cars[0]
@@ -661,6 +662,7 @@ describe('car simulation', () => {
       twoOwnerChance: 0,
       twoTileChance: 1,
       maxSpeed: 1000,
+      movementTimeScale: 1,
       speedLimitScale: 100
     })
     const car = simulation.cars[0]
@@ -740,6 +742,7 @@ describe('car simulation', () => {
       twoOwnerChance: 0,
       twoTileChance: 1,
       maxSpeed: 1000,
+      movementTimeScale: 1,
       speedLimitScale: 100
     })
     const car = simulation.cars[0]
@@ -802,6 +805,7 @@ describe('car simulation', () => {
       twoOwnerChance: 0,
       twoTileChance: 1,
       maxSpeed: 1000,
+      movementTimeScale: 1,
       speedLimitScale: 100
     })
     const car = simulation.cars[0]
@@ -909,7 +913,7 @@ describe('car simulation', () => {
     simulation.destroy()
   })
 
-  it('advances driving movement using simulation-clock seconds', () => {
+  it('advances driving movement using the presentation movement scale', () => {
     const city = createTrafficCity()
     const clock = {
       secondsPerSimulationHour: 60,
@@ -919,6 +923,7 @@ describe('car simulation', () => {
       count: 0,
       clock,
       maxSpeed: 28,
+      movementTimeScale: 2,
       speedLimitScale: 1,
       minCruiseSpeedScale: 1,
       maxCruiseSpeedScale: 1
@@ -939,7 +944,8 @@ describe('car simulation', () => {
     simulation.update(0.01)
 
     expect(car.movement?.edgeIndex).toBe(edgeIndex)
-    expect(car.position.x).toBeGreaterThan(tileCenterPosition(city, 0, 3).x + 10)
+    expect(car.position.x).toBeGreaterThan(tileCenterPosition(city, 0, 3).x)
+    expect(car.position.x).toBeLessThan(tileCenterPosition(city, 0, 3).x + 2)
     expect(car.position.x).toBeLessThan(tileCenterPosition(city, 1, 3).x)
 
     simulation.destroy()

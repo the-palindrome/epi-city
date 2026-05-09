@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SimulationClock, toSimulationSeconds } from './simulation-clock.js'
+import { SimulationClock, toMovementSeconds, toSimulationSeconds } from './simulation-clock.js'
 
 describe('simulation clock', () => {
   it('advances one simulation hour per real minute at 1x game time', () => {
@@ -11,13 +11,21 @@ describe('simulation clock', () => {
     expect(clock.formatTimeOfDay()).toBe('09:00')
   })
 
-  it('converts real seconds to simulation seconds for movement systems', () => {
+  it('converts real seconds to simulation seconds for clock-driven systems', () => {
     const clock = new SimulationClock({ startHour: 8, secondsPerSimulationHour: 60 })
 
     expect(clock.getSimulationSecondsPerRealSecond()).toBe(60)
     expect(clock.toSimulationSeconds(0.5)).toBe(30)
     expect(toSimulationSeconds(clock, 0.5)).toBe(30)
     expect(toSimulationSeconds({ secondsPerSimulationHour: 120 }, 1)).toBe(30)
+  })
+
+  it('converts real seconds to presentation movement seconds without clock compression', () => {
+    const clock = new SimulationClock({ startHour: 8, secondsPerSimulationHour: 60 })
+
+    expect(toSimulationSeconds(clock, 0.5)).toBe(30)
+    expect(toMovementSeconds(0.5, 4)).toBe(2)
+    expect(toMovementSeconds(0.5, 0)).toBe(0.5)
   })
 
   it('wraps time of day while tracking elapsed days', () => {

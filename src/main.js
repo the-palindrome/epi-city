@@ -10,6 +10,7 @@ import {
   SIMULATION_CONFIG
 } from './core/constants.js'
 import { createSeededRandom, createSystemRandom } from './core/random.js'
+import { REAL_WORLD_SCALE } from './core/scale.js'
 import { Game } from './engine/game.js'
 import {
   applyCameraToWorld,
@@ -613,6 +614,7 @@ async function main() {
     window.citySim = {
       camera,
       city,
+      scale: REAL_WORLD_SCALE,
       dashboard,
       npcHoverMenu,
       simulationClock,

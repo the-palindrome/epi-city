@@ -1,6 +1,6 @@
 import { CAR_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { faceNpcSprite, idleNpcSprite, stepNpcSpriteAnimation } from '../render/npc-sprite.js'
-import { toSimulationSeconds } from '../sim/simulation-clock.js'
+import { toMovementSeconds } from '../sim/simulation-clock.js'
 
 const MOVEMENT_KEYS = Object.freeze({
   ArrowUp: Object.freeze({ x: 0, y: -1 }),
@@ -16,7 +16,6 @@ const CONTROLLED_CAR_STATE = 'manual'
 
 export function createEntityControl({
   city,
-  getClock,
   getCarSimulation,
   getNpcSimulation,
   requestRender
@@ -73,7 +72,8 @@ export function createEntityControl({
       return
     }
 
-    const movementDelta = toSimulationSeconds(getClock?.(), Math.min(deltaSeconds, 0.1))
+    const movementScale = selection.kind === 'car' ? CAR_CONFIG.movementTimeScale : NPC_CONFIG.movementTimeScale
+    const movementDelta = toMovementSeconds(Math.min(deltaSeconds, 0.1), movementScale)
     const moved = selection.kind === 'car'
       ? moveControlledCar(selection.entity, direction, movementDelta)
       : moveControlledNpc(selection.entity, direction, movementDelta)
@@ -183,7 +183,7 @@ export function createEntityControl({
 
     const speed = positiveNumberOrDefault(
       car.manualControlSpeed,
-      positiveNumberOrDefault(CAR_CONFIG.maxSpeed, 18) * positiveNumberOrDefault(CAR_CONFIG.speedLimitScale, 0.4)
+      positiveNumberOrDefault(CAR_CONFIG.maxSpeed, 18)
     )
     const distance = speed * deltaSeconds
     const carDirection = cardinalDirection(direction)

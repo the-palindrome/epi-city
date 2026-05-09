@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { NPC_CONFIG } from '../core/constants.js'
+import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { createSeededRandom } from '../core/random.js'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
 import { createNpcSimulation } from './npc-simulation.js'
@@ -243,7 +243,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     routeRetrySeconds: 1,
     routeBlockedReplanSeconds: 2,
     initialInfectiousCount: options.initialInfectiousCount ?? 0,
-    infectionDistance: options.infectionDistance ?? 48,
+    infectionDistance: options.infectionDistance ?? INFECTION_CONFIG.infectionDistance,
     infectionProbability: options.infectionProbability ?? 0.03,
     incubationDays: options.incubationDays ?? 5,
     infectionDays: options.infectionDays ?? 7,
@@ -421,7 +421,7 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
-  it('advances walking movement using simulation-clock seconds', () => {
+  it('advances walking movement using the presentation movement scale', () => {
     const city = createCity({
       width: 2,
       height: 1,
@@ -462,7 +462,8 @@ describe('NPC simulation randomness', () => {
 
     simulation.update(1 / 60)
 
-    expect(npc.position.x).toBeGreaterThan(startX + 4)
+    expect(npc.position.x).toBeGreaterThan(startX)
+    expect(npc.position.x).toBeLessThan(startX + 1)
     expect(npc.position.x).toBeLessThan(48)
 
     simulation.destroy()

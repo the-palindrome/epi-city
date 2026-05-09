@@ -74,6 +74,10 @@ export function toSimulationSeconds(clock, deltaSeconds) {
   return deltaSeconds
 }
 
+export function toMovementSeconds(deltaSeconds, movementTimeScale = 1) {
+  return deltaSeconds * positiveNumberOrDefault(movementTimeScale, 1)
+}
+
 function positiveNumberOrDefault(value, fallback) {
   const number = Number(value)
 

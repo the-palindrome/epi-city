@@ -2,10 +2,15 @@ import * as PIXI from 'pixi.js'
 import { CAR_CONFIG, HOME_BUILDING_TYPES, WORK_BUILDING_TYPES } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
+import {
+  kilometersPerHourToWorldUnitsPerSecond,
+  metersPerSecondToWorldUnitsPerSecond,
+  milesPerHourToWorldUnitsPerSecond
+} from '../core/scale.js'
 import { hourInRange } from '../core/time.js'
 import { buildingHasAnyType } from '../map/buildings.js'
 import { createCarSpriteRenderer } from '../render/car-sprite.js'
-import { toSimulationSeconds } from './simulation-clock.js'
+import { toMovementSeconds, toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -122,7 +127,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     }
 
     const safeDelta = Math.min(deltaSeconds, 0.1)
-    const movementDelta = toSimulationSeconds(clock, safeDelta)
+    const movementDelta = toMovementSeconds(safeDelta, resolvedConfig.movementTimeScale)
     const hour = clock.getTimeOfDayHours()
 
     for (const car of cars) {
@@ -2394,16 +2399,39 @@ function deterministicCarCruiseScale(carId, config) {
 }
 
 function edgeSpeedLimit(edge, config) {
+  const edgeLimit = speedLimitToWorldUnitsPerSecond(
+    edge.speedLimit,
+    config.speedLimitUnit ?? CAR_CONFIG.speedLimitUnit
+  )
   const configuredLimit = Math.max(
     1,
     Math.min(
       positiveNumberOrDefault(config.maxSpeed, CAR_CONFIG.maxSpeed),
-      edge.speedLimit * positiveNumberOrDefault(config.speedLimitScale, CAR_CONFIG.speedLimitScale)
+      edgeLimit * positiveNumberOrDefault(config.speedLimitScale, CAR_CONFIG.speedLimitScale)
     )
   )
   const durationLimitedSpeed = Math.max(1, edge.worldLength / MIN_EDGE_DURATION_SECONDS)
 
   return Math.min(configuredLimit, durationLimitedSpeed)
+}
+
+function speedLimitToWorldUnitsPerSecond(speedLimit, unit) {
+  const value = positiveNumberOrDefault(speedLimit, 1)
+
+  switch (unit) {
+    case 'world-units-per-second':
+    case 'worldUnitsPerSecond':
+      return value
+    case 'km/h':
+    case 'kph':
+      return kilometersPerHourToWorldUnitsPerSecond(value)
+    case 'm/s':
+    case 'mps':
+      return metersPerSecondToWorldUnitsPerSecond(value)
+    case 'mph':
+    default:
+      return milesPerHourToWorldUnitsPerSecond(value)
+  }
 }
 
 function edgeSpeedForCar(edge, car, config, knownSpeedLimit = null) {
