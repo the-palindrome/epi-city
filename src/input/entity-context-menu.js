@@ -11,6 +11,7 @@ export function installEntityContextMenu({
   world,
   getCarSimulation,
   getNpcSimulation,
+  assumeEntityControl,
   showEntityRoute,
   hideEntityRoute,
   isEntityRouteVisible,
@@ -18,6 +19,7 @@ export function installEntityContextMenu({
 }) {
   const menu = document.createElement('div')
   const followButton = document.createElement('button')
+  const assumeControlButton = document.createElement('button')
   const showRouteButton = document.createElement('button')
   const infectButton = document.createElement('button')
   let target = null
@@ -33,6 +35,11 @@ export function installEntityContextMenu({
   followButton.textContent = 'follow'
   followButton.setAttribute('role', 'menuitem')
 
+  assumeControlButton.type = 'button'
+  assumeControlButton.className = 'entity-context-menu-option'
+  assumeControlButton.textContent = 'assume control'
+  assumeControlButton.setAttribute('role', 'menuitem')
+
   showRouteButton.type = 'button'
   showRouteButton.className = 'entity-context-menu-option'
   showRouteButton.textContent = 'show route'
@@ -44,6 +51,7 @@ export function installEntityContextMenu({
   infectButton.setAttribute('role', 'menuitem')
 
   menu.appendChild(followButton)
+  menu.appendChild(assumeControlButton)
   menu.appendChild(showRouteButton)
   menu.appendChild(infectButton)
   document.body.appendChild(menu)
@@ -93,6 +101,22 @@ export function installEntityContextMenu({
     }
 
     npcSimulation.infection.setNpcState(selection.entity, 'infectious')
+
+    if (typeof requestRender === 'function') {
+      requestRender()
+    }
+  }
+
+  function onAssumeControlClick() {
+    const selection = resolveTarget()
+
+    hide()
+
+    if (!selection || selection.kind !== 'npc' || typeof assumeEntityControl !== 'function') {
+      return
+    }
+
+    assumeEntityControl(selection.kind, selection.entity.id)
 
     if (typeof requestRender === 'function') {
       requestRender()
@@ -160,6 +184,7 @@ export function installEntityContextMenu({
 
   function updateMenuActions() {
     infectButton.hidden = !target || target.kind !== 'npc'
+    assumeControlButton.hidden = !target || target.kind !== 'npc'
     showRouteButton.textContent = isRouteVisibleForTarget() ? 'hide route' : 'show route'
   }
 
@@ -190,6 +215,7 @@ export function installEntityContextMenu({
     destroyed = true
     app.canvas.removeEventListener('contextmenu', onContextMenu)
     followButton.removeEventListener('click', onFollowClick)
+    assumeControlButton.removeEventListener('click', onAssumeControlClick)
     showRouteButton.removeEventListener('click', onShowRouteClick)
     infectButton.removeEventListener('click', onInfectClick)
     document.removeEventListener('mousedown', onDocumentMouseDown)
@@ -199,6 +225,7 @@ export function installEntityContextMenu({
 
   app.canvas.addEventListener('contextmenu', onContextMenu)
   followButton.addEventListener('click', onFollowClick)
+  assumeControlButton.addEventListener('click', onAssumeControlClick)
   showRouteButton.addEventListener('click', onShowRouteClick)
   infectButton.addEventListener('click', onInfectClick)
   document.addEventListener('mousedown', onDocumentMouseDown)

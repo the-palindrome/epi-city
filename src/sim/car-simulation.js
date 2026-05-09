@@ -130,7 +130,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     }
 
     for (const car of cars) {
-      if (car.state === 'parked') {
+      if (!car.manualControl && car.state === 'parked') {
         maybeStartCarTrip(car, hour, context)
       }
     }
@@ -138,7 +138,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     context.yieldIndex = createTrafficYieldIndex(context)
 
     for (const car of cars) {
-      if (car.state === 'driving') {
+      if (!car.manualControl && car.state === 'driving') {
         updateDrivingCar(car, movementDelta, context)
       }
     }
@@ -1984,7 +1984,7 @@ function createTrafficYieldIndex(context) {
   const byTileIndex = new Map()
 
   for (const car of context.cars) {
-    if (car.state !== 'driving' || car.movement || !car.route || car.route.cursor >= car.route.edges.length) {
+    if (car.manualControl || car.state !== 'driving' || car.movement || !car.route || car.route.cursor >= car.route.edges.length) {
       clearTrafficYieldState(car)
       continue
     }

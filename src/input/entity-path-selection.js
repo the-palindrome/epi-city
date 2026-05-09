@@ -114,6 +114,17 @@ export function createEntityPathSelection({
     graphics.clear()
   }
 
+  function selectEntity(kind, id, options = {}) {
+    const routeVisible = options.routeVisible ?? (
+      selected && selected.kind === kind && selected.id === id
+        ? selected.routeVisible
+        : false
+    )
+
+    selected = { kind, id, routeVisible }
+    render()
+  }
+
   function showRouteFor(kind, id) {
     selected = { kind, id, routeVisible: true }
     render()
@@ -152,6 +163,7 @@ export function createEntityPathSelection({
     graphics,
     render,
     clearSelection,
+    selectEntity,
     showRouteFor,
     hideRouteFor,
     isRouteVisibleFor,

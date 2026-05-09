@@ -223,4 +223,48 @@ describe('entity context menu', () => {
 
     menu.destroy()
   })
+
+  it('adds an NPC-only assume control action', () => {
+    const npc = { id: 7 }
+    const car = { id: 3 }
+    const assumeEntityControl = vi.fn()
+    const requestRender = vi.fn()
+    const canvas = new FakeElement('canvas')
+    const menu = installEntityContextMenu({
+      app: { canvas },
+      camera: { x: 0, y: 0, zoom: 1 },
+      city: {},
+      world: {},
+      getNpcSimulation: () => ({ npcs: [npc] }),
+      getCarSimulation: () => ({ cars: [car] }),
+      assumeEntityControl,
+      requestRender
+    })
+
+    selectionState.hit = { kind: 'npc', entity: npc }
+    canvas.eventListeners.contextmenu(contextMenuEvent())
+
+    const npcAssumeButton = findMenuOption(menu.element, 'assume control')
+
+    expect(npcAssumeButton.hidden).not.toBe(true)
+
+    npcAssumeButton.eventListeners.click()
+
+    expect(assumeEntityControl).toHaveBeenCalledWith('npc', 7)
+    expect(requestRender).toHaveBeenCalledTimes(1)
+    expect(menu.element.hidden).toBe(true)
+
+    selectionState.hit = { kind: 'car', entity: car }
+    canvas.eventListeners.contextmenu(contextMenuEvent())
+
+    const carAssumeButton = findMenuOption(menu.element, 'assume control')
+
+    expect(carAssumeButton.hidden).toBe(true)
+
+    carAssumeButton.eventListeners.click()
+
+    expect(assumeEntityControl).toHaveBeenCalledTimes(1)
+
+    menu.destroy()
+  })
 })

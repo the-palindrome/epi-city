@@ -21,6 +21,7 @@ import {
   refreshFollowedCamera
 } from './input/camera.js'
 import { installEntityContextMenu } from './input/entity-context-menu.js'
+import { createEntityControl } from './input/entity-control.js'
 import { installNpcHoverMenu } from './input/npc-hover-menu.js'
 import { createEntityPathSelection } from './input/entity-path-selection.js'
 import {
@@ -129,6 +130,13 @@ async function main() {
       camera,
       city,
       entityLayer,
+      getNpcSimulation: () => npcSimulation,
+      getCarSimulation: () => carSimulation,
+      requestRender: () => game.render()
+    })
+    const entityControl = createEntityControl({
+      city,
+      getClock: () => simulationClock,
       getNpcSimulation: () => npcSimulation,
       getCarSimulation: () => carSimulation,
       requestRender: () => game.render()
@@ -299,6 +307,7 @@ async function main() {
       city.resetTrafficSignals()
       clearCameraFollow(camera)
       entityContextMenu?.hide()
+      entityControl.clearControl()
       pathSelection.clearSelection()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
@@ -317,6 +326,10 @@ async function main() {
       world,
       getNpcSimulation: () => npcSimulation,
       getCarSimulation: () => carSimulation,
+      assumeEntityControl: (kind, id) => {
+        pathSelection.selectEntity(kind, id)
+        entityControl.assumeControl(kind, id)
+      },
       showEntityRoute: (kind, id) => pathSelection.showRouteFor(kind, id),
       hideEntityRoute: (kind, id) => pathSelection.hideRouteFor(kind, id),
       isEntityRouteVisible: (kind, id) => pathSelection.isRouteVisibleFor(kind, id),
@@ -488,6 +501,7 @@ async function main() {
     carSimulation = createConfiguredCarSimulation()
     game.addSystem(carSimulation)
     game.addSystem(npcSimulation)
+    game.addSystem(entityControl)
     game.addSystem(pathSelection)
     game.addSystem({ render: applyCameraFollow })
     game.start()
@@ -632,6 +646,7 @@ async function main() {
       game.destroy()
       dashboard.destroy()
       cameraControls.destroy()
+      entityControl.destroy()
       entityContextMenu.destroy()
       npcHoverMenu.destroy()
       clearPixiContainer(entityLayer)

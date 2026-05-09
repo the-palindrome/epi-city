@@ -137,6 +137,10 @@ describe('entity path selection', () => {
     expect(graphics.calls.some(([name]) => name === 'circle')).toBe(true)
     expect(graphics.calls.some(([name]) => name === 'lineTo')).toBe(false)
 
+    selection.selectEntity('npc', 1)
+
+    expect(selection.selected).toEqual({ kind: 'npc', id: 1, routeVisible: false })
+
     selection.destroy()
   })
 

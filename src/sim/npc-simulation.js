@@ -1934,7 +1934,7 @@ function collectNpcSpawnTiles(city) {
 }
 
 function refreshNpcGoal(npc, timeOfDayHours, context) {
-  if (npc.vehicleTrip) {
+  if (npc.manualControl || npc.vehicleTrip) {
     return
   }
 
@@ -1960,6 +1960,10 @@ function refreshNpcGoal(npc, timeOfDayHours, context) {
 }
 
 function prepareNpcForRouting(npc, deltaSeconds, context) {
+  if (npc.manualControl) {
+    return
+  }
+
   if (npc.vehicleTrip || npc.waitingForCar) {
     return
   }
@@ -1999,6 +2003,10 @@ function prepareNpcForRouting(npc, deltaSeconds, context) {
 }
 
 function updateNpcMovement(npc, deltaSeconds, context) {
+  if (npc.manualControl) {
+    return
+  }
+
   if (npc.vehicleTrip || npc.waitingForCar) {
     idleNpcSprite(npc)
     return

@@ -17,7 +17,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph.
+- Press `Space` to play or pause the simulation, press `q` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph.
 - Use rendering options to show or hide the map texture, tune texture opacity, switch NPC/car rendering between `sprite` and `geometric`, show the tile overlay, choose its color scheme, tune tile overlay opacity, enable optional SEIR heatmaps, and turn on entity debug overlays.
 - In `geometric` entity rendering, NPCs draw as infection-colored disks and cars draw as rectangles colored by any passengers inside them.
 - Entity debug overlays can show infectious NPC radius circles, recent infection arrows, recent contact edges, and short NPC/car path trails. Infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp from 1 game minute to 2 game hours.

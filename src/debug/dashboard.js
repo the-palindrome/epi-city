@@ -448,7 +448,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
     const key = typeof event.key === 'string' ? event.key.toLowerCase() : ''
 
-    if (key === 's' && !isTextEntryTarget(event.target)) {
+    if (key === 'q' && !isTextEntryTarget(event.target)) {
       event.preventDefault()
       toggleDashboard()
       return

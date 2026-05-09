@@ -437,17 +437,17 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('toggles the dashboard with the s hotkey', () => {
+  it('toggles the dashboard with the q hotkey', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const keydown = globalThis.document.eventListeners.keydown
 
-    const hideEvent = createKeydownEvent({ key: 's', code: 'KeyS' })
+    const hideEvent = createKeydownEvent({ key: 'q', code: 'KeyQ' })
     keydown(hideEvent)
 
     expect(hideEvent.defaultPrevented).toBe(true)
     expect(dashboard.element.classList.contains('hidden')).toBe(true)
 
-    const showEvent = createKeydownEvent({ key: 'S', code: 'KeyS' })
+    const showEvent = createKeydownEvent({ key: 'Q', code: 'KeyQ' })
     keydown(showEvent)
 
     expect(showEvent.defaultPrevented).toBe(true)
@@ -497,12 +497,12 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
-  it('does not toggle the dashboard with the s hotkey inside editable controls', () => {
+  it('does not toggle the dashboard with the q hotkey inside editable controls', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const keydown = globalThis.document.eventListeners.keydown
     const seedInput = findByDataset(dashboard.element, 'simulationSeed')
 
-    const inputEvent = createKeydownEvent({ key: 's', code: 'KeyS', target: seedInput })
+    const inputEvent = createKeydownEvent({ key: 'q', code: 'KeyQ', target: seedInput })
     keydown(inputEvent)
 
     expect(inputEvent.defaultPrevented).toBe(false)
@@ -537,7 +537,7 @@ describe('debug dashboard overlays', () => {
     expect(renderEvent.defaultPrevented).toBe(true)
     expect(dashboard.overlayElement.classList.contains('hidden')).toBe(true)
 
-    const simulationEvent = createKeydownEvent({ key: 's', code: 'KeyS', target: playButton })
+    const simulationEvent = createKeydownEvent({ key: 'q', code: 'KeyQ', target: playButton })
     keydown(simulationEvent)
 
     expect(simulationEvent.defaultPrevented).toBe(true)
