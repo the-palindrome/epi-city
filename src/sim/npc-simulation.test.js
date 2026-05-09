@@ -236,6 +236,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     nightclubLatestStartHour: options.nightclubLatestStartHour,
     nightclubDurationHours: options.nightclubDurationHours,
     desires: options.desires,
+    socialGraph: options.socialGraph,
     familyTypeWeights: options.familyTypeWeights,
     familyChildCountWeights: options.familyChildCountWeights,
     routePlanBudget: options.routePlanBudget || 24,
@@ -754,6 +755,37 @@ describe('NPC simulation randomness', () => {
     repeated.destroy()
   })
 
+  it('generates a deterministic reciprocal NPC friendship graph', () => {
+    const options = {
+      count: 16,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      socialGraph: {
+        minFriends: 2,
+        maxFriends: 5
+      },
+      initialUpdate: false
+    }
+    const simulation = createSimulation('social-graph-seed', createCityWithDailyLifeBuildings(), options)
+    const repeated = createSimulation('social-graph-seed', createCityWithDailyLifeBuildings(), options)
+    const friendLists = simulation.npcs.map((npc) => npc.friendIds)
+
+    expect(friendLists).toEqual(repeated.npcs.map((npc) => npc.friendIds))
+    expect(friendLists.some((friends) => friends.length > 0)).toBe(true)
+
+    for (const npc of simulation.npcs) {
+      expect(npc.friendIds.length).toBeLessThanOrEqual(5)
+
+      for (const friendId of npc.friendIds) {
+        expect(simulation.npcs[friendId].friendIds).toContain(npc.id)
+      }
+    }
+
+    expect(simulation.socialGraph.getFriendIds(simulation.npcs[0])).toBe(simulation.npcs[0].friendIds)
+
+    simulation.destroy()
+    repeated.destroy()
+  })
+
   it('decays desire scores using simulation time', () => {
     const simulation = createSimulation('desire-decay', createCityWithDailyLifeBuildings(), {
       count: 1,
@@ -880,6 +912,68 @@ describe('NPC simulation randomness', () => {
       id: 'desire:social',
       buildingId: 'club'
     })
+  })
+
+  it('coordinates social desire trips with available friends', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const simulation = createSimulation('social-trip-group', city, {
+      count: 3,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      scheduleVariationHours: 0,
+      shoppingChance: 0,
+      nightclubChance: 0,
+      desires: {
+        destinationCandidateCount: 1,
+        socialGroupMinFriends: 2,
+        socialGroupMaxFriends: 2
+      },
+      initialUpdate: false
+    })
+    const [host, firstFriend, secondFriend] = simulation.npcs
+
+    simulation.desires.socialGraph = {
+      getFriendIds: (npc) => npc.id === host.id ? [firstFriend.id, secondFriend.id] : []
+    }
+
+    setNpcDesires(host, { social: 5 })
+    setNpcDesires(firstFriend, { social: 90 })
+    setNpcDesires(secondFriend, { social: 90 })
+
+    const element = host.getActiveDestinationElement(18)
+    const groupId = host.activeDesire.socialGroupId
+
+    expect(element).toMatchObject({
+      id: 'desire:social',
+      buildingId: 'mall'
+    })
+    expect(groupId).toBeGreaterThan(0)
+
+    for (const friend of [firstFriend, secondFriend]) {
+      expect(friend.activeDesire).toMatchObject({
+        need: 'social',
+        action: 'socialize',
+        buildingId: 'mall',
+        socialGroupId: groupId,
+        organizerNpcId: host.id
+      })
+      expect([...friend.activeDesire.participantIds].sort((a, b) => a - b)).toEqual([host.id, firstFriend.id, secondFriend.id])
+      expect(friend.goal).toMatchObject({
+        id: 'desire:social',
+        buildingId: 'mall'
+      })
+      expect(friend.getActiveDestinationElement(18)).toMatchObject({
+        id: 'desire:social',
+        buildingId: 'mall'
+      })
+    }
+
+    simulation.desires.handleRouteFailure(host)
+
+    expect(host.activeDesire).toBeNull()
+    expect(firstFriend.activeDesire).toBeNull()
+    expect(secondFriend.activeDesire).toBeNull()
+
+    simulation.destroy()
   })
 
   it('keeps hard timetable stops ahead of desires', () => {

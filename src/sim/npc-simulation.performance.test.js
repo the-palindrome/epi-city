@@ -116,6 +116,10 @@ function createClock(hour) {
 }
 
 function createMeasuredNpcSimulation(city, count, hour = 18) {
+  return createConfiguredNpcSimulation(city, count, hour)
+}
+
+function createConfiguredNpcSimulation(city, count, hour = 18, overrides = {}) {
   return createNpcSimulation(city, createActorLayer(), {
     count,
     zorder: 1,
@@ -141,7 +145,8 @@ function createMeasuredNpcSimulation(city, count, hour = 18) {
     infectionDays: 7,
     immunityDays: 90,
     clock: createClock(hour),
-    random: createSeededRandom(`npc-performance-${count}-${hour}`)
+    random: createSeededRandom(`npc-performance-${count}-${hour}`),
+    ...overrides
   })
 }
 
@@ -163,6 +168,31 @@ function prepareLowHungerCandidates(simulation, count) {
     npc.desires.energy = 90
     npc.desires.fun = 90
     npc.desires.social = 90
+    npc.activeDesire = null
+    candidates.push(npc)
+
+    if (candidates.length >= count) {
+      break
+    }
+  }
+
+  return candidates
+}
+
+function prepareLowSocialCandidates(simulation, count) {
+  const candidates = []
+
+  for (const npc of simulation.npcs) {
+    const activeElement = npc.getActiveTimetableElement(21)
+
+    if (npc.age < 18 || activeElement?.id !== 'home') {
+      continue
+    }
+
+    npc.desires.hunger = 90
+    npc.desires.energy = 90
+    npc.desires.fun = 90
+    npc.desires.social = 5
     npc.activeDesire = null
     candidates.push(npc)
 
@@ -212,6 +242,48 @@ function legacyLowHungerDestination(npc, buildingsById, restaurants, supermarket
     : null
 }
 
+function legacyLowSocialDestination(npc, buildingsById, nightclubs, malls) {
+  const home = buildingsById.get(npc.home) || null
+  const origin = buildingsById.get(npc.locationState?.buildingId) || home
+  const building = legacyNearestTypedBuilding(nightclubs, origin, ['nightclub'], 4) ||
+    legacyNearestTypedBuilding(malls, origin, ['mall'], 4) ||
+    home
+
+  return building
+    ? {
+        id: 'desire:social',
+        buildingId: building.id,
+        location: {
+          x: building.entrance.x,
+          y: building.entrance.y
+        }
+      }
+    : null
+}
+
+function legacyNearestTypedBuilding(buildings, originBuilding, types, candidateCount) {
+  if (!buildings || buildings.length === 0) {
+    return null
+  }
+
+  const nearby = []
+
+  for (const building of buildings) {
+    if (!building.entrance || !buildingHasAnyType(building, types)) {
+      continue
+    }
+
+    nearby.push({
+      building,
+      distance: squaredEntranceDistance(originBuilding, building)
+    })
+  }
+
+  nearby.sort((a, b) => a.distance - b.distance || String(a.building.id).localeCompare(String(b.building.id)))
+
+  return nearby[Math.min(candidateCount, nearby.length) - 1]?.building || null
+}
+
 function legacyActiveDestinationElement(npc, needs, buildingsById, restaurants, supermarkets) {
   const scheduledElement = npc.getActiveTimetableElement(18)
 
@@ -238,6 +310,16 @@ function legacyActiveDestinationElement(npc, needs, buildingsById, restaurants, 
   }
 
   return selected?.element || scheduledElement
+}
+
+function legacySocialDestinationElement(npc, buildingsById, nightclubs, malls) {
+  const scheduledElement = npc.getActiveTimetableElement(21)
+
+  if (!scheduledElement || scheduledElement.id !== 'home' || npc.age < 18) {
+    return scheduledElement
+  }
+
+  return legacyLowSocialDestination(npc, buildingsById, nightclubs, malls) || scheduledElement
 }
 
 function squaredEntranceDistance(first, second) {
@@ -268,6 +350,43 @@ function runUpdates(simulation, frames) {
 }
 
 describe('NPC simulation performance', () => {
+  it('generates family-heavy NPC social profiles with near-linear creation cost', () => {
+    const city = loadLibertyCity()
+    const familyOptions = {
+      familyTypeWeights: {
+        single: 0,
+        marriedWithoutChildren: 0,
+        marriedWithChildren: 1
+      },
+      familyChildCountWeights: [
+        { count: 2, weight: 1 }
+      ]
+    }
+
+    const createFamilySimulation = (count) => {
+      const simulation = createConfiguredNpcSimulation(city, count, 18, familyOptions)
+      const friendEdgeTotal = simulation.npcs.reduce((total, npc) => total + npc.friendIds.length, 0)
+      const checksum = simulation.npcs.reduce((total, npc) => total + npc.age + String(npc.home || '').length + npc.friendIds.length, 0)
+
+      expect(simulation.npcs.length).toBe(count)
+      expect(simulation.npcs.filter((npc) => npc.age < 18).length).toBe(count / 2)
+      expect(friendEdgeTotal).toBeGreaterThan(count)
+
+      simulation.destroy()
+
+      return checksum
+    }
+
+    const small = measureBest(() => createFamilySimulation(1000), 3)
+    const large = measureBest(() => createFamilySimulation(4000), 3)
+    const smallPerNpc = small.ms / 1000
+    const largePerNpc = large.ms / 4000
+
+    expect(small.value).toBeGreaterThan(0)
+    expect(large.value).toBeGreaterThan(small.value)
+    expect(largePerNpc).toBeLessThanOrEqual(smallPerNpc * 3)
+  }, 30000)
+
   it('assigns NPC route-field handles at least 10x faster than per-NPC path object arrays', () => {
     const city = loadLibertyCity()
     const target = city.buildings.find((building) => building.id === 'building-0010')?.entrance
@@ -367,6 +486,61 @@ describe('NPC simulation performance', () => {
         for (const npc of candidates) {
           npc.activeDesire = null
           const destination = npc.getActiveDestinationElement(18)
+
+          checksum += destination?.location?.x || 0
+        }
+      }
+
+      return checksum
+    }, 4)
+    const speedup = legacy.ms / Math.max(optimized.ms, 0.001)
+
+    expect(legacy.value).toBeGreaterThan(0)
+    expect(optimized.value).toBeGreaterThan(0)
+    expect(speedup).toBeGreaterThanOrEqual(10)
+
+    simulation.destroy()
+  }, 30000)
+
+  it('coordinates low-social desire destinations at least 10x faster with precomputed venue candidates', () => {
+    const city = loadLibertyCity()
+    const simulation = createConfiguredNpcSimulation(city, 5000, 21, {
+      familyTypeWeights: {
+        single: 1,
+        marriedWithoutChildren: 0,
+        marriedWithChildren: 0
+      }
+    })
+    const candidates = prepareLowSocialCandidates(simulation, 2500)
+    const buildingsById = new Map(city.buildings.map((building) => [building.id, building]))
+    const allBuildings = city.buildings
+    const nightclubs = buildingsWithAnyType(city, ['nightclub'])
+    const malls = buildingsWithAnyType(city, ['mall'])
+    const repetitions = 12
+
+    expect(candidates.length).toBeGreaterThanOrEqual(2000)
+    expect(nightclubs.length + malls.length).toBeGreaterThan(0)
+
+    const legacy = measureBest(() => {
+      let checksum = 0
+
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        for (const npc of candidates) {
+          const destination = legacySocialDestinationElement(npc, buildingsById, allBuildings, allBuildings)
+
+          checksum += destination?.location?.x || 0
+        }
+      }
+
+      return checksum
+    }, 4)
+    const optimized = measureBest(() => {
+      let checksum = 0
+
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        for (const npc of candidates) {
+          npc.activeDesire = null
+          const destination = npc.getActiveDestinationElement(21)
 
           checksum += destination?.location?.x || 0
         }

@@ -81,12 +81,25 @@ const DESIRE_ACTIONS_BY_INDEX = Object.freeze(DESIRE_NAMES.map((need) => DESIRE_
 const NIGHTCLUB_DESIRE_START_HOUR = 20
 const NIGHTCLUB_DESIRE_END_HOUR = 4
 const DESIRE_ZERO_RATES = new Float64Array(DESIRE_COUNT)
+const DEFAULT_SOCIAL_GRAPH_CONFIG = Object.freeze({
+  minFriends: 2,
+  maxFriends: 8,
+  candidateAttemptsPerFriend: 16,
+  ageBucketYears: 8,
+  sameHomeWeight: 4,
+  sameWorkOrSchoolWeight: 5,
+  agePeerWeight: 3,
+  randomWeight: 1
+})
+const DEFAULT_SOCIAL_GROUP_MIN_FRIENDS = 1
+const DEFAULT_SOCIAL_GROUP_MAX_FRIENDS = 3
 const desireCityDataCache = new WeakMap()
 
 export function createNpcSimulation(city, entityLayer, config) {
   const random = config.random || createSystemRandom()
   const infectionRandom = config.infectionRandom || (random.seed ? createSeededRandom(`${random.seed}:infection`) : createSystemRandom())
   const desireRandom = config.desireRandom || (random.seed ? createSeededRandom(`${random.seed}:desires`) : createSystemRandom())
+  const socialRandom = config.socialRandom || (random.seed ? createSeededRandom(`${random.seed}:social`) : createSystemRandom())
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
   const clock = config.clock || STATIC_CLOCK
   const visibleTileCounts = new Uint8Array(city.tiles.length)
@@ -141,6 +154,8 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
 
   const desires = new NpcDesireDynamics(npcs, city, desireCityData, config, desireRandom, clock)
+  const socialGraph = createNpcSocialGraph(npcs, socialRandom, config.socialGraph)
+  desires.setSocialGraph(socialGraph, routePlanner)
   context.desires = desires
   const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
   infection.setContactTracingEnabled(
@@ -220,6 +235,7 @@ export function createNpcSimulation(city, entityLayer, config) {
 
   return {
     npcs,
+    socialGraph,
     tileCapacity: config.tileCapacity,
     routePlanner,
     desires,
@@ -243,6 +259,7 @@ class NpcEntity {
     this.zorder = zorder
     this.age = age
     this.home = buildingAssignment.home ? buildingAssignment.home.id : null
+    this.school = buildingAssignment.school ? buildingAssignment.school.id : null
     this.work = buildingAssignment.work ? buildingAssignment.work.id : null
     this.timetable = timetable
     this.goal = null
@@ -266,6 +283,7 @@ class NpcEntity {
     this.infection = 'susceptible'
     this.desires = null
     this.activeDesire = null
+    this.friendIds = []
   }
 
   getActiveTimetableElement(timeOfDayHours) {
@@ -451,6 +469,9 @@ class NpcDesireDynamics {
       this.mallSatisfactionRates,
       this.nightclubSatisfactionRates
     )
+    this.socialGraph = null
+    this.routePlanner = null
+    this.nextSocialGroupId = 1
 
     for (let index = 0; index < npcs.length; index += 1) {
       const npc = npcs[index]
@@ -467,6 +488,11 @@ class NpcDesireDynamics {
         writable: true
       })
     }
+  }
+
+  setSocialGraph(socialGraph, routePlanner = null) {
+    this.socialGraph = socialGraph || null
+    this.routePlanner = routePlanner || null
   }
 
   update(deltaSeconds) {
@@ -500,6 +526,11 @@ class NpcDesireDynamics {
 
   handleRouteFailure(npc) {
     if (!npc.activeDesire) {
+      return
+    }
+
+    if (npc.activeDesire.socialGroupId) {
+      this.clearSocialGroupDesire(npc.activeDesire, true)
       return
     }
 
@@ -537,6 +568,17 @@ class NpcDesireDynamics {
   shouldContinueActiveDesire(npc) {
     const needIndex = npc.activeDesire?.needIndex
 
+    if (npc.activeDesire?.socialGroupId) {
+      return Boolean(
+        Number.isInteger(needIndex) &&
+        npc.desires &&
+        (
+          npc.locationState?.buildingId !== npc.activeDesire.buildingId ||
+          this.needScores[needIndex][npc.id] < this.config.satisfiedThreshold
+        )
+      )
+    }
+
     return Boolean(
       Number.isInteger(needIndex) &&
       npc.desires &&
@@ -569,7 +611,7 @@ class NpcDesireDynamics {
       return null
     }
 
-    return {
+    const activeDesire = {
       needIndex: selectedNeedIndex,
       need: destination.need,
       action: DESIRE_ACTIONS_BY_INDEX[selectedNeedIndex],
@@ -577,6 +619,10 @@ class NpcDesireDynamics {
       element: destination.element,
       startedAtSeconds: elapsedSeconds
     }
+
+    return selectedNeedIndex === DESIRE_INDEX.social
+      ? this.createSocialGroupDesire(npc, activeDesire, timeOfDayHours)
+      : activeDesire
   }
 
   createDestinationForNeed(npc, needIndex, timeOfDayHours) {
@@ -618,10 +664,90 @@ class NpcDesireDynamics {
     if (needIndex === DESIRE_INDEX.social) {
       return (this.canUseNightclub(npc, timeOfDayHours) ? this.takeNearbyBuilding('nightclub', origin) : null) ||
         this.takeNearbyBuilding('mall', origin) ||
+        this.takeNearbyBuilding('restaurant', origin) ||
         home
     }
 
     return null
+  }
+
+  createSocialGroupDesire(npc, activeDesire, timeOfDayHours) {
+    const participantIds = this.chooseSocialCompanions(npc, timeOfDayHours)
+
+    if (participantIds.length <= 1) {
+      return activeDesire
+    }
+
+    const groupId = this.nextSocialGroupId
+
+    this.nextSocialGroupId += 1
+
+    for (let index = 1; index < participantIds.length; index += 1) {
+      const friend = this.npcs[participantIds[index]]
+
+      if (!friend) {
+        continue
+      }
+
+      const friendDesire = cloneSocialActiveDesire(activeDesire, groupId, npc.id, participantIds)
+
+      friend.activeDesire = friendDesire
+
+      if (typeof friend.setGoal === 'function') {
+        friend.setGoal(friendDesire.element)
+
+        if (friend.present) {
+          this.routePlanner?.request(friend)
+        }
+      }
+    }
+
+    return cloneSocialActiveDesire(activeDesire, groupId, npc.id, participantIds)
+  }
+
+  chooseSocialCompanions(npc, timeOfDayHours) {
+    const friendIds = this.socialGraph?.getFriendIds(npc) || npc.friendIds || []
+    const maxFriends = Math.max(0, this.config.socialGroupMaxFriends)
+
+    if (friendIds.length === 0 || maxFriends === 0) {
+      return [npc.id]
+    }
+
+    const targetFriendCount = Math.min(
+      friendIds.length,
+      maxFriends,
+      Math.max(this.config.socialGroupMinFriends, this.random.int(maxFriends + 1))
+    )
+    const participants = [npc.id]
+    const startIndex = this.random.int(friendIds.length)
+
+    for (let offset = 0; offset < friendIds.length && participants.length <= targetFriendCount; offset += 1) {
+      const friendId = friendIds[(startIndex + offset) % friendIds.length]
+      const friend = this.npcs[friendId]
+
+      if (this.canInviteFriendToSocialTrip(npc, friend, timeOfDayHours)) {
+        participants.push(friend.id)
+      }
+    }
+
+    return participants
+  }
+
+  canInviteFriendToSocialTrip(npc, friend, timeOfDayHours) {
+    if (!friend ||
+        friend === npc ||
+        friend.manualControl ||
+        friend.vehicleTrip ||
+        friend.waitingForCar ||
+        friend.activeDesire ||
+        !friend.desires) {
+      return false
+    }
+
+    const scheduledElement = friend.getActiveTimetableElement(timeOfDayHours)
+
+    return this.canUseDesireDestination(friend, scheduledElement) &&
+      this.needScores[DESIRE_INDEX.social][friend.id] <= this.config.socialInviteThreshold
   }
 
   canUseNightclub(npc, timeOfDayHours) {
@@ -657,6 +783,25 @@ class NpcDesireDynamics {
 
   clearActiveDesire(npc) {
     npc.activeDesire = null
+  }
+
+  clearSocialGroupDesire(activeDesire, startCooldown = false) {
+    const participantIds = activeDesire?.participantIds || []
+
+    for (const participantId of participantIds) {
+      const participant = this.npcs[participantId]
+
+      if (!participant?.activeDesire ||
+          participant.activeDesire.socialGroupId !== activeDesire.socialGroupId) {
+        continue
+      }
+
+      if (startCooldown) {
+        this.startCooldown(participant, participant.activeDesire.needIndex)
+      }
+
+      this.clearActiveDesire(participant)
+    }
   }
 
   getElapsedSimulationSeconds() {
@@ -1400,11 +1545,214 @@ function collectHomesWithMinors(npcs) {
   return homes
 }
 
+function createNpcSocialGraph(npcs, random, options = {}) {
+  const config = normalizeSocialGraphConfig(options)
+  const friendSets = Array.from({ length: npcs.length }, () => new Set())
+  const buckets = createSocialGraphBuckets(npcs, config)
+
+  for (const npc of npcs) {
+    const targetFriends = Math.min(
+      Math.max(0, npcs.length - 1),
+      config.minFriends + random.int(config.maxFriends - config.minFriends + 1)
+    )
+    let attempts = Math.max(1, targetFriends * config.candidateAttemptsPerFriend)
+
+    while (friendSets[npc.id].size < targetFriends && attempts > 0) {
+      attempts -= 1
+      const candidate = chooseSocialGraphCandidate(npc, buckets, npcs, config, random)
+
+      addFriendship(friendSets, npc.id, candidate?.id, config.maxFriends)
+    }
+  }
+
+  const friendIdsByNpc = friendSets.map((friends, npcId) => {
+    const ids = Object.freeze([...friends].sort((a, b) => a - b))
+
+    npcs[npcId].friendIds = ids
+    return ids
+  })
+
+  return Object.freeze({
+    friendIdsByNpc: Object.freeze(friendIdsByNpc),
+    getFriendIds(npcOrIndex) {
+      const index = typeof npcOrIndex === 'number' ? npcOrIndex : npcOrIndex?.id
+
+      return Number.isInteger(index) && index >= 0 && index < friendIdsByNpc.length
+        ? friendIdsByNpc[index]
+        : []
+    }
+  })
+}
+
+function createSocialGraphBuckets(npcs, config) {
+  const home = new Map()
+  const activity = new Map()
+  const age = new Map()
+
+  for (const npc of npcs) {
+    appendSocialBucket(home, npc.home, npc)
+    appendSocialBucket(activity, socialActivityKey(npc), npc)
+    appendSocialBucket(age, socialAgeBucket(npc.age, config), npc)
+  }
+
+  return { home, activity, age }
+}
+
+function appendSocialBucket(buckets, key, npc) {
+  if (key === null || key === undefined) {
+    return
+  }
+
+  let bucket = buckets.get(key)
+
+  if (!bucket) {
+    bucket = []
+    buckets.set(key, bucket)
+  }
+
+  bucket.push(npc)
+}
+
+function chooseSocialGraphCandidate(npc, buckets, npcs, config, random) {
+  const weightedBuckets = []
+
+  appendWeightedSocialBucket(weightedBuckets, buckets.home.get(npc.home), config.sameHomeWeight)
+  appendWeightedSocialBucket(weightedBuckets, buckets.activity.get(socialActivityKey(npc)), config.sameWorkOrSchoolWeight)
+  appendWeightedSocialBucket(weightedBuckets, buckets.age.get(socialAgeBucket(npc.age, config)), config.agePeerWeight)
+  appendWeightedSocialBucket(weightedBuckets, npcs, config.randomWeight)
+
+  const bucket = weightedSocialBucket(weightedBuckets, random)
+
+  return bucket ? bucket[random.int(bucket.length)] : null
+}
+
+function appendWeightedSocialBucket(weightedBuckets, bucket, weight) {
+  if (bucket && bucket.length > 1 && Number.isFinite(weight) && weight > 0) {
+    weightedBuckets.push({ bucket, weight })
+  }
+}
+
+function weightedSocialBucket(weightedBuckets, random) {
+  let totalWeight = 0
+
+  for (const bucket of weightedBuckets) {
+    totalWeight += bucket.weight
+  }
+
+  if (totalWeight <= 0) {
+    return null
+  }
+
+  let threshold = random.next() * totalWeight
+
+  for (const weightedBucket of weightedBuckets) {
+    threshold -= weightedBucket.weight
+
+    if (threshold <= 0) {
+      return weightedBucket.bucket
+    }
+  }
+
+  return weightedBuckets[weightedBuckets.length - 1].bucket
+}
+
+function addFriendship(friendSets, firstId, secondId, maxFriends) {
+  if (!Number.isInteger(firstId) ||
+      !Number.isInteger(secondId) ||
+      firstId === secondId ||
+      firstId < 0 ||
+      secondId < 0 ||
+      firstId >= friendSets.length ||
+      secondId >= friendSets.length ||
+      friendSets[firstId].has(secondId) ||
+      friendSets[firstId].size >= maxFriends ||
+      friendSets[secondId].size >= maxFriends) {
+    return false
+  }
+
+  friendSets[firstId].add(secondId)
+  friendSets[secondId].add(firstId)
+  return true
+}
+
+function socialActivityKey(npc) {
+  if (npc.school) {
+    return `school:${npc.school}`
+  }
+
+  if (npc.work) {
+    return `work:${npc.work}`
+  }
+
+  return null
+}
+
+function socialAgeBucket(age, config) {
+  if (!Number.isInteger(age)) {
+    return null
+  }
+
+  return Math.floor(age / config.ageBucketYears)
+}
+
+function normalizeSocialGraphConfig(options = {}) {
+  const source = options || {}
+  const maxFriends = positiveIntegerOrDefault(source.maxFriends, DEFAULT_SOCIAL_GRAPH_CONFIG.maxFriends)
+  const minFriends = Math.min(
+    maxFriends,
+    nonNegativeIntegerOrDefault(source.minFriends, DEFAULT_SOCIAL_GRAPH_CONFIG.minFriends)
+  )
+
+  return {
+    minFriends,
+    maxFriends,
+    candidateAttemptsPerFriend: positiveIntegerOrDefault(
+      source.candidateAttemptsPerFriend,
+      DEFAULT_SOCIAL_GRAPH_CONFIG.candidateAttemptsPerFriend
+    ),
+    ageBucketYears: positiveIntegerOrDefault(source.ageBucketYears, DEFAULT_SOCIAL_GRAPH_CONFIG.ageBucketYears),
+    sameHomeWeight: nonNegativeNumberOrDefault(source.sameHomeWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.sameHomeWeight),
+    sameWorkOrSchoolWeight: nonNegativeNumberOrDefault(source.sameWorkOrSchoolWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.sameWorkOrSchoolWeight),
+    agePeerWeight: nonNegativeNumberOrDefault(source.agePeerWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.agePeerWeight),
+    randomWeight: nonNegativeNumberOrDefault(source.randomWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.randomWeight)
+  }
+}
+
+function cloneSocialActiveDesire(activeDesire, socialGroupId, organizerNpcId, participantIds) {
+  return {
+    ...activeDesire,
+    element: cloneTimetableElement(activeDesire.element),
+    socialGroupId,
+    organizerNpcId,
+    participantIds: Object.freeze([...participantIds])
+  }
+}
+
+function cloneTimetableElement(element) {
+  return element
+    ? {
+        ...element,
+        location: element.location ? { ...element.location } : element.location
+      }
+    : element
+}
+
 function normalizeDesireConfig(overrides = {}) {
   const fallback = NPC_CONFIG.desires
   const config = overrides || {}
   const initialMin = clampNeedScore(config.initialMin ?? fallback.initialMin)
   const initialMax = clampNeedScore(config.initialMax ?? fallback.initialMax)
+  const socialGroupMaxFriends = positiveIntegerOrDefault(
+    config.socialGroupMaxFriends,
+    fallback.socialGroupMaxFriends ?? DEFAULT_SOCIAL_GROUP_MAX_FRIENDS
+  )
+  const socialGroupMinFriends = Math.min(
+    socialGroupMaxFriends,
+    nonNegativeIntegerOrDefault(
+      config.socialGroupMinFriends,
+      fallback.socialGroupMinFriends ?? DEFAULT_SOCIAL_GROUP_MIN_FRIENDS
+    )
+  )
 
   return {
     initialMin: Math.min(initialMin, initialMax),
@@ -1417,6 +1765,9 @@ function normalizeDesireConfig(overrides = {}) {
       config.destinationCandidateCount,
       fallback.destinationCandidateCount
     ),
+    socialGroupMinFriends,
+    socialGroupMaxFriends,
+    socialInviteThreshold: clampNeedScore(config.socialInviteThreshold ?? fallback.socialInviteThreshold ?? fallback.lowThreshold),
     decayPerHour: normalizeNeedRates(config.decayPerHour, fallback.decayPerHour),
     satisfactionPerHour: {
       home: normalizeNeedRates(config.satisfactionPerHour?.home, fallback.satisfactionPerHour.home),

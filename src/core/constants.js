@@ -108,6 +108,9 @@ export const NPC_CONFIG = Object.freeze({
     satisfiedThreshold: 70,
     tripCooldownHours: 1,
     destinationCandidateCount: 4,
+    socialGroupMinFriends: 1,
+    socialGroupMaxFriends: 3,
+    socialInviteThreshold: 100,
     decayPerHour: Object.freeze({
       hunger: 4,
       energy: 3,
