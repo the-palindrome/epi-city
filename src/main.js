@@ -317,6 +317,9 @@ async function main() {
       world,
       getNpcSimulation: () => npcSimulation,
       getCarSimulation: () => carSimulation,
+      showEntityRoute: (kind, id) => pathSelection.showRouteFor(kind, id),
+      hideEntityRoute: (kind, id) => pathSelection.hideRouteFor(kind, id),
+      isEntityRouteVisible: (kind, id) => pathSelection.isRouteVisibleFor(kind, id),
       requestRender: () => game.render()
     })
     npcHoverMenu = installNpcHoverMenu({

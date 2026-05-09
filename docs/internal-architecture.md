@@ -266,7 +266,7 @@ The dependency command creates or repairs `map-editor/.venv`, then installs the 
 
 ## Debugging Hooks
 
-`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. Right-clicking an NPC opens a context menu with `follow` and `infect`; the `infect` action marks that NPC infectious through the same infection state API used by the simulation. This keeps the console useful without exposing every Pixi container and loader helper.
+`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. Left-clicking an NPC or car selects it without displaying its route. Right-clicking an entity opens a context menu with `follow` and a route toggle that displays `show route` or `hide route` for the selected entity; NPCs also expose `infect`, which marks that NPC infectious through the same infection state API used by the simulation. This keeps the console useful without exposing every Pixi container and loader helper.
 
 Useful console checks:
 

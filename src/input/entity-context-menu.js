@@ -11,10 +11,14 @@ export function installEntityContextMenu({
   world,
   getCarSimulation,
   getNpcSimulation,
+  showEntityRoute,
+  hideEntityRoute,
+  isEntityRouteVisible,
   requestRender
 }) {
   const menu = document.createElement('div')
   const followButton = document.createElement('button')
+  const showRouteButton = document.createElement('button')
   const infectButton = document.createElement('button')
   let target = null
   let destroyed = false
@@ -29,12 +33,18 @@ export function installEntityContextMenu({
   followButton.textContent = 'follow'
   followButton.setAttribute('role', 'menuitem')
 
+  showRouteButton.type = 'button'
+  showRouteButton.className = 'entity-context-menu-option'
+  showRouteButton.textContent = 'show route'
+  showRouteButton.setAttribute('role', 'menuitem')
+
   infectButton.type = 'button'
   infectButton.className = 'entity-context-menu-option'
   infectButton.textContent = 'infect'
   infectButton.setAttribute('role', 'menuitem')
 
   menu.appendChild(followButton)
+  menu.appendChild(showRouteButton)
   menu.appendChild(infectButton)
   document.body.appendChild(menu)
 
@@ -89,6 +99,35 @@ export function installEntityContextMenu({
     }
   }
 
+  function onShowRouteClick() {
+    const selection = resolveTarget()
+    const routeVisible = isRouteVisibleForTarget()
+
+    hide()
+
+    if (!selection) {
+      return
+    }
+
+    if (routeVisible) {
+      if (typeof hideEntityRoute !== 'function') {
+        return
+      }
+
+      hideEntityRoute(selection.kind, selection.entity.id)
+    } else {
+      if (typeof showEntityRoute !== 'function') {
+        return
+      }
+
+      showEntityRoute(selection.kind, selection.entity.id)
+    }
+
+    if (typeof requestRender === 'function') {
+      requestRender()
+    }
+  }
+
   function onDocumentMouseDown(event) {
     if (!menu.hidden && !menu.contains(event.target)) {
       hide()
@@ -121,6 +160,13 @@ export function installEntityContextMenu({
 
   function updateMenuActions() {
     infectButton.hidden = !target || target.kind !== 'npc'
+    showRouteButton.textContent = isRouteVisibleForTarget() ? 'hide route' : 'show route'
+  }
+
+  function isRouteVisibleForTarget() {
+    return Boolean(target &&
+      typeof isEntityRouteVisible === 'function' &&
+      isEntityRouteVisible(target.kind, target.id))
   }
 
   function resolveTarget() {
@@ -144,6 +190,7 @@ export function installEntityContextMenu({
     destroyed = true
     app.canvas.removeEventListener('contextmenu', onContextMenu)
     followButton.removeEventListener('click', onFollowClick)
+    showRouteButton.removeEventListener('click', onShowRouteClick)
     infectButton.removeEventListener('click', onInfectClick)
     document.removeEventListener('mousedown', onDocumentMouseDown)
     document.removeEventListener('keydown', onKeyDown)
@@ -152,6 +199,7 @@ export function installEntityContextMenu({
 
   app.canvas.addEventListener('contextmenu', onContextMenu)
   followButton.addEventListener('click', onFollowClick)
+  showRouteButton.addEventListener('click', onShowRouteClick)
   infectButton.addEventListener('click', onInfectClick)
   document.addEventListener('mousedown', onDocumentMouseDown)
   document.addEventListener('keydown', onKeyDown)
