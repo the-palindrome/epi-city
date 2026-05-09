@@ -15,9 +15,9 @@ function createMap(overrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'building-0001', type: 'residential', spans: [[1, 1, 1]] }
+        { id: 'building-0001', types: ['residential'], spans: [[1, 1, 1]] }
       ]
     },
     rows: [
@@ -47,7 +47,7 @@ function createCrosswalkMap(overrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: []
     },
     rows: [
@@ -73,7 +73,7 @@ function createOpenSidewalkMap(overrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: []
     },
     rows: [
@@ -101,7 +101,7 @@ function createSignalMap(laneGraphOverrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: []
     },
     rows: [
@@ -204,28 +204,32 @@ describe('city map validation and compile', () => {
     expect(map.buildings.defaultTypes).toEqual(['residential'])
     expect(map.buildings.items[0].types).toEqual(['residential', 'restaurant'])
     expect(building.types).toEqual(['residential', 'restaurant'])
-    expect(building.primaryType).toBe('residential')
-    expect(building.hasType('restaurant')).toBe(true)
     expect(city.getTileVariant(1, 1)).toMatchObject({
       buildingType: 'residential',
       buildingTypes: ['residential', 'restaurant']
     })
   })
 
-  it('accepts legacy building type fields while normalizing to type arrays', () => {
-    const city = compileCityMap(validateCityMap(createMap({
+  it('rejects legacy singular building type metadata', () => {
+    expect(() => validateCityMap(createMap({
       buildings: {
         encoding: 'row-spans-v1',
         defaultType: 'residential',
         items: [
-          { id: 'building-0001', type: ['commercial', 'mall'], spans: [[1, 1, 1]] }
+          { id: 'building-0001', types: ['commercial', 'mall'], spans: [[1, 1, 1]] }
         ]
       }
-    })))
-    const building = city.getBuilding(1, 1)
+    }))).toThrow(/defaultTypes/)
 
-    expect(building.types).toEqual(['commercial', 'mall'])
-    expect(building.hasType('mall')).toBe(true)
+    expect(() => validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultTypes: ['residential'],
+        items: [
+          { id: 'building-0001', type: 'commercial', spans: [[1, 1, 1]] }
+        ]
+      }
+    }))).toThrow(/types/)
   })
 
   it('normalizes and compiles fixed vehicle lane graph metadata', () => {
@@ -377,7 +381,7 @@ describe('city map validation and compile', () => {
       },
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: []
       },
       rows: ['rrr', 'rdr', 'rrr'],
@@ -423,11 +427,11 @@ describe('city map validation and compile', () => {
     const city = compileCityMap(validateCityMap(createMap({
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: [
           {
             id: 'building-0001',
-            type: 'residential',
+            types: ['residential'],
             entrance: { x: 1, y: 1 },
             spans: [[1, 1, 1]]
           }
@@ -615,7 +619,7 @@ describe('city map validation and compile', () => {
     expect(() => validateCityMap(createMap({
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: []
       }
     }))).toThrow(/do not cover building tile 1,1/)
@@ -625,11 +629,11 @@ describe('city map validation and compile', () => {
     expect(() => validateCityMap(createMap({
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: [
           {
             id: 'building-0001',
-            type: 'residential',
+            types: ['residential'],
             entrance: { x: 0, y: 0 },
             spans: [[1, 1, 1]]
           }

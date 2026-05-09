@@ -65,7 +65,7 @@ Startup follows this sequence:
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
-The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a non-empty `types` string array, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint. Legacy `type` strings or arrays normalize to `types`.
+The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a non-empty `types` string array, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint.
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
@@ -125,7 +125,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
 
-The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, car movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes NPC and car counts as sliders plus exact number inputs, and includes a checkbox for the day-night overlay. Changing either entity count restarts the population systems with clamped counts; the NPC default remains 1000, and the car default is 500.
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, car movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes NPC and car counts as sliders plus exact number inputs, and includes a checkbox for the day-night overlay. Changing either entity count restarts the population systems with clamped counts; the NPC default remains 1000, and the car default is 200.
 
 `SimulationClock` advances one simulated hour for every 60 game seconds. Since `Game` applies speed before fixed updates reach systems, `1x` speed makes one real minute equal one simulation hour, and higher speeds multiply that rate. Restarting the simulation resets the clock to the configured start hour.
 

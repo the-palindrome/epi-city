@@ -99,10 +99,10 @@ function createCityWithSharedBuildings() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home-1', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'work-1', type: 'commercial', entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] }
+        { id: 'home-1', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work-1', types: ['commercial'], entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] }
       ]
     },
     rows: [
@@ -298,9 +298,7 @@ function createSimulationWithNpc(seedPrefix, city, options, predicate) {
 
 function buildingsWithType(city, type) {
   return city.buildings.filter((building) => (
-    typeof building.hasType === 'function'
-      ? building.hasType(type)
-      : (building.types || [building.type]).includes(type)
+    building.types.includes(type)
   ))
 }
 

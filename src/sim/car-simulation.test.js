@@ -147,9 +147,9 @@ function createTrafficCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
         { id: 'work', types: ['restaurant'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
@@ -186,11 +186,11 @@ function createTrafficCityWithShopping() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'shop', type: 'supermarket', entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'shop', types: ['supermarket'], entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
     rows: [
@@ -226,10 +226,10 @@ function createFirstEdgeCrosswalkCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 2, y: 1 }, spans: [[1, 2, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 2, y: 1 }, spans: [[1, 2, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
     rows: [
@@ -264,10 +264,10 @@ function createLaneChangeTrafficCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 6, y: 5 }, spans: [[5, 6, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 6, y: 5 }, spans: [[5, 6, 1]] }
       ]
     },
     rows: [
@@ -305,10 +305,10 @@ function createTrafficSignalCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
     rows: [

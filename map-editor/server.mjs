@@ -23,8 +23,7 @@ const GRID_SIZE = 256;
 const DEFAULT_TILE_SIZE = 32;
 const TEXTURE_SET_NAME = 'liberty-city';
 const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
-const DEFAULT_BUILDING_TYPE = 'residential';
-const DEFAULT_BUILDING_TYPES = Object.freeze([DEFAULT_BUILDING_TYPE]);
+const DEFAULT_BUILDING_TYPES = Object.freeze(['residential']);
 const MAX_JSON_BODY_BYTES = 64 * 1024 * 1024;
 const MAX_TRAINER_OUTPUT_BYTES = 5 * 1024 * 1024;
 

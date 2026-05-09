@@ -22,7 +22,6 @@ import numpy as np
 from PIL import Image
 
 PROCESS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = PROCESS_DIR.parent
 
 SOURCE = PROCESS_DIR / "source/gta1-liberty-city-hd.webp"
 OUTPUT_MAP = PROCESS_DIR / "output/liberty-city-raw/tile-layout.json"

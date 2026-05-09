@@ -53,12 +53,13 @@ export function createEntityPathSelection({
       return
     }
 
-    const point = canvasPoint(app.canvas, event)
-    const worldPoint = {
-      x: (point.x - camera.x) / camera.zoom,
-      y: (point.y - camera.y) / camera.zoom
-    }
-    const hit = findSelectableEntityAt(worldPoint, city, getNpcSimulation()?.npcs || [], getCarSimulation()?.cars || [])
+    const hit = findSelectableEntityFromPointer({
+      app,
+      camera,
+      city,
+      getNpcSimulation,
+      getCarSimulation
+    }, event)
 
     selected = hit ? { kind: hit.kind, id: hit.entity.id, routeVisible: false } : null
     render()
@@ -194,6 +195,27 @@ export function findSelectableEntityAt(point, city, npcs, cars) {
   }
 
   return best
+}
+
+export function findSelectableEntityFromPointer({
+  app,
+  camera,
+  city,
+  getCarSimulation,
+  getNpcSimulation
+}, event) {
+  const point = canvasPoint(app.canvas, event)
+  const worldPoint = {
+    x: (point.x - camera.x) / camera.zoom,
+    y: (point.y - camera.y) / camera.zoom
+  }
+
+  return findSelectableEntityAt(
+    worldPoint,
+    city,
+    getNpcSimulation()?.npcs || [],
+    getCarSimulation()?.cars || []
+  )
 }
 
 export function npcPathPoints(city, npc) {

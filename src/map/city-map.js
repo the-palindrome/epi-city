@@ -896,6 +896,7 @@ export function compileCityMap(data) {
 
 function createTrafficSignalController(layout) {
   const groups = layout?.groups || []
+  const groupsById = new Map(groups.map((group) => [group.id, group]))
   const edgeSignalIndexesById = new Map()
   let elapsedSeconds = 0
 
@@ -925,7 +926,7 @@ function createTrafficSignalController(layout) {
   }
 
   function getState(id) {
-    const group = groups.find((candidate) => candidate.id === id)
+    const group = groupsById.get(id)
     const phase = currentPhase(group)
 
     if (!group || !group.enabled || !phase) {

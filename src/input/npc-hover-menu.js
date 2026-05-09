@@ -1,5 +1,4 @@
-import { canvasPoint } from '../core/math.js'
-import { findSelectableEntityAt } from './entity-path-selection.js'
+import { findSelectableEntityFromPointer } from './entity-path-selection.js'
 
 const MENU_MARGIN_PX = 8
 const CURSOR_OFFSET_PX = 14
@@ -49,17 +48,13 @@ export function installNpcHoverMenu({
     }
 
     const npcSimulation = getNpcSimulation()
-    const point = canvasPoint(app.canvas, lastEvent)
-    const worldPoint = {
-      x: (point.x - camera.x) / camera.zoom,
-      y: (point.y - camera.y) / camera.zoom
-    }
-    const hit = findSelectableEntityAt(
-      worldPoint,
+    const hit = findSelectableEntityFromPointer({
+      app,
+      camera,
       city,
-      npcSimulation?.npcs || [],
-      getCarSimulation()?.cars || []
-    )
+      getNpcSimulation,
+      getCarSimulation
+    }, lastEvent)
 
     if (!hit || hit.kind !== 'npc' || !npcSimulation?.infection) {
       targetId = null

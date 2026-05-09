@@ -1504,7 +1504,7 @@ function cityBuildingSignature(city) {
 
   for (const building of buildings) {
     const entrance = building.entrance ? `${building.entrance.x},${building.entrance.y}` : 'none'
-    const types = Array.isArray(building.types) ? building.types.join(',') : String(building.type || '')
+    const types = Array.isArray(building.types) ? building.types.join(',') : ''
 
     parts.push(`${building.id}:${entrance}:${types}`)
   }

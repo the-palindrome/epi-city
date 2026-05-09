@@ -44,18 +44,7 @@ export const DEFAULT_CITY_MAP_PATHS = Object.freeze({
 })
 
 export const BUILDING_LAYOUT_ENCODING = 'row-spans-v1'
-export const DEFAULT_BUILDING_TYPE = 'residential'
-export const DEFAULT_BUILDING_TYPES = Object.freeze([DEFAULT_BUILDING_TYPE])
-export const BUILDING_TYPES = Object.freeze([
-  'residential',
-  'commercial',
-  'school',
-  'restaurant',
-  'supermarket',
-  'hospital',
-  'mall',
-  'nightclub'
-])
+export const DEFAULT_BUILDING_TYPES = Object.freeze(['residential'])
 export const HOME_BUILDING_TYPES = Object.freeze(['residential'])
 export const WORK_BUILDING_TYPES = Object.freeze([
   'commercial',
@@ -202,7 +191,7 @@ export const INFECTION_CONFIG = Object.freeze({
 })
 
 export const CAR_CONFIG = Object.freeze({
-  count: 500,
+  count: 200,
   zorder: 1,
   colorPalette: Object.freeze([0x3f6fd8, 0xd94a48, 0xf1d15c, 0x55b86b, 0xd8dce6, 0x22272e]),
   twoTileChance: 0.82,

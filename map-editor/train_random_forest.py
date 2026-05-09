@@ -318,7 +318,14 @@ def train_layer(
 
 
 def stringify_counts(counter: Counter) -> dict[str, int]:
-    return {str(to_json_value(key)).lower() if isinstance(to_json_value(key), bool) else str(to_json_value(key)): int(value) for key, value in counter.items()}
+    counts = {}
+
+    for key, value in counter.items():
+        json_key = to_json_value(key)
+        label = str(json_key).lower() if isinstance(json_key, bool) else str(json_key)
+        counts[label] = int(value)
+
+    return counts
 
 
 def to_json_value(value: Any) -> Any:

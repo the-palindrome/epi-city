@@ -7,7 +7,7 @@ const selectionState = vi.hoisted(() => ({
 }))
 
 vi.mock('./entity-path-selection.js', () => ({
-  findSelectableEntityAt: vi.fn(() => selectionState.hit)
+  findSelectableEntityFromPointer: vi.fn(() => selectionState.hit)
 }))
 
 vi.mock('./camera.js', () => ({

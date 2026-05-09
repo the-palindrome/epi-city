@@ -263,8 +263,7 @@
       const DEFAULT_TILE_SIZE = 32;
       const DEFAULT_TEXTURE_SET = 'liberty-city';
       const BUILDING_LAYOUT_ENCODING = 'row-spans-v1';
-      const DEFAULT_BUILDING_TYPE = 'residential';
-      const DEFAULT_BUILDING_TYPES = Object.freeze([DEFAULT_BUILDING_TYPE]);
+      const DEFAULT_BUILDING_TYPES = Object.freeze(['residential']);
       const MAP_PACKAGE_FILES = Object.freeze({
         tileLayout: 'tile-layout.json',
         textureLayout: 'texture-layout.json',
@@ -2343,35 +2342,38 @@
       }
 
       function defaultBuildingTypesForLayout(buildings) {
-        if (Object.prototype.hasOwnProperty.call(buildings, 'defaultTypes')) {
-          return normalizeBuildingTypes(buildings.defaultTypes, 'Map buildings.defaultTypes');
+        if (Object.prototype.hasOwnProperty.call(buildings, 'defaultType')) {
+          throw new Error('Map buildings.defaultType is no longer supported; use defaultTypes.');
         }
 
-        if (Object.prototype.hasOwnProperty.call(buildings, 'defaultType')) {
-          return normalizeBuildingTypes(buildings.defaultType, 'Map buildings.defaultType');
+        if (Object.prototype.hasOwnProperty.call(buildings, 'defaultTypes')) {
+          return normalizeBuildingTypes(buildings.defaultTypes, 'Map buildings.defaultTypes');
         }
 
         return [...DEFAULT_BUILDING_TYPES];
       }
 
       function buildingTypesForBuilding(building, fallbackTypes = DEFAULT_BUILDING_TYPES) {
-        if (Object.prototype.hasOwnProperty.call(building, 'types')) {
-          return normalizeBuildingTypes(building.types, `Building "${building.id}".types`);
+        if (Object.prototype.hasOwnProperty.call(building, 'type')) {
+          throw new Error(`Building "${building.id}".type is no longer supported; use types.`);
         }
 
-        if (Object.prototype.hasOwnProperty.call(building, 'type')) {
-          return normalizeBuildingTypes(building.type, `Building "${building.id}".type`);
+        if (Object.prototype.hasOwnProperty.call(building, 'types')) {
+          return normalizeBuildingTypes(building.types, `Building "${building.id}".types`);
         }
 
         return [...fallbackTypes];
       }
 
       function normalizeBuildingTypes(value, context) {
-        const rawTypes = Array.isArray(value) ? value : [value];
+        if (!Array.isArray(value) || value.length === 0) {
+          throw new Error(`${context} must be a non-empty array of type strings.`);
+        }
+
         const types = [];
         const seen = new Set();
 
-        for (const rawType of rawTypes) {
+        for (const rawType of value) {
           if (typeof rawType !== 'string' || rawType.length === 0) {
             throw new Error(`${context} must contain non-empty type strings.`);
           }
@@ -2395,7 +2397,6 @@
 
       function setBuildingTypes(building, types) {
         building.types = cloneBuildingTypes(types);
-        delete building.type;
       }
 
       function formatBuildingTypes(types) {

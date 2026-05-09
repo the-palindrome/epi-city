@@ -202,9 +202,9 @@ function createCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'building-0001', type: 'residential', spans: [[1, 1, 1]] }
+        { id: 'building-0001', types: ['residential'], spans: [[1, 1, 1]] }
       ]
     },
     rows: [
@@ -234,10 +234,10 @@ function createTileOverlayColorCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', spans: [[0, 2, 1]] },
-        { id: 'shop', type: 'commercial', spans: [[1, 0, 1]] }
+        { id: 'home', types: ['residential'], spans: [[0, 2, 1]] },
+        { id: 'shop', types: ['commercial'], spans: [[1, 0, 1]] }
       ]
     },
     rows: [

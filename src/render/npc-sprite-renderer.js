@@ -14,6 +14,7 @@ import {
   getNpcSpriteMetrics
 } from './npc-sprite.js'
 import { createCanvas, createCanvasGraphics } from './canvas-graphics.js'
+import { drawEntityTrails, finitePosition, strokePolyline } from './entity-trails.js'
 import { applyNearestSampling } from './texture-sampling.js'
 
 const NPC_SPRITE_FACINGS = Object.freeze(['south', 'east', 'north', 'west'])
@@ -525,7 +526,14 @@ function drawNpcDebugOverlays(graphics, npcs, infection, context) {
   }
 
   if (options.pathTrailsVisible) {
-    drawEntityTrails(graphics, visibleNpcs, context.trailHistories, options.pathTrailLength, (npc) => getNpcRenderColor(infection, npc))
+    drawEntityTrails(
+      graphics,
+      visibleNpcs,
+      context.trailHistories,
+      options.pathTrailLength,
+      (npc) => getNpcRenderColor(infection, npc),
+      0.52
+    )
   }
 
   if (options.infectionRadiusVisible) {
@@ -603,48 +611,6 @@ function drawContactEdges(graphics, npcById, getContactEvents, durationSeconds, 
   }
 }
 
-function drawEntityTrails(graphics, entities, trailHistories, trailLength, colorForEntity) {
-  const activeIds = new Set()
-  const maxPoints = Math.max(2, trailLength + 1)
-
-  for (const entity of entities) {
-    const point = finitePosition(entity.position)
-
-    if (!point) {
-      continue
-    }
-
-    activeIds.add(entity.id)
-
-    const history = trailHistories.get(entity.id) || []
-    const last = history[history.length - 1]
-
-    if (!last || last.x !== point.x || last.y !== point.y) {
-      history.push(point)
-    }
-
-    while (history.length > maxPoints) {
-      history.shift()
-    }
-
-    trailHistories.set(entity.id, history)
-
-    if (history.length > 1) {
-      strokePolyline(graphics, history, {
-        width: 2,
-        color: colorForEntity(entity),
-        alpha: 0.52
-      })
-    }
-  }
-
-  for (const id of trailHistories.keys()) {
-    if (!activeIds.has(id)) {
-      trailHistories.delete(id)
-    }
-  }
-}
-
 function drawDirectedLine(graphics, from, to, style) {
   if (typeof graphics.moveTo !== 'function') {
     return
@@ -673,37 +639,12 @@ function drawDirectedLine(graphics, from, to, style) {
   graphics.moveTo(arrowX, arrowY).lineTo(leftX, leftY).moveTo(arrowX, arrowY).lineTo(rightX, rightY).stroke(strokeStyle)
 }
 
-function strokePolyline(graphics, points, style) {
-  if (points.length < 2 || typeof graphics.moveTo !== 'function') {
-    return
-  }
-
-  graphics.moveTo(points[0].x, points[0].y)
-
-  for (let index = 1; index < points.length; index += 1) {
-    graphics.lineTo(points[index].x, points[index].y)
-  }
-
-  graphics.stroke(style)
-}
-
 function currentOrSnapshotPosition(entity, snapshot) {
   const currentPosition = entity && entity.present !== false
     ? finitePosition(entity.position)
     : null
 
   return currentPosition || finitePosition(snapshot)
-}
-
-function finitePosition(position) {
-  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
-    return null
-  }
-
-  return {
-    x: Math.round(position.x),
-    y: Math.round(position.y)
-  }
 }
 
 function getElapsedSimulationSeconds(clock) {

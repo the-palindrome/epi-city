@@ -1,6 +1,6 @@
 # Epi City
 
-Epi City is a top-down city simulation prototype built with Pixi.js and Vite. The current version renders a 256x256 Liberty City tile map, supports mouse camera controls, and exposes grid/pathfinding helpers for future simulation work.
+Epi City is a top-down Pixi.js and Vite city simulation with Liberty City map rendering, NPC and car movement, SEIR infection dynamics, debug dashboards, and local map-editing tools.
 
 ## Quick Start
 
@@ -25,7 +25,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - SEIR heatmaps use kernel density estimation for susceptible, exposed, infectious, and recovered NPC positions. The rendering panel includes a kernel-radius slider plus exact number input.
 - The epidemic graph plots S/E/I/R counts over simulated time, includes one tickbox per state, can be resized, labels its time/case axes, and supports drag-to-pan plus wheel-to-zoom on the time axis.
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
-- Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 500.
+- Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 200.
 - Use the simulation dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
 - Hover an NPC to inspect its infection status, contagiousness, immunity, and phase timer.
 - Right-click an NPC and choose `infect` to manually make that NPC infectious.
@@ -88,7 +88,7 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, and `nightclub`; legacy singular `type` maps still load.
+The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, and `nightclub`.
 
 ## Movement Rules
 
@@ -108,7 +108,7 @@ The runtime uses a single browser animation loop with the game-development shape
 
 ## Car Prototype
 
-The app creates 500 cars by default. Cars have one or two adult real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Real NPC owners can drive to active timetable stops such as work, lunch, shopping, or home. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
+The app creates 200 cars by default. Cars have one or two adult real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Real NPC owners can drive to active timetable stops such as work, lunch, shopping, or home. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
 
 Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
 

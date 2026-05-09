@@ -1,6 +1,5 @@
-import { canvasPoint } from '../core/math.js'
 import { followEntityWithCamera } from './camera.js'
-import { findSelectableEntityAt } from './entity-path-selection.js'
+import { findSelectableEntityFromPointer } from './entity-path-selection.js'
 
 const MENU_MARGIN_PX = 8
 
@@ -59,12 +58,13 @@ export function installEntityContextMenu({
   function onContextMenu(event) {
     event.preventDefault()
 
-    const point = canvasPoint(app.canvas, event)
-    const worldPoint = {
-      x: (point.x - camera.x) / camera.zoom,
-      y: (point.y - camera.y) / camera.zoom
-    }
-    const hit = findSelectableEntityAt(worldPoint, city, getNpcSimulation()?.npcs || [], getCarSimulation()?.cars || [])
+    const hit = findSelectableEntityFromPointer({
+      app,
+      camera,
+      city,
+      getNpcSimulation,
+      getCarSimulation
+    }, event)
 
     if (!hit) {
       hide()

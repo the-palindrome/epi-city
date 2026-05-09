@@ -598,50 +598,6 @@ async function main() {
       dashboard.simulation.setDayNightOverlayEnabled(simulationState.dayNightOverlayEnabled)
     }
 
-    function setMapTextureEnabled(enabled) {
-      dashboard.setMapTextureEnabled(enabled)
-    }
-
-    function setMapTextureOpacity(opacity) {
-      dashboard.setMapTextureOpacity(opacity)
-    }
-
-    function setEntityRenderMode(mode) {
-      dashboard.setEntityRenderMode(mode)
-    }
-
-    function setInfectionRadiusVisible(visible) {
-      dashboard.setInfectionRadiusVisible(visible)
-    }
-
-    function setInfectionEdgesVisible(visible) {
-      dashboard.setInfectionEdgesVisible(visible)
-    }
-
-    function setContactEdgesVisible(visible) {
-      dashboard.setContactEdgesVisible(visible)
-    }
-
-    function setInfectionEdgeDuration(durationMinutes) {
-      dashboard.setInfectionEdgeDuration(durationMinutes)
-    }
-
-    function setContactEdgeDuration(durationMinutes) {
-      dashboard.setContactEdgeDuration(durationMinutes)
-    }
-
-    function setPathTrailsVisible(visible) {
-      dashboard.setPathTrailsVisible(visible)
-    }
-
-    function setPathTrailLength(length) {
-      dashboard.setPathTrailLength(length)
-    }
-
-    function setHeatmapRadius(radius) {
-      dashboard.setHeatmapRadius(radius)
-    }
-
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -692,17 +648,17 @@ async function main() {
       setInfectionDays,
       setImmunityDays,
       setDayNightOverlayEnabled,
-      setMapTextureEnabled,
-      setMapTextureOpacity,
-      setEntityRenderMode,
-      setInfectionRadiusVisible,
-      setInfectionEdgesVisible,
-      setContactEdgesVisible,
-      setInfectionEdgeDuration,
-      setContactEdgeDuration,
-      setPathTrailsVisible,
-      setPathTrailLength,
-      setHeatmapRadius,
+      setMapTextureEnabled: dashboard.setMapTextureEnabled,
+      setMapTextureOpacity: dashboard.setMapTextureOpacity,
+      setEntityRenderMode: dashboard.setEntityRenderMode,
+      setInfectionRadiusVisible: dashboard.setInfectionRadiusVisible,
+      setInfectionEdgesVisible: dashboard.setInfectionEdgesVisible,
+      setContactEdgesVisible: dashboard.setContactEdgesVisible,
+      setInfectionEdgeDuration: dashboard.setInfectionEdgeDuration,
+      setContactEdgeDuration: dashboard.setContactEdgeDuration,
+      setPathTrailsVisible: dashboard.setPathTrailsVisible,
+      setPathTrailLength: dashboard.setPathTrailLength,
+      setHeatmapRadius: dashboard.setHeatmapRadius,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
       clearCameraFollow: () => clearCameraFollow(camera),

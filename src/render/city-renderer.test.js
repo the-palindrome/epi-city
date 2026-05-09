@@ -65,9 +65,9 @@ function createCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'building-0001', type: 'residential', spans: [[1, 1, 1]] }
+        { id: 'building-0001', types: ['residential'], spans: [[1, 1, 1]] }
       ]
     },
     rows: [
