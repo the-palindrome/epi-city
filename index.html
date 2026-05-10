@@ -199,6 +199,10 @@
         display: none;
       }
 
+      #policy-dashboard {
+        width: min(460px, calc(100vw - 32px));
+      }
+
       .graph-dashboard-resize-handle {
         position: absolute;
         top: 4px;
@@ -392,12 +396,116 @@
 	        min-width: 0;
 	      }
 
-	      .dashboard-speed-value,
+      .dashboard-speed-value,
 	      .dashboard-opacity-value {
 	        color: #526044;
 	        font-size: 12px;
 	        text-align: right;
 	      }
+
+      .dashboard-policy-effects-value {
+        color: #20261d;
+        font-size: 12px;
+        font-weight: 700;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .dashboard-policy-rules {
+        display: grid;
+        gap: 8px;
+      }
+
+      .dashboard-policy-rule {
+        padding: 8px 0 0;
+        border-top: 1px solid rgba(40, 48, 36, 0.14);
+      }
+
+      .dashboard-policy-rule-header {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+
+      .dashboard-policy-enabled {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .dashboard-policy-enabled input {
+        width: 14px;
+        height: 14px;
+        accent-color: #2c9a54;
+      }
+
+      .dashboard-policy-status {
+        justify-self: start;
+        padding: 2px 6px;
+        border: 1px solid rgba(40, 48, 36, 0.16);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.56);
+        color: #526044;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .dashboard-policy-status[data-policy-active="true"] {
+        border-color: rgba(44, 154, 84, 0.35);
+        color: #1f7d43;
+      }
+
+      .dashboard-policy-delete {
+        min-height: 26px;
+        padding: 3px 7px;
+      }
+
+      .dashboard-policy-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+      }
+
+      .dashboard-policy-line select,
+      .dashboard-policy-line input {
+        min-width: 0;
+        height: 28px;
+        box-sizing: border-box;
+        border: 1px solid rgba(40, 48, 36, 0.24);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.82);
+        color: #20261d;
+        font: inherit;
+      }
+
+      .dashboard-policy-line select {
+        flex: 1 1 118px;
+        padding: 4px 6px;
+      }
+
+      .dashboard-policy-line input {
+        flex: 0 0 58px;
+        width: 58px;
+        padding: 4px 6px;
+      }
+
+      .dashboard-policy-token {
+        flex: 0 0 auto;
+        color: #526044;
+        font-weight: 700;
+      }
+
+      .dashboard-policy-effect {
+        display: block;
+        padding-top: 4px;
+        color: #526044;
+        font-size: 12px;
+      }
 
 	      .dashboard-field select {
 	        padding: 4px 6px;
@@ -461,6 +569,7 @@
     <div id="dashboard-layer">
       <div id="debug-dashboard" class="debug-dashboard hidden" aria-label="Simulation dashboard"></div>
       <div id="overlay-dashboard" class="debug-dashboard hidden" aria-label="Rendering options"></div>
+      <div id="policy-dashboard" class="debug-dashboard hidden" aria-label="Policy dashboard"></div>
     </div>
     <div id="graph-dashboard" class="debug-dashboard hidden" aria-label="Epidemic graph"></div>
     <script type="module" src="/src/main.js"></script>

@@ -133,14 +133,17 @@ class FakeElement {
 function createDashboardDocument() {
   const dashboard = new FakeElement('div')
   const overlayDashboard = new FakeElement('div')
+  const policyDashboard = new FakeElement('div')
   const graphDashboard = new FakeElement('div')
   const eventListeners = {}
 
+  policyDashboard.classList.toggle('hidden', true)
   graphDashboard.classList.toggle('hidden', true)
 
   return {
     dashboard,
     overlayDashboard,
+    policyDashboard,
     graphDashboard,
     eventListeners,
     activeElement: null,
@@ -157,6 +160,10 @@ function createDashboardDocument() {
 
       if (id === 'overlay-dashboard') {
         return overlayDashboard
+      }
+
+      if (id === 'policy-dashboard') {
+        return policyDashboard
       }
 
       if (id === 'graph-dashboard') {
@@ -437,6 +444,74 @@ describe('debug dashboard overlays', () => {
     dashboard.destroy()
   })
 
+  it('renders the policy title, p shortcut, and default editable policy rule', () => {
+    const changes = []
+    let stats = { susceptible: 92, exposed: 3, infectious: 3, recovered: 2 }
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      getInfectionStats() {
+        return stats
+      },
+      onPolicyEffectsChange(effects) {
+        changes.push(effects)
+      }
+    })
+    const title = dashboard.policyElement.children[0]
+    const shortcut = title.children[0]
+    const effects = findByDataset(dashboard.policyElement, 'policyEffects')
+    const metric = findByDataset(dashboard.policyElement, 'policyMetric')
+    const operator = findByDataset(dashboard.policyElement, 'policyOperator')
+    const threshold = findByDataset(dashboard.policyElement, 'policyThreshold')
+    const unit = findByDataset(dashboard.policyElement, 'policyUnit')
+    const action = findByDataset(dashboard.policyElement, 'policyThenAction')
+    const intensity = findByDataset(dashboard.policyElement, 'policyIntensity')
+    const cancellationProbability = findByDataset(dashboard.policyElement, 'policyCancellationProbability')
+    const untilOperator = findByDataset(dashboard.policyElement, 'policyUntilOperator')
+    const untilThreshold = findByDataset(dashboard.policyElement, 'policyUntilThreshold')
+    const untilUnit = findByDataset(dashboard.policyElement, 'policyUntilUnit')
+    const status = findByDataset(dashboard.policyElement, 'policyStatus')
+
+    expect(title.className).toBe('dashboard-title')
+    expect(title.textContent).toBe('policy')
+    expect(shortcut.className).toBe('dashboard-shortcut')
+    expect(shortcut.textContent).toBe('p')
+    expect(metric.value).toBe('activeCases')
+    expect(operator.value).toBe('>=')
+    expect(operator.children.map((option) => option.value)).toEqual(['>=', '<='])
+    expect(threshold.value).toBe('5')
+    expect(unit.value).toBe('percentPopulation')
+    expect(action.value).toBe('socialDistancing')
+    expect(action.children.map((option) => [option.value, option.textContent])).toContainEqual(['homeOffice', 'home office'])
+    expect(action.children.map((option) => option.value)).not.toContain('closeWorkplaces')
+    expect(intensity.hidden).toBe(true)
+    expect(cancellationProbability.hidden).toBe(true)
+    expect(untilOperator.value).toBe('<=')
+    expect(untilOperator.children.map((option) => option.value)).toEqual(['>=', '<='])
+    expect(untilThreshold.value).toBe('2')
+    expect(untilUnit.value).toBe('percentPopulation')
+
+    dashboard.render()
+
+    expect(status.textContent).toBe('active')
+    expect(status.dataset.policyActive).toBe('true')
+    expect(effects.textContent).toBe('social distancing (1 active)')
+    expect(changes.at(-1)).toMatchObject({
+      infectionProbabilityMultiplier: 1,
+      socialDistancingEnabled: true,
+      activePolicies: [
+        expect.objectContaining({ action: 'socialDistancing' })
+      ]
+    })
+
+    stats = { susceptible: 99, exposed: 0, infectious: 1, recovered: 0 }
+    dashboard.render()
+
+    expect(status.textContent).toBe('inactive')
+    expect(effects.textContent).toBe('none')
+    expect(changes.at(-1)).toMatchObject({ infectionProbabilityMultiplier: 1 })
+
+    dashboard.destroy()
+  })
+
   it('toggles the dashboard with the q hotkey', () => {
     const dashboard = installDebugDashboard(createCity(), createEntityLayer())
     const keydown = globalThis.document.eventListeners.keydown
@@ -493,6 +568,73 @@ describe('debug dashboard overlays', () => {
 
     expect(hideEvent.defaultPrevented).toBe(true)
     expect(dashboard.graphElement.classList.contains('hidden')).toBe(true)
+
+    dashboard.destroy()
+  })
+
+  it('toggles the policy dashboard with the p hotkey', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer())
+    const keydown = globalThis.document.eventListeners.keydown
+
+    expect(dashboard.policyElement.classList.contains('hidden')).toBe(true)
+
+    const showEvent = createKeydownEvent({ key: 'p', code: 'KeyP' })
+    keydown(showEvent)
+
+    expect(showEvent.defaultPrevented).toBe(true)
+    expect(dashboard.policyElement.classList.contains('hidden')).toBe(false)
+
+    const hideEvent = createKeydownEvent({ key: 'P', code: 'KeyP' })
+    keydown(hideEvent)
+
+    expect(hideEvent.defaultPrevented).toBe(true)
+    expect(dashboard.policyElement.classList.contains('hidden')).toBe(true)
+
+    dashboard.destroy()
+  })
+
+  it('adds, edits, and disables user-defined policy rules', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      getInfectionStats() {
+        return { susceptible: 97, exposed: 0, infectious: 3, recovered: 0 }
+      }
+    })
+    const add = findAllByDataset(dashboard.policyElement, 'policyAction')
+      .find((button) => button.dataset.policyAction === 'add')
+
+    add.eventListeners.click()
+
+    const rules = findAllByDataset(dashboard.policyElement, 'policyRule')
+    const actions = findAllByDataset(dashboard.policyElement, 'policyThenAction')
+    const intensities = findAllByDataset(dashboard.policyElement, 'policyIntensity')
+    const probabilities = findAllByDataset(dashboard.policyElement, 'policyCancellationProbability')
+    const thresholds = findAllByDataset(dashboard.policyElement, 'policyThreshold')
+    const effects = findByDataset(dashboard.policyElement, 'policyEffects')
+
+    expect(rules).toHaveLength(2)
+
+    actions[1].value = 'reduceNightlife'
+    actions[1].eventListeners.change()
+    intensities[1].value = 'strict'
+    intensities[1].eventListeners.change()
+    probabilities[1].value = '0.75'
+    probabilities[1].eventListeners.change()
+    thresholds[1].value = '1'
+    thresholds[1].eventListeners.change()
+    dashboard.render()
+
+    expect(dashboard.policy.state.policies[1]).toMatchObject({
+      action: 'reduceNightlife',
+      intensity: 'strict',
+      cancellationProbability: 0.75
+    })
+    expect(dashboard.policy.state.effects.eventCancellationProbabilities.reduceNightlife).toBe(0.75)
+
+    dashboard.policy.setAllPoliciesEnabled(false)
+    dashboard.render()
+
+    expect(effects.textContent).toBe('none')
+    expect(dashboard.policy.state.policies.every((policy) => policy.enabled === false)).toBe(true)
 
     dashboard.destroy()
   })

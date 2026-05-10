@@ -245,6 +245,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     routeBlockedReplanSeconds: 2,
     initialInfectiousCount: options.initialInfectiousCount ?? 0,
     inoculatedPercent: options.inoculatedPercent,
+    policyEffects: options.policyEffects,
     infectionDistance: options.infectionDistance ?? INFECTION_CONFIG.infectionDistance,
     infectionProbability: options.infectionProbability ?? 0.03,
     incubationDays: options.incubationDays ?? 5,
@@ -916,6 +917,189 @@ describe('NPC simulation randomness', () => {
     ])
 
     simulation.destroy()
+  })
+
+  it('applies policy transmission multipliers without changing the base infection probability', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('infection-policy-multiplier', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 1,
+      initialUpdate: false
+    })
+
+    simulation.npcs[0].position = { x: 16, y: 16 }
+    simulation.npcs[1].position = { x: 22, y: 16 }
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.setNpcState(1, 'susceptible')
+    simulation.infection.setPolicyInfectionProbabilityMultiplier(0)
+
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[1].infection).toBe('susceptible')
+    expect(simulation.infection.infectionProbability).toBe(0)
+
+    simulation.infection.setPolicyInfectionProbabilityMultiplier(1)
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[1].infection).toBe('exposed')
+    expect(simulation.infection.baseInfectionProbability).toBe(1)
+    expect(simulation.infection.infectionProbability).toBe(1)
+
+    simulation.destroy()
+  })
+
+  it('cancels matching timetable events according to active policy probabilities', () => {
+    const cases = [
+      {
+        name: 'school',
+        hour: 10,
+        createCity: createCityWithBuildingTypes,
+        options: { count: 6, familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES },
+        action: 'closeSchools',
+        canceledId: 'home',
+        allowedId: 'school',
+        predicate: (npc) => npc.age >= 6 && npc.age < 18 && npc.school
+      },
+      {
+        name: 'home-office',
+        hour: 10,
+        options: { shoppingChance: 0, nightclubChance: 0 },
+        action: 'homeOffice',
+        canceledId: 'home',
+        allowedId: 'work'
+      },
+      {
+        name: 'shopping',
+        hour: 17.5,
+        options: { shoppingChance: 1, nightclubChance: 0 },
+        action: 'reduceShopping',
+        canceledId: 'home',
+        allowedId: 'shopping'
+      },
+      {
+        name: 'nightlife',
+        hour: 22,
+        options: {
+          shoppingChance: 0,
+          nightclubChance: 1,
+          nightclubStartHour: 21,
+          nightclubLatestStartHour: 21,
+          nightclubDurationHours: 3
+        },
+        action: 'reduceNightlife',
+        canceledId: 'home',
+        allowedId: 'nightclub'
+      }
+    ]
+
+    for (const testCase of cases) {
+      const city = (testCase.createCity || createCityWithDailyLifeBuildings)()
+      const createPolicySimulation = (probability) => createSimulationWithNpc(
+        `policy-cancel-${testCase.name}-${probability}`,
+        city,
+        {
+          count: 1,
+          familyTypeWeights: SINGLE_ADULT_FAMILIES,
+          scheduleVariationHours: 0,
+          clock: createMutableClock(testCase.hour),
+          policyEffects: {
+            infectionProbabilityMultiplier: 1,
+            eventCancellationProbabilities: {
+              closeSchools: 0,
+              homeOffice: 0,
+              reduceShopping: 0,
+              reduceNightlife: 0,
+              [testCase.action]: probability
+            }
+          },
+          ...testCase.options,
+          initialUpdate: false
+        },
+        testCase.predicate || (() => true)
+      )
+      const canceled = createPolicySimulation(1)
+      const allowed = createPolicySimulation(0)
+
+      canceled.simulation.update(1 / 60)
+      allowed.simulation.update(1 / 60)
+
+      expect(canceled.npc.goal.id).toBe(testCase.canceledId)
+      expect(allowed.npc.goal.id).toBe(testCase.allowedId)
+
+      canceled.simulation.destroy()
+      allowed.simulation.destroy()
+    }
+  })
+
+  it('enforces social distancing by queuing pedestrians before occupied tiles', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const createWalker = (socialDistancingEnabled) => {
+      const simulation = createSimulation(`social-distance-${socialDistancingEnabled}`, city, {
+        count: 2,
+        policyEffects: {
+          infectionProbabilityMultiplier: 1,
+          socialDistancingEnabled,
+          eventCancellationProbabilities: {
+            closeSchools: 0,
+            homeOffice: 0,
+            reduceShopping: 0,
+            reduceNightlife: 0
+          }
+        },
+        initialUpdate: false
+      })
+      const walker = simulation.npcs[0]
+      const occupant = simulation.npcs[1]
+      const start = { x: 0, y: 0, index: city.index(0, 0) }
+      const destination = { x: 1, y: 0, index: city.index(1, 0) }
+
+      walker.present = true
+      walker.locationState = null
+      walker.position = { x: 16, y: 16 }
+      walker.tile = { ...start }
+      walker.slot = { id: 0 }
+      walker.movement.target = null
+      walker.timetable = {
+        getActiveElement: () => ({
+          id: 'walk',
+          buildingId: 'target',
+          location: destination
+        })
+      }
+
+      occupant.present = true
+      occupant.locationState = null
+      occupant.position = { x: 48, y: 16 }
+      occupant.tile = { ...destination }
+      occupant.slot = { id: 0 }
+      occupant.movement.target = null
+      occupant.timetable = { getActiveElement: () => null }
+
+      return { simulation, walker }
+    }
+    const distanced = createWalker(true)
+    const normal = createWalker(false)
+
+    distanced.simulation.update(1 / 60)
+    normal.simulation.update(1 / 60)
+
+    expect(distanced.walker.movement.target).toBeNull()
+    expect(normal.walker.movement.target).toBeTruthy()
+
+    distanced.simulation.destroy()
+    normal.simulation.destroy()
   })
 
   it('records recent contact events when contact edge display is enabled', () => {

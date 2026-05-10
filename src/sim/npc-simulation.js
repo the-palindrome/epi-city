@@ -98,6 +98,7 @@ const desireCityDataCache = new WeakMap()
 export function createNpcSimulation(city, entityLayer, config) {
   const random = config.random || createSystemRandom()
   const infectionRandom = config.infectionRandom || (random.seed ? createSeededRandom(`${random.seed}:infection`) : createSystemRandom())
+  const policyRandom = config.policyRandom || (random.seed ? createSeededRandom(`${random.seed}:policy`) : createSystemRandom())
   const desireRandom = config.desireRandom || (random.seed ? createSeededRandom(`${random.seed}:desires`) : createSystemRandom())
   const socialRandom = config.socialRandom || (random.seed ? createSeededRandom(`${random.seed}:social`) : createSystemRandom())
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
@@ -110,6 +111,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   const buildingsByPurpose = desireCityData.buildingsByPurpose
   const unlimitedCapacityTiles = collectBuildingEntranceTiles(city)
   const routePlanner = new NpcRoutePlanner(config)
+  const policyController = new NpcPolicyController(city, policyRandom, clock)
   const npcs = []
   const crowding = createNpcCrowdingState(city, config)
   const context = {
@@ -119,6 +121,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     unlimitedCapacityTiles,
     crowding,
     random,
+    policies: policyController,
     routePlanner,
     zorder,
     config
@@ -160,6 +163,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   desires.setSocialGraph(socialGraph, routePlanner)
   context.desires = desires
   const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
+  setPolicyEffects(config.policyEffects)
   infection.setContactTracingEnabled(
     Boolean(entityDebugOptions.contactEdgesVisible),
     entityDebugOptions.contactEdgeDurationSeconds
@@ -235,6 +239,14 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
   }
 
+  function setPolicyEffects(effects) {
+    policyController.setEffects(effects)
+
+    if (infection) {
+      infection.setPolicyInfectionProbabilityMultiplier(policyController.effects.infectionProbabilityMultiplier)
+    }
+  }
+
   render()
 
   return {
@@ -249,6 +261,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     render,
     setEntityRenderMode,
     setEntityDebugOptions,
+    setPolicyEffects,
     destroy() {
       destroyed = true
 
@@ -443,6 +456,65 @@ class NpcRoutePlanner {
       this.queue.splice(0, this.head)
       this.head = 0
     }
+  }
+}
+
+class NpcPolicyController {
+  constructor(city, random, clock) {
+    this.city = city
+    this.random = random
+    this.clock = clock
+    this.effects = normalizeNpcPolicyEffects(null)
+    this.decisions = new Map()
+    this.effectKey = getNpcPolicyEffectsKey(this.effects)
+  }
+
+  setEffects(effects) {
+    const nextEffects = normalizeNpcPolicyEffects(effects)
+    const nextKey = getNpcPolicyEffectsKey(nextEffects)
+
+    if (nextKey !== this.effectKey) {
+      this.decisions.clear()
+      this.effectKey = nextKey
+    }
+
+    this.effects = nextEffects
+  }
+
+  getAdjustedDestinationElement(npc, element) {
+    const eventAction = getPolicyEventActionForElement(this.city, element)
+
+    if (!eventAction) {
+      return element
+    }
+
+    const probability = this.effects.eventCancellationProbabilities[eventAction] || 0
+
+    if (probability <= 0) {
+      return element
+    }
+
+    return this.shouldCancelEvent(npc, element, eventAction, probability)
+      ? getNpcHomeTimetableElement(npc) || element
+      : element
+  }
+
+  shouldKeepDistanceFromTile(tileIndex) {
+    return Boolean(this.effects.socialDistancingEnabled && Number.isInteger(tileIndex) && tileIndex >= 0)
+  }
+
+  shouldCancelEvent(npc, element, eventAction, probability) {
+    if (probability >= 1) {
+      return true
+    }
+
+    const key = createNpcPolicyDecisionKey(npc, element, eventAction, probability, this.clock)
+
+    if (!this.decisions.has(key)) {
+      this.decisions.set(key, this.random.next() < probability)
+    }
+
+    return this.decisions.get(key)
   }
 }
 
@@ -881,7 +953,9 @@ class NpcInfectionDynamics {
     this.random = random
     this.clock = clock
     this.infectionDistance = nonNegativeNumberOrDefault(config.infectionDistance, INFECTION_CONFIG.infectionDistance)
-    this.infectionProbability = clampUnitInterval(config.infectionProbability ?? INFECTION_CONFIG.infectionProbability)
+    this.baseInfectionProbability = clampUnitInterval(config.infectionProbability ?? INFECTION_CONFIG.infectionProbability)
+    this.policyInfectionProbabilityMultiplier = 1
+    this.infectionProbability = this.baseInfectionProbability
     this.incubationSeconds = daysToSeconds(nonNegativeNumberOrDefault(config.incubationDays, INFECTION_CONFIG.incubationDays))
     this.infectionSeconds = daysToSeconds(nonNegativeNumberOrDefault(config.infectionDays, INFECTION_CONFIG.infectionDays))
     this.immunitySeconds = daysToSeconds(nonNegativeNumberOrDefault(config.immunityDays, INFECTION_CONFIG.immunityDays))
@@ -984,6 +1058,17 @@ class NpcInfectionDynamics {
     if (!this.contactTracingEnabled) {
       this.clearContactEvents()
     }
+  }
+
+  setPolicyInfectionProbabilityMultiplier(multiplier) {
+    const value = Number(multiplier)
+
+    this.policyInfectionProbabilityMultiplier = Number.isFinite(value)
+      ? Math.min(Math.max(value, 0), 1)
+      : 1
+    this.infectionProbability = clampUnitInterval(
+      this.baseInfectionProbability * this.policyInfectionProbabilityMultiplier
+    )
   }
 
   getNpcColor(npc) {
@@ -1770,6 +1855,99 @@ function cloneTimetableElement(element) {
     : element
 }
 
+function getPolicyEventActionForElement(city, element) {
+  if (!element) {
+    return null
+  }
+
+  if (element.id === 'work') {
+    return 'homeOffice'
+  }
+
+  if (element.id === 'school') {
+    return 'closeSchools'
+  }
+
+  if (element.id === 'shopping') {
+    return 'reduceShopping'
+  }
+
+  if (element.id === 'nightclub') {
+    return 'reduceNightlife'
+  }
+
+  const building = getPolicyElementBuilding(city, element)
+
+  if (buildingHasAnyType(building, NIGHTCLUB_BUILDING_TYPES)) {
+    return 'reduceNightlife'
+  }
+
+  if (buildingHasAnyType(building, SHOPPING_BUILDING_TYPES)) {
+    return 'reduceShopping'
+  }
+
+  return null
+}
+
+function getPolicyElementBuilding(city, element) {
+  if (element?.location && typeof city.getBuilding === 'function') {
+    const building = city.getBuilding(element.location.x, element.location.y)
+
+    if (building) {
+      return building
+    }
+  }
+
+  return (city.buildings || []).find((building) => building.id === element?.buildingId) || null
+}
+
+function getNpcHomeTimetableElement(npc) {
+  return npc?.timetable?.elements?.find((element) => element.id === 'home') || null
+}
+
+function createNpcPolicyDecisionKey(npc, element, eventAction, probability, clock) {
+  const dayIndex = clock && typeof clock.getDayIndex === 'function'
+    ? clock.getDayIndex()
+    : 0
+
+  return [
+    eventAction,
+    formatPolicyProbabilityKey(probability),
+    dayIndex,
+    npc?.id ?? -1,
+    element?.id || '',
+    element?.buildingId || ''
+  ].join(':')
+}
+
+function formatPolicyProbabilityKey(probability) {
+  return Number(normalizePolicyProbability(probability).toFixed(4)).toString()
+}
+
+function normalizeNpcPolicyEffects(effects) {
+  return {
+    infectionProbabilityMultiplier: normalizePolicyProbability(effects?.infectionProbabilityMultiplier ?? 1),
+    socialDistancingEnabled: Boolean(effects?.socialDistancingEnabled),
+    eventCancellationProbabilities: {
+      closeSchools: normalizePolicyProbability(effects?.eventCancellationProbabilities?.closeSchools),
+      homeOffice: normalizePolicyProbability(effects?.eventCancellationProbabilities?.homeOffice),
+      reduceShopping: normalizePolicyProbability(effects?.eventCancellationProbabilities?.reduceShopping),
+      reduceNightlife: normalizePolicyProbability(effects?.eventCancellationProbabilities?.reduceNightlife)
+    }
+  }
+}
+
+function getNpcPolicyEffectsKey(effects) {
+  return [
+    formatPolicyProbabilityKey(effects.infectionProbabilityMultiplier),
+    effects.socialDistancingEnabled ? '1' : '0',
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.closeSchools),
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.homeOffice),
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.reduceShopping),
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.reduceNightlife)
+  ].join(':')
+}
+
 function normalizeDesireConfig(overrides = {}) {
   const fallback = NPC_CONFIG.desires
   const config = overrides || {}
@@ -2322,9 +2500,11 @@ function refreshNpcGoal(npc, timeOfDayHours, context) {
     return
   }
 
-  const activeElement = typeof npc.getActiveDestinationElement === 'function'
+  let activeElement = typeof npc.getActiveDestinationElement === 'function'
     ? npc.getActiveDestinationElement(timeOfDayHours)
     : npc.getActiveTimetableElement(timeOfDayHours)
+
+  activeElement = context.policies?.getAdjustedDestinationElement(npc, activeElement) || activeElement
 
   if (!activeElement) {
     if (npc.goal) {
@@ -2550,6 +2730,10 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
     return false
   }
 
+  if (shouldQueueForSocialDistance(targetIndex, context)) {
+    return false
+  }
+
   const targetSlot = findAvailableNpcSlot(
     targetIndex,
     random,
@@ -2756,6 +2940,10 @@ function tryExitCurrentLocation(npc, context) {
   const location = npc.locationState.location
 
   if (shouldQueueForCrowdedDoorway(location.index, context)) {
+    return false
+  }
+
+  if (shouldQueueForSocialDistance(location.index, context)) {
     return false
   }
 
@@ -2968,6 +3156,14 @@ function shouldQueueForCrowdedCrosswalk(tileIndex, context) {
   )
 }
 
+function shouldQueueForSocialDistance(tileIndex, context) {
+  if (!context.policies?.shouldKeepDistanceFromTile(tileIndex)) {
+    return false
+  }
+
+  return npcCrowdCount(tileIndex, context) > 0
+}
+
 function isNpcCrosswalkTile(tileIndex, city) {
   if (!Number.isInteger(tileIndex) || tileIndex < 0) {
     return false
@@ -3088,6 +3284,16 @@ function clampPercent(value) {
   }
 
   return Math.min(Math.max(number, 0), 100)
+}
+
+function normalizePolicyProbability(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return 0
+  }
+
+  return Math.min(Math.max(number, 0), 1)
 }
 
 function unitIntervalOrDefault(value, fallback) {

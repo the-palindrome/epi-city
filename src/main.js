@@ -121,6 +121,17 @@ async function main() {
     }
     let npcSimulation = null
     let carSimulation = null
+    let activePolicyEffects = {
+      infectionProbabilityMultiplier: 1,
+      socialDistancingEnabled: false,
+      eventCancellationProbabilities: {
+        closeSchools: 0,
+        homeOffice: 0,
+        reduceShopping: 0,
+        reduceNightlife: 0
+      },
+      activePolicies: []
+    }
     const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
     const dayNightOverlay = createDayNightOverlay(city, entityLayer, simulationClock, {
       enabled: simulationState.dayNightOverlayEnabled
@@ -326,6 +337,7 @@ async function main() {
       pathSelection.clearSelection()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
+      applyPolicyEffects(activePolicyEffects)
       carSimulation = createConfiguredCarSimulation()
       game.addSystem(carSimulation)
       game.addSystem(npcSimulation)
@@ -513,6 +525,9 @@ async function main() {
       onHeatmapRadiusChange: (radius) => {
         simulationState.heatmapRadius = clampRangeValue(radius, SEIR_HEATMAP_CONFIG.radiusRange)
         game.render()
+      },
+      onPolicyEffectsChange: (effects) => {
+        applyPolicyEffects(effects)
       }
     })
 
@@ -522,6 +537,7 @@ async function main() {
     game.addSystem(dayNightOverlay)
     game.addSystem({ render: () => dashboard.render() })
     npcSimulation = createConfiguredNpcSimulation()
+    applyPolicyEffects(activePolicyEffects)
     carSimulation = createConfiguredCarSimulation()
     game.addSystem(carSimulation)
     game.addSystem(npcSimulation)
@@ -536,6 +552,28 @@ async function main() {
       npcSimulation?.setEntityDebugOptions(options)
       carSimulation?.setEntityDebugOptions(options)
       game.render()
+    }
+
+    function applyPolicyEffects(effects) {
+      const multiplier = clampRangeValue(effects?.infectionProbabilityMultiplier ?? 1, { min: 0, max: 1 })
+
+      activePolicyEffects = {
+        infectionProbabilityMultiplier: multiplier,
+        socialDistancingEnabled: Boolean(effects?.socialDistancingEnabled),
+        eventCancellationProbabilities: {
+          closeSchools: clampRangeValue(effects?.eventCancellationProbabilities?.closeSchools ?? 0, { min: 0, max: 1 }),
+          homeOffice: clampRangeValue(effects?.eventCancellationProbabilities?.homeOffice ?? 0, { min: 0, max: 1 }),
+          reduceShopping: clampRangeValue(effects?.eventCancellationProbabilities?.reduceShopping ?? 0, { min: 0, max: 1 }),
+          reduceNightlife: clampRangeValue(effects?.eventCancellationProbabilities?.reduceNightlife ?? 0, { min: 0, max: 1 })
+        },
+        activePolicies: Array.isArray(effects?.activePolicies)
+          ? effects.activePolicies.map((policy) => ({ ...policy }))
+          : []
+      }
+
+      if (npcSimulation && typeof npcSimulation.setPolicyEffects === 'function') {
+        npcSimulation.setPolicyEffects(activePolicyEffects)
+      }
     }
 
     function playSimulation() {
@@ -660,6 +698,9 @@ async function main() {
         return carSimulation
       },
       simulationState,
+      get policyEffects() {
+        return activePolicyEffects
+      },
       get npcs() {
         return npcSimulation.npcs
       },

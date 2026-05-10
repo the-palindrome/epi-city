@@ -30,11 +30,71 @@ const EPIDEMIC_GRAPH_STATES = Object.freeze([
   Object.freeze({ id: 'infectious', label: 'I', color: INFECTION_CONFIG.colors.infectious }),
   Object.freeze({ id: 'recovered', label: 'R', color: INFECTION_CONFIG.colors.recovered })
 ])
+const POLICY_METRICS = Object.freeze([
+  Object.freeze({ id: 'activeCases', label: 'infected cases E+I' }),
+  Object.freeze({ id: 'infectiousCases', label: 'infectious cases' }),
+  Object.freeze({ id: 'exposedCases', label: 'exposed cases' }),
+  Object.freeze({ id: 'recoveredCases', label: 'recovered cases' }),
+  Object.freeze({ id: 'susceptibleCases', label: 'susceptible cases' })
+])
+const POLICY_OPERATORS = Object.freeze([
+  Object.freeze({ id: '>=', label: '>=' }),
+  Object.freeze({ id: '<=', label: '<=' })
+])
+const POLICY_UNITS = Object.freeze([
+  Object.freeze({ id: 'percentPopulation', label: '% population' }),
+  Object.freeze({ id: 'people', label: 'people' })
+])
+const POLICY_ACTIONS = Object.freeze([
+  Object.freeze({ id: 'socialDistancing', label: 'social distancing' }),
+  Object.freeze({ id: 'closeSchools', label: 'close schools' }),
+  Object.freeze({ id: 'homeOffice', label: 'home office' }),
+  Object.freeze({ id: 'reduceShopping', label: 'reduce shopping' }),
+  Object.freeze({ id: 'reduceNightlife', label: 'reduce nightlife' })
+])
+const POLICY_INTENSITIES = Object.freeze([
+  Object.freeze({ id: 'light', label: 'light' }),
+  Object.freeze({ id: 'moderate', label: 'moderate' }),
+  Object.freeze({ id: 'strict', label: 'strict' })
+])
+const POLICY_ACTION_EFFECTS = Object.freeze({
+  socialDistancing: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
+  closeSchools: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
+  homeOffice: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
+  reduceShopping: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
+  reduceNightlife: Object.freeze({ light: 1, moderate: 1, strict: 1 })
+})
+const POLICY_EVENT_ACTIONS = Object.freeze(['closeSchools', 'homeOffice', 'reduceShopping', 'reduceNightlife'])
+const POLICY_BINARY_ACTIONS = Object.freeze(['socialDistancing'])
+const POLICY_EVENT_CANCELLATION_PROBABILITIES = Object.freeze({
+  closeSchools: 0,
+  homeOffice: 0,
+  reduceShopping: 0,
+  reduceNightlife: 0
+})
+const DEFAULT_POLICIES = Object.freeze([
+  Object.freeze({
+    id: 'policy-1',
+    enabled: true,
+    metric: 'activeCases',
+    operator: '>=',
+    threshold: 5,
+    unit: 'percentPopulation',
+    action: 'socialDistancing',
+    intensity: 'moderate',
+    cancellationProbability: 0.5,
+    untilOperator: '<=',
+    untilThreshold: 2,
+    untilUnit: 'percentPopulation'
+  })
+])
 let epidemicGraphSequence = 0
+let policySequence = DEFAULT_POLICIES.length
 
 export function installDebugDashboard(city, entityLayer, simulationControls = {}) {
   const dashboard = document.getElementById('debug-dashboard')
   const overlayDashboard = document.getElementById('overlay-dashboard')
+  const policyDashboard = document.getElementById('policy-dashboard')
   const graphDashboard = document.getElementById('graph-dashboard')
   const overlayState = Object.fromEntries(DASHBOARD_OVERLAYS.map((overlay) => [overlay.id, false]))
   const mapOverlays = DASHBOARD_OVERLAYS.filter((overlay) => overlay.kind !== 'heatmap')
@@ -43,6 +103,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   const layers = new Map()
   const simulation = createSimulationControls(simulationControls)
   const epidemicGraph = createEpidemicGraph(simulationControls)
+  const policy = createPolicyControls(simulationControls)
   const graphResizeHandle = createGraphResizeHandle()
   const graphResizer = createGraphDashboardResizer(graphDashboard, graphResizeHandle, () => epidemicGraph.render())
   const heatmapRadiusRange = normalizeHeatmapRadiusRange(simulationControls.heatmapRadiusRange)
@@ -137,10 +198,13 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   dashboard.innerHTML = ''
   overlayDashboard.innerHTML = ''
+  policyDashboard.innerHTML = ''
   graphDashboard.innerHTML = ''
   dashboard.appendChild(createDashboardTitle('simulation', 's'))
   dashboard.appendChild(simulation.element)
   overlayDashboard.appendChild(createDashboardTitle('rendering options', 'r'))
+  policyDashboard.appendChild(createDashboardTitle('policy', 'p'))
+  policyDashboard.appendChild(policy.element)
   graphDashboard.appendChild(createDashboardTitle('epidemic', 'g'))
   graphDashboard.appendChild(epidemicGraph.element)
   graphDashboard.appendChild(graphResizeHandle)
@@ -255,6 +319,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
   function render() {
     simulation.render()
+    policy.render()
     epidemicGraph.render()
     let currentHeatmapNpcsByState
 
@@ -441,6 +506,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     epidemicGraph.render()
   }
 
+  function togglePolicyDashboard(force) {
+    const shouldHide = typeof force === 'boolean' ? !force : !policyDashboard.classList.contains('hidden')
+    policyDashboard.classList.toggle('hidden', shouldHide)
+    policy.render()
+  }
+
   function onKeyDown(event) {
     if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
       return
@@ -466,6 +537,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
       return
     }
 
+    if (key === 'p' && !isTextEntryTarget(event.target)) {
+      event.preventDefault()
+      togglePolicyDashboard()
+      return
+    }
+
     if (!isSpaceHotkey(event) || isInteractiveTarget(event.target)) {
       return
     }
@@ -479,6 +556,8 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   dashboard.addEventListener('change', releaseDashboardShortcutFocus)
   overlayDashboard.addEventListener('click', releaseDashboardShortcutFocus)
   overlayDashboard.addEventListener('change', releaseDashboardShortcutFocus)
+  policyDashboard.addEventListener('click', releaseDashboardShortcutFocus)
+  policyDashboard.addEventListener('change', releaseDashboardShortcutFocus)
   graphDashboard.addEventListener('click', releaseDashboardShortcutFocus)
   graphDashboard.addEventListener('change', releaseDashboardShortcutFocus)
 
@@ -507,10 +586,12 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
   return {
     element: dashboard,
     overlayElement: overlayDashboard,
+    policyElement: policyDashboard,
     graphElement: graphDashboard,
     overlays: overlayState,
     rendering: renderingSettings,
     graph: epidemicGraph,
+    policy,
     simulation,
     setOverlay,
     setMapTextureEnabled,
@@ -528,12 +609,14 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
     setHeatmapRadius,
     toggle: toggleDashboard,
     toggleRenderingOptions: toggleOverlayDashboard,
+    togglePolicy: togglePolicyDashboard,
     toggleGraph: toggleGraphDashboard,
     render,
     destroy() {
       document.removeEventListener('keydown', onKeyDown)
       removeDashboardShortcutFocusListeners(dashboard)
       removeDashboardShortcutFocusListeners(overlayDashboard)
+      removeDashboardShortcutFocusListeners(policyDashboard)
       removeDashboardShortcutFocusListeners(graphDashboard)
       epidemicGraph.destroy()
       graphResizer.destroy()
@@ -544,6 +627,7 @@ export function installDebugDashboard(city, entityLayer, simulationControls = {}
 
       dashboard.innerHTML = ''
       overlayDashboard.innerHTML = ''
+      policyDashboard.innerHTML = ''
       graphDashboard.innerHTML = ''
       layers.clear()
     }
@@ -977,6 +1061,742 @@ function createSimulationControls(options) {
     setInfectionDays,
     setImmunityDays,
     togglePlayback
+  }
+}
+
+function createPolicyControls(options = {}) {
+  const state = {
+    policies: normalizePolicyList(options.policies),
+    effects: createPolicyEffects([])
+  }
+  const callbacks = {
+    onPolicyEffectsChange: options.onPolicyEffectsChange || noop,
+    onPoliciesChange: options.onPoliciesChange || noop
+  }
+  const section = createDashboardSection('Policy')
+  const actions = document.createElement('div')
+  const addButton = createPolicyButton('+ policy', 'add')
+  const enableAllButton = createPolicyButton('enable all', 'enableAll')
+  const disableAllButton = createPolicyButton('disable all', 'disableAll')
+  const effectsField = createPolicyEffectsField()
+  const list = document.createElement('div')
+  const controlsById = new Map()
+  let lastEffectsKey = ''
+
+  actions.className = 'dashboard-actions dashboard-policy-actions'
+  list.className = 'dashboard-policy-rules'
+  list.dataset.policyList = 'true'
+
+  actions.appendChild(addButton)
+  actions.appendChild(enableAllButton)
+  actions.appendChild(disableAllButton)
+  section.appendChild(actions)
+  section.appendChild(effectsField.label)
+  section.appendChild(list)
+
+  addButton.addEventListener('click', () => {
+    addPolicy()
+  })
+
+  enableAllButton.addEventListener('click', () => {
+    setAllPoliciesEnabled(true)
+  })
+
+  disableAllButton.addEventListener('click', () => {
+    setAllPoliciesEnabled(false)
+  })
+
+  function rebuildPolicyList() {
+    controlsById.clear()
+    list.innerHTML = ''
+
+    for (const policy of state.policies) {
+      const rule = createPolicyRule(policy)
+
+      controlsById.set(policy.id, rule)
+      list.appendChild(rule.element)
+    }
+  }
+
+  function createPolicyRule(policy) {
+    const element = document.createElement('div')
+    const header = document.createElement('div')
+    const enabledLabel = document.createElement('label')
+    const enabledInput = document.createElement('input')
+    const enabledText = document.createElement('span')
+    const status = document.createElement('output')
+    const deleteButton = createPolicyButton('delete', 'delete')
+    const conditionLine = document.createElement('div')
+    const untilLine = document.createElement('div')
+    const effect = document.createElement('output')
+    const metric = createPolicySelect(POLICY_METRICS, policy.metric, 'policyMetric', policy.id)
+    const operator = createPolicySelect(POLICY_OPERATORS, policy.operator, 'policyOperator', policy.id)
+    const threshold = createPolicyNumberInput(policy.threshold, 'policyThreshold', policy.id)
+    const unit = createPolicySelect(POLICY_UNITS, policy.unit, 'policyUnit', policy.id)
+    const action = createPolicySelect(POLICY_ACTIONS, policy.action, 'policyThenAction', policy.id)
+    const intensity = createPolicySelect(POLICY_INTENSITIES, policy.intensity, 'policyIntensity', policy.id)
+    const probabilityToken = document.createElement('span')
+    const cancellationProbability = createPolicyProbabilityInput(policy.cancellationProbability, 'policyCancellationProbability', policy.id)
+    const untilOperator = createPolicySelect(POLICY_OPERATORS, policy.untilOperator, 'policyUntilOperator', policy.id)
+    const untilThreshold = createPolicyNumberInput(policy.untilThreshold, 'policyUntilThreshold', policy.id)
+    const untilUnit = createPolicySelect(POLICY_UNITS, policy.untilUnit, 'policyUntilUnit', policy.id)
+
+    element.className = 'dashboard-policy-rule'
+    element.dataset.policyRule = policy.id
+    header.className = 'dashboard-policy-rule-header'
+    enabledLabel.className = 'dashboard-policy-enabled'
+    enabledInput.type = 'checkbox'
+    enabledInput.checked = policy.enabled
+    enabledInput.dataset.policyEnabled = policy.id
+    enabledText.textContent = 'enabled'
+    status.className = 'dashboard-policy-status'
+    status.dataset.policyStatus = policy.id
+    deleteButton.className += ' dashboard-policy-delete'
+    deleteButton.dataset.policyDelete = policy.id
+    conditionLine.className = 'dashboard-policy-line'
+    untilLine.className = 'dashboard-policy-line dashboard-policy-until-line'
+    effect.className = 'dashboard-policy-effect'
+    effect.dataset.policyEffect = policy.id
+
+    appendPolicyToken(conditionLine, 'if')
+    conditionLine.appendChild(metric)
+    conditionLine.appendChild(operator)
+    conditionLine.appendChild(threshold)
+    conditionLine.appendChild(unit)
+    appendPolicyToken(conditionLine, 'then')
+    conditionLine.appendChild(action)
+    conditionLine.appendChild(intensity)
+    probabilityToken.className = 'dashboard-policy-token'
+    probabilityToken.textContent = 'p'
+    conditionLine.appendChild(probabilityToken)
+    conditionLine.appendChild(cancellationProbability)
+
+    appendPolicyToken(untilLine, 'until')
+    untilLine.appendChild(untilOperator)
+    untilLine.appendChild(untilThreshold)
+    untilLine.appendChild(untilUnit)
+
+    enabledLabel.appendChild(enabledInput)
+    enabledLabel.appendChild(enabledText)
+    header.appendChild(enabledLabel)
+    header.appendChild(status)
+    header.appendChild(deleteButton)
+    element.appendChild(header)
+    element.appendChild(conditionLine)
+    element.appendChild(untilLine)
+    element.appendChild(effect)
+
+    enabledInput.addEventListener('change', () => {
+      updatePolicy(policy.id, { enabled: enabledInput.checked })
+    })
+
+    metric.addEventListener('change', () => {
+      updatePolicy(policy.id, { metric: metric.value })
+    })
+
+    operator.addEventListener('change', () => {
+      updatePolicy(policy.id, { operator: operator.value })
+    })
+
+    threshold.addEventListener('change', () => {
+      updatePolicy(policy.id, { threshold: threshold.value })
+    })
+
+    unit.addEventListener('change', () => {
+      updatePolicy(policy.id, { unit: unit.value })
+    })
+
+    action.addEventListener('change', () => {
+      updatePolicy(policy.id, { action: action.value })
+    })
+
+    intensity.addEventListener('change', () => {
+      updatePolicy(policy.id, { intensity: intensity.value })
+    })
+
+    cancellationProbability.addEventListener('change', () => {
+      updatePolicy(policy.id, { cancellationProbability: cancellationProbability.value })
+    })
+
+    untilOperator.addEventListener('change', () => {
+      updatePolicy(policy.id, { untilOperator: untilOperator.value })
+    })
+
+    untilThreshold.addEventListener('change', () => {
+      updatePolicy(policy.id, { untilThreshold: untilThreshold.value })
+    })
+
+    untilUnit.addEventListener('change', () => {
+      updatePolicy(policy.id, { untilUnit: untilUnit.value })
+    })
+
+    deleteButton.addEventListener('click', () => {
+      deletePolicy(policy.id)
+    })
+
+    return {
+      element,
+      enabledInput,
+      status,
+      metric,
+      operator,
+      threshold,
+      unit,
+      action,
+      intensity,
+      probabilityToken,
+      cancellationProbability,
+      untilOperator,
+      untilThreshold,
+      untilUnit,
+      effect
+    }
+  }
+
+  function updatePolicy(id, patch) {
+    const policy = state.policies.find((item) => item.id === id)
+
+    if (!policy) {
+      return
+    }
+
+    Object.assign(policy, normalizePolicyPatch(patch))
+    callbacks.onPoliciesChange(clonePolicyList(state.policies))
+    render()
+  }
+
+  function addPolicy(policy = null) {
+    state.policies.push(normalizePolicy(policy || createDefaultPolicy()))
+    rebuildPolicyList()
+    callbacks.onPoliciesChange(clonePolicyList(state.policies))
+    render()
+  }
+
+  function deletePolicy(id) {
+    const index = state.policies.findIndex((policy) => policy.id === id)
+
+    if (index === -1) {
+      return
+    }
+
+    state.policies.splice(index, 1)
+    rebuildPolicyList()
+    callbacks.onPoliciesChange(clonePolicyList(state.policies))
+    render()
+  }
+
+  function setPolicyEnabled(id, enabled) {
+    updatePolicy(id, { enabled })
+  }
+
+  function setAllPoliciesEnabled(enabled) {
+    for (const policy of state.policies) {
+      policy.enabled = Boolean(enabled)
+    }
+
+    callbacks.onPoliciesChange(clonePolicyList(state.policies))
+    render()
+  }
+
+  function render() {
+    const context = getPolicyContext(options)
+    const activePolicies = evaluatePolicies(state.policies, context)
+    const effects = createPolicyEffects(activePolicies)
+
+    state.effects = effects
+    effectsField.value.textContent = formatPolicyEffects(effects)
+
+    for (const policy of state.policies) {
+      const controls = controlsById.get(policy.id)
+
+      if (!controls) {
+        continue
+      }
+
+      controls.enabledInput.checked = policy.enabled
+      controls.metric.value = policy.metric
+      controls.operator.value = policy.operator
+      controls.threshold.value = formatNumberInput(policy.threshold)
+      controls.unit.value = policy.unit
+      controls.action.value = policy.action
+      controls.intensity.value = policy.intensity
+      controls.cancellationProbability.value = formatNumberInput(policy.cancellationProbability)
+      controls.intensity.hidden = !usesPolicyIntensity(policy.action)
+      controls.cancellationProbability.hidden = !usesPolicyCancellationProbability(policy.action)
+      controls.probabilityToken.hidden = !usesPolicyCancellationProbability(policy.action)
+      controls.untilOperator.value = policy.untilOperator
+      controls.untilThreshold.value = formatNumberInput(policy.untilThreshold)
+      controls.untilUnit.value = policy.untilUnit
+      controls.status.textContent = getPolicyStatusText(policy)
+      controls.status.dataset.policyActive = String(policy.active)
+      controls.effect.textContent = formatPolicyRuleEffect(policy)
+    }
+
+    const nextEffectsKey = getPolicyEffectsKey(effects)
+
+    if (nextEffectsKey !== lastEffectsKey) {
+      lastEffectsKey = nextEffectsKey
+      callbacks.onPolicyEffectsChange(clonePolicyEffects(effects))
+    }
+  }
+
+  rebuildPolicyList()
+  render()
+
+  return {
+    element: section,
+    state,
+    render,
+    addPolicy,
+    deletePolicy,
+    setPolicyEnabled,
+    setAllPoliciesEnabled,
+    getEffects: () => clonePolicyEffects(state.effects)
+  }
+}
+
+function createPolicyButton(label, action) {
+  const button = document.createElement('button')
+
+  button.className = 'dashboard-button dashboard-policy-button'
+  button.type = 'button'
+  button.dataset.policyAction = action
+  button.textContent = label
+
+  return button
+}
+
+function createPolicyEffectsField() {
+  const label = document.createElement('div')
+  const text = document.createElement('span')
+  const value = document.createElement('output')
+
+  label.className = 'dashboard-field dashboard-policy-effects-field'
+  text.textContent = 'effect'
+  value.className = 'dashboard-policy-effects-value'
+  value.dataset.policyEffects = 'true'
+  label.appendChild(text)
+  label.appendChild(value)
+
+  return { label, value }
+}
+
+function createPolicySelect(options, selectedId, dataset, id) {
+  const select = document.createElement('select')
+  const selected = String(selectedId || '')
+
+  select.dataset[dataset] = id
+
+  for (const option of options) {
+    const element = document.createElement('option')
+
+    element.value = option.id
+    element.textContent = option.label
+    select.appendChild(element)
+  }
+
+  select.value = options.some((option) => option.id === selected)
+    ? selected
+    : options[0].id
+
+  return select
+}
+
+function createPolicyNumberInput(value, dataset, id) {
+  const input = document.createElement('input')
+
+  input.type = 'number'
+  input.min = '0'
+  input.step = '0.25'
+  input.value = formatNumberInput(normalizePolicyThreshold(value))
+  input.dataset[dataset] = id
+
+  return input
+}
+
+function createPolicyProbabilityInput(value, dataset, id) {
+  const input = document.createElement('input')
+
+  input.type = 'number'
+  input.min = '0'
+  input.max = '1'
+  input.step = '0.05'
+  input.value = formatNumberInput(normalizePolicyProbability(value))
+  input.dataset[dataset] = id
+
+  return input
+}
+
+function appendPolicyToken(parent, text) {
+  const token = document.createElement('span')
+
+  token.className = 'dashboard-policy-token'
+  token.textContent = text
+  parent.appendChild(token)
+}
+
+function normalizePolicyList(policies) {
+  const source = Array.isArray(policies) && policies.length > 0
+    ? policies
+    : DEFAULT_POLICIES
+
+  return source.map((policy) => normalizePolicy(policy))
+}
+
+function normalizePolicy(policy) {
+  const fallback = DEFAULT_POLICIES[0]
+  const normalized = {
+    id: String(policy?.id || `policy-${++policySequence}`),
+    enabled: policy?.enabled !== false,
+    active: Boolean(policy?.active),
+    metric: normalizePolicyOption(policy?.metric, POLICY_METRICS, fallback.metric),
+    operator: normalizePolicyOption(policy?.operator, POLICY_OPERATORS, fallback.operator),
+    threshold: normalizePolicyThreshold(policy?.threshold ?? fallback.threshold),
+    unit: normalizePolicyOption(policy?.unit, POLICY_UNITS, fallback.unit),
+    action: normalizePolicyOption(policy?.action, POLICY_ACTIONS, fallback.action),
+    intensity: normalizePolicyOption(policy?.intensity, POLICY_INTENSITIES, fallback.intensity),
+    cancellationProbability: normalizePolicyProbability(policy?.cancellationProbability ?? fallback.cancellationProbability),
+    untilOperator: normalizePolicyOption(policy?.untilOperator, POLICY_OPERATORS, fallback.untilOperator),
+    untilThreshold: normalizePolicyThreshold(policy?.untilThreshold ?? fallback.untilThreshold),
+    untilUnit: normalizePolicyOption(policy?.untilUnit, POLICY_UNITS, fallback.untilUnit)
+  }
+
+  return normalized
+}
+
+function normalizePolicyPatch(patch = {}) {
+  const normalized = {}
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
+    normalized.enabled = Boolean(patch.enabled)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'metric')) {
+    normalized.metric = normalizePolicyOption(patch.metric, POLICY_METRICS, DEFAULT_POLICIES[0].metric)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'operator')) {
+    normalized.operator = normalizePolicyOption(patch.operator, POLICY_OPERATORS, DEFAULT_POLICIES[0].operator)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'threshold')) {
+    normalized.threshold = normalizePolicyThreshold(patch.threshold)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'unit')) {
+    normalized.unit = normalizePolicyOption(patch.unit, POLICY_UNITS, DEFAULT_POLICIES[0].unit)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'action')) {
+    normalized.action = normalizePolicyOption(patch.action, POLICY_ACTIONS, DEFAULT_POLICIES[0].action)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'intensity')) {
+    normalized.intensity = normalizePolicyOption(patch.intensity, POLICY_INTENSITIES, DEFAULT_POLICIES[0].intensity)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'cancellationProbability')) {
+    normalized.cancellationProbability = normalizePolicyProbability(patch.cancellationProbability)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'untilOperator')) {
+    normalized.untilOperator = normalizePolicyOption(patch.untilOperator, POLICY_OPERATORS, DEFAULT_POLICIES[0].untilOperator)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'untilThreshold')) {
+    normalized.untilThreshold = normalizePolicyThreshold(patch.untilThreshold)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'untilUnit')) {
+    normalized.untilUnit = normalizePolicyOption(patch.untilUnit, POLICY_UNITS, DEFAULT_POLICIES[0].untilUnit)
+  }
+
+  return normalized
+}
+
+function normalizePolicyOption(id, options, fallback) {
+  const value = String(id || '')
+
+  return options.some((option) => option.id === value) ? value : fallback
+}
+
+function normalizePolicyThreshold(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return 0
+  }
+
+  return Math.max(0, number)
+}
+
+function normalizePolicyProbability(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return 0
+  }
+
+  return Math.min(Math.max(number, 0), 1)
+}
+
+function createDefaultPolicy() {
+  return {
+    ...DEFAULT_POLICIES[0],
+    id: `policy-${++policySequence}`,
+    active: false
+  }
+}
+
+function clonePolicyList(policies) {
+  return policies.map((policy) => ({ ...policy }))
+}
+
+function getPolicyContext(options) {
+  const provided = typeof options.getPolicyContext === 'function' ? options.getPolicyContext() : null
+  const stats = normalizeEpidemicStats(
+    provided?.stats ||
+    (typeof options.getInfectionStats === 'function' ? options.getInfectionStats() : null)
+  )
+  const population = normalizePolicyPopulation(
+    provided?.population,
+    stats,
+    null,
+    options.npcCount
+  )
+
+  return { stats, population }
+}
+
+function normalizePolicyPopulation(population, stats, npcs, fallback) {
+  const providedPopulation = Math.round(Number(population))
+
+  if (Number.isFinite(providedPopulation) && providedPopulation >= 0) {
+    return providedPopulation
+  }
+
+  if (Array.isArray(npcs)) {
+    return npcs.length
+  }
+
+  if (stats) {
+    return EPIDEMIC_GRAPH_STATES.reduce((sum, state) => sum + (stats[state.id] || 0), 0)
+  }
+
+  const fallbackPopulation = Math.round(Number(fallback))
+
+  return Number.isFinite(fallbackPopulation) && fallbackPopulation >= 0 ? fallbackPopulation : 0
+}
+
+function evaluatePolicies(policies, context) {
+  const activePolicies = []
+
+  for (const policy of policies) {
+    if (!policy.enabled) {
+      policy.active = false
+      continue
+    }
+
+    const shouldActivate = testPolicyCondition(policy, context, {
+      operator: policy.operator,
+      threshold: policy.threshold,
+      unit: policy.unit
+    })
+    const shouldDeactivate = testPolicyCondition(policy, context, {
+      operator: policy.untilOperator,
+      threshold: policy.untilThreshold,
+      unit: policy.untilUnit
+    })
+
+    policy.active = policy.active
+      ? !shouldDeactivate
+      : shouldActivate
+
+    if (policy.active) {
+      activePolicies.push(policy)
+    }
+  }
+
+  return activePolicies
+}
+
+function testPolicyCondition(policy, context, condition) {
+  const metricValue = getPolicyMetricValue(policy.metric, context.stats)
+  const threshold = getPolicyThresholdValue(condition.threshold, condition.unit, context.population)
+
+  return comparePolicyValues(metricValue, condition.operator, threshold)
+}
+
+function getPolicyMetricValue(metric, stats) {
+  if (!stats) {
+    return 0
+  }
+
+  if (metric === 'activeCases') {
+    return stats.exposed + stats.infectious
+  }
+
+  if (metric === 'infectiousCases') {
+    return stats.infectious
+  }
+
+  if (metric === 'exposedCases') {
+    return stats.exposed
+  }
+
+  if (metric === 'recoveredCases') {
+    return stats.recovered
+  }
+
+  if (metric === 'susceptibleCases') {
+    return stats.susceptible
+  }
+
+  return 0
+}
+
+function getPolicyThresholdValue(threshold, unit, population) {
+  const value = normalizePolicyThreshold(threshold)
+
+  return unit === 'percentPopulation'
+    ? Math.max(0, population) * value / 100
+    : value
+}
+
+function comparePolicyValues(left, operator, right) {
+  if (operator === '>=') {
+    return left >= right
+  }
+
+  if (operator === '<') {
+    return left < right
+  }
+
+  if (operator === '<=') {
+    return left <= right
+  }
+
+  return left > right
+}
+
+function createPolicyEffects(activePolicies) {
+  const multipliers = activePolicies.map(getPolicyMultiplier)
+  const infectionProbabilityMultiplier = multipliers.length > 0
+    ? Math.min(...multipliers)
+    : 1
+  const eventCancellationProbabilities = { ...POLICY_EVENT_CANCELLATION_PROBABILITIES }
+  const socialDistancingEnabled = activePolicies.some((policy) => policy.action === 'socialDistancing')
+
+  for (const policy of activePolicies) {
+    if (POLICY_EVENT_ACTIONS.includes(policy.action)) {
+      eventCancellationProbabilities[policy.action] = Math.max(
+        eventCancellationProbabilities[policy.action],
+        normalizePolicyProbability(policy.cancellationProbability)
+      )
+    }
+  }
+
+  return {
+    infectionProbabilityMultiplier,
+    socialDistancingEnabled,
+    eventCancellationProbabilities,
+    activePolicies: activePolicies.map((policy) => ({
+      id: policy.id,
+      action: policy.action,
+      intensity: policy.intensity,
+      cancellationProbability: normalizePolicyProbability(policy.cancellationProbability),
+      multiplier: getPolicyMultiplier(policy)
+    }))
+  }
+}
+
+function getPolicyMultiplier(policy) {
+  const actionEffects = POLICY_ACTION_EFFECTS[policy.action] || POLICY_ACTION_EFFECTS.socialDistancing
+  const multiplier = Number(actionEffects[policy.intensity])
+
+  return Number.isFinite(multiplier) ? Math.min(Math.max(multiplier, 0), 1) : 1
+}
+
+function usesPolicyIntensity(action) {
+  return !POLICY_BINARY_ACTIONS.includes(action) && !POLICY_EVENT_ACTIONS.includes(action)
+}
+
+function usesPolicyCancellationProbability(action) {
+  return POLICY_EVENT_ACTIONS.includes(action)
+}
+
+function getPolicyStatusText(policy) {
+  if (!policy.enabled) {
+    return 'disabled'
+  }
+
+  return policy.active ? 'active' : 'inactive'
+}
+
+function formatPolicyRuleEffect(policy) {
+  if (POLICY_BINARY_ACTIONS.includes(policy.action)) {
+    return `${getPolicyActionLabel(policy.action)}: keep NPCs apart`
+  }
+
+  if (POLICY_EVENT_ACTIONS.includes(policy.action)) {
+    return `${getPolicyActionLabel(policy.action)}: cancel ${formatPolicyPercent(policy.cancellationProbability)} of matching events`
+  }
+
+  return `${getPolicyActionLabel(policy.action)} ${getPolicyIntensityLabel(policy.intensity)}: transmission x${formatPolicyMultiplier(getPolicyMultiplier(policy))}`
+}
+
+function formatPolicyEffects(effects) {
+  if (!effects || effects.activePolicies.length === 0) {
+    return 'none'
+  }
+
+  const cancellations = Object.entries(effects.eventCancellationProbabilities || {})
+    .filter((entry) => entry[1] > 0)
+    .map(([action, probability]) => `${getPolicyActionLabel(action)} ${formatPolicyPercent(probability)}`)
+  const binaryEffects = effects.socialDistancingEnabled ? ['social distancing'] : []
+  const transmission = effects.infectionProbabilityMultiplier < 1
+    ? `transmission x${formatPolicyMultiplier(effects.infectionProbabilityMultiplier)}`
+    : null
+  const parts = [transmission, ...binaryEffects, ...cancellations].filter(Boolean)
+
+  return parts.length > 0
+    ? `${parts.join(', ')} (${effects.activePolicies.length} active)`
+    : `${effects.activePolicies.length} active`
+}
+
+function formatPolicyMultiplier(multiplier) {
+  return Number(multiplier.toFixed(2)).toString()
+}
+
+function formatPolicyPercent(probability) {
+  return `${Math.round(normalizePolicyProbability(probability) * 100)}%`
+}
+
+function getPolicyActionLabel(action) {
+  return POLICY_ACTIONS.find((option) => option.id === action)?.label || action
+}
+
+function getPolicyIntensityLabel(intensity) {
+  return POLICY_INTENSITIES.find((option) => option.id === intensity)?.label || intensity
+}
+
+function getPolicyEffectsKey(effects) {
+  const cancellationKey = Object.entries(effects.eventCancellationProbabilities || {})
+    .map(([action, probability]) => `${action}:${formatPolicyMultiplier(probability)}`)
+    .join(',')
+
+  return `${formatPolicyMultiplier(effects.infectionProbabilityMultiplier)}:${effects.socialDistancingEnabled ? 1 : 0}:${cancellationKey}:${effects.activePolicies.map((policy) => policy.id).join(',')}`
+}
+
+function clonePolicyEffects(effects) {
+  return {
+    infectionProbabilityMultiplier: effects.infectionProbabilityMultiplier,
+    socialDistancingEnabled: Boolean(effects.socialDistancingEnabled),
+    eventCancellationProbabilities: {
+      ...POLICY_EVENT_CANCELLATION_PROBABILITIES,
+      ...(effects.eventCancellationProbabilities || {})
+    },
+    activePolicies: effects.activePolicies.map((policy) => ({ ...policy }))
   }
 }
 
