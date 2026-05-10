@@ -911,6 +911,7 @@ class NpcInfectionDynamics {
       npc.infection = 'susceptible'
     }
 
+    this.seedInitialInoculations(config.inoculatedPercent)
     this.seedInitialInfections(config.initialInfectiousCount)
   }
 
@@ -1129,11 +1130,39 @@ class NpcInfectionDynamics {
   }
 
   seedInitialInfections(initialInfectiousCount) {
+    const indexes = new Int32Array(this.npcs.length)
+    let susceptibleCount = 0
+
+    for (let index = 0; index < indexes.length; index += 1) {
+      if (this.states[index] === INFECTION_STATE_IDS.susceptible) {
+        indexes[susceptibleCount] = index
+        susceptibleCount += 1
+      }
+    }
+
     const count = clampInteger(
       initialInfectiousCount ?? INFECTION_CONFIG.initialInfectiousCount,
       0,
-      this.npcs.length
+      susceptibleCount
     )
+
+    if (count === 0) {
+      return
+    }
+
+    for (let index = 0; index < count; index += 1) {
+      const selectedIndex = index + this.random.int(susceptibleCount - index)
+      const npcIndex = indexes[selectedIndex]
+
+      indexes[selectedIndex] = indexes[index]
+      indexes[index] = npcIndex
+      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.infectious, this.infectionSeconds)
+    }
+  }
+
+  seedInitialInoculations(inoculatedPercent) {
+    const percent = clampPercent(inoculatedPercent ?? INFECTION_CONFIG.inoculatedPercent)
+    const count = clampInteger((this.npcs.length * percent) / 100, 0, this.npcs.length)
 
     if (count === 0) {
       return
@@ -1151,7 +1180,7 @@ class NpcInfectionDynamics {
 
       indexes[selectedIndex] = indexes[index]
       indexes[index] = npcIndex
-      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.infectious, this.infectionSeconds)
+      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.recovered, this.immunitySeconds)
     }
   }
 
@@ -3049,6 +3078,16 @@ function clampUnitInterval(value) {
   }
 
   return Math.min(Math.max(number, 0), 1)
+}
+
+function clampPercent(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return INFECTION_CONFIG.inoculatedPercent
+  }
+
+  return Math.min(Math.max(number, 0), 100)
 }
 
 function unitIntervalOrDefault(value, fallback) {

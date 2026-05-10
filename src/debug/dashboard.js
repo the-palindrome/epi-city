@@ -672,6 +672,7 @@ function createSimulationControls(options) {
     npcCount: normalizeNpcCount(options.npcCount ?? 1000, options.npcCountRange),
     carCount: normalizeCarCount(options.carCount ?? 200, options.carCountRange),
     initialInfectiousCount: normalizeInitialInfectiousCount(options.initialInfectiousCount ?? 4, options.initialInfectiousCountRange),
+    inoculatedPercent: normalizeInoculatedPercent(options.inoculatedPercent ?? INFECTION_CONFIG.inoculatedPercent, options.inoculatedPercentRange),
     infectionDistance: normalizeInfectionDistance(options.infectionDistance ?? INFECTION_CONFIG.infectionDistance, options.infectionDistanceRange),
     infectionProbability: normalizeInfectionProbability(options.infectionProbability ?? 0.03, options.infectionProbabilityRange),
     incubationDays: normalizeIncubationDays(options.incubationDays ?? 1, options.incubationDaysRange),
@@ -689,6 +690,7 @@ function createSimulationControls(options) {
     onNpcCountChange: options.onNpcCountChange || noop,
     onCarCountChange: options.onCarCountChange || noop,
     onInitialInfectiousCountChange: options.onInitialInfectiousCountChange || noop,
+    onInoculatedPercentChange: options.onInoculatedPercentChange || noop,
     onInfectionDistanceChange: options.onInfectionDistanceChange || noop,
     onInfectionProbabilityChange: options.onInfectionProbabilityChange || noop,
     onIncubationDaysChange: options.onIncubationDaysChange || noop,
@@ -700,6 +702,7 @@ function createSimulationControls(options) {
   const npcCountRange = normalizeNpcCountRange(options.npcCountRange)
   const carCountRange = normalizeCarCountRange(options.carCountRange)
   const initialInfectiousCountRange = normalizeInitialInfectiousCountRange(options.initialInfectiousCountRange)
+  const inoculatedPercentRange = normalizeInoculatedPercentRange(options.inoculatedPercentRange)
   const infectionDistanceRange = normalizeInfectionDistanceRange(options.infectionDistanceRange)
   const infectionProbabilityRange = normalizeInfectionProbabilityRange(options.infectionProbabilityRange)
   const incubationDaysRange = normalizeIncubationDaysRange(options.incubationDaysRange)
@@ -720,6 +723,7 @@ function createSimulationControls(options) {
   const infectionTitle = createDashboardSubsectionTitle('Infection')
   const infectionStatsField = createInfectionStatsField()
   const initialInfectiousCountField = createInitialInfectiousCountField(state.initialInfectiousCount, initialInfectiousCountRange)
+  const inoculatedPercentField = createInoculatedPercentField(state.inoculatedPercent, inoculatedPercentRange)
   const infectionDistanceField = createInfectionDistanceField(state.infectionDistance, infectionDistanceRange)
   const infectionProbabilityField = createInfectionProbabilityField(state.infectionProbability, infectionProbabilityRange)
   const incubationDaysField = createIncubationDaysField(state.incubationDays, incubationDaysRange)
@@ -741,6 +745,7 @@ function createSimulationControls(options) {
   section.appendChild(infectionTitle)
   section.appendChild(infectionStatsField.label)
   section.appendChild(initialInfectiousCountField.label)
+  section.appendChild(inoculatedPercentField.label)
   section.appendChild(infectionDistanceField.label)
   section.appendChild(infectionProbabilityField.label)
   section.appendChild(incubationDaysField.label)
@@ -806,6 +811,11 @@ function createSimulationControls(options) {
   initialInfectiousCountField.input.addEventListener('change', () => {
     setInitialInfectiousCount(initialInfectiousCountField.input.value)
     callbacks.onInitialInfectiousCountChange(state.initialInfectiousCount)
+  })
+
+  inoculatedPercentField.input.addEventListener('change', () => {
+    setInoculatedPercent(inoculatedPercentField.input.value)
+    callbacks.onInoculatedPercentChange(state.inoculatedPercent)
   })
 
   infectionDistanceField.input.addEventListener('change', () => {
@@ -895,6 +905,11 @@ function createSimulationControls(options) {
     initialInfectiousCountField.input.value = String(state.initialInfectiousCount)
   }
 
+  function setInoculatedPercent(percent) {
+    state.inoculatedPercent = normalizeInoculatedPercent(percent, inoculatedPercentRange)
+    inoculatedPercentField.input.value = formatNumberInput(state.inoculatedPercent)
+  }
+
   function setInfectionDistance(distance) {
     state.infectionDistance = normalizeInfectionDistance(distance, infectionDistanceRange)
     infectionDistanceField.input.value = formatNumberInput(state.infectionDistance)
@@ -935,6 +950,7 @@ function createSimulationControls(options) {
   setCarCount(state.carCount)
   setDayNightOverlayEnabled(state.dayNightOverlayEnabled)
   setInitialInfectiousCount(state.initialInfectiousCount)
+  setInoculatedPercent(state.inoculatedPercent)
   setInfectionDistance(state.infectionDistance)
   setInfectionProbability(state.infectionProbability)
   setIncubationDays(state.incubationDays)
@@ -954,6 +970,7 @@ function createSimulationControls(options) {
     setCarCount,
     setDayNightOverlayEnabled,
     setInitialInfectiousCount,
+    setInoculatedPercent,
     setInfectionDistance,
     setInfectionProbability,
     setIncubationDays,
@@ -1453,6 +1470,17 @@ function createInitialInfectiousCountField(count, range) {
   })
 }
 
+function createInoculatedPercentField(percent, range) {
+  return createNumberField({
+    labelText: 'inoculated %',
+    className: 'dashboard-inoculated-percent-field',
+    dataset: 'simulationInoculatedPercent',
+    value: percent,
+    range,
+    normalize: normalizeInoculatedPercent
+  })
+}
+
 function createInfectionDistanceField(distance, range) {
   return createNumberField({
     labelText: 'infect dist',
@@ -1551,6 +1579,10 @@ function normalizeInitialInfectiousCountRange(range) {
   return normalizeIntegerRange(range, { min: 0, max: 10000, step: 1 })
 }
 
+function normalizeInoculatedPercentRange(range) {
+  return normalizeNumberRange(range, { min: 0, max: 100, step: 1 })
+}
+
 function normalizeInfectionDistanceRange(range) {
   return normalizeNumberRange(range, { min: 0, max: 256, step: 1 })
 }
@@ -1626,6 +1658,10 @@ function normalizeInitialInfectiousCount(count, range) {
   }
 
   return Math.min(Math.max(value, countRange.min), countRange.max)
+}
+
+function normalizeInoculatedPercent(percent, range) {
+  return normalizeNumberInRange(percent, normalizeInoculatedPercentRange(range))
 }
 
 function normalizeInfectionDistance(distance, range) {

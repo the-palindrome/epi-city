@@ -160,6 +160,7 @@ export const NPC_CONFIG = Object.freeze({
 
 export const INFECTION_CONFIG = Object.freeze({
   initialInfectiousCount: 4,
+  inoculatedPercent: 0,
   infectionDistance: metersToWorldUnits(2),
   infectionProbability: 0.03,
   incubationDays: 1,
@@ -174,6 +175,11 @@ export const INFECTION_CONFIG = Object.freeze({
   initialInfectiousCountRange: Object.freeze({
     min: 0,
     max: 10000,
+    step: 1
+  }),
+  inoculatedPercentRange: Object.freeze({
+    min: 0,
+    max: 100,
     step: 1
   }),
   infectionDistanceRange: Object.freeze({

@@ -244,6 +244,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     routeRetrySeconds: 1,
     routeBlockedReplanSeconds: 2,
     initialInfectiousCount: options.initialInfectiousCount ?? 0,
+    inoculatedPercent: options.inoculatedPercent,
     infectionDistance: options.infectionDistance ?? INFECTION_CONFIG.infectionDistance,
     infectionProbability: options.infectionProbability ?? 0.03,
     incubationDays: options.incubationDays ?? 5,
@@ -830,6 +831,45 @@ describe('NPC simulation randomness', () => {
       recovered: 0
     })
     expect(simulation.npcs.filter((npc) => npc.infection === 'infectious')).toHaveLength(2)
+
+    simulation.destroy()
+  })
+
+  it('starts inoculated NPCs as recovered and seeds infections from the remaining susceptible population', () => {
+    const simulation = createSimulation('infection-inoculated', createCity(), {
+      count: 10,
+      inoculatedPercent: 40,
+      initialInfectiousCount: 4,
+      initialUpdate: false
+    })
+    const stats = simulation.infection.getStats()
+
+    expect(stats).toEqual({
+      susceptible: 2,
+      exposed: 0,
+      infectious: 4,
+      recovered: 4
+    })
+    expect(simulation.npcs.filter((npc) => npc.infection === 'recovered')).toHaveLength(4)
+    expect(simulation.npcs.filter((npc) => npc.infection === 'infectious')).toHaveLength(4)
+
+    simulation.destroy()
+  })
+
+  it('prevents seeded infections when the whole population is inoculated', () => {
+    const simulation = createSimulation('infection-fully-inoculated', createCity(), {
+      count: 8,
+      inoculatedPercent: 100,
+      initialInfectiousCount: 4,
+      initialUpdate: false
+    })
+
+    expect(simulation.infection.getStats()).toEqual({
+      susceptible: 0,
+      exposed: 0,
+      infectious: 0,
+      recovered: 8
+    })
 
     simulation.destroy()
   })

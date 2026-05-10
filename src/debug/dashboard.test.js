@@ -937,6 +937,8 @@ describe('debug dashboard overlays', () => {
       infectionDistance: 48,
       initialInfectiousCount: 4,
       initialInfectiousCountRange: { min: 0, max: 10000, step: 1 },
+      inoculatedPercent: 25,
+      inoculatedPercentRange: { min: 0, max: 100, step: 1 },
       infectionDistanceRange: { min: 0, max: 256, step: 1 },
       infectionProbability: 0.03,
       infectionProbabilityRange: { min: 0, max: 1, step: 0.01 },
@@ -954,6 +956,9 @@ describe('debug dashboard overlays', () => {
       onInitialInfectiousCountChange(value) {
         changes.push(['initial', value])
       },
+      onInoculatedPercentChange(value) {
+        changes.push(['inoculated', value])
+      },
       onInfectionProbabilityChange(value) {
         changes.push(['probability', value])
       },
@@ -969,6 +974,7 @@ describe('debug dashboard overlays', () => {
     })
     const stats = findByDataset(dashboard.element, 'simulationInfectionStats')
     const initialInfectiousCount = findByDataset(dashboard.element, 'simulationInitialInfectiousCount')
+    const inoculatedPercent = findByDataset(dashboard.element, 'simulationInoculatedPercent')
     const distance = findByDataset(dashboard.element, 'simulationInfectionDistance')
     const probability = findByDataset(dashboard.element, 'simulationInfectionProbability')
     const incubationDays = findByDataset(dashboard.element, 'simulationIncubationDays')
@@ -977,6 +983,7 @@ describe('debug dashboard overlays', () => {
 
     expect(stats.textContent).toBe('S 8 E 1 I 2 R 3')
     expect(initialInfectiousCount.value).toBe('4')
+    expect(inoculatedPercent.value).toBe('25')
     expect(distance.value).toBe('48')
     expect(probability.value).toBe('0.03')
     expect(incubationDays.value).toBe('1')
@@ -985,6 +992,8 @@ describe('debug dashboard overlays', () => {
 
     initialInfectiousCount.value = '13'
     initialInfectiousCount.eventListeners.change()
+    inoculatedPercent.value = '120'
+    inoculatedPercent.eventListeners.change()
     distance.value = '64'
     distance.eventListeners.change()
     probability.value = '2'
@@ -997,6 +1006,7 @@ describe('debug dashboard overlays', () => {
     immunityDays.eventListeners.change()
 
     expect(dashboard.simulation.state.initialInfectiousCount).toBe(13)
+    expect(dashboard.simulation.state.inoculatedPercent).toBe(100)
     expect(dashboard.simulation.state.infectionDistance).toBe(64)
     expect(dashboard.simulation.state.infectionProbability).toBe(1)
     expect(dashboard.simulation.state.incubationDays).toBe(14)
@@ -1004,6 +1014,7 @@ describe('debug dashboard overlays', () => {
     expect(dashboard.simulation.state.immunityDays).toBe(0)
     expect(changes).toEqual([
       ['initial', 13],
+      ['inoculated', 100],
       ['distance', 64],
       ['probability', 1],
       ['incubation', 14],
@@ -1013,9 +1024,11 @@ describe('debug dashboard overlays', () => {
 
     dashboard.simulation.setImmunityDays(30)
     dashboard.simulation.setInitialInfectiousCount(5)
+    dashboard.simulation.setInoculatedPercent(12.5)
 
     expect(immunityDays.value).toBe('30')
     expect(initialInfectiousCount.value).toBe('5')
+    expect(inoculatedPercent.value).toBe('12.5')
 
     dashboard.destroy()
   })

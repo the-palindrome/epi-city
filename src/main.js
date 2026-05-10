@@ -100,6 +100,7 @@ async function main() {
       npcCount: NPC_CONFIG.count,
       carCount: CAR_CONFIG.count,
       initialInfectiousCount: INFECTION_CONFIG.initialInfectiousCount,
+      inoculatedPercent: INFECTION_CONFIG.inoculatedPercent,
       infectionDistance: INFECTION_CONFIG.infectionDistance,
       infectionProbability: INFECTION_CONFIG.infectionProbability,
       incubationDays: INFECTION_CONFIG.incubationDays,
@@ -172,6 +173,7 @@ async function main() {
         ...NPC_CONFIG,
         count: simulationState.npcCount,
         initialInfectiousCount: simulationState.initialInfectiousCount,
+        inoculatedPercent: simulationState.inoculatedPercent,
         infectionDistance: simulationState.infectionDistance,
         infectionProbability: simulationState.infectionProbability,
         incubationDays: simulationState.incubationDays,
@@ -232,12 +234,24 @@ async function main() {
     function clampInitialInfectiousCount(count) {
       const { min, max } = INFECTION_CONFIG.initialInfectiousCountRange
       const value = Math.round(Number(count))
+      const susceptibleCapacity = Math.max(0, simulationState.npcCount - getInitialInoculatedCount())
 
       if (!Number.isFinite(value)) {
         return min
       }
 
-      return Math.min(Math.max(value, min), Math.min(max, simulationState.npcCount))
+      return Math.min(Math.max(value, min), Math.min(max, susceptibleCapacity))
+    }
+
+    function getInitialInoculatedCount() {
+      return Math.min(
+        simulationState.npcCount,
+        Math.round(simulationState.npcCount * clampInoculatedPercent(simulationState.inoculatedPercent) / 100)
+      )
+    }
+
+    function clampInoculatedPercent(percent) {
+      return clampRangeValue(percent, INFECTION_CONFIG.inoculatedPercentRange)
     }
 
     function clampInfectionDistance(distance) {
@@ -355,6 +369,8 @@ async function main() {
       carCountRange: SIMULATION_CONFIG.carCountRange,
       initialInfectiousCount: simulationState.initialInfectiousCount,
       initialInfectiousCountRange: INFECTION_CONFIG.initialInfectiousCountRange,
+      inoculatedPercent: simulationState.inoculatedPercent,
+      inoculatedPercentRange: INFECTION_CONFIG.inoculatedPercentRange,
       infectionDistance: simulationState.infectionDistance,
       infectionDistanceRange: INFECTION_CONFIG.infectionDistanceRange,
       infectionProbability: simulationState.infectionProbability,
@@ -411,6 +427,13 @@ async function main() {
       },
       onInitialInfectiousCountChange: (count) => {
         simulationState.initialInfectiousCount = clampInitialInfectiousCount(count)
+        dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
+        restartSimulation()
+      },
+      onInoculatedPercentChange: (percent) => {
+        simulationState.inoculatedPercent = clampInoculatedPercent(percent)
+        simulationState.initialInfectiousCount = clampInitialInfectiousCount(simulationState.initialInfectiousCount)
+        dashboard.simulation.setInoculatedPercent(simulationState.inoculatedPercent)
         dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
         restartSimulation()
       },
@@ -563,6 +586,14 @@ async function main() {
       restartSimulation()
     }
 
+    function setInoculatedPercent(percent) {
+      simulationState.inoculatedPercent = clampInoculatedPercent(percent)
+      simulationState.initialInfectiousCount = clampInitialInfectiousCount(simulationState.initialInfectiousCount)
+      dashboard.simulation.setInoculatedPercent(simulationState.inoculatedPercent)
+      dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
+      restartSimulation()
+    }
+
     function setInfectionDistance(distance) {
       simulationState.infectionDistance = clampInfectionDistance(distance)
       dashboard.simulation.setInfectionDistance(simulationState.infectionDistance)
@@ -644,6 +675,7 @@ async function main() {
       setNpcCount,
       setCarCount,
       setInitialInfectiousCount,
+      setInoculatedPercent,
       setInfectionDistance,
       setInfectionProbability,
       setIncubationDays,
