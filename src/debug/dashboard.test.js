@@ -286,6 +286,24 @@ function findAllByDataset(root, key, results = []) {
   return results
 }
 
+function trackTextContentWrites(element) {
+  let textContent = element.textContent
+  const tracker = { writes: 0 }
+
+  Object.defineProperty(element, 'textContent', {
+    configurable: true,
+    get() {
+      return textContent
+    },
+    set(value) {
+      tracker.writes += 1
+      textContent = value
+    }
+  })
+
+  return tracker
+}
+
 function createKeydownEvent(overrides = {}) {
   return {
     key: ' ',
@@ -635,6 +653,63 @@ describe('debug dashboard overlays', () => {
 
     expect(effects.textContent).toBe('none')
     expect(dashboard.policy.state.policies.every((policy) => policy.enabled === false)).toBe(true)
+
+    dashboard.destroy()
+  })
+
+  it('does not overwrite focused policy number fields during dashboard renders', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      getInfectionStats() {
+        return { susceptible: 97, exposed: 0, infectious: 3, recovered: 0 }
+      }
+    })
+    const threshold = findByDataset(dashboard.policyElement, 'policyThreshold')
+
+    expect(threshold.value).toBe('5')
+
+    threshold.focus()
+    threshold.value = '12'
+    dashboard.render()
+
+    expect(threshold.value).toBe('12')
+    expect(dashboard.policy.state.policies[0].threshold).toBe(5)
+
+    threshold.eventListeners.change()
+
+    expect(dashboard.policy.state.policies[0].threshold).toBe(12)
+
+    threshold.blur()
+    dashboard.render()
+
+    expect(threshold.value).toBe('12')
+
+    dashboard.destroy()
+  })
+
+  it('does not rewrite unchanged policy effect text during dashboard renders', () => {
+    let stats = { susceptible: 92, exposed: 3, infectious: 3, recovered: 2 }
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      getInfectionStats() {
+        return stats
+      }
+    })
+    const effects = findByDataset(dashboard.policyElement, 'policyEffects')
+    const ruleEffect = findByDataset(dashboard.policyElement, 'policyEffect')
+    const effectsTracker = trackTextContentWrites(effects)
+    const ruleEffectTracker = trackTextContentWrites(ruleEffect)
+
+    dashboard.render()
+    dashboard.render()
+
+    expect(effectsTracker.writes).toBe(0)
+    expect(ruleEffectTracker.writes).toBe(0)
+
+    stats = { susceptible: 99, exposed: 0, infectious: 1, recovered: 0 }
+    dashboard.render()
+
+    expect(effectsTracker.writes).toBe(1)
+    expect(effects.textContent).toBe('none')
+    expect(ruleEffectTracker.writes).toBe(0)
 
     dashboard.destroy()
   })

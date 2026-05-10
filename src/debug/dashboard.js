@@ -1304,7 +1304,7 @@ function createPolicyControls(options = {}) {
     const effects = createPolicyEffects(activePolicies)
 
     state.effects = effects
-    effectsField.value.textContent = formatPolicyEffects(effects)
+    setElementTextContent(effectsField.value, formatPolicyEffects(effects))
 
     for (const policy of state.policies) {
       const controls = controlsById.get(policy.id)
@@ -1313,23 +1313,23 @@ function createPolicyControls(options = {}) {
         continue
       }
 
-      controls.enabledInput.checked = policy.enabled
-      controls.metric.value = policy.metric
-      controls.operator.value = policy.operator
-      controls.threshold.value = formatNumberInput(policy.threshold)
-      controls.unit.value = policy.unit
-      controls.action.value = policy.action
-      controls.intensity.value = policy.intensity
-      controls.cancellationProbability.value = formatNumberInput(policy.cancellationProbability)
-      controls.intensity.hidden = !usesPolicyIntensity(policy.action)
-      controls.cancellationProbability.hidden = !usesPolicyCancellationProbability(policy.action)
-      controls.probabilityToken.hidden = !usesPolicyCancellationProbability(policy.action)
-      controls.untilOperator.value = policy.untilOperator
-      controls.untilThreshold.value = formatNumberInput(policy.untilThreshold)
-      controls.untilUnit.value = policy.untilUnit
-      controls.status.textContent = getPolicyStatusText(policy)
-      controls.status.dataset.policyActive = String(policy.active)
-      controls.effect.textContent = formatPolicyRuleEffect(policy)
+      setElementChecked(controls.enabledInput, policy.enabled)
+      setPolicyControlValue(controls.metric, policy.metric)
+      setPolicyControlValue(controls.operator, policy.operator)
+      setPolicyControlValue(controls.threshold, formatNumberInput(policy.threshold))
+      setPolicyControlValue(controls.unit, policy.unit)
+      setPolicyControlValue(controls.action, policy.action)
+      setPolicyControlValue(controls.intensity, policy.intensity)
+      setPolicyControlValue(controls.cancellationProbability, formatNumberInput(policy.cancellationProbability))
+      setElementHidden(controls.intensity, !usesPolicyIntensity(policy.action))
+      setElementHidden(controls.cancellationProbability, !usesPolicyCancellationProbability(policy.action))
+      setElementHidden(controls.probabilityToken, !usesPolicyCancellationProbability(policy.action))
+      setPolicyControlValue(controls.untilOperator, policy.untilOperator)
+      setPolicyControlValue(controls.untilThreshold, formatNumberInput(policy.untilThreshold))
+      setPolicyControlValue(controls.untilUnit, policy.untilUnit)
+      setElementTextContent(controls.status, getPolicyStatusText(policy))
+      setElementDatasetValue(controls.status, 'policyActive', String(policy.active))
+      setElementTextContent(controls.effect, formatPolicyRuleEffect(policy))
     }
 
     const nextEffectsKey = getPolicyEffectsKey(effects)
@@ -1425,6 +1425,50 @@ function createPolicyProbabilityInput(value, dataset, id) {
   input.dataset[dataset] = id
 
   return input
+}
+
+function setPolicyControlValue(control, value) {
+  if (document.activeElement === control || control.value === value) {
+    return
+  }
+
+  control.value = value
+}
+
+function setElementTextContent(element, text) {
+  if (element.textContent === text) {
+    return
+  }
+
+  element.textContent = text
+}
+
+function setElementDatasetValue(element, key, value) {
+  if (element.dataset[key] === value) {
+    return
+  }
+
+  element.dataset[key] = value
+}
+
+function setElementHidden(element, hidden) {
+  const nextHidden = Boolean(hidden)
+
+  if (element.hidden === nextHidden) {
+    return
+  }
+
+  element.hidden = nextHidden
+}
+
+function setElementChecked(element, checked) {
+  const nextChecked = Boolean(checked)
+
+  if (element.checked === nextChecked) {
+    return
+  }
+
+  element.checked = nextChecked
 }
 
 function appendPolicyToken(parent, text) {
