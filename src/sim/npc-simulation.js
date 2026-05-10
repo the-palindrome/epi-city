@@ -111,11 +111,13 @@ export function createNpcSimulation(city, entityLayer, config) {
   const unlimitedCapacityTiles = collectBuildingEntranceTiles(city)
   const routePlanner = new NpcRoutePlanner(config)
   const npcs = []
+  const crowding = createNpcCrowdingState(city, config)
   const context = {
     city,
     clock,
     slotOffsets,
     unlimitedCapacityTiles,
+    crowding,
     random,
     routePlanner,
     zorder,
@@ -184,6 +186,8 @@ export function createNpcSimulation(city, entityLayer, config) {
     const safeDelta = Math.min(Math.max(deltaSeconds, 0), 0.1)
     const movementDelta = toMovementSeconds(safeDelta, config.movementTimeScale)
     const timeOfDayHours = clock.getTimeOfDayHours()
+
+    updateNpcCrowdingState(crowding, npcs)
 
     for (const npc of npcs) {
       refreshNpcGoal(npc, timeOfDayHours, context)
@@ -2387,7 +2391,7 @@ function updateNpcMovement(npc, deltaSeconds, context) {
 
 function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const target = npc.movement.target
-  const maxStep = npc.movement.speed * deltaSeconds
+  const maxStep = npc.movement.speed * deltaSeconds * npcCrowdSpeedScale(npc, target, context)
   const nextDistance = Math.min(target.distanceTravelled + maxStep, target.curve.length)
   const previousX = npc.position.x
   const previousY = npc.position.y
@@ -2513,12 +2517,17 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
     return false
   }
 
+  if (shouldQueueForCrowdedCrosswalk(targetIndex, context)) {
+    return false
+  }
+
   const targetSlot = findAvailableNpcSlot(
     targetIndex,
     random,
     config.tileCapacity,
     context.unlimitedCapacityTiles,
-    npc.slot.id
+    npc.slot.id,
+    context.crowding
   )
 
   const target = targetSlot.unlimited
@@ -2532,6 +2541,7 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
   }, context)
 
   npc.movement.target = movementTarget
+  reserveNpcCrowdingTarget(targetIndex, targetSlot.slot, context)
   faceNpcSprite(npc, movementTarget.directionX, movementTarget.directionY)
 
   return true
@@ -2715,11 +2725,18 @@ function normalizeVector(x, y) {
 
 function tryExitCurrentLocation(npc, context) {
   const location = npc.locationState.location
+
+  if (shouldQueueForCrowdedDoorway(location.index, context)) {
+    return false
+  }
+
   const targetSlot = findAvailableNpcSlot(
     location.index,
     context.random,
     context.config.tileCapacity,
-    context.unlimitedCapacityTiles
+    context.unlimitedCapacityTiles,
+    null,
+    context.crowding
   )
 
   const position = targetSlot.unlimited
@@ -2760,9 +2777,15 @@ function enterGoalLocation(npc, context) {
   npc.routing = createEmptyRouteState()
 }
 
-function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null) {
+function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null, crowding = null) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
     return { slot: -1, unlimited: true }
+  }
+
+  const avoidedSlot = chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding)
+
+  if (avoidedSlot !== -1) {
+    return { slot: avoidedSlot, unlimited: false }
   }
 
   if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
@@ -2770,6 +2793,177 @@ function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacity
   }
 
   return { slot: random.int(tileCapacity), unlimited: false }
+}
+
+function chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding) {
+  if (!crowding?.slotCounts || tileCapacity <= 0 || tileIndex < 0) {
+    return -1
+  }
+
+  const baseIndex = tileIndex * tileCapacity
+  let bestSlot = -1
+  let bestCount = Infinity
+  let occupiedCount = 0
+
+  for (let slot = 0; slot < tileCapacity; slot += 1) {
+    const count = crowding.slotCounts[baseIndex + slot]
+    occupiedCount += count
+
+    if (count < bestCount) {
+      bestCount = count
+      bestSlot = slot
+    }
+  }
+
+  if (bestSlot === -1) {
+    return -1
+  }
+
+  if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
+    const preferredCount = crowding.slotCounts[baseIndex + preferredSlot]
+
+    if (preferredCount <= bestCount) {
+      return preferredSlot
+    }
+  }
+
+  return occupiedCount > 0 ? bestSlot : -1
+}
+
+function reserveNpcCrowdingTarget(tileIndex, slotId, context) {
+  if (!context.crowding) {
+    return
+  }
+
+  addNpcCrowdingOccupancy(context.crowding, tileIndex, slotId, false)
+}
+
+function createNpcCrowdingState(city, config) {
+  const tileCapacity = positiveIntegerOrDefault(config.tileCapacity, NPC_CONFIG.tileCapacity)
+
+  return {
+    config: normalizeNpcCrowdingConfig(config.crowding),
+    tileCapacity,
+    tileCounts: new Uint16Array(city.tiles.length),
+    incomingTileCounts: new Uint16Array(city.tiles.length),
+    slotCounts: new Uint16Array(city.tiles.length * tileCapacity)
+  }
+}
+
+function updateNpcCrowdingState(crowding, npcs) {
+  crowding.tileCounts.fill(0)
+  crowding.incomingTileCounts.fill(0)
+  crowding.slotCounts.fill(0)
+
+  for (const npc of npcs) {
+    if (!npc.present) {
+      continue
+    }
+
+    addNpcCrowdingOccupancy(crowding, npc.tile?.index, npc.slot?.id, true)
+
+    if (npc.movement.target) {
+      addNpcCrowdingOccupancy(
+        crowding,
+        npc.movement.target.tile?.index,
+        npc.movement.target.slot?.id,
+        false
+      )
+    }
+  }
+}
+
+function addNpcCrowdingOccupancy(crowding, tileIndex, slotId, isCurrentTile) {
+  if (!Number.isInteger(tileIndex) || tileIndex < 0 || tileIndex >= crowding.tileCounts.length) {
+    return
+  }
+
+  if (isCurrentTile) {
+    crowding.tileCounts[tileIndex] += 1
+  } else {
+    crowding.incomingTileCounts[tileIndex] += 1
+  }
+
+  if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.tileCapacity) {
+    crowding.slotCounts[tileIndex * crowding.tileCapacity + slotId] += 1
+  }
+}
+
+function npcCrowdCount(tileIndex, context) {
+  const crowding = context.crowding
+
+  if (!crowding || !Number.isInteger(tileIndex) || tileIndex < 0 || tileIndex >= crowding.tileCounts.length) {
+    return 0
+  }
+
+  return crowding.tileCounts[tileIndex] + crowding.incomingTileCounts[tileIndex]
+}
+
+function npcCrowdSpeedScale(npc, target, context) {
+  const config = context.crowding?.config
+
+  if (!config) {
+    return 1
+  }
+
+  const crowdedCount = Math.max(
+    npcCrowdCount(npc.tile.index, context),
+    npcCrowdCount(target.tile.index, context)
+  )
+  const overCapacity = crowdedCount - config.softTileCapacity
+
+  if (overCapacity <= 0) {
+    return 1
+  }
+
+  const crowdRatio = Math.min(1, overCapacity / config.softTileCapacity)
+  return Math.max(1 - config.maxSpeedPenalty, 1 - config.maxSpeedPenalty * crowdRatio)
+}
+
+function shouldQueueForCrowdedDoorway(tileIndex, context) {
+  const capacity = context.crowding?.config.doorwayQueueCapacity
+
+  return Number.isFinite(capacity) &&
+    capacity > 0 &&
+    npcCrowdCount(tileIndex, context) >= capacity
+}
+
+function shouldQueueForCrowdedCrosswalk(tileIndex, context) {
+  const capacity = context.crowding?.config.crosswalkQueueCapacity
+
+  return Boolean(
+    Number.isFinite(capacity) &&
+    capacity > 0 &&
+    isNpcCrosswalkTile(tileIndex, context.city) &&
+    npcCrowdCount(tileIndex, context) >= capacity
+  )
+}
+
+function isNpcCrosswalkTile(tileIndex, city) {
+  if (!Number.isInteger(tileIndex) || tileIndex < 0) {
+    return false
+  }
+
+  if (city.tileCrosswalk) {
+    return city.tileCrosswalk[tileIndex] === 1
+  }
+
+  if (typeof city.isCrosswalk !== 'function') {
+    return false
+  }
+
+  return city.isCrosswalk(tileIndex % city.width, Math.floor(tileIndex / city.width))
+}
+
+function normalizeNpcCrowdingConfig(config = NPC_CONFIG.crowding) {
+  const fallback = NPC_CONFIG.crowding
+
+  return {
+    softTileCapacity: positiveIntegerOrDefault(config?.softTileCapacity, fallback.softTileCapacity),
+    doorwayQueueCapacity: nonNegativeIntegerOrDefault(config?.doorwayQueueCapacity, fallback.doorwayQueueCapacity),
+    crosswalkQueueCapacity: nonNegativeIntegerOrDefault(config?.crosswalkQueueCapacity, fallback.crosswalkQueueCapacity),
+    maxSpeedPenalty: Math.min(0.95, Math.max(0, finiteNumberOrDefault(config?.maxSpeedPenalty, fallback.maxSpeedPenalty)))
+  }
 }
 
 function createNpcSlotOffsets(city, config) {

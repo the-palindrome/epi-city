@@ -18,6 +18,14 @@ describe('scale-derived simulation defaults', () => {
     expect(NPC_CONFIG.movementTimeScale).toBe(4)
   })
 
+  it('keeps pedestrian crowding defaults soft rather than hard-capping tiles', () => {
+    expect(NPC_CONFIG.crowding.softTileCapacity).toBeGreaterThan(0)
+    expect(NPC_CONFIG.crowding.doorwayQueueCapacity).toBeGreaterThan(0)
+    expect(NPC_CONFIG.crowding.crosswalkQueueCapacity).toBeGreaterThan(0)
+    expect(NPC_CONFIG.crowding.maxSpeedPenalty).toBeGreaterThan(0)
+    expect(NPC_CONFIG.crowding.maxSpeedPenalty).toBeLessThan(1)
+  })
+
   it('uses meter-derived infection and heatmap radii', () => {
     expect(worldUnitsToMeters(INFECTION_CONFIG.infectionDistance)).toBeCloseTo(2)
     expect(worldUnitsToMeters(INFECTION_CONFIG.infectionDistanceRange.max)).toBeCloseTo(25)

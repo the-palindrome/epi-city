@@ -162,7 +162,7 @@ function createCornerCity() {
     },
     rows: [
       'sss',
-      'oos'
+      'oss'
     ],
     textureRows: [
       [0, 0, 0],
@@ -222,6 +222,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     size: NPC_CONFIG.size,
     minSpeed: 34,
     maxSpeed: 58,
+    crowding: options.crowding,
     workStartHour: 9,
     workEndHour: 17,
     scheduleVariationHours: options.scheduleVariationHours ?? 0.75,
@@ -465,6 +466,280 @@ describe('NPC simulation randomness', () => {
     expect(npc.position.x).toBeGreaterThan(startX)
     expect(npc.position.x).toBeLessThan(startX + 1)
     expect(npc.position.x).toBeLessThan(48)
+
+    simulation.destroy()
+  })
+
+  it('slows pedestrians while their current tile is over soft crowd capacity', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const targetLocation = { x: 1, y: 0, index: city.index(1, 0) }
+    const createWalker = (seed, count) => {
+      const simulation = createSimulation(seed, city, {
+        count,
+        tileCapacity: 1,
+        crowding: {
+          softTileCapacity: 1,
+          doorwayQueueCapacity: 9,
+          crosswalkQueueCapacity: 9,
+          maxSpeedPenalty: 0.5
+        },
+        initialUpdate: false
+      })
+
+      for (const npc of simulation.npcs) {
+        npc.present = true
+        npc.locationState = null
+        npc.position = { x: 16, y: 16 }
+        npc.tile = { x: 0, y: 0, index: city.index(0, 0) }
+        npc.slot = { id: 0 }
+        npc.movement.speed = 8
+        npc.movement.target = null
+        npc.timetable = { getActiveElement: () => null }
+      }
+
+      simulation.npcs[0].timetable = {
+        getActiveElement: () => ({
+          id: 'walk',
+          buildingId: 'target',
+          location: targetLocation
+        })
+      }
+
+      return simulation
+    }
+    const solitary = createWalker('solitary-crowd-speed', 1)
+    const crowded = createWalker('crowded-crowd-speed', 4)
+
+    solitary.update(1 / 60)
+    crowded.update(1 / 60)
+
+    const solitaryStartX = solitary.npcs[0].position.x
+    const crowdedStartX = crowded.npcs[0].position.x
+
+    solitary.update(1 / 60)
+    crowded.update(1 / 60)
+
+    expect(crowded.npcs[0].position.x - crowdedStartX).toBeLessThan(solitary.npcs[0].position.x - solitaryStartX)
+
+    solitary.destroy()
+    crowded.destroy()
+  })
+
+  it('keeps pedestrians inside a location while the doorway tile is queued', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('doorway-queue', city, {
+      count: 3,
+      crowding: {
+        softTileCapacity: 1,
+        doorwayQueueCapacity: 2,
+        crosswalkQueueCapacity: 9,
+        maxSpeedPenalty: 0.5
+      },
+      initialUpdate: false
+    })
+    const doorway = { x: 0, y: 0, index: city.index(0, 0) }
+    const destination = { x: 1, y: 0, index: city.index(1, 0) }
+    const exitingNpc = simulation.npcs[0]
+
+    for (const npc of simulation.npcs.slice(1)) {
+      npc.present = true
+      npc.locationState = null
+      npc.position = { x: 16, y: 16 }
+      npc.tile = { ...doorway }
+      npc.slot = { id: 0 }
+      npc.movement.target = null
+      npc.timetable = { getActiveElement: () => null }
+    }
+
+    exitingNpc.present = false
+    exitingNpc.locationState = {
+      timetableElementId: 'home',
+      buildingId: 'home',
+      location: doorway
+    }
+    exitingNpc.tile = { ...doorway }
+    exitingNpc.position = { x: 16, y: 16 }
+    exitingNpc.slot = { id: -1 }
+    exitingNpc.timetable = {
+      getActiveElement: () => ({
+        id: 'work',
+        buildingId: 'work',
+        location: destination
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    expect(exitingNpc.present).toBe(false)
+    expect(exitingNpc.locationState).toMatchObject({ buildingId: 'home' })
+    expect(exitingNpc.movement.target).toBeNull()
+
+    simulation.destroy()
+  })
+
+  it('queues before entering a crowded crosswalk', () => {
+    const city = createCity({
+      width: 3,
+      height: 1,
+      legend: {
+        s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+        c: { category: 'crosswalk', walkable: true, drivable: true, parkable: false }
+      },
+      rows: ['scs'],
+      textureRows: [[0, 0, 0]]
+    })
+    city.setCrosswalkSignalState('green')
+
+    const simulation = createSimulation('crosswalk-queue', city, {
+      count: 2,
+      crowding: {
+        softTileCapacity: 1,
+        doorwayQueueCapacity: 9,
+        crosswalkQueueCapacity: 1,
+        maxSpeedPenalty: 0.5
+      },
+      initialUpdate: false
+    })
+    const waitingNpc = simulation.npcs[0]
+    const crosswalkNpc = simulation.npcs[1]
+    const start = { x: 0, y: 0, index: city.index(0, 0) }
+    const crosswalk = { x: 1, y: 0, index: city.index(1, 0) }
+    const destination = { x: 2, y: 0, index: city.index(2, 0) }
+
+    waitingNpc.present = true
+    waitingNpc.locationState = null
+    waitingNpc.position = { x: 16, y: 16 }
+    waitingNpc.tile = { ...start }
+    waitingNpc.slot = { id: 0 }
+    waitingNpc.movement.target = null
+    waitingNpc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: destination
+      })
+    }
+
+    crosswalkNpc.present = true
+    crosswalkNpc.locationState = null
+    crosswalkNpc.position = { x: 48, y: 16 }
+    crosswalkNpc.tile = { ...crosswalk }
+    crosswalkNpc.slot = { id: 0 }
+    crosswalkNpc.movement.target = null
+    crosswalkNpc.timetable = { getActiveElement: () => null }
+
+    simulation.update(1 / 60)
+
+    expect(waitingNpc.movement.target).toBeNull()
+    expect(waitingNpc.tile).toMatchObject(start)
+    expect(waitingNpc.routing.blockedSeconds).toBeGreaterThan(0)
+
+    simulation.destroy()
+  })
+
+  it('counts same-tick crosswalk reservations when queueing pedestrians', () => {
+    const city = createCity({
+      width: 3,
+      height: 1,
+      legend: {
+        s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+        c: { category: 'crosswalk', walkable: true, drivable: true, parkable: false }
+      },
+      rows: ['scs'],
+      textureRows: [[0, 0, 0]]
+    })
+    city.setCrosswalkSignalState('green')
+
+    const simulation = createSimulation('crosswalk-reservation-queue', city, {
+      count: 2,
+      crowding: {
+        softTileCapacity: 1,
+        doorwayQueueCapacity: 9,
+        crosswalkQueueCapacity: 1,
+        maxSpeedPenalty: 0.5
+      },
+      initialUpdate: false
+    })
+    const start = { x: 0, y: 0, index: city.index(0, 0) }
+    const destination = { x: 2, y: 0, index: city.index(2, 0) }
+
+    for (const npc of simulation.npcs) {
+      npc.present = true
+      npc.locationState = null
+      npc.position = { x: 16, y: 16 }
+      npc.tile = { ...start }
+      npc.slot = { id: 0 }
+      npc.movement.target = null
+      npc.timetable = {
+        getActiveElement: () => ({
+          id: 'walk',
+          buildingId: 'target',
+          location: destination
+        })
+      }
+    }
+
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[0].movement.target).not.toBeNull()
+    expect(simulation.npcs[1].movement.target).toBeNull()
+    expect(simulation.npcs[1].routing.blockedSeconds).toBeGreaterThan(0)
+
+    simulation.destroy()
+  })
+
+  it('spreads target visual slots away from occupied slots on crowded tiles', () => {
+    const city = createCity({
+      width: 2,
+      height: 1,
+      rows: ['ss'],
+      textureRows: [[0, 0]]
+    })
+    const simulation = createSimulation('crowded-slot-avoidance', city, {
+      count: 2,
+      tileCapacity: 5,
+      initialUpdate: false
+    })
+    const walker = simulation.npcs[0]
+    const occupant = simulation.npcs[1]
+    const start = { x: 0, y: 0, index: city.index(0, 0) }
+    const destination = { x: 1, y: 0, index: city.index(1, 0) }
+
+    walker.present = true
+    walker.locationState = null
+    walker.position = { x: 16, y: 16 }
+    walker.tile = { ...start }
+    walker.slot = { id: 4 }
+    walker.movement.target = null
+    walker.timetable = {
+      getActiveElement: () => ({
+        id: 'walk',
+        buildingId: 'target',
+        location: destination
+      })
+    }
+
+    occupant.present = true
+    occupant.locationState = null
+    occupant.position = { x: 48, y: 16 }
+    occupant.tile = { ...destination }
+    occupant.slot = { id: 4 }
+    occupant.movement.target = null
+    occupant.timetable = { getActiveElement: () => null }
+
+    simulation.update(1 / 60)
+
+    expect(walker.movement.target.slot.id).toBe(0)
 
     simulation.destroy()
   })

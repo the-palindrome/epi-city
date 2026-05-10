@@ -1194,27 +1194,23 @@ function canUsePrecomputedStep({ currentIndex, nextIndex, directionIndex, width,
   }
 
   if (property === 'walkable') {
-    if (tileCrosswalk[nextIndex] !== 1) {
-      return true
+    if (tileCrosswalk[nextIndex] === 1 && tileCrosswalk[currentIndex] !== 1 && signalState !== 'green') {
+      return false
     }
 
-    if (tileCrosswalk[currentIndex] === 1) {
-      return true
-    }
-
-    if (signalState === 'green') {
-      return true
-    }
-
-    return false
+    return canUseDiagonalStep(currentIndex, directionIndex, width, layer)
   }
 
-  if (Math.abs(DIRECTION_DX[directionIndex]) === 1 && Math.abs(DIRECTION_DY[directionIndex]) === 1) {
-    return layer[currentIndex + DIRECTION_DX[directionIndex]] === 1 &&
-      layer[currentIndex + (DIRECTION_DY[directionIndex] * width)] === 1
+  return canUseDiagonalStep(currentIndex, directionIndex, width, layer)
+}
+
+function canUseDiagonalStep(currentIndex, directionIndex, width, layer) {
+  if (Math.abs(DIRECTION_DX[directionIndex]) !== 1 || Math.abs(DIRECTION_DY[directionIndex]) !== 1) {
+    return true
   }
 
-  return true
+  return layer[currentIndex + DIRECTION_DX[directionIndex]] === 1 &&
+    layer[currentIndex + (DIRECTION_DY[directionIndex] * width)] === 1
 }
 
 function getStepMasksForProperty(navigation, property, signalState) {

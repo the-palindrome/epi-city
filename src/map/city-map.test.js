@@ -90,6 +90,37 @@ function createOpenSidewalkMap(overrides = {}) {
   }
 }
 
+function createCornerCuttingMap(overrides = {}) {
+  return {
+    width: 4,
+    height: 4,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      x: { category: 'obstacle', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultTypes: ['residential'],
+      items: []
+    },
+    rows: [
+      'ssss',
+      'ssxs',
+      'sxss',
+      'ssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0],
+      [0, 0, 1, 0],
+      [0, 1, 0, 0],
+      [0, 0, 0, 0]
+    ],
+    ...overrides
+  }
+}
+
 function createSignalMap(laneGraphOverrides = {}) {
   return {
     width: 5,
@@ -500,6 +531,30 @@ describe('city map validation and compile', () => {
 
     expect(first).toContainEqual({ x: 1, y: 1 })
     expect(second).toEqual(first)
+  })
+
+  it('blocks pedestrian diagonal steps between blocked orthogonal neighbors', () => {
+    const city = compileCityMap(validateCityMap(createCornerCuttingMap()))
+    const fromIndex = city.index(1, 1)
+    const toIndex = city.index(2, 2)
+
+    expect(city.canStep(1, 1, 2, 2, 'pedestrian')).toBe(false)
+    expect(city.canStepIndex(fromIndex, toIndex, 'pedestrian')).toBe(false)
+    expect(city.canStepPedestrianIndex(fromIndex, toIndex)).toBe(false)
+  })
+
+  it('routes pedestrians around anti-diagonal blocked corners', () => {
+    const city = compileCityMap(validateCityMap(createCornerCuttingMap()))
+    const start = { x: 1, y: 1 }
+    const end = { x: 2, y: 2 }
+    const startIndex = city.index(start.x, start.y)
+    const endIndex = city.index(end.x, end.y)
+    const directPathIndexes = [startIndex, endIndex]
+    const cachedPathIndexes = city.findCachedPathIndexesByIndex(startIndex, endIndex, 'pedestrian')
+
+    expect(city.findPath(start, end, 'pedestrian')).not.toEqual([start, end])
+    expect(cachedPathIndexes).not.toEqual(directPathIndexes)
+    expect(cachedPathIndexes.at(-1)).toBe(endIndex)
   })
 
   it('exposes cached route fields for allocation-free next-hop movement', () => {

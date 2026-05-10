@@ -83,6 +83,12 @@ export const NPC_CONFIG = Object.freeze({
   minSpeed: metersPerSecondToWorldUnitsPerSecond(1.1),
   maxSpeed: metersPerSecondToWorldUnitsPerSecond(1.4),
   movementTimeScale: 4,
+  crowding: Object.freeze({
+    softTileCapacity: 4,
+    doorwayQueueCapacity: 3,
+    crosswalkQueueCapacity: 3,
+    maxSpeedPenalty: 0.55
+  }),
   workStartHour: 9,
   workEndHour: 17,
   scheduleVariationHours: 0.75,
