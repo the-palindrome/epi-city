@@ -7,7 +7,7 @@ const selectionState = vi.hoisted(() => ({
 }))
 
 vi.mock('./entity-path-selection.js', () => ({
-  findSelectableEntityAt: vi.fn(() => selectionState.hit)
+  findSelectableEntityFromPointer: vi.fn(() => selectionState.hit)
 }))
 
 vi.mock('./camera.js', () => ({
@@ -123,6 +123,7 @@ describe('entity context menu', () => {
     const setNpcState = vi.fn((entity, infection) => {
       entity.infection = infection
     })
+    const showEntityRoute = vi.fn()
     const requestRender = vi.fn()
     const canvas = new FakeElement('canvas')
     const menu = installEntityContextMenu({
@@ -132,6 +133,7 @@ describe('entity context menu', () => {
       world: {},
       getNpcSimulation: () => ({ npcs: [npc], infection: { setNpcState } }),
       getCarSimulation: () => ({ cars: [car] }),
+      showEntityRoute,
       requestRender
     })
     const event = contextMenuEvent()
@@ -156,6 +158,112 @@ describe('entity context menu', () => {
     canvas.eventListeners.contextmenu(contextMenuEvent())
 
     expect(findMenuOption(menu.element, 'infect').hidden).toBe(true)
+
+    menu.destroy()
+  })
+
+  it('toggles the route action for NPCs and cars', () => {
+    const npc = { id: 7 }
+    const car = { id: 3 }
+    const visibleRoutes = new Set()
+    const routeKey = (kind, id) => `${kind}:${id}`
+    const showEntityRoute = vi.fn((kind, id) => {
+      visibleRoutes.add(routeKey(kind, id))
+    })
+    const hideEntityRoute = vi.fn((kind, id) => {
+      visibleRoutes.delete(routeKey(kind, id))
+    })
+    const isEntityRouteVisible = vi.fn((kind, id) => visibleRoutes.has(routeKey(kind, id)))
+    const requestRender = vi.fn()
+    const canvas = new FakeElement('canvas')
+    const menu = installEntityContextMenu({
+      app: { canvas },
+      camera: { x: 0, y: 0, zoom: 1 },
+      city: {},
+      world: {},
+      getNpcSimulation: () => ({ npcs: [npc] }),
+      getCarSimulation: () => ({ cars: [car] }),
+      showEntityRoute,
+      hideEntityRoute,
+      isEntityRouteVisible,
+      requestRender
+    })
+
+    selectionState.hit = { kind: 'car', entity: car }
+    canvas.eventListeners.contextmenu(contextMenuEvent())
+
+    const showRouteButton = findMenuOption(menu.element, 'show route')
+
+    expect(showRouteButton.hidden).toBe(false)
+
+    showRouteButton.eventListeners.click()
+
+    expect(showEntityRoute).toHaveBeenCalledWith('car', 3)
+    expect(requestRender).toHaveBeenCalledTimes(1)
+    expect(menu.element.hidden).toBe(true)
+
+    selectionState.hit = { kind: 'car', entity: car }
+    canvas.eventListeners.contextmenu(contextMenuEvent())
+
+    const hideRouteButton = findMenuOption(menu.element, 'hide route')
+
+    expect(hideRouteButton.hidden).toBe(false)
+
+    hideRouteButton.eventListeners.click()
+
+    expect(hideEntityRoute).toHaveBeenCalledWith('car', 3)
+    expect(requestRender).toHaveBeenCalledTimes(2)
+    expect(menu.element.hidden).toBe(true)
+
+    selectionState.hit = { kind: 'npc', entity: npc }
+    canvas.eventListeners.contextmenu(contextMenuEvent())
+    findMenuOption(menu.element, 'show route').eventListeners.click()
+
+    expect(showEntityRoute).toHaveBeenLastCalledWith('npc', 7)
+
+    menu.destroy()
+  })
+
+  it('adds an NPC-only assume control action', () => {
+    const npc = { id: 7 }
+    const car = { id: 3 }
+    const assumeEntityControl = vi.fn()
+    const requestRender = vi.fn()
+    const canvas = new FakeElement('canvas')
+    const menu = installEntityContextMenu({
+      app: { canvas },
+      camera: { x: 0, y: 0, zoom: 1 },
+      city: {},
+      world: {},
+      getNpcSimulation: () => ({ npcs: [npc] }),
+      getCarSimulation: () => ({ cars: [car] }),
+      assumeEntityControl,
+      requestRender
+    })
+
+    selectionState.hit = { kind: 'npc', entity: npc }
+    canvas.eventListeners.contextmenu(contextMenuEvent())
+
+    const npcAssumeButton = findMenuOption(menu.element, 'assume control')
+
+    expect(npcAssumeButton.hidden).not.toBe(true)
+
+    npcAssumeButton.eventListeners.click()
+
+    expect(assumeEntityControl).toHaveBeenCalledWith('npc', 7)
+    expect(requestRender).toHaveBeenCalledTimes(1)
+    expect(menu.element.hidden).toBe(true)
+
+    selectionState.hit = { kind: 'car', entity: car }
+    canvas.eventListeners.contextmenu(contextMenuEvent())
+
+    const carAssumeButton = findMenuOption(menu.element, 'assume control')
+
+    expect(carAssumeButton.hidden).toBe(true)
+
+    carAssumeButton.eventListeners.click()
+
+    expect(assumeEntityControl).toHaveBeenCalledTimes(1)
 
     menu.destroy()
   })

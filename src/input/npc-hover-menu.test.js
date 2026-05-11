@@ -6,7 +6,7 @@ const selectionState = vi.hoisted(() => ({
 }))
 
 vi.mock('./entity-path-selection.js', () => ({
-  findSelectableEntityAt: vi.fn(() => selectionState.hit)
+  findSelectableEntityFromPointer: vi.fn(() => selectionState.hit)
 }))
 
 class FakeElement {
@@ -116,8 +116,35 @@ describe('NPC hover menu', () => {
     globalThis.cancelAnimationFrame = originalCancelAnimationFrame
   })
 
-  it('renders full infection status for the hovered NPC and hides off NPCs', () => {
-    const npc = { id: 2 }
+  it('renders full status for the hovered NPC and hides off NPCs', () => {
+    const npc = {
+      id: 2,
+      age: 12,
+      home: 'home-7',
+      work: null,
+      timetable: {
+        elements: [
+          { id: 'home', buildingId: 'home-7' },
+          { id: 'school', buildingId: 'school-3' }
+        ]
+      },
+      present: false,
+      locationState: {
+        buildingId: 'school-3'
+      },
+      goal: {
+        id: 'school',
+        buildingId: 'school-3'
+      },
+      carId: null,
+      desires: {
+        hunger: 82,
+        energy: 41,
+        fun: 18,
+        social: 67
+      },
+      activeDesire: null
+    }
     const car = { id: 4 }
     const canvas = new FakeElement('canvas')
     const menu = installNpcHoverMenu({
@@ -150,12 +177,38 @@ describe('NPC hover menu', () => {
     expect(menu.targetId).toBe(2)
     expect(menu.element.hidden).toBe(false)
     expect(menu.element.textContent).toContain('NPC 2')
-    expect(menu.element.textContent).toContain('infection')
-    expect(menu.element.textContent).toContain('exposed')
-    expect(menu.element.textContent).toContain('contagious')
-    expect(menu.element.textContent).toContain('can be infected')
-    expect(menu.element.textContent).toContain('infectious in')
+    expect(menu.element.textContent).toContain('age')
+    expect(menu.element.textContent).toContain('12')
+    expect(menu.element.textContent).toContain('home')
+    expect(menu.element.textContent).toContain('home-7')
+    expect(menu.element.textContent).toContain('work')
+    expect(menu.element.textContent).toContain('school')
+    expect(menu.element.textContent).toContain('school-3')
+    expect(menu.element.textContent).toContain('lunch')
+    expect(menu.element.textContent).toContain('shopping')
+    expect(menu.element.textContent).toContain('nightlife')
+    expect(menu.element.textContent).toContain('current')
+    expect(menu.element.textContent).toContain('inside school-3')
+    expect(menu.element.textContent).toContain('goal')
+    expect(menu.element.textContent).toContain('school school-3')
+    expect(menu.element.textContent).toContain('car')
+    expect(menu.element.textContent).toContain('hunger')
+    expect(menu.element.textContent).toContain('82% good')
+    expect(menu.element.textContent).toContain('energy')
+    expect(menu.element.textContent).toContain('41% okay')
+    expect(menu.element.textContent).toContain('fun')
+    expect(menu.element.textContent).toContain('18% urgent')
+    expect(menu.element.textContent).toContain('social')
+    expect(menu.element.textContent).toContain('67% okay')
+    expect(menu.element.textContent).toContain('health')
+    expect(menu.element.textContent).toContain('Exposed')
+    expect(menu.element.textContent).toContain('health note')
+    expect(menu.element.textContent).toContain('Incubating; not contagious yet')
+    expect(menu.element.textContent).toContain('next change')
+    expect(menu.element.textContent).toContain('Infectious in')
     expect(menu.element.textContent).toContain('2 days')
+    expect(menu.element.textContent).not.toContain('can be infected')
+    expect(menu.element.textContent).not.toContain('phase timer')
 
     selectionState.hit = { kind: 'car', entity: car }
     canvas.eventListeners.mousemove(mouseEvent())
@@ -163,6 +216,70 @@ describe('NPC hover menu', () => {
 
     expect(menu.targetId).toBeNull()
     expect(menu.element.hidden).toBe(true)
+
+    menu.destroy()
+  })
+
+  it('formats active desire goals with friendly language', () => {
+    const npc = {
+      id: 5,
+      age: 34,
+      home: 'home-2',
+      work: 'work-9',
+      timetable: {
+        elements: []
+      },
+      present: false,
+      locationState: {
+        buildingId: 'home-2'
+      },
+      goal: {
+        id: 'desire:hunger',
+        buildingId: 'diner-1'
+      },
+      carId: null,
+      desires: {
+        hunger: 12,
+        energy: 72,
+        fun: 68,
+        social: 33
+      },
+      activeDesire: {
+        need: 'hunger',
+        action: 'eat',
+        buildingId: 'diner-1'
+      }
+    }
+    const canvas = new FakeElement('canvas')
+    const menu = installNpcHoverMenu({
+      app: { canvas },
+      camera: { x: 0, y: 0, zoom: 1 },
+      city: {},
+      getNpcSimulation: () => ({
+        npcs: [npc],
+        infection: {
+          getNpcStatus: () => ({
+            id: 5,
+            infection: 'susceptible',
+            color: 0xe5c748,
+            nextState: null,
+            remainingSeconds: 0
+          })
+        }
+      }),
+      getCarSimulation: () => ({ cars: [] })
+    })
+
+    selectionState.hit = { kind: 'npc', entity: npc }
+    canvas.eventListeners.mousemove(mouseEvent())
+    animationFrame()
+
+    expect(menu.element.textContent).toContain('goal')
+    expect(menu.element.textContent).toContain('eat at diner-1')
+    expect(menu.element.textContent).toContain('hunger')
+    expect(menu.element.textContent).toContain('12% urgent')
+    expect(menu.element.textContent).toContain('social')
+    expect(menu.element.textContent).toContain('33% low')
 
     menu.destroy()
   })

@@ -39,11 +39,11 @@ Startup follows this sequence:
   },
   "buildings": {
     "encoding": "row-spans-v1",
-    "defaultType": "residential",
+    "defaultTypes": ["residential"],
     "items": [
       {
         "id": "building-0001",
-        "type": "residential",
+        "types": ["residential", "restaurant"],
         "spans": [[0, 0, 3]]
       }
     ]
@@ -65,7 +65,7 @@ Startup follows this sequence:
 
 Each `rows` entry must be a string with exactly `width` symbols. The file must contain exactly `height` semantic rows. Every symbol must exist in the legend, and every legend entry must include a supported `category` plus boolean `walkable`, `drivable`, and `parkable` properties.
 
-The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a string `type`, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint.
+The optional `buildings` object uses `row-spans-v1`: each building has a stable string `id`, a non-empty `types` string array, optional `entrance: { x, y }` metadata, and `spans` encoded as `[y, x, length]`. The runtime validates that spans are in bounds, cover only `building` category tiles, do not overlap, form 8-connected components, and exactly cover every building tile. When present, an entrance must be inside its building footprint.
 
 Each `textureRows` entry must be an array with exactly `width` integer texture IDs. The texture rows file must match the tile layout dimensions, and its texture IDs refer to atlas frames in `public/maps/liberty-city/manifest.json`. This keeps gameplay semantics independent from visual fidelity.
 
@@ -88,7 +88,7 @@ The base categories are `road`, `sidewalk`, `crosswalk`, `park`, `water`, `build
 | `index(x, y)` | Converts grid coordinates into a typed-array offset. |
 | `getTile(x, y)` | Returns a base category name or `null` outside the map. |
 | `getTileId(x, y)` | Returns a numeric category ID or `null` outside the map. |
-| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType, buildingEntrance }` for a cell. |
+| `getTileVariant(x, y)` | Returns `{ category, walkable, drivable, parkable, textureId, zorder, buildingId, buildingType, buildingTypes, buildingEntrance }` for a cell. |
 | `getTextureId(x, y)` | Returns the atlas-frame ID for a cell. |
 | `getBuildingId(x, y)`, `getBuilding(x, y)` | Reads building metadata from the compiled building lookup. |
 | `inBounds(x, y)` | Checks integer grid bounds. |
@@ -125,7 +125,7 @@ A* uses 8-way movement with costs of `10` for cardinal moves and `14` for diagon
 
 `Game` owns the runtime clock state. The browser animation loop keeps rendering while simulation time can pause, play, or run at a speed multiplier. Updates use a fixed step of `1 / 60` seconds, so systems receive stable delta values even when the display frame delta varies.
 
-The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, car movement, and crosswalk signals advance together. The dashboard displays the current simulated day/time, exposes NPC and car counts as sliders plus exact number inputs, and includes a checkbox for the day-night overlay. Changing either entity count restarts the population systems with clamped counts; the NPC default remains 1000, and the car default is 500.
+The dashboard writes speed changes through `game.setSpeed(multiplier)`. The multiplier applies to every simulation system, so the day-night clock, NPC movement, car movement, and crosswalk signals advance together. Entity locomotion has its own presentation movement scale before physical speeds are applied, which keeps meter-derived movement readable under the compressed day clock. The dashboard displays the current simulated day/time, exposes NPC and car counts as sliders plus exact number inputs, and includes a checkbox for the day-night overlay. Changing either entity count restarts the population systems with clamped counts; the NPC default remains 1000, and the car default is 200.
 
 `SimulationClock` advances one simulated hour for every 60 game seconds. Since `Game` applies speed before fixed updates reach systems, `1x` speed makes one real minute equal one simulation hour, and higher speeds multiply that rate. Restarting the simulation resets the clock to the configured start hour.
 
@@ -139,10 +139,13 @@ NPC entities expose the state the simulation needs:
 {
   id,
   zorder,
+  age,
   home,
   work,
   timetable,
   goal,
+  desires,
+  activeDesire,
   present,
   locationState,
   routing,
@@ -154,15 +157,21 @@ NPC entities expose the state the simulation needs:
 }
 ```
 
-The simulation owns movement decisions and tile occupancy bookkeeping. NPC movement speeds are applied against the simulation clock delta, so the default one-hour-per-real-minute clock compression also compresses walking time. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
+The simulation owns movement decisions and tile occupancy bookkeeping. NPC movement speeds are authored as physical meters per second and then applied through the NPC presentation movement scale, while schedules, needs, infection timers, and the day-night display continue to use the compressed simulation clock. NPC entities keep inspectable state but do not own the frame loop. NPCs use `zorder: 1`.
 
-The NPC system receives a random source through config. At creation time, each NPC receives `home` and `work` building ids chosen from residential and commercial buildings, plus a timetable with `home` and `work` elements. The work element targets the work building entrance and is active around `09:00-17:00` with per-NPC variation. The home element targets the home building entrance and wraps around the rest of the day. The default app state enables the `epi-city` seed, which makes home/work assignment, timetable variation, spawn anchor selection, and speed assignment repeat when the simulation restarts with the same seed. NPCs without an active goal stay idle instead of choosing random adjacent path tiles.
+The simulation scale is centralized in `src/core/scale.js`: a 32-world-unit tile represents 3.25 meters, so one world unit represents 0.1015625 meters and one meter is about 9.846 world units. The default Liberty City map is 256 tiles wide, or 832 meters at this scale. Movement speeds, infection radii, heatmap radii, and car dimensions should be authored in physical units and converted through this module instead of hard-coded as raw world units. Movement presentation speed is controlled separately through `movementTimeScale` on NPC and car config.
 
-NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses `city.findCachedPath()` to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
+The NPC system receives a random source through config. At creation time, it samples transient family shapes until it reaches the requested people count, then flattens those households into NPCs. Family type is not stored. The lasting state is each NPC's `age`, shared residential `home`, optional adult `work`, timetable, and existing movement/infection data. Default family weights are 35% single, 30% married without children, and 35% married with children; child counts for families with children use weights of 45% for one child, 35% for two, 15% for three, and 5% for four.
+
+Ages drive commute behavior. Ages 0-5 receive a home-only timetable. Ages 6-17 commute between home and a strict `school` building when one exists; maps without a school keep those NPCs home-only. Ages 18-99 receive a richer adult timetable, with work chosen from work-capable public types (`commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, or `nightclub`). The work or school element targets the destination entrance and is active around `09:00-17:00` with per-NPC variation. Adult timetables add optional higher-priority stops before the catch-all home element: lunch picks one of the nearest restaurant candidates to the assigned workplace for a one-hour break inside the `11:00-13:00` window, shopping has a configurable probability and targets a supermarket or mall immediately after work, and nightlife has a smaller probability for adults from childless generated households and targets a nightclub at night.
+
+NPC desire dynamics track hunger, energy, fun, and social as 0-100 satisfaction scores using a dedicated seeded random stream. Runtime scores live in compact typed arrays while `npc.desires` exposes accessor properties for inspection. Scores decay over simulation time and recover inside matching locations: restaurants and supermarkets feed hunger, home restores energy and slowly helps all needs, malls help fun/social, and nightclubs help fun/social for eligible adults after 20:00. Desire destinations are soft goals only when the active timetable element is catch-all `home`; hard work, school, lunch, shopping, and scheduled nightlife elements keep priority. Preschool NPCs never leave home for desires, minors cannot use nightclubs, and adults from homes with minors are also blocked from desire-based nightclub trips. Map-derived desire data is cached per compiled city object with a building signature, including building-purpose buckets, building-id lookups, and nearest venue candidates; per-location satisfaction profiles are cached as NPCs settle inside buildings. The map cache recomputes if the city building signature changes. The default app state enables the `epi-city` seed, which makes family composition, home/work/school assignment, timetable variation, spawn anchor selection, speed assignment, and desire initialization repeat when the simulation restarts with the same seed. NPCs without an active goal stay idle instead of choosing random adjacent path tiles.
+
+NPCs do not spawn directly on crosswalk tiles when they need a fallback outdoor spawn. Goal movement uses cached route-field handles to plan pedestrian routes to the active timetable location, then uses `city.canStep()` for every tile step so crosswalk signal rules are enforced at the same boundary as other movement checks. Route-field handle objects are cached with the underlying reverse fields so repeated planning avoids wrapper allocations. Route requests are processed through a per-update budget so shift changes do not plan every queued NPC route in one frame.
 
 Each normal walkable tile has nine visual NPC anchors arranged as a compact 3x3 grid inside the tile. Tile occupancy is unrestricted: NPCs do not block spawning, exiting, or movement because a tile is crowded. The renderer draws at most nine NPCs for a tile. Building entrance tiles remain shared holding points for NPCs entering, waiting inside, or leaving the same building without blocking the doorway.
 
-NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses defaults of 48 world units of infection distance, `0.03` per-minute transmission probability, 1 day of incubation, 7 days infectious, and 90 days of recovered immunity.
+NPC infection dynamics run inside the same system after movement updates. Each NPC has an `infection` value of `susceptible`, `exposed`, `infectious`, or `recovered`. Exposed NPCs become infectious after the configured incubation time, infectious NPCs recover after the configured infectious time, and recovered NPCs return to susceptible after the configured immunity time. Rendering maps those states to the configured SEIR palette: susceptible yellow, exposed orange, infectious red, and recovered green. The default runtime starts four infectious NPCs, exposes that initial count on the dashboard, and uses defaults of 2 meters of infection distance, `0.03` per-minute transmission probability, 1 day of incubation, 7 days infectious, and 90 days of recovered immunity.
 
 Transmission indexes only infectious NPCs in a reusable world-space spatial hash sized from the infection distance. Susceptible NPCs check their own cell plus neighboring cells and then run exact squared-distance tests against the infectious candidates. This avoids an all-pairs contact scan at the 10,000-NPC dashboard limit. Infection randomness uses a dedicated seeded random stream derived from the NPC seed, so adding disease dynamics does not change movement or timetable repeatability.
 
@@ -170,13 +179,13 @@ Successful transmissions append compact source/target snapshots to a bounded rec
 
 ## Car Simulation
 
-`createCarSimulation()` builds cars after the map renders. Each car receives one or two real NPC owner records, and all owners for one car share the same residential home building. A commuting owner waits inside the origin building while the car is pending, rides hidden inside the car, and is dropped into the destination building when the car parks. If a car is used to reach work, the same car remains parked near work until the evening return window sends it home.
+`createCarSimulation()` builds cars after the map renders. Each car receives one or two adult real NPC owner records, and all owners for one car share the same residential home building. A commuting owner waits inside the origin building while the car is pending, rides hidden inside the car, and is dropped into the destination building when the car parks. Real NPC owners drive toward their active timetable destination, so richer adult stops such as lunch or shopping can use the car; synthetic owners keep the simpler home/work commute windows.
 
 Cars park on `tileParkable` cells near the relevant building entrance. The parking manager uses typed `Int32Array` occupancy and reservation layers so each occupied tile belongs to at most one car. Two-tile cars are the common case, with some three-tile cars. Parked rendering shifts the car body toward the nearest road or lane tile.
 
 Moving cars use the authored `city.laneGraph`. The runtime compiles that graph into compact arrays for node tile indexes, directed edge endpoints, reverse adjacency, edge costs, tile-to-node lookup, and nearest lane node by tile. It also adds generated lane-change maneuver edges wherever same-direction lanes are one tile laterally apart and three to six tiles forward. A generated lane change excludes crosswalk tiles and stores a sampled Bezier world path plus swept road tiles for clearance checks. The lane graph compiler also detects intersection signal groups from nodes that carry both north-south and east-west lane movements. This precomputed network is cached by the compiled lane graph object, so loading a changed map folder produces a new lane graph object and recomputes the car traffic structures.
 
-Car routing follows the same destination-field idea as pedestrian routing. `createCarRoutePlanner()` builds reverse Dijkstra route fields keyed by destination lane node, stores the next edge for each reachable start node, and caches exact extracted routes by start node. Edge cost uses lane distance only, so cars choose the shortest lane route even if it includes authored merge or generated lane-change edges. Speed limits affect movement duration after routing, and movement is applied in simulation-clock seconds. Cars keep an individual cruise speed below the lane cap and adjust toward slower or faster targets when a moving car blocks an upcoming generated lane-change gap. During a generated lane change, the swept tiles must be clear before the maneuver starts, but the car keeps occupying only its normal two- or three-tile body footprint. Traffic signals are evaluated when a car starts the next lane edge, so signal changes do not invalidate route caches. Cars may enter a controlled intersection only on the green phase for that edge's movement axis, and cars already inside the group can leave. Cars only enter crosswalk lane nodes while the shared crosswalk signal is green, but cars already on a crosswalk can continue out at any signal.
+Car routing follows the same destination-field idea as pedestrian routing. `createCarRoutePlanner()` builds reverse Dijkstra route fields keyed by destination lane node, stores the next edge for each reachable start node, and caches exact extracted routes by start node. Edge cost uses lane distance only, so cars choose the shortest lane route even if it includes authored merge or generated lane-change edges. Lane speed limits are interpreted as mph, converted into world units per second through `src/core/scale.js`, and then applied to movement duration after routing. Cars keep an individual cruise speed below the lane cap and adjust toward slower or faster targets when a moving car blocks an upcoming generated lane-change gap. During a generated lane change, the swept tiles must be clear before the maneuver starts, but the car keeps occupying only its normal two- or three-tile body footprint. Traffic signals are evaluated when a car starts the next lane edge, so signal changes do not invalidate route caches. Cars may enter a controlled intersection only on the green phase for that edge's movement axis, and cars already inside the group can leave. Cars only enter crosswalk lane nodes while the shared crosswalk signal is green, but cars already on a crosswalk can continue out at any signal.
 
 ## Texture Sets
 
@@ -222,7 +231,7 @@ Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car
 
 Entity debug overlays share the entity renderer pass and are only drawn when enabled. Infection radius renders outline-only circles around infectious NPCs, infection arrows reuse recorded transmission events from the infection dynamics, contact edges show close-contact pairs from their own contact edge window, and path trails keep a bounded in-memory position history per visible NPC or car. Infection arrows render above contact edges; infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp to 1-120 game minutes. Path trails clamp to 1-100 past steps.
 
-The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, residential building blue, commercial building amber, and unknown building type neutral gray.
+The tile overlay has three mutually exclusive color schemes: `tile type`, `monochrome-light`, and `monochrome-dark`. The `tile type` scheme paints semantic categories with fixed debug colors: sidewalk white, road blackish, crosswalk light gray with white strips, park green, water blue, obstacle red, known building types by their primary type, and unknown building types neutral gray.
 
 The tile overlay layer is built lazily the first time it is enabled. Visibility toggles only change layer visibility, while opacity and color-scheme changes rebuild the cached layer with the new fill styles. The overlay builder uses the same 16x16 chunk pattern as the city renderer so large masks remain inspectable without covering NPCs.
 
@@ -230,13 +239,13 @@ SEIR heatmaps are built only while their overlay checkbox is enabled. Each activ
 
 ## Map Editor
 
-The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server on port `5174`.
+The map editor in `map-editor/` is a local maintenance tool for correcting semantic tile labels without changing the source texture atlas. It serves the canonical source image and a browser editor from a separate Node server that starts on port `5174` and tries the next port if that one is already in use.
 
 The browser owns the editable map state. Startup asks `/api/config` for an empty semantic tile configuration and the current Liberty City texture rows, then loads the default atlas plus texture manifest for immediate preview. `Load Map Folder` opens a package folder containing `tile-layout.json`, `texture-layout.json`, `manifest.json`, and the atlas named by the manifest. `Reset to defaults` rebuilds the empty semantic state with the current visual layer. `Save Map Folder` writes the editable semantic rows/buildings and visual assignment layer back to `tile-layout.json` and `texture-layout.json` together.
 
 Texture rows loading validates `textureRows` instead of falling back to default texture IDs. The editor status reports whether the current visual preview is rendered from loaded folder assets or is waiting for one of those assets.
 
-The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer. The building layer edits the selected connected building component's `type` in the top-level `buildings` metadata.
+The editor displays the current map state for every layer. There is no separate sparse-label overlay or hidden generated-label source. A brush stroke directly mutates the current tile type, `walkable`, `parkable`, or `drivable` grid, and each stroke becomes one undoable operation. The explicit `empty` brush value writes `null` back into the selected label layer. The building layer edits the selected connected building component's `types` in the top-level `buildings` metadata.
 
 The texture layer edits `textureRows` at the manifest-frame ID level. Its picker samples the texture ID from a clicked tile, then paint strokes copy that ID to other cells. Texture edits share the same undo/redo pipeline as semantic edits, and when an atlas plus manifest are loaded the editor rebuilds the visual map from the updated `textureRows`. Because the runtime reads tile texture IDs from `texture-layout.json`, the editor directs users to `Save Map Folder` after texture painting.
 
@@ -259,7 +268,7 @@ The dependency command creates or repairs `map-editor/.venv`, then installs the 
 
 ## Debugging Hooks
 
-`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. Right-clicking an NPC opens a context menu with `follow` and `infect`; the `infect` action marks that NPC infectious through the same infection state API used by the simulation. This keeps the console useful without exposing every Pixi container and loader helper.
+`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. Left-clicking an NPC or car selects it without displaying its route. Right-clicking an entity opens a context menu with `follow` and a route toggle that displays `show route` or `hide route` for the selected entity; NPCs also expose `infect`, which marks that NPC infectious through the same infection state API used by the simulation. This keeps the console useful without exposing every Pixi container and loader helper.
 
 Useful console checks:
 
@@ -267,6 +276,8 @@ Useful console checks:
 window.citySim.city.getTile(100, 100)
 window.citySim.city.getTileVariant(100, 100)
 window.citySim.city.getTextureId(100, 100)
+window.citySim.scale.metersPerTile
+window.citySim.scale.worldUnitsPerMeter
 window.citySim.city.nearestPassableTile(120, 140, 'pedestrian')
 window.citySim.city.findPath({ x: 8, y: 8 }, { x: 240, y: 240 }, 'vehicle')
 window.citySim.gameLoop.running
@@ -288,9 +299,10 @@ window.citySim.setInfectionEdgeDuration(10)
 window.citySim.setContactEdgeDuration(10)
 window.citySim.setPathTrailsVisible(true)
 window.citySim.setPathTrailLength(5)
-window.citySim.setHeatmapRadius(128)
+window.citySim.setHeatmapRadius(window.citySim.scale.worldUnitsPerMeter * 10)
 window.citySim.cars[0].owners
 window.citySim.cars[0].parkedAt
+window.citySim.npcs[0].age
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
 window.citySim.npcs[0].timetable.elements

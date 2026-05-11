@@ -53,14 +53,15 @@ export function createEntityPathSelection({
       return
     }
 
-    const point = canvasPoint(app.canvas, event)
-    const worldPoint = {
-      x: (point.x - camera.x) / camera.zoom,
-      y: (point.y - camera.y) / camera.zoom
-    }
-    const hit = findSelectableEntityAt(worldPoint, city, getNpcSimulation()?.npcs || [], getCarSimulation()?.cars || [])
+    const hit = findSelectableEntityFromPointer({
+      app,
+      camera,
+      city,
+      getNpcSimulation,
+      getCarSimulation
+    }, event)
 
-    selected = hit ? { kind: hit.kind, id: hit.entity.id } : null
+    selected = hit ? { kind: hit.kind, id: hit.entity.id, routeVisible: false } : null
     render()
 
     if (typeof requestRender === 'function') {
@@ -98,17 +99,49 @@ export function createEntityPathSelection({
       return
     }
 
-    const points = selection.kind === 'car'
-      ? carPathPoints(selection.entity, getCarSimulation()?.router?.network)
-      : npcPathPoints(city, selection.entity)
-
     drawSelectionMarker(graphics, selection.kind, selection.entity, city)
-    drawDirectedPath(graphics, points, PATH_COLORS[selection.kind], city.tileSize)
+
+    if (selected.routeVisible) {
+      const points = selection.kind === 'car'
+        ? carPathPoints(selection.entity, getCarSimulation()?.router?.network)
+        : npcPathPoints(city, selection.entity)
+
+      drawDirectedPath(graphics, points, PATH_COLORS[selection.kind], city.tileSize)
+    }
   }
 
   function clearSelection() {
     selected = null
     graphics.clear()
+  }
+
+  function selectEntity(kind, id, options = {}) {
+    const routeVisible = options.routeVisible ?? (
+      selected && selected.kind === kind && selected.id === id
+        ? selected.routeVisible
+        : false
+    )
+
+    selected = { kind, id, routeVisible }
+    render()
+  }
+
+  function showRouteFor(kind, id) {
+    selected = { kind, id, routeVisible: true }
+    render()
+  }
+
+  function hideRouteFor(kind, id) {
+    if (!isRouteVisibleFor(kind, id)) {
+      return
+    }
+
+    selected.routeVisible = false
+    render()
+  }
+
+  function isRouteVisibleFor(kind, id) {
+    return Boolean(selected && selected.kind === kind && selected.id === id && selected.routeVisible)
   }
 
   function destroy() {
@@ -131,6 +164,10 @@ export function createEntityPathSelection({
     graphics,
     render,
     clearSelection,
+    selectEntity,
+    showRouteFor,
+    hideRouteFor,
+    isRouteVisibleFor,
     destroy,
     get selected() {
       return selected ? { ...selected } : null
@@ -158,6 +195,27 @@ export function findSelectableEntityAt(point, city, npcs, cars) {
   }
 
   return best
+}
+
+export function findSelectableEntityFromPointer({
+  app,
+  camera,
+  city,
+  getCarSimulation,
+  getNpcSimulation
+}, event) {
+  const point = canvasPoint(app.canvas, event)
+  const worldPoint = {
+    x: (point.x - camera.x) / camera.zoom,
+    y: (point.y - camera.y) / camera.zoom
+  }
+
+  return findSelectableEntityAt(
+    worldPoint,
+    city,
+    getNpcSimulation()?.npcs || [],
+    getCarSimulation()?.cars || []
+  )
 }
 
 export function npcPathPoints(city, npc) {

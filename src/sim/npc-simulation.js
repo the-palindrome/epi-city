@@ -1,7 +1,18 @@
 import * as PIXI from 'pixi.js'
-import { ENTITY_RENDER_DEBUG_CONFIG, INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
+import {
+  ENTITY_RENDER_DEBUG_CONFIG,
+  HOME_BUILDING_TYPES,
+  INFECTION_CONFIG,
+  NIGHTCLUB_BUILDING_TYPES,
+  NPC_CONFIG,
+  RESTAURANT_BUILDING_TYPES,
+  SCHOOL_BUILDING_TYPES,
+  SHOPPING_BUILDING_TYPES,
+  WORK_BUILDING_TYPES
+} from '../core/constants.js'
 import { createSeededRandom, createSystemRandom } from '../core/random.js'
 import { hourInRange, normalizeHour } from '../core/time.js'
+import { buildingHasAnyType } from '../map/buildings.js'
 import { createNpcSpriteRenderer } from '../render/npc-sprite-renderer.js'
 import {
   createNpcSpriteState,
@@ -9,7 +20,7 @@ import {
   idleNpcSprite,
   stepNpcSpriteAnimation
 } from '../render/npc-sprite.js'
-import { toSimulationSeconds } from './simulation-clock.js'
+import { toMovementSeconds, toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -36,39 +47,96 @@ const INFECTION_STATE_NAMES = Object.freeze([
 const NPC_MOVEMENT_CURVE_SAMPLE_COUNT = 12
 const NPC_MOVEMENT_CURVE_TANGENT_SCALE = 0.36
 const NPC_MOVEMENT_CURVE_MAX_TANGENT_TILES = 0.5
+const ADULT_MIN_AGE = 18
+const ADULT_MAX_AGE = 99
+const SCHOOL_MIN_AGE = 6
+const SCHOOL_MAX_AGE_EXCLUSIVE = 18
+const CHILD_MIN_AGE = 0
+const CHILD_MAX_AGE = 17
+const MAX_PARTNER_AGE_DIFFERENCE = 6
+const MIN_PARENT_AGE_GAP = 18
+const MAX_PARENT_AGE_GAP = 45
+const DESIRE_NAMES = Object.freeze(['hunger', 'energy', 'fun', 'social'])
+const DESIRE_INDEX = Object.freeze({
+  hunger: 0,
+  energy: 1,
+  fun: 2,
+  social: 3
+})
+const DESIRE_COUNT = DESIRE_NAMES.length
+const DESIRE_DESTINATION_IDS = Object.freeze({
+  hunger: 'desire:hunger',
+  energy: 'desire:energy',
+  fun: 'desire:fun',
+  social: 'desire:social'
+})
+const DESIRE_DESTINATION_IDS_BY_INDEX = Object.freeze(DESIRE_NAMES.map((need) => DESIRE_DESTINATION_IDS[need]))
+const DESIRE_ACTIONS = Object.freeze({
+  hunger: 'eat',
+  energy: 'rest',
+  fun: 'have fun',
+  social: 'socialize'
+})
+const DESIRE_ACTIONS_BY_INDEX = Object.freeze(DESIRE_NAMES.map((need) => DESIRE_ACTIONS[need]))
+const NIGHTCLUB_DESIRE_START_HOUR = 20
+const NIGHTCLUB_DESIRE_END_HOUR = 4
+const NPC_CROWDING_SPARSE_UPDATE_LIMIT = 3000
+const DESIRE_ZERO_RATES = new Float64Array(DESIRE_COUNT)
+const DEFAULT_SOCIAL_GRAPH_CONFIG = Object.freeze({
+  minFriends: 2,
+  maxFriends: 8,
+  candidateAttemptsPerFriend: 16,
+  ageBucketYears: 8,
+  sameHomeWeight: 4,
+  sameWorkOrSchoolWeight: 5,
+  agePeerWeight: 3,
+  randomWeight: 1
+})
+const DEFAULT_SOCIAL_GROUP_MIN_FRIENDS = 1
+const DEFAULT_SOCIAL_GROUP_MAX_FRIENDS = 3
+const desireCityDataCache = new WeakMap()
 
 export function createNpcSimulation(city, entityLayer, config) {
   const random = config.random || createSystemRandom()
   const infectionRandom = config.infectionRandom || (random.seed ? createSeededRandom(`${random.seed}:infection`) : createSystemRandom())
+  const policyRandom = config.policyRandom || (random.seed ? createSeededRandom(`${random.seed}:policy`) : createSystemRandom())
+  const desireRandom = config.desireRandom || (random.seed ? createSeededRandom(`${random.seed}:desires`) : createSystemRandom())
+  const socialRandom = config.socialRandom || (random.seed ? createSeededRandom(`${random.seed}:social`) : createSystemRandom())
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
   const clock = config.clock || STATIC_CLOCK
   const visibleTileCounts = new Uint8Array(city.tiles.length)
   const visibleTileIndexes = []
   const slotOffsets = createNpcSlotOffsets(city, config)
   const spawnTiles = collectNpcSpawnTiles(city)
-  const buildingsByType = collectBuildingsByType(city)
+  const desireCityData = getDesireCityData(city)
+  const buildingsByPurpose = desireCityData.buildingsByPurpose
   const unlimitedCapacityTiles = collectBuildingEntranceTiles(city)
   const routePlanner = new NpcRoutePlanner(config)
+  const policyController = new NpcPolicyController(city, policyRandom, clock)
   const npcs = []
+  const crowding = createNpcCrowdingState(city, config)
   const context = {
     city,
     clock,
     slotOffsets,
     unlimitedCapacityTiles,
+    crowding,
     random,
+    policies: policyController,
     routePlanner,
     zorder,
     config
   }
   let destroyed = false
   let entityDebugOptions = { ...(config.entityDebugOptions || {}) }
+  const npcProfiles = createNpcFamilyProfiles(city, buildingsByPurpose, random, config.count, config)
 
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
 
-  for (let id = 0; id < config.count; id += 1) {
-    const buildingAssignment = createNpcBuildingAssignment(buildingsByType, random)
-    const timetable = createNpcTimetable(city, buildingAssignment, random, config)
+  for (let id = 0; id < npcProfiles.length; id += 1) {
+    const profile = npcProfiles[id]
+    const timetable = createNpcTimetable(city, profile.buildingAssignment, profile.age, random, config)
     const spawnState = createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets)
 
     if (!spawnState) {
@@ -82,7 +150,8 @@ export function createNpcSimulation(city, entityLayer, config) {
       slot: spawnState.slot,
       present: spawnState.present,
       locationState: spawnState.locationState,
-      buildingAssignment,
+      buildingAssignment: profile.buildingAssignment,
+      age: profile.age,
       timetable,
       random,
       zorder,
@@ -90,7 +159,12 @@ export function createNpcSimulation(city, entityLayer, config) {
     }))
   }
 
+  const desires = new NpcDesireDynamics(npcs, city, desireCityData, config, desireRandom, clock)
+  const socialGraph = createNpcSocialGraph(npcs, socialRandom, config.socialGraph)
+  desires.setSocialGraph(socialGraph, routePlanner)
+  context.desires = desires
   const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
+  setPolicyEffects(config.policyEffects)
   infection.setContactTracingEnabled(
     Boolean(entityDebugOptions.contactEdgesVisible),
     entityDebugOptions.contactEdgeDurationSeconds
@@ -115,8 +189,10 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
 
     const safeDelta = Math.min(Math.max(deltaSeconds, 0), 0.1)
-    const movementDelta = toSimulationSeconds(clock, safeDelta)
+    const movementDelta = toMovementSeconds(safeDelta, config.movementTimeScale)
     const timeOfDayHours = clock.getTimeOfDayHours()
+
+    updateNpcCrowdingState(crowding, npcs)
 
     for (const npc of npcs) {
       refreshNpcGoal(npc, timeOfDayHours, context)
@@ -132,6 +208,7 @@ export function createNpcSimulation(city, entityLayer, config) {
       updateNpcMovement(npc, movementDelta, context)
     }
 
+    desires.update(safeDelta)
     infection.update(safeDelta)
   }
 
@@ -163,18 +240,29 @@ export function createNpcSimulation(city, entityLayer, config) {
     }
   }
 
+  function setPolicyEffects(effects) {
+    policyController.setEffects(effects)
+
+    if (infection) {
+      infection.setPolicyInfectionProbabilityMultiplier(policyController.effects.infectionProbabilityMultiplier)
+    }
+  }
+
   render()
 
   return {
     npcs,
+    socialGraph,
     tileCapacity: config.tileCapacity,
     routePlanner,
+    desires,
     infection,
     graphics,
     update,
     render,
     setEntityRenderMode,
     setEntityDebugOptions,
+    setPolicyEffects,
     destroy() {
       destroyed = true
 
@@ -184,10 +272,12 @@ export function createNpcSimulation(city, entityLayer, config) {
 }
 
 class NpcEntity {
-  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, timetable, random, zorder, config }) {
+  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, age, timetable, random, zorder, config }) {
     this.id = id
     this.zorder = zorder
+    this.age = age
     this.home = buildingAssignment.home ? buildingAssignment.home.id : null
+    this.school = buildingAssignment.school ? buildingAssignment.school.id : null
     this.work = buildingAssignment.work ? buildingAssignment.work.id : null
     this.timetable = timetable
     this.goal = null
@@ -209,10 +299,17 @@ class NpcEntity {
     this.carId = null
     this.commuteByCar = false
     this.infection = 'susceptible'
+    this.desires = null
+    this.activeDesire = null
+    this.friendIds = []
   }
 
   getActiveTimetableElement(timeOfDayHours) {
     return this.timetable.getActiveElement(timeOfDayHours)
+  }
+
+  getActiveDestinationElement(timeOfDayHours) {
+    return this.getActiveTimetableElement(timeOfDayHours)
   }
 
   setGoal(element) {
@@ -230,8 +327,11 @@ class NpcEntity {
     return Boolean(
       this.goal &&
       this.locationState &&
-      this.locationState.timetableElementId === this.goal.id &&
-      this.locationState.buildingId === this.goal.buildingId
+      this.locationState.buildingId === this.goal.buildingId &&
+      (
+        this.locationState.timetableElementId === this.goal.id ||
+        isDesireElementId(this.goal.id)
+      )
     )
   }
 
@@ -360,6 +460,509 @@ class NpcRoutePlanner {
   }
 }
 
+class NpcPolicyController {
+  constructor(city, random, clock) {
+    this.city = city
+    this.random = random
+    this.clock = clock
+    this.effects = normalizeNpcPolicyEffects(null)
+    this.decisions = new Map()
+    this.effectKey = getNpcPolicyEffectsKey(this.effects)
+  }
+
+  setEffects(effects) {
+    const nextEffects = normalizeNpcPolicyEffects(effects)
+    const nextKey = getNpcPolicyEffectsKey(nextEffects)
+
+    if (nextKey !== this.effectKey) {
+      this.decisions.clear()
+      this.effectKey = nextKey
+    }
+
+    this.effects = nextEffects
+  }
+
+  getAdjustedDestinationElement(npc, element) {
+    const eventAction = getPolicyEventActionForElement(this.city, element)
+
+    if (!eventAction) {
+      return element
+    }
+
+    const probability = this.effects.eventCancellationProbabilities[eventAction] || 0
+
+    if (probability <= 0) {
+      return element
+    }
+
+    return this.shouldCancelEvent(npc, element, eventAction, probability)
+      ? getNpcHomeTimetableElement(npc) || element
+      : element
+  }
+
+  shouldKeepDistanceFromTile(tileIndex) {
+    return Boolean(this.effects.socialDistancingEnabled && Number.isInteger(tileIndex) && tileIndex >= 0)
+  }
+
+  shouldCancelEvent(npc, element, eventAction, probability) {
+    if (probability >= 1) {
+      return true
+    }
+
+    const key = createNpcPolicyDecisionKey(npc, element, eventAction, probability, this.clock)
+
+    if (!this.decisions.has(key)) {
+      this.decisions.set(key, this.random.next() < probability)
+    }
+
+    return this.decisions.get(key)
+  }
+}
+
+class NpcDesireDynamics {
+  constructor(npcs, city, cityData, config, random, clock) {
+    this.npcs = npcs
+    this.city = city
+    this.cityData = cityData
+    this.buildingsByPurpose = cityData.buildingsByPurpose
+    this.config = normalizeDesireConfig(config.desires)
+    this.random = random
+    this.clock = clock
+    this.elapsedSimulationSeconds = 0
+    this.needScores = Array.from({ length: DESIRE_COUNT }, () => new Float64Array(npcs.length))
+    this.cooldowns = Array.from({ length: DESIRE_COUNT }, () => new Float64Array(npcs.length))
+    this.buildingsById = cityData.buildingsById
+    this.homesWithMinors = collectHomesWithMinors(npcs)
+    this.decayPerHour = needRatesToArray(this.config.decayPerHour)
+    this.homeSatisfactionRates = needRatesToArray(this.config.satisfactionPerHour.home)
+    this.restaurantSatisfactionRates = needRatesToArray(this.config.satisfactionPerHour.restaurant)
+    this.supermarketSatisfactionRates = needRatesToArray(this.config.satisfactionPerHour.supermarket)
+    this.mallSatisfactionRates = needRatesToArray(this.config.satisfactionPerHour.mall)
+    this.nightclubSatisfactionRates = needRatesToArray(this.config.satisfactionPerHour.nightclub)
+    this.baseSatisfactionByBuildingId = buildBaseDesireSatisfactionByBuildingId(
+      city.buildings || [],
+      this.restaurantSatisfactionRates,
+      this.supermarketSatisfactionRates,
+      this.mallSatisfactionRates,
+      this.nightclubSatisfactionRates
+    )
+    this.destinationCache = Array.from({ length: DESIRE_COUNT }, () => new Map())
+    this.socialGraph = null
+    this.routePlanner = null
+    this.nextSocialGroupId = 1
+
+    for (let index = 0; index < npcs.length; index += 1) {
+      const npc = npcs[index]
+
+      for (let needIndex = 0; needIndex < DESIRE_COUNT; needIndex += 1) {
+        this.needScores[needIndex][index] = clampNeedScore(this.random.between(this.config.initialMin, this.config.initialMax))
+      }
+
+      npc.desires = createNpcDesireView(this.needScores, index)
+      npc.activeDesire = null
+      Object.defineProperty(npc, 'getActiveDestinationElement', {
+        value: (timeOfDayHours) => this.getActiveDestinationElement(npc, timeOfDayHours),
+        configurable: true,
+        writable: true
+      })
+    }
+  }
+
+  setSocialGraph(socialGraph, routePlanner = null) {
+    this.socialGraph = socialGraph || null
+    this.routePlanner = routePlanner || null
+  }
+
+  update(deltaSeconds) {
+    const simulationDeltaSeconds = toSimulationSeconds(this.clock, deltaSeconds)
+
+    if (!Number.isFinite(simulationDeltaSeconds) || simulationDeltaSeconds <= 0) {
+      return
+    }
+
+    this.elapsedSimulationSeconds += simulationDeltaSeconds
+    const deltaHours = simulationDeltaSeconds / SECONDS_PER_HOUR
+
+    for (let index = 0; index < this.npcs.length; index += 1) {
+      this.decayNeeds(index, deltaHours)
+      this.satisfyNeeds(this.npcs[index], index, deltaHours)
+    }
+  }
+
+  getActiveDestinationElement(npc, timeOfDayHours) {
+    const scheduledElement = npc.getActiveTimetableElement(timeOfDayHours)
+
+    if (!this.canUseDesireDestination(npc, scheduledElement)) {
+      this.clearActiveDesire(npc)
+      return scheduledElement
+    }
+
+    this.refreshActiveDesire(npc, timeOfDayHours)
+
+    return npc.activeDesire?.element || scheduledElement
+  }
+
+  handleRouteFailure(npc) {
+    if (!npc.activeDesire) {
+      return
+    }
+
+    if (npc.activeDesire.socialGroupId) {
+      this.clearSocialGroupDesire(npc.activeDesire, true)
+      return
+    }
+
+    this.startCooldown(npc, npc.activeDesire.needIndex)
+    this.clearActiveDesire(npc)
+  }
+
+  canUseDesireDestination(npc, scheduledElement) {
+    return Boolean(
+      scheduledElement &&
+      scheduledElement.id === 'home' &&
+      Number.isInteger(npc.age) &&
+      npc.age >= SCHOOL_MIN_AGE &&
+      npc.desires
+    )
+  }
+
+  refreshActiveDesire(npc, timeOfDayHours) {
+    if (npc.activeDesire) {
+      if (this.shouldContinueActiveDesire(npc)) {
+        return
+      }
+
+      this.startCooldown(npc, npc.activeDesire.needIndex)
+      this.clearActiveDesire(npc)
+    }
+
+    const nextDesire = this.chooseNextDesire(npc, timeOfDayHours)
+
+    if (nextDesire) {
+      npc.activeDesire = nextDesire
+    }
+  }
+
+  shouldContinueActiveDesire(npc) {
+    const needIndex = npc.activeDesire?.needIndex
+
+    if (npc.activeDesire?.socialGroupId) {
+      return Boolean(
+        Number.isInteger(needIndex) &&
+        npc.desires &&
+        (
+          npc.locationState?.buildingId !== npc.activeDesire.buildingId ||
+          this.needScores[needIndex][npc.id] < this.config.satisfiedThreshold
+        )
+      )
+    }
+
+    return Boolean(
+      Number.isInteger(needIndex) &&
+      npc.desires &&
+      this.needScores[needIndex][npc.id] < this.config.satisfiedThreshold
+    )
+  }
+
+  chooseNextDesire(npc, timeOfDayHours) {
+    const npcIndex = npc.id
+    const elapsedSeconds = this.getElapsedSimulationSeconds()
+    let selectedNeedIndex = -1
+    let selectedScore = this.config.lowThreshold
+
+    for (let needIndex = 0; needIndex < DESIRE_COUNT; needIndex += 1) {
+      const score = this.needScores[needIndex][npcIndex]
+
+      if (score < selectedScore && this.cooldowns[needIndex][npcIndex] <= elapsedSeconds) {
+        selectedNeedIndex = needIndex
+        selectedScore = score
+      }
+    }
+
+    if (selectedNeedIndex === -1) {
+      return null
+    }
+
+    const destination = this.createDestinationForNeed(npc, selectedNeedIndex, timeOfDayHours)
+
+    if (!destination) {
+      return null
+    }
+
+    const activeDesire = {
+      needIndex: selectedNeedIndex,
+      need: destination.need,
+      action: DESIRE_ACTIONS_BY_INDEX[selectedNeedIndex],
+      buildingId: destination.building.id,
+      element: destination.element,
+      startedAtSeconds: elapsedSeconds
+    }
+
+    return selectedNeedIndex === DESIRE_INDEX.social
+      ? this.createSocialGroupDesire(npc, activeDesire, timeOfDayHours)
+      : activeDesire
+  }
+
+  createDestinationForNeed(npc, needIndex, timeOfDayHours) {
+    const building = this.chooseBuildingForNeed(npc, needIndex, timeOfDayHours)
+
+    if (!building?.entrance) {
+      return null
+    }
+
+    const cache = this.destinationCache[needIndex]
+    const cached = cache.get(building.id)
+
+    if (cached) {
+      return cached
+    }
+
+    const need = DESIRE_NAMES[needIndex]
+    const element = createTimetableElement(DESIRE_DESTINATION_IDS_BY_INDEX[needIndex], building, 0, 0, this.city)
+
+    element.desire = need
+    element.action = DESIRE_ACTIONS_BY_INDEX[needIndex]
+
+    const destination = { need, building, element }
+
+    cache.set(building.id, destination)
+    return destination
+  }
+
+  chooseBuildingForNeed(npc, needIndex, timeOfDayHours) {
+    const home = this.buildingsById.get(npc.home) || null
+    const origin = this.buildingsById.get(npc.locationState?.buildingId) || home
+
+    if (needIndex === DESIRE_INDEX.energy) {
+      return home
+    }
+
+    if (needIndex === DESIRE_INDEX.hunger) {
+      return this.takeNearbyBuilding('restaurant', origin) ||
+        this.takeNearbyBuilding('supermarket', origin) ||
+        home
+    }
+
+    if (needIndex === DESIRE_INDEX.fun) {
+      return this.takeNearbyBuilding('mall', origin) ||
+        (this.canUseNightclub(npc, timeOfDayHours) ? this.takeNearbyBuilding('nightclub', origin) : null) ||
+        home
+    }
+
+    if (needIndex === DESIRE_INDEX.social) {
+      return (this.canUseNightclub(npc, timeOfDayHours) ? this.takeNearbyBuilding('nightclub', origin) : null) ||
+        this.takeNearbyBuilding('mall', origin) ||
+        this.takeNearbyBuilding('restaurant', origin) ||
+        home
+    }
+
+    return null
+  }
+
+  createSocialGroupDesire(npc, activeDesire, timeOfDayHours) {
+    const participantIds = this.chooseSocialCompanions(npc, timeOfDayHours)
+
+    if (participantIds.length <= 1) {
+      return activeDesire
+    }
+
+    const groupId = this.nextSocialGroupId
+
+    this.nextSocialGroupId += 1
+
+    for (let index = 1; index < participantIds.length; index += 1) {
+      const friend = this.npcs[participantIds[index]]
+
+      if (!friend) {
+        continue
+      }
+
+      const friendDesire = cloneSocialActiveDesire(activeDesire, groupId, npc.id, participantIds)
+
+      friend.activeDesire = friendDesire
+
+      if (typeof friend.setGoal === 'function') {
+        friend.setGoal(friendDesire.element)
+
+        if (friend.present) {
+          this.routePlanner?.request(friend)
+        }
+      }
+    }
+
+    return cloneSocialActiveDesire(activeDesire, groupId, npc.id, participantIds)
+  }
+
+  chooseSocialCompanions(npc, timeOfDayHours) {
+    const friendIds = this.socialGraph?.getFriendIds(npc) || npc.friendIds || []
+    const maxFriends = Math.max(0, this.config.socialGroupMaxFriends)
+
+    if (friendIds.length === 0 || maxFriends === 0) {
+      return [npc.id]
+    }
+
+    const targetFriendCount = Math.min(
+      friendIds.length,
+      maxFriends,
+      Math.max(this.config.socialGroupMinFriends, this.random.int(maxFriends + 1))
+    )
+    const participants = [npc.id]
+    const startIndex = this.random.int(friendIds.length)
+
+    for (let offset = 0; offset < friendIds.length && participants.length <= targetFriendCount; offset += 1) {
+      const friendId = friendIds[(startIndex + offset) % friendIds.length]
+      const friend = this.npcs[friendId]
+
+      if (this.canInviteFriendToSocialTrip(npc, friend, timeOfDayHours)) {
+        participants.push(friend.id)
+      }
+    }
+
+    return participants
+  }
+
+  canInviteFriendToSocialTrip(npc, friend, timeOfDayHours) {
+    if (!friend ||
+        friend === npc ||
+        friend.manualControl ||
+        friend.vehicleTrip ||
+        friend.waitingForCar ||
+        friend.activeDesire ||
+        !friend.desires) {
+      return false
+    }
+
+    const scheduledElement = friend.getActiveTimetableElement(timeOfDayHours)
+
+    return this.canUseDesireDestination(friend, scheduledElement) &&
+      this.needScores[DESIRE_INDEX.social][friend.id] <= this.config.socialInviteThreshold
+  }
+
+  canUseNightclub(npc, timeOfDayHours) {
+    return Boolean(
+      isAdultAge(npc.age) &&
+      !this.homesWithMinors.has(npc.home) &&
+      hourInRange(normalizeHour(timeOfDayHours), NIGHTCLUB_DESIRE_START_HOUR, NIGHTCLUB_DESIRE_END_HOUR)
+    )
+  }
+
+  takeNearbyBuilding(purpose, originBuilding) {
+    const buildings = this.buildingsByPurpose[purpose]
+
+    if (!buildings || buildings.length === 0) {
+      return null
+    }
+
+    const candidates = originBuilding?.id
+      ? this.cityData.nearestBuildingsByPurpose[purpose]?.get(originBuilding.id)
+      : buildings
+
+    if (!candidates || candidates.length === 0) {
+      return null
+    }
+
+    const candidateCount = Math.min(candidates.length, this.config.destinationCandidateCount)
+
+    return candidates[this.random.int(Math.min(candidateCount, candidates.length))]
+  }
+
+  startCooldown(npc, need) {
+    const needIndex = Number.isInteger(need) ? need : DESIRE_INDEX[need]
+
+    if (Number.isInteger(needIndex)) {
+      this.cooldowns[needIndex][npc.id] = this.getElapsedSimulationSeconds() + this.config.tripCooldownHours * SECONDS_PER_HOUR
+    }
+  }
+
+  clearActiveDesire(npc) {
+    npc.activeDesire = null
+  }
+
+  clearSocialGroupDesire(activeDesire, startCooldown = false) {
+    const participantIds = activeDesire?.participantIds || []
+
+    for (const participantId of participantIds) {
+      const participant = this.npcs[participantId]
+
+      if (!participant?.activeDesire ||
+          participant.activeDesire.socialGroupId !== activeDesire.socialGroupId) {
+        continue
+      }
+
+      if (startCooldown) {
+        this.startCooldown(participant, participant.activeDesire.needIndex)
+      }
+
+      this.clearActiveDesire(participant)
+    }
+  }
+
+  getElapsedSimulationSeconds() {
+    if (this.clock && typeof this.clock.getElapsedSimulationSeconds === 'function') {
+      const seconds = this.clock.getElapsedSimulationSeconds()
+
+      if (Number.isFinite(seconds)) {
+        return seconds
+      }
+    }
+
+    return this.elapsedSimulationSeconds
+  }
+
+  decayNeeds(index, deltaHours) {
+    for (let needIndex = 0; needIndex < DESIRE_COUNT; needIndex += 1) {
+      const scores = this.needScores[needIndex]
+
+      scores[index] = clampNeedScore(scores[index] - this.decayPerHour[needIndex] * deltaHours)
+    }
+  }
+
+  satisfyNeeds(npc, index, deltaHours) {
+    const locationState = npc.locationState
+
+    if (!locationState?.buildingId) {
+      return
+    }
+
+    const rates = this.satisfactionRatesForLocation(npc, locationState)
+
+    if (rates === DESIRE_ZERO_RATES) {
+      return
+    }
+
+    for (let needIndex = 0; needIndex < DESIRE_COUNT; needIndex += 1) {
+      const rate = rates[needIndex]
+
+      if (rate > 0) {
+        const scores = this.needScores[needIndex]
+
+        scores[index] = clampNeedScore(scores[index] + rate * deltaHours)
+      }
+    }
+  }
+
+  satisfactionRatesForLocation(npc, locationState) {
+    if (
+      locationState.desireBuildingId === locationState.buildingId &&
+      locationState.desireHomeId === npc.home &&
+      locationState.desireSatisfactionRates
+    ) {
+      return locationState.desireSatisfactionRates
+    }
+
+    const baseRates = this.baseSatisfactionByBuildingId.get(locationState.buildingId) || DESIRE_ZERO_RATES
+    const rates = locationState.buildingId === npc.home
+      ? addNeedRateArrays(baseRates, this.homeSatisfactionRates)
+      : baseRates
+
+    locationState.desireBuildingId = locationState.buildingId
+    locationState.desireHomeId = npc.home
+    locationState.desireSatisfactionRates = rates
+
+    return rates
+  }
+}
+
 class NpcInfectionDynamics {
   constructor(npcs, city, config, random, clock) {
     this.npcs = npcs
@@ -367,7 +970,9 @@ class NpcInfectionDynamics {
     this.random = random
     this.clock = clock
     this.infectionDistance = nonNegativeNumberOrDefault(config.infectionDistance, INFECTION_CONFIG.infectionDistance)
-    this.infectionProbability = clampUnitInterval(config.infectionProbability ?? INFECTION_CONFIG.infectionProbability)
+    this.baseInfectionProbability = clampUnitInterval(config.infectionProbability ?? INFECTION_CONFIG.infectionProbability)
+    this.policyInfectionProbabilityMultiplier = 1
+    this.infectionProbability = this.baseInfectionProbability
     this.incubationSeconds = daysToSeconds(nonNegativeNumberOrDefault(config.incubationDays, INFECTION_CONFIG.incubationDays))
     this.infectionSeconds = daysToSeconds(nonNegativeNumberOrDefault(config.infectionDays, INFECTION_CONFIG.infectionDays))
     this.immunitySeconds = daysToSeconds(nonNegativeNumberOrDefault(config.immunityDays, INFECTION_CONFIG.immunityDays))
@@ -397,6 +1002,7 @@ class NpcInfectionDynamics {
       npc.infection = 'susceptible'
     }
 
+    this.seedInitialInoculations(config.inoculatedPercent)
     this.seedInitialInfections(config.initialInfectiousCount)
   }
 
@@ -469,6 +1075,17 @@ class NpcInfectionDynamics {
     if (!this.contactTracingEnabled) {
       this.clearContactEvents()
     }
+  }
+
+  setPolicyInfectionProbabilityMultiplier(multiplier) {
+    const value = Number(multiplier)
+
+    this.policyInfectionProbabilityMultiplier = Number.isFinite(value)
+      ? Math.min(Math.max(value, 0), 1)
+      : 1
+    this.infectionProbability = clampUnitInterval(
+      this.baseInfectionProbability * this.policyInfectionProbabilityMultiplier
+    )
   }
 
   getNpcColor(npc) {
@@ -615,11 +1232,39 @@ class NpcInfectionDynamics {
   }
 
   seedInitialInfections(initialInfectiousCount) {
+    const indexes = new Int32Array(this.npcs.length)
+    let susceptibleCount = 0
+
+    for (let index = 0; index < indexes.length; index += 1) {
+      if (this.states[index] === INFECTION_STATE_IDS.susceptible) {
+        indexes[susceptibleCount] = index
+        susceptibleCount += 1
+      }
+    }
+
     const count = clampInteger(
       initialInfectiousCount ?? INFECTION_CONFIG.initialInfectiousCount,
       0,
-      this.npcs.length
+      susceptibleCount
     )
+
+    if (count === 0) {
+      return
+    }
+
+    for (let index = 0; index < count; index += 1) {
+      const selectedIndex = index + this.random.int(susceptibleCount - index)
+      const npcIndex = indexes[selectedIndex]
+
+      indexes[selectedIndex] = indexes[index]
+      indexes[index] = npcIndex
+      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.infectious, this.infectionSeconds)
+    }
+  }
+
+  seedInitialInoculations(inoculatedPercent) {
+    const percent = clampPercent(inoculatedPercent ?? INFECTION_CONFIG.inoculatedPercent)
+    const count = clampInteger((this.npcs.length * percent) / 100, 0, this.npcs.length)
 
     if (count === 0) {
       return
@@ -637,7 +1282,7 @@ class NpcInfectionDynamics {
 
       indexes[selectedIndex] = indexes[index]
       indexes[index] = npcIndex
-      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.infectious, this.infectionSeconds)
+      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.recovered, this.immunitySeconds)
     }
   }
 
@@ -909,19 +1554,546 @@ class NpcInfectionDynamics {
   }
 }
 
-function collectBuildingsByType(city) {
-  const buildingsByType = {
-    residential: [],
-    commercial: []
+function collectBuildingsByPurpose(city) {
+  const buildingsByPurpose = {
+    home: [],
+    mall: [],
+    nightclub: [],
+    restaurant: [],
+    school: [],
+    shopping: [],
+    supermarket: [],
+    work: []
   }
 
   for (const building of city.buildings || []) {
-    if (Object.prototype.hasOwnProperty.call(buildingsByType, building.type) && building.entrance) {
-      buildingsByType[building.type].push(building)
+    if (!building.entrance) {
+      continue
+    }
+
+    if (buildingHasAnyType(building, HOME_BUILDING_TYPES)) {
+      buildingsByPurpose.home.push(building)
+    }
+
+    if (buildingHasAnyType(building, WORK_BUILDING_TYPES)) {
+      buildingsByPurpose.work.push(building)
+    }
+
+    if (buildingHasAnyType(building, SCHOOL_BUILDING_TYPES)) {
+      buildingsByPurpose.school.push(building)
+    }
+
+    if (buildingHasAnyType(building, RESTAURANT_BUILDING_TYPES)) {
+      buildingsByPurpose.restaurant.push(building)
+    }
+
+    if (buildingHasAnyType(building, SHOPPING_BUILDING_TYPES)) {
+      buildingsByPurpose.shopping.push(building)
+    }
+
+    if (buildingHasAnyType(building, ['mall'])) {
+      buildingsByPurpose.mall.push(building)
+    }
+
+    if (buildingHasAnyType(building, ['supermarket'])) {
+      buildingsByPurpose.supermarket.push(building)
+    }
+
+    if (buildingHasAnyType(building, NIGHTCLUB_BUILDING_TYPES)) {
+      buildingsByPurpose.nightclub.push(building)
     }
   }
 
-  return buildingsByType
+  return buildingsByPurpose
+}
+
+function getDesireCityData(city) {
+  const signature = cityBuildingSignature(city)
+  const cached = desireCityDataCache.get(city)
+
+  if (cached && cached.signature === signature) {
+    return cached
+  }
+
+  const buildings = city.buildings || []
+  const buildingsByPurpose = collectBuildingsByPurpose(city)
+  const data = {
+    signature,
+    buildingsByPurpose,
+    buildingsById: new Map(buildings.map((building) => [building.id, building])),
+    nearestBuildingsByPurpose: {
+      mall: precomputeNearestBuildings(city, buildings, buildingsByPurpose.mall),
+      nightclub: precomputeNearestBuildings(city, buildings, buildingsByPurpose.nightclub),
+      restaurant: precomputeNearestBuildings(city, buildings, buildingsByPurpose.restaurant),
+      supermarket: precomputeNearestBuildings(city, buildings, buildingsByPurpose.supermarket)
+    }
+  }
+
+  desireCityDataCache.set(city, data)
+  return data
+}
+
+function cityBuildingSignature(city) {
+  const buildings = city.buildings || []
+  const parts = [String(buildings.length)]
+
+  for (const building of buildings) {
+    const entrance = building.entrance ? `${building.entrance.x},${building.entrance.y}` : 'none'
+    const types = Array.isArray(building.types) ? building.types.join(',') : ''
+
+    parts.push(`${building.id}:${entrance}:${types}`)
+  }
+
+  return parts.join('|')
+}
+
+function precomputeNearestBuildings(city, origins, targets) {
+  const byOriginId = new Map()
+
+  if (!targets || targets.length === 0) {
+    return byOriginId
+  }
+
+  for (const origin of origins) {
+    if (!origin?.id || !origin.entrance) {
+      continue
+    }
+
+    byOriginId.set(origin.id, targets.filter((building) => buildingReachableFromBuilding(city, origin, building)).sort(
+      (a, b) => squaredEntranceDistance(origin, a) - squaredEntranceDistance(origin, b) ||
+        String(a.id).localeCompare(String(b.id))
+    ))
+  }
+
+  return byOriginId
+}
+
+function collectHomesWithMinors(npcs) {
+  const homes = new Set()
+
+  for (const npc of npcs) {
+    if (npc.home && Number.isInteger(npc.age) && npc.age < ADULT_MIN_AGE) {
+      homes.add(npc.home)
+    }
+  }
+
+  return homes
+}
+
+function createNpcSocialGraph(npcs, random, options = {}) {
+  const config = normalizeSocialGraphConfig(options)
+  const friendSets = Array.from({ length: npcs.length }, () => new Set())
+  const buckets = createSocialGraphBuckets(npcs, config)
+
+  for (const npc of npcs) {
+    const targetFriends = Math.min(
+      Math.max(0, npcs.length - 1),
+      config.minFriends + random.int(config.maxFriends - config.minFriends + 1)
+    )
+    let attempts = Math.max(1, targetFriends * config.candidateAttemptsPerFriend)
+
+    while (friendSets[npc.id].size < targetFriends && attempts > 0) {
+      attempts -= 1
+      const candidate = chooseSocialGraphCandidate(npc, buckets, npcs, config, random)
+
+      addFriendship(friendSets, npc.id, candidate?.id, config.maxFriends)
+    }
+  }
+
+  const friendIdsByNpc = friendSets.map((friends, npcId) => {
+    const ids = Object.freeze([...friends].sort((a, b) => a - b))
+
+    npcs[npcId].friendIds = ids
+    return ids
+  })
+
+  return Object.freeze({
+    friendIdsByNpc: Object.freeze(friendIdsByNpc),
+    getFriendIds(npcOrIndex) {
+      const index = typeof npcOrIndex === 'number' ? npcOrIndex : npcOrIndex?.id
+
+      return Number.isInteger(index) && index >= 0 && index < friendIdsByNpc.length
+        ? friendIdsByNpc[index]
+        : []
+    }
+  })
+}
+
+function createSocialGraphBuckets(npcs, config) {
+  const home = new Map()
+  const activity = new Map()
+  const age = new Map()
+
+  for (const npc of npcs) {
+    appendSocialBucket(home, npc.home, npc)
+    appendSocialBucket(activity, socialActivityKey(npc), npc)
+    appendSocialBucket(age, socialAgeBucket(npc.age, config), npc)
+  }
+
+  return { home, activity, age }
+}
+
+function appendSocialBucket(buckets, key, npc) {
+  if (key === null || key === undefined) {
+    return
+  }
+
+  let bucket = buckets.get(key)
+
+  if (!bucket) {
+    bucket = []
+    buckets.set(key, bucket)
+  }
+
+  bucket.push(npc)
+}
+
+function chooseSocialGraphCandidate(npc, buckets, npcs, config, random) {
+  const weightedBuckets = []
+
+  appendWeightedSocialBucket(weightedBuckets, buckets.home.get(npc.home), config.sameHomeWeight)
+  appendWeightedSocialBucket(weightedBuckets, buckets.activity.get(socialActivityKey(npc)), config.sameWorkOrSchoolWeight)
+  appendWeightedSocialBucket(weightedBuckets, buckets.age.get(socialAgeBucket(npc.age, config)), config.agePeerWeight)
+  appendWeightedSocialBucket(weightedBuckets, npcs, config.randomWeight)
+
+  const bucket = weightedSocialBucket(weightedBuckets, random)
+
+  return bucket ? bucket[random.int(bucket.length)] : null
+}
+
+function appendWeightedSocialBucket(weightedBuckets, bucket, weight) {
+  if (bucket && bucket.length > 1 && Number.isFinite(weight) && weight > 0) {
+    weightedBuckets.push({ bucket, weight })
+  }
+}
+
+function weightedSocialBucket(weightedBuckets, random) {
+  let totalWeight = 0
+
+  for (const bucket of weightedBuckets) {
+    totalWeight += bucket.weight
+  }
+
+  if (totalWeight <= 0) {
+    return null
+  }
+
+  let threshold = random.next() * totalWeight
+
+  for (const weightedBucket of weightedBuckets) {
+    threshold -= weightedBucket.weight
+
+    if (threshold <= 0) {
+      return weightedBucket.bucket
+    }
+  }
+
+  return weightedBuckets[weightedBuckets.length - 1].bucket
+}
+
+function addFriendship(friendSets, firstId, secondId, maxFriends) {
+  if (!Number.isInteger(firstId) ||
+      !Number.isInteger(secondId) ||
+      firstId === secondId ||
+      firstId < 0 ||
+      secondId < 0 ||
+      firstId >= friendSets.length ||
+      secondId >= friendSets.length ||
+      friendSets[firstId].has(secondId) ||
+      friendSets[firstId].size >= maxFriends ||
+      friendSets[secondId].size >= maxFriends) {
+    return false
+  }
+
+  friendSets[firstId].add(secondId)
+  friendSets[secondId].add(firstId)
+  return true
+}
+
+function socialActivityKey(npc) {
+  if (npc.school) {
+    return `school:${npc.school}`
+  }
+
+  if (npc.work) {
+    return `work:${npc.work}`
+  }
+
+  return null
+}
+
+function socialAgeBucket(age, config) {
+  if (!Number.isInteger(age)) {
+    return null
+  }
+
+  return Math.floor(age / config.ageBucketYears)
+}
+
+function normalizeSocialGraphConfig(options = {}) {
+  const source = options || {}
+  const maxFriends = positiveIntegerOrDefault(source.maxFriends, DEFAULT_SOCIAL_GRAPH_CONFIG.maxFriends)
+  const minFriends = Math.min(
+    maxFriends,
+    nonNegativeIntegerOrDefault(source.minFriends, DEFAULT_SOCIAL_GRAPH_CONFIG.minFriends)
+  )
+
+  return {
+    minFriends,
+    maxFriends,
+    candidateAttemptsPerFriend: positiveIntegerOrDefault(
+      source.candidateAttemptsPerFriend,
+      DEFAULT_SOCIAL_GRAPH_CONFIG.candidateAttemptsPerFriend
+    ),
+    ageBucketYears: positiveIntegerOrDefault(source.ageBucketYears, DEFAULT_SOCIAL_GRAPH_CONFIG.ageBucketYears),
+    sameHomeWeight: nonNegativeNumberOrDefault(source.sameHomeWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.sameHomeWeight),
+    sameWorkOrSchoolWeight: nonNegativeNumberOrDefault(source.sameWorkOrSchoolWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.sameWorkOrSchoolWeight),
+    agePeerWeight: nonNegativeNumberOrDefault(source.agePeerWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.agePeerWeight),
+    randomWeight: nonNegativeNumberOrDefault(source.randomWeight, DEFAULT_SOCIAL_GRAPH_CONFIG.randomWeight)
+  }
+}
+
+function cloneSocialActiveDesire(activeDesire, socialGroupId, organizerNpcId, participantIds) {
+  return {
+    ...activeDesire,
+    element: cloneTimetableElement(activeDesire.element),
+    socialGroupId,
+    organizerNpcId,
+    participantIds: Object.freeze([...participantIds])
+  }
+}
+
+function cloneTimetableElement(element) {
+  return element
+    ? {
+        ...element,
+        location: element.location ? { ...element.location } : element.location
+      }
+    : element
+}
+
+function getPolicyEventActionForElement(city, element) {
+  if (!element) {
+    return null
+  }
+
+  if (element.id === 'work') {
+    return 'homeOffice'
+  }
+
+  if (element.id === 'school') {
+    return 'closeSchools'
+  }
+
+  if (element.id === 'shopping') {
+    return 'reduceShopping'
+  }
+
+  if (element.id === 'nightclub') {
+    return 'reduceNightlife'
+  }
+
+  const building = getPolicyElementBuilding(city, element)
+
+  if (buildingHasAnyType(building, NIGHTCLUB_BUILDING_TYPES)) {
+    return 'reduceNightlife'
+  }
+
+  if (buildingHasAnyType(building, SHOPPING_BUILDING_TYPES)) {
+    return 'reduceShopping'
+  }
+
+  return null
+}
+
+function getPolicyElementBuilding(city, element) {
+  if (element?.location && typeof city.getBuilding === 'function') {
+    const building = city.getBuilding(element.location.x, element.location.y)
+
+    if (building) {
+      return building
+    }
+  }
+
+  return (city.buildings || []).find((building) => building.id === element?.buildingId) || null
+}
+
+function getNpcHomeTimetableElement(npc) {
+  return npc?.timetable?.elements?.find((element) => element.id === 'home') || null
+}
+
+function createNpcPolicyDecisionKey(npc, element, eventAction, probability, clock) {
+  const dayIndex = clock && typeof clock.getDayIndex === 'function'
+    ? clock.getDayIndex()
+    : 0
+
+  return [
+    eventAction,
+    formatPolicyProbabilityKey(probability),
+    dayIndex,
+    npc?.id ?? -1,
+    element?.id || '',
+    element?.buildingId || ''
+  ].join(':')
+}
+
+function formatPolicyProbabilityKey(probability) {
+  return Number(normalizePolicyProbability(probability).toFixed(4)).toString()
+}
+
+function normalizeNpcPolicyEffects(effects) {
+  return {
+    infectionProbabilityMultiplier: normalizePolicyProbability(effects?.infectionProbabilityMultiplier ?? 1),
+    socialDistancingEnabled: Boolean(effects?.socialDistancingEnabled),
+    eventCancellationProbabilities: {
+      closeSchools: normalizePolicyProbability(effects?.eventCancellationProbabilities?.closeSchools),
+      homeOffice: normalizePolicyProbability(effects?.eventCancellationProbabilities?.homeOffice),
+      reduceShopping: normalizePolicyProbability(effects?.eventCancellationProbabilities?.reduceShopping),
+      reduceNightlife: normalizePolicyProbability(effects?.eventCancellationProbabilities?.reduceNightlife)
+    }
+  }
+}
+
+function getNpcPolicyEffectsKey(effects) {
+  return [
+    formatPolicyProbabilityKey(effects.infectionProbabilityMultiplier),
+    effects.socialDistancingEnabled ? '1' : '0',
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.closeSchools),
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.homeOffice),
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.reduceShopping),
+    formatPolicyProbabilityKey(effects.eventCancellationProbabilities.reduceNightlife)
+  ].join(':')
+}
+
+function normalizeDesireConfig(overrides = {}) {
+  const fallback = NPC_CONFIG.desires
+  const config = overrides || {}
+  const initialMin = clampNeedScore(config.initialMin ?? fallback.initialMin)
+  const initialMax = clampNeedScore(config.initialMax ?? fallback.initialMax)
+  const socialGroupMaxFriends = positiveIntegerOrDefault(
+    config.socialGroupMaxFriends,
+    fallback.socialGroupMaxFriends ?? DEFAULT_SOCIAL_GROUP_MAX_FRIENDS
+  )
+  const socialGroupMinFriends = Math.min(
+    socialGroupMaxFriends,
+    nonNegativeIntegerOrDefault(
+      config.socialGroupMinFriends,
+      fallback.socialGroupMinFriends ?? DEFAULT_SOCIAL_GROUP_MIN_FRIENDS
+    )
+  )
+
+  return {
+    initialMin: Math.min(initialMin, initialMax),
+    initialMax: Math.max(initialMin, initialMax),
+    lowThreshold: clampNeedScore(config.lowThreshold ?? fallback.lowThreshold),
+    urgentThreshold: clampNeedScore(config.urgentThreshold ?? fallback.urgentThreshold),
+    satisfiedThreshold: clampNeedScore(config.satisfiedThreshold ?? fallback.satisfiedThreshold),
+    tripCooldownHours: nonNegativeNumberOrDefault(config.tripCooldownHours, fallback.tripCooldownHours),
+    destinationCandidateCount: positiveIntegerOrDefault(
+      config.destinationCandidateCount,
+      fallback.destinationCandidateCount
+    ),
+    socialGroupMinFriends,
+    socialGroupMaxFriends,
+    socialInviteThreshold: clampNeedScore(config.socialInviteThreshold ?? fallback.socialInviteThreshold ?? fallback.lowThreshold),
+    decayPerHour: normalizeNeedRates(config.decayPerHour, fallback.decayPerHour),
+    satisfactionPerHour: {
+      home: normalizeNeedRates(config.satisfactionPerHour?.home, fallback.satisfactionPerHour.home),
+      restaurant: normalizeNeedRates(config.satisfactionPerHour?.restaurant, fallback.satisfactionPerHour.restaurant),
+      supermarket: normalizeNeedRates(config.satisfactionPerHour?.supermarket, fallback.satisfactionPerHour.supermarket),
+      mall: normalizeNeedRates(config.satisfactionPerHour?.mall, fallback.satisfactionPerHour.mall),
+      nightclub: normalizeNeedRates(config.satisfactionPerHour?.nightclub, fallback.satisfactionPerHour.nightclub)
+    }
+  }
+}
+
+function normalizeNeedRates(overrides = {}, fallback = {}) {
+  const rates = {}
+  const source = overrides || {}
+
+  for (const need of DESIRE_NAMES) {
+    rates[need] = nonNegativeNumberOrDefault(source[need], fallback[need] ?? 0)
+  }
+
+  return rates
+}
+
+function needRatesToArray(rates) {
+  const values = new Float64Array(DESIRE_COUNT)
+
+  for (const need of DESIRE_NAMES) {
+    values[DESIRE_INDEX[need]] = nonNegativeNumberOrDefault(rates?.[need], 0)
+  }
+
+  return values
+}
+
+function addNeedRateArrays(first, second) {
+  if (first === DESIRE_ZERO_RATES && second === DESIRE_ZERO_RATES) {
+    return DESIRE_ZERO_RATES
+  }
+
+  const values = new Float64Array(DESIRE_COUNT)
+  let hasRates = false
+
+  for (let index = 0; index < DESIRE_COUNT; index += 1) {
+    const value = first[index] + second[index]
+
+    values[index] = value
+    hasRates ||= value > 0
+  }
+
+  return hasRates ? values : DESIRE_ZERO_RATES
+}
+
+function buildBaseDesireSatisfactionByBuildingId(buildings, restaurantRates, supermarketRates, mallRates, nightclubRates) {
+  const byBuildingId = new Map()
+
+  for (const building of buildings) {
+    let rates = DESIRE_ZERO_RATES
+
+    if (buildingHasAnyType(building, RESTAURANT_BUILDING_TYPES)) {
+      rates = addNeedRateArrays(rates, restaurantRates)
+    }
+
+    if (buildingHasAnyType(building, ['supermarket'])) {
+      rates = addNeedRateArrays(rates, supermarketRates)
+    }
+
+    if (buildingHasAnyType(building, ['mall'])) {
+      rates = addNeedRateArrays(rates, mallRates)
+    }
+
+    if (buildingHasAnyType(building, NIGHTCLUB_BUILDING_TYPES)) {
+      rates = addNeedRateArrays(rates, nightclubRates)
+    }
+
+    if (rates !== DESIRE_ZERO_RATES) {
+      byBuildingId.set(building.id, rates)
+    }
+  }
+
+  return byBuildingId
+}
+
+function createNpcDesireView(needScores, npcIndex) {
+  const view = {}
+
+  for (const need of DESIRE_NAMES) {
+    const needIndex = DESIRE_INDEX[need]
+
+    Object.defineProperty(view, need, {
+      enumerable: true,
+      get() {
+        return needScores[needIndex][npcIndex]
+      },
+      set(value) {
+        needScores[needIndex][npcIndex] = clampNeedScore(value)
+      }
+    })
+  }
+
+  return view
 }
 
 function collectBuildingEntranceTiles(city) {
@@ -936,13 +2108,6 @@ function collectBuildingEntranceTiles(city) {
   return entranceTiles
 }
 
-function createNpcBuildingAssignment(buildingsByType, random) {
-  return {
-    home: takeRandomItem(buildingsByType.residential, random),
-    work: takeRandomItem(buildingsByType.commercial, random)
-  }
-}
-
 function takeRandomItem(items, random) {
   if (!items || items.length === 0) {
     return null
@@ -951,23 +2116,382 @@ function takeRandomItem(items, random) {
   return items[random.int(items.length)]
 }
 
-function createNpcTimetable(city, buildingAssignment, random, config) {
-  if (!buildingAssignment.home || !buildingAssignment.work) {
+function createNpcFamilyProfiles(city, buildingsByPurpose, random, count, config) {
+  const profiles = []
+  const targetCount = nonNegativeIntegerOrDefault(count, NPC_CONFIG.count)
+
+  while (profiles.length < targetCount) {
+    const remaining = targetCount - profiles.length
+    const home = takeRandomItem(buildingsByPurpose.home, random)
+    const familySize = chooseFamilySize(remaining, random, config)
+    const ages = createFamilyAges(familySize, random)
+    const familyHasChildren = familySize > 2
+
+    for (const age of ages) {
+      profiles.push({
+        age,
+        buildingAssignment: createNpcBuildingAssignmentForAge(city, buildingsByPurpose, home, age, !familyHasChildren, random, config)
+      })
+    }
+  }
+
+  return profiles
+}
+
+function createNpcBuildingAssignmentForAge(city, buildingsByPurpose, home, age, adultWithoutChildren, random, config) {
+  const work = isAdultAge(age) ? takeRandomReachableBuilding(city, buildingsByPurpose.work, home, random) : null
+
+  return {
+    home,
+    school: isSchoolAge(age) ? takeRandomReachableBuilding(city, buildingsByPurpose.school, home, random) : null,
+    work,
+    lunch: work ? takeNearbyBuilding(city, buildingsByPurpose.restaurant, work, random, config) : null,
+    shopping: work && random.next() < unitIntervalOrDefault(config.shoppingChance, NPC_CONFIG.shoppingChance)
+      ? takeRandomReachableBuilding(city, buildingsByPurpose.shopping, work, random)
+      : null,
+    nightclub: work && adultWithoutChildren && random.next() < unitIntervalOrDefault(config.nightclubChance, NPC_CONFIG.nightclubChance)
+      ? takeRandomReachableBuilding(city, buildingsByPurpose.nightclub, work, random)
+      : null
+  }
+}
+
+function takeRandomReachableBuilding(city, buildings, originBuilding, random) {
+  if (!buildings || buildings.length === 0) {
+    return null
+  }
+
+  if (!originBuilding?.entrance || typeof city?.arePedestrianConnectedByIndex !== 'function') {
+    return takeRandomItem(buildings, random)
+  }
+
+  const originIndex = city.index(originBuilding.entrance.x, originBuilding.entrance.y)
+  const candidates = []
+
+  for (const building of buildings) {
+    if (buildingReachableFromIndex(city, originIndex, building)) {
+      candidates.push(building)
+    }
+  }
+
+  return takeRandomItem(candidates, random)
+}
+
+function takeNearbyBuilding(city, buildings, originBuilding, random, config) {
+  if (!buildings || buildings.length === 0 || !originBuilding?.entrance) {
+    return null
+  }
+
+  const candidateCount = Math.min(
+    buildings.length,
+    positiveIntegerOrDefault(config.lunchRestaurantCandidateCount, NPC_CONFIG.lunchRestaurantCandidateCount)
+  )
+  const nearby = buildings
+    .filter((building) => buildingReachableFromBuilding(city, originBuilding, building))
+    .map((building) => ({
+      building,
+      distance: squaredEntranceDistance(originBuilding, building)
+    }))
+    .sort((a, b) => a.distance - b.distance || String(a.building.id).localeCompare(String(b.building.id)))
+
+  if (nearby.length === 0) {
+    return null
+  }
+
+  return nearby[random.int(Math.min(candidateCount, nearby.length))].building
+}
+
+function buildingReachableFromBuilding(city, originBuilding, building) {
+  if (!originBuilding?.entrance) {
+    return true
+  }
+
+  const originIndex = city?.index(originBuilding.entrance.x, originBuilding.entrance.y)
+
+  return buildingReachableFromIndex(city, originIndex, building)
+}
+
+function buildingReachableFromIndex(city, originIndex, building) {
+  if (!building?.entrance || typeof city?.arePedestrianConnectedByIndex !== 'function') {
+    return true
+  }
+
+  const targetIndex = city.index(building.entrance.x, building.entrance.y)
+
+  return city.arePedestrianConnectedByIndex(originIndex, targetIndex)
+}
+
+function squaredEntranceDistance(first, second) {
+  if (!first?.entrance || !second?.entrance) {
+    return Infinity
+  }
+
+  const dx = first.entrance.x - second.entrance.x
+  const dy = first.entrance.y - second.entrance.y
+
+  return dx * dx + dy * dy
+}
+
+function chooseFamilySize(remaining, random, config) {
+  if (remaining <= 1) {
+    return 1
+  }
+
+  const choices = familyTypeChoicesForRemaining(remaining, config, false)
+  const type = weightedChoice(choices.length > 0 ? choices : familyTypeChoicesForRemaining(remaining, config, true), random)
+
+  if (!type || type.id === 'single') {
+    return 1
+  }
+
+  if (type.id === 'marriedWithoutChildren') {
+    return 2
+  }
+
+  const childCount = chooseFamilyChildCount(remaining - 2, random, config)
+
+  return 2 + childCount
+}
+
+function familyTypeChoicesForRemaining(remaining, config, useDefaults) {
+  const weights = useDefaults ? NPC_CONFIG.familyTypeWeights : (config.familyTypeWeights || NPC_CONFIG.familyTypeWeights)
+  const choices = []
+
+  appendWeightedChoice(choices, 'single', weights?.single)
+
+  if (remaining >= 2) {
+    appendWeightedChoice(choices, 'marriedWithoutChildren', weights?.marriedWithoutChildren)
+  }
+
+  if (remaining >= 3) {
+    appendWeightedChoice(choices, 'marriedWithChildren', weights?.marriedWithChildren)
+  }
+
+  return choices
+}
+
+function appendWeightedChoice(choices, id, weight) {
+  if (Number.isFinite(weight) && weight > 0) {
+    choices.push({ id, weight })
+  }
+}
+
+function chooseFamilyChildCount(maxChildren, random, config) {
+  const choices = familyChildCountChoicesForRemaining(maxChildren, config, false)
+  const choice = weightedChoice(choices.length > 0 ? choices : familyChildCountChoicesForRemaining(maxChildren, config, true), random)
+
+  return choice ? choice.count : 1
+}
+
+function familyChildCountChoicesForRemaining(maxChildren, config, useDefaults) {
+  const weights = useDefaults
+    ? NPC_CONFIG.familyChildCountWeights
+    : (config.familyChildCountWeights || NPC_CONFIG.familyChildCountWeights)
+  const choices = []
+
+  for (const option of weights || []) {
+    if (Number.isInteger(option?.count) && option.count >= 1 && option.count <= maxChildren &&
+        Number.isFinite(option.weight) && option.weight > 0) {
+      choices.push({ count: option.count, weight: option.weight })
+    }
+  }
+
+  return choices
+}
+
+function weightedChoice(choices, random) {
+  let totalWeight = 0
+
+  for (const choice of choices || []) {
+    totalWeight += choice.weight
+  }
+
+  if (totalWeight <= 0) {
+    return null
+  }
+
+  let threshold = random.next() * totalWeight
+
+  for (const choice of choices) {
+    threshold -= choice.weight
+
+    if (threshold <= 0) {
+      return choice
+    }
+  }
+
+  return choices[choices.length - 1]
+}
+
+function createFamilyAges(familySize, random) {
+  if (familySize <= 1) {
+    return [randomIntegerInclusive(ADULT_MIN_AGE, ADULT_MAX_AGE, random)]
+  }
+
+  if (familySize === 2) {
+    return createPartnerAges(random)
+  }
+
+  const childAges = []
+
+  for (let index = 0; index < familySize - 2; index += 1) {
+    childAges.push(randomIntegerInclusive(CHILD_MIN_AGE, CHILD_MAX_AGE, random))
+  }
+
+  const oldestChildAge = Math.max(...childAges)
+  const minParentAge = Math.max(ADULT_MIN_AGE, oldestChildAge + MIN_PARENT_AGE_GAP)
+  const maxParentAge = Math.min(ADULT_MAX_AGE, oldestChildAge + MAX_PARENT_AGE_GAP)
+  const firstParentAge = randomIntegerInclusive(minParentAge, maxParentAge, random)
+  const secondParentAge = createPartnerAge(firstParentAge, random, minParentAge, ADULT_MAX_AGE)
+
+  return [firstParentAge, secondParentAge, ...childAges]
+}
+
+function createPartnerAges(random) {
+  const firstAge = randomIntegerInclusive(ADULT_MIN_AGE, ADULT_MAX_AGE, random)
+
+  return [
+    firstAge,
+    createPartnerAge(firstAge, random, ADULT_MIN_AGE, ADULT_MAX_AGE)
+  ]
+}
+
+function createPartnerAge(firstAge, random, minAge, maxAge) {
+  return randomIntegerInclusive(
+    Math.max(minAge, firstAge - MAX_PARTNER_AGE_DIFFERENCE),
+    Math.min(maxAge, firstAge + MAX_PARTNER_AGE_DIFFERENCE),
+    random
+  )
+}
+
+function randomIntegerInclusive(min, max, random) {
+  const safeMin = Math.ceil(min)
+  const safeMax = Math.floor(Math.max(min, max))
+
+  return safeMin + random.int(safeMax - safeMin + 1)
+}
+
+function isSchoolAge(age) {
+  return Number.isInteger(age) && age >= SCHOOL_MIN_AGE && age < SCHOOL_MAX_AGE_EXCLUSIVE
+}
+
+function isAdultAge(age) {
+  return Number.isInteger(age) && age >= ADULT_MIN_AGE && age <= ADULT_MAX_AGE
+}
+
+function isDesireElementId(id) {
+  return typeof id === 'string' && id.startsWith('desire:')
+}
+
+function createNpcTimetable(city, buildingAssignment, age, random, config) {
+  if (!buildingAssignment.home) {
     return new NpcTimetable([])
   }
 
-  const variationHours = finiteNumberOrDefault(config.scheduleVariationHours, NPC_CONFIG.scheduleVariationHours)
-  const workStartHour = normalizeHour(
-    finiteNumberOrDefault(config.workStartHour, NPC_CONFIG.workStartHour) + random.between(-variationHours, variationHours)
-  )
-  const workEndHour = normalizeHour(
-    finiteNumberOrDefault(config.workEndHour, NPC_CONFIG.workEndHour) + random.between(-variationHours, variationHours)
-  )
+  if (isSchoolAge(age)) {
+    return buildingAssignment.school
+      ? createCommuteTimetable(city, buildingAssignment.home, buildingAssignment.school, 'school', random, config)
+      : createHomeOnlyTimetable(city, buildingAssignment.home)
+  }
+
+  if (isAdultAge(age) && buildingAssignment.work) {
+    return createAdultTimetable(city, buildingAssignment, random, config)
+  }
+
+  return createHomeOnlyTimetable(city, buildingAssignment.home)
+}
+
+function createHomeOnlyTimetable(city, home) {
+  return new NpcTimetable([
+    createTimetableElement('home', home, 0, 0, city)
+  ])
+}
+
+function createCommuteTimetable(city, home, destination, destinationId, random, config) {
+  if (!home || !destination) {
+    return new NpcTimetable([])
+  }
+
+  const { startHour, endHour } = createWorkHours(random, config)
 
   return new NpcTimetable([
-    createTimetableElement('home', buildingAssignment.home, workEndHour, workStartHour, city),
-    createTimetableElement('work', buildingAssignment.work, workStartHour, workEndHour, city)
+    createTimetableElement(destinationId, destination, startHour, endHour, city),
+    createTimetableElement('home', home, 0, 0, city)
   ])
+}
+
+function createAdultTimetable(city, buildingAssignment, random, config) {
+  const { home, work } = buildingAssignment
+  const { startHour, endHour } = createWorkHours(random, config)
+  const elements = []
+
+  if (buildingAssignment.lunch) {
+    const lunchHours = createLunchHours(random, config)
+
+    if (lunchHours) {
+      elements.push(createTimetableElement('lunch', buildingAssignment.lunch, lunchHours.startHour, lunchHours.endHour, city))
+    }
+  }
+
+  if (buildingAssignment.shopping) {
+    elements.push(createTimetableElement(
+      'shopping',
+      buildingAssignment.shopping,
+      endHour,
+      normalizeHour(endHour + positiveNumberOrDefault(config.shoppingDurationHours, NPC_CONFIG.shoppingDurationHours)),
+      city
+    ))
+  }
+
+  if (buildingAssignment.nightclub) {
+    const nightclubStartHour = random.between(
+      finiteNumberOrDefault(config.nightclubStartHour, NPC_CONFIG.nightclubStartHour),
+      finiteNumberOrDefault(config.nightclubLatestStartHour, NPC_CONFIG.nightclubLatestStartHour)
+    )
+
+    elements.push(createTimetableElement(
+      'nightclub',
+      buildingAssignment.nightclub,
+      normalizeHour(nightclubStartHour),
+      normalizeHour(nightclubStartHour + positiveNumberOrDefault(config.nightclubDurationHours, NPC_CONFIG.nightclubDurationHours)),
+      city
+    ))
+  }
+
+  elements.push(createTimetableElement('work', work, startHour, endHour, city))
+  elements.push(createTimetableElement('home', home, 0, 0, city))
+
+  return new NpcTimetable(elements)
+}
+
+function createWorkHours(random, config) {
+  const variationHours = finiteNumberOrDefault(config.scheduleVariationHours, NPC_CONFIG.scheduleVariationHours)
+
+  return {
+    startHour: normalizeHour(
+      finiteNumberOrDefault(config.workStartHour, NPC_CONFIG.workStartHour) + random.between(-variationHours, variationHours)
+    ),
+    endHour: normalizeHour(
+      finiteNumberOrDefault(config.workEndHour, NPC_CONFIG.workEndHour) + random.between(-variationHours, variationHours)
+    )
+  }
+}
+
+function createLunchHours(random, config) {
+  const lunchStartHour = finiteNumberOrDefault(config.lunchStartHour, NPC_CONFIG.lunchStartHour)
+  const lunchEndHour = finiteNumberOrDefault(config.lunchEndHour, NPC_CONFIG.lunchEndHour)
+  const lunchDurationHours = positiveNumberOrDefault(config.lunchDurationHours, NPC_CONFIG.lunchDurationHours)
+  const latestStartHour = lunchEndHour - lunchDurationHours
+
+  if (latestStartHour < lunchStartHour) {
+    return null
+  }
+
+  const startHour = random.between(lunchStartHour, latestStartHour)
+
+  return {
+    startHour: normalizeHour(startHour),
+    endHour: normalizeHour(startHour + lunchDurationHours)
+  }
 }
 
 function createTimetableElement(id, building, startHour, endHour, city) {
@@ -1035,11 +2559,15 @@ function collectNpcSpawnTiles(city) {
 }
 
 function refreshNpcGoal(npc, timeOfDayHours, context) {
-  if (npc.vehicleTrip) {
+  if (npc.manualControl || npc.vehicleTrip) {
     return
   }
 
-  const activeElement = npc.getActiveTimetableElement(timeOfDayHours)
+  let activeElement = typeof npc.getActiveDestinationElement === 'function'
+    ? npc.getActiveDestinationElement(timeOfDayHours)
+    : npc.getActiveTimetableElement(timeOfDayHours)
+
+  activeElement = context.policies?.getAdjustedDestinationElement(npc, activeElement) || activeElement
 
   if (!activeElement) {
     if (npc.goal) {
@@ -1059,6 +2587,10 @@ function refreshNpcGoal(npc, timeOfDayHours, context) {
 }
 
 function prepareNpcForRouting(npc, deltaSeconds, context) {
+  if (npc.manualControl) {
+    return
+  }
+
   if (npc.vehicleTrip || npc.waitingForCar) {
     return
   }
@@ -1098,6 +2630,10 @@ function prepareNpcForRouting(npc, deltaSeconds, context) {
 }
 
 function updateNpcMovement(npc, deltaSeconds, context) {
+  if (npc.manualControl) {
+    return
+  }
+
   if (npc.vehicleTrip || npc.waitingForCar) {
     idleNpcSprite(npc)
     return
@@ -1127,7 +2663,7 @@ function updateNpcMovement(npc, deltaSeconds, context) {
 
 function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const target = npc.movement.target
-  const maxStep = npc.movement.speed * deltaSeconds
+  const maxStep = npc.movement.speed * deltaSeconds * npcCrowdSpeedScale(npc, target, context)
   const nextDistance = Math.min(target.distanceTravelled + maxStep, target.curve.length)
   const previousX = npc.position.x
   const previousY = npc.position.y
@@ -1228,6 +2764,7 @@ function planRouteForNpc(npc, context) {
   if (!routeField || (npc.tile.index !== npc.goal.location.index && nextIndex === -1)) {
     npc.routing.routeField = null
     npc.routing.retrySeconds = finiteNumberOrDefault(context.config.routeRetrySeconds, NPC_CONFIG.routeRetrySeconds)
+    context.desires?.handleRouteFailure(npc)
     return
   }
 
@@ -1252,12 +2789,21 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
     return false
   }
 
+  if (shouldQueueForCrowdedCrosswalk(targetIndex, context)) {
+    return false
+  }
+
+  if (shouldQueueForSocialDistance(targetIndex, context)) {
+    return false
+  }
+
   const targetSlot = findAvailableNpcSlot(
     targetIndex,
     random,
     config.tileCapacity,
     context.unlimitedCapacityTiles,
-    npc.slot.id
+    npc.slot.id,
+    context.crowding
   )
 
   const target = targetSlot.unlimited
@@ -1271,6 +2817,7 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
   }, context)
 
   npc.movement.target = movementTarget
+  reserveNpcCrowdingTarget(targetIndex, targetSlot.slot, context)
   faceNpcSprite(npc, movementTarget.directionX, movementTarget.directionY)
 
   return true
@@ -1454,11 +3001,22 @@ function normalizeVector(x, y) {
 
 function tryExitCurrentLocation(npc, context) {
   const location = npc.locationState.location
+
+  if (shouldQueueForCrowdedDoorway(location.index, context)) {
+    return false
+  }
+
+  if (shouldQueueForSocialDistance(location.index, context)) {
+    return false
+  }
+
   const targetSlot = findAvailableNpcSlot(
     location.index,
     context.random,
     context.config.tileCapacity,
-    context.unlimitedCapacityTiles
+    context.unlimitedCapacityTiles,
+    null,
+    context.crowding
   )
 
   const position = targetSlot.unlimited
@@ -1499,9 +3057,15 @@ function enterGoalLocation(npc, context) {
   npc.routing = createEmptyRouteState()
 }
 
-function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null) {
+function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null, crowding = null) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
     return { slot: -1, unlimited: true }
+  }
+
+  const avoidedSlot = chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding)
+
+  if (avoidedSlot !== -1) {
+    return { slot: avoidedSlot, unlimited: false }
   }
 
   if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
@@ -1509,6 +3073,272 @@ function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacity
   }
 
   return { slot: random.int(tileCapacity), unlimited: false }
+}
+
+function chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding) {
+  if (!crowding?.slotCounts || tileCapacity <= 0 || tileIndex < 0) {
+    return -1
+  }
+
+  const baseIndex = tileIndex * tileCapacity
+  let bestSlot = -1
+  let bestCount = Infinity
+  let occupiedCount = 0
+
+  for (let slot = 0; slot < tileCapacity; slot += 1) {
+    const count = npcCrowdingSlotCount(crowding, baseIndex + slot)
+    occupiedCount += count
+
+    if (count < bestCount) {
+      bestCount = count
+      bestSlot = slot
+    }
+  }
+
+  if (bestSlot === -1) {
+    return -1
+  }
+
+  if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
+    const preferredCount = npcCrowdingSlotCount(crowding, baseIndex + preferredSlot)
+
+    if (preferredCount <= bestCount) {
+      return preferredSlot
+    }
+  }
+
+  return occupiedCount > 0 ? bestSlot : -1
+}
+
+function reserveNpcCrowdingTarget(tileIndex, slotId, context) {
+  if (!context.crowding) {
+    return
+  }
+
+  addNpcCrowdingOccupancy(context.crowding, tileIndex, slotId, false)
+}
+
+export function createNpcCrowdingState(city, config) {
+  const tileCapacity = positiveIntegerOrDefault(config.tileCapacity, NPC_CONFIG.tileCapacity)
+
+  return {
+    config: normalizeNpcCrowdingConfig(config.crowding),
+    tileCapacity,
+    tileCounts: new Uint16Array(city.tiles.length),
+    incomingTileCounts: new Uint16Array(city.tiles.length),
+    slotCounts: new Uint16Array(city.tiles.length * tileCapacity),
+    tileStamps: new Uint32Array(city.tiles.length),
+    incomingTileStamps: new Uint32Array(city.tiles.length),
+    slotStamps: new Uint32Array(city.tiles.length * tileCapacity),
+    stamp: 0,
+    dense: false,
+    occupancyCount: 0,
+    lastOccupancyCount: 0
+  }
+}
+
+export function updateNpcCrowdingState(crowding, npcs) {
+  if (crowding.lastOccupancyCount > NPC_CROWDING_SPARSE_UPDATE_LIMIT) {
+    updateDenseNpcCrowdingState(crowding, npcs)
+    return
+  }
+
+  beginSparseNpcCrowdingUpdate(crowding)
+
+  for (const npc of npcs) {
+    if (!npc.present) {
+      continue
+    }
+
+    addNpcCrowdingOccupancy(crowding, npc.tile?.index, npc.slot?.id, true)
+
+    if (npc.movement.target) {
+      addNpcCrowdingOccupancy(
+        crowding,
+        npc.movement.target.tile?.index,
+        npc.movement.target.slot?.id,
+        false
+      )
+    }
+  }
+
+  finishNpcCrowdingUpdate(crowding)
+}
+
+function updateDenseNpcCrowdingState(crowding, npcs) {
+  crowding.dense = true
+  crowding.occupancyCount = 0
+  crowding.tileCounts.fill(0)
+  crowding.incomingTileCounts.fill(0)
+  crowding.slotCounts.fill(0)
+
+  for (const npc of npcs) {
+    if (!npc.present) {
+      continue
+    }
+
+    addNpcCrowdingOccupancy(crowding, npc.tile?.index, npc.slot?.id, true)
+
+    if (npc.movement.target) {
+      addNpcCrowdingOccupancy(
+        crowding,
+        npc.movement.target.tile?.index,
+        npc.movement.target.slot?.id,
+        false
+      )
+    }
+  }
+
+  finishNpcCrowdingUpdate(crowding)
+}
+
+function beginSparseNpcCrowdingUpdate(crowding) {
+  crowding.dense = false
+  crowding.occupancyCount = 0
+  crowding.stamp += 1
+
+  if (crowding.stamp < 0xffffffff) {
+    return
+  }
+
+  crowding.tileStamps.fill(0)
+  crowding.incomingTileStamps.fill(0)
+  crowding.slotStamps.fill(0)
+  crowding.stamp = 1
+}
+
+function finishNpcCrowdingUpdate(crowding) {
+  crowding.lastOccupancyCount = crowding.occupancyCount
+}
+
+function addNpcCrowdingOccupancy(crowding, tileIndex, slotId, isCurrentTile) {
+  if (!Number.isInteger(tileIndex) || tileIndex < 0 || tileIndex >= crowding.tileCounts.length) {
+    return
+  }
+
+  const counts = isCurrentTile ? crowding.tileCounts : crowding.incomingTileCounts
+  const stamps = isCurrentTile ? crowding.tileStamps : crowding.incomingTileStamps
+
+  if (!crowding.dense && stamps[tileIndex] !== crowding.stamp) {
+    stamps[tileIndex] = crowding.stamp
+    counts[tileIndex] = 0
+  }
+
+  counts[tileIndex] += 1
+  crowding.occupancyCount += 1
+
+  if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.tileCapacity) {
+    const slotIndex = tileIndex * crowding.tileCapacity + slotId
+
+    if (!crowding.dense && crowding.slotStamps[slotIndex] !== crowding.stamp) {
+      crowding.slotStamps[slotIndex] = crowding.stamp
+      crowding.slotCounts[slotIndex] = 0
+    }
+
+    crowding.slotCounts[slotIndex] += 1
+  }
+}
+
+function npcCrowdCount(tileIndex, context) {
+  const crowding = context.crowding
+
+  if (!crowding || !Number.isInteger(tileIndex) || tileIndex < 0 || tileIndex >= crowding.tileCounts.length) {
+    return 0
+  }
+
+  if (crowding.dense) {
+    return crowding.tileCounts[tileIndex] + crowding.incomingTileCounts[tileIndex]
+  }
+
+  return npcCrowdingStampedCount(crowding.tileCounts, crowding.tileStamps, crowding.stamp, tileIndex) +
+    npcCrowdingStampedCount(crowding.incomingTileCounts, crowding.incomingTileStamps, crowding.stamp, tileIndex)
+}
+
+function npcCrowdingSlotCount(crowding, slotIndex) {
+  if (crowding.dense) {
+    return crowding.slotCounts[slotIndex]
+  }
+
+  return npcCrowdingStampedCount(crowding.slotCounts, crowding.slotStamps, crowding.stamp, slotIndex)
+}
+
+function npcCrowdingStampedCount(counts, stamps, stamp, index) {
+  return stamps[index] === stamp ? counts[index] : 0
+}
+
+function npcCrowdSpeedScale(npc, target, context) {
+  const config = context.crowding?.config
+
+  if (!config) {
+    return 1
+  }
+
+  const crowdedCount = Math.max(
+    npcCrowdCount(npc.tile.index, context),
+    npcCrowdCount(target.tile.index, context)
+  )
+  const overCapacity = crowdedCount - config.softTileCapacity
+
+  if (overCapacity <= 0) {
+    return 1
+  }
+
+  const crowdRatio = Math.min(1, overCapacity / config.softTileCapacity)
+  return Math.max(1 - config.maxSpeedPenalty, 1 - config.maxSpeedPenalty * crowdRatio)
+}
+
+function shouldQueueForCrowdedDoorway(tileIndex, context) {
+  const capacity = context.crowding?.config.doorwayQueueCapacity
+
+  return Number.isFinite(capacity) &&
+    capacity > 0 &&
+    npcCrowdCount(tileIndex, context) >= capacity
+}
+
+function shouldQueueForCrowdedCrosswalk(tileIndex, context) {
+  const capacity = context.crowding?.config.crosswalkQueueCapacity
+
+  return Boolean(
+    Number.isFinite(capacity) &&
+    capacity > 0 &&
+    isNpcCrosswalkTile(tileIndex, context.city) &&
+    npcCrowdCount(tileIndex, context) >= capacity
+  )
+}
+
+function shouldQueueForSocialDistance(tileIndex, context) {
+  if (!context.policies?.shouldKeepDistanceFromTile(tileIndex)) {
+    return false
+  }
+
+  return npcCrowdCount(tileIndex, context) > 0
+}
+
+function isNpcCrosswalkTile(tileIndex, city) {
+  if (!Number.isInteger(tileIndex) || tileIndex < 0) {
+    return false
+  }
+
+  if (city.tileCrosswalk) {
+    return city.tileCrosswalk[tileIndex] === 1
+  }
+
+  if (typeof city.isCrosswalk !== 'function') {
+    return false
+  }
+
+  return city.isCrosswalk(tileIndex % city.width, Math.floor(tileIndex / city.width))
+}
+
+function normalizeNpcCrowdingConfig(config = NPC_CONFIG.crowding) {
+  const fallback = NPC_CONFIG.crowding
+
+  return {
+    softTileCapacity: positiveIntegerOrDefault(config?.softTileCapacity, fallback.softTileCapacity),
+    doorwayQueueCapacity: nonNegativeIntegerOrDefault(config?.doorwayQueueCapacity, fallback.doorwayQueueCapacity),
+    crosswalkQueueCapacity: nonNegativeIntegerOrDefault(config?.crosswalkQueueCapacity, fallback.crosswalkQueueCapacity),
+    maxSpeedPenalty: Math.min(0.95, Math.max(0, finiteNumberOrDefault(config?.maxSpeedPenalty, fallback.maxSpeedPenalty)))
+  }
 }
 
 function createNpcSlotOffsets(city, config) {
@@ -1572,6 +3402,14 @@ function positiveIntegerOrDefault(value, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback
 }
 
+function positiveNumberOrDefault(value, fallback) {
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function nonNegativeIntegerOrDefault(value, fallback) {
+  return Number.isInteger(value) && value >= 0 ? value : fallback
+}
+
 function nonNegativeNumberOrDefault(value, fallback) {
   const number = Number(value)
 
@@ -1588,6 +3426,36 @@ function clampUnitInterval(value) {
   return Math.min(Math.max(number, 0), 1)
 }
 
+function clampPercent(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return INFECTION_CONFIG.inoculatedPercent
+  }
+
+  return Math.min(Math.max(number, 0), 100)
+}
+
+function normalizePolicyProbability(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return 0
+  }
+
+  return Math.min(Math.max(number, 0), 1)
+}
+
+function unitIntervalOrDefault(value, fallback) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return fallback
+  }
+
+  return Math.min(Math.max(number, 0), 1)
+}
+
 function clampInteger(value, min, max) {
   const number = Math.round(Number(value))
 
@@ -1596,6 +3464,16 @@ function clampInteger(value, min, max) {
   }
 
   return Math.min(Math.max(number, min), max)
+}
+
+function clampNeedScore(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return 0
+  }
+
+  return Math.min(Math.max(number, 0), 100)
 }
 
 function daysToSeconds(days) {

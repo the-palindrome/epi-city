@@ -2,7 +2,6 @@ import {
   BUILDING_LAYOUT_ENCODING,
   CATEGORY_TO_TILE,
   CROSSWALK_SIGNAL_PHASES,
-  DEFAULT_BUILDING_TYPE,
   DIRECTIONS,
   MOVEMENT_PROPERTY_BY_MODE,
   TILE_NAMES,
@@ -10,6 +9,12 @@ import {
 } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { clamp, indexOf, octileDistance } from '../core/math.js'
+import {
+  CityBuilding,
+  normalizeBuildingTypes,
+  normalizeDefaultBuildingTypes,
+  primaryBuildingType
+} from './buildings.js'
 import { compileLaneGraphLayout, normalizeLaneGraphLayout } from './lane-graph.js'
 
 const FNV_OFFSET_BASIS = 0x811c9dc5
@@ -166,7 +171,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
   if (buildings === undefined) {
     return {
       encoding: BUILDING_LAYOUT_ENCODING,
-      defaultType: DEFAULT_BUILDING_TYPE,
+      defaultTypes: normalizeDefaultBuildingTypes({}),
       items: []
     }
   }
@@ -179,9 +184,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
     throw new Error(`Map JSON buildings.encoding must be "${BUILDING_LAYOUT_ENCODING}".`)
   }
 
-  if (buildings.defaultType !== undefined && (typeof buildings.defaultType !== 'string' || buildings.defaultType.length === 0)) {
-    throw new Error('Map JSON buildings.defaultType must be a non-empty string when present.')
-  }
+  const defaultTypes = normalizeDefaultBuildingTypes(buildings)
 
   if (!Array.isArray(buildings.items)) {
     throw new Error('Map JSON buildings.items must be an array.')
@@ -216,9 +219,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
       throw new Error(`Map JSON buildings has duplicate id "${building.id}".`)
     }
 
-    if (typeof building.type !== 'string' || building.type.length === 0) {
-      throw new Error(`Map JSON building "${building.id}" must include a non-empty type string.`)
-    }
+    const types = normalizeBuildingTypes(building, `Map JSON building "${building.id}"`, defaultTypes)
 
     if (!Array.isArray(building.spans) || building.spans.length === 0) {
       throw new Error(`Map JSON building "${building.id}" must include non-empty spans.`)
@@ -268,7 +269,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
 
     return {
       id: building.id,
-      type: building.type,
+      types,
       entrance,
       spans
     }
@@ -290,7 +291,7 @@ function normalizeBuildingsLayout(buildings, mapData, legendEntries) {
 
   return {
     encoding: buildings.encoding,
-    defaultType: buildings.defaultType || DEFAULT_BUILDING_TYPE,
+    defaultTypes,
     items
   }
 }
@@ -449,12 +450,12 @@ export function compileCityMap(data) {
   }
 
   const buildings = data.buildings.items.map((building, buildingIndex) => {
-    const runtimeBuilding = {
+    const runtimeBuilding = new CityBuilding({
       id: building.id,
-      type: building.type,
-      entrance: building.entrance ? { ...building.entrance } : null,
-      spans: building.spans.map((span) => [...span])
-    }
+      types: building.types,
+      entrance: building.entrance,
+      spans: building.spans
+    })
 
     for (const [y, x, length] of building.spans) {
       for (let offset = 0; offset < length; offset += 1) {
@@ -510,7 +511,8 @@ export function compileCityMap(data) {
       textureId: tileTextureIds[tileIndex],
       zorder: tileZOrders[tileIndex],
       buildingId: building ? building.id : null,
-      buildingType: building ? building.type : null,
+      buildingType: primaryBuildingType(building),
+      buildingTypes: building ? building.types : [],
       buildingEntrance
     }
   }
@@ -820,15 +822,7 @@ export function compileCityMap(data) {
     }
 
     const stepMasks = getStepMasksForProperty(navigation, property, crosswalkSignals.getState())
-    const field = navigation.routeFields.get(endIndex, stepMasks.cacheKey, stepMasks.incoming)
-
-    return {
-      endIndex,
-      movementCacheKey: stepMasks.cacheKey,
-      nextDirection: field.nextDirection,
-      nextIndex: field.nextIndex,
-      offsets: navigation.offsets
-    }
+    return navigation.routeFields.getHandle(endIndex, stepMasks.cacheKey, stepMasks.incoming)
   }
 
   function getRouteFieldNextIndex(field, fromIndex) {
@@ -838,6 +832,20 @@ export function compileCityMap(data) {
 
     const nextIndex = field.nextIndex[fromIndex]
     return nextIndex === undefined ? -1 : nextIndex
+  }
+
+  function getPedestrianComponentIndexByIndex(tileIndex) {
+    if (!Number.isInteger(tileIndex) || tileIndex < 0 || tileIndex >= tiles.length) {
+      return -1
+    }
+
+    return navigation.pedestrianComponents[tileIndex]
+  }
+
+  function arePedestrianConnectedByIndex(firstIndex, secondIndex) {
+    const firstComponent = getPedestrianComponentIndexByIndex(firstIndex)
+
+    return firstComponent !== -1 && firstComponent === getPedestrianComponentIndexByIndex(secondIndex)
   }
 
   return {
@@ -889,6 +897,8 @@ export function compileCityMap(data) {
     findCachedPathIndexesByIndex,
     getCachedRouteFieldByIndex,
     getRouteFieldNextIndex,
+    getPedestrianComponentIndexByIndex,
+    arePedestrianConnectedByIndex,
     navigationCacheKey: navigation.cacheKey,
     getNavigationCacheStats: () => ({
       cacheKey: navigation.cacheKey,
@@ -902,6 +912,7 @@ export function compileCityMap(data) {
 
 function createTrafficSignalController(layout) {
   const groups = layout?.groups || []
+  const groupsById = new Map(groups.map((group) => [group.id, group]))
   const edgeSignalIndexesById = new Map()
   let elapsedSeconds = 0
 
@@ -931,7 +942,7 @@ function createTrafficSignalController(layout) {
   }
 
   function getState(id) {
-    const group = groups.find((candidate) => candidate.id === id)
+    const group = groupsById.get(id)
     const phase = currentPhase(group)
 
     if (!group || !group.enabled || !phase) {
@@ -1133,6 +1144,7 @@ function createNavigationData(cacheKey, width, height, tileWalkable, tileDrivabl
     cacheKey,
     offsets,
     pedestrian,
+    pedestrianComponents: buildPedestrianComponents(width, height, tileWalkable, pedestrian.green.outgoing, offsets),
     vehicle: buildMovementMasks({
       width,
       height,
@@ -1143,6 +1155,53 @@ function createNavigationData(cacheKey, width, height, tileWalkable, tileDrivabl
     }),
     routeFields: createRouteFieldCache(length, offsets)
   }
+}
+
+function buildPedestrianComponents(width, height, tileWalkable, outgoingMasks, offsets) {
+  const length = width * height
+  const components = new Int32Array(length)
+  const stack = new Int32Array(length)
+  let componentId = 0
+
+  components.fill(-1)
+
+  for (let startIndex = 0; startIndex < length; startIndex += 1) {
+    if (tileWalkable[startIndex] !== 1 || components[startIndex] !== -1) {
+      continue
+    }
+
+    let stackLength = 1
+
+    components[startIndex] = componentId
+    stack[0] = startIndex
+
+    while (stackLength > 0) {
+      stackLength -= 1
+
+      const currentIndex = stack[stackLength]
+      let directionMask = outgoingMasks[currentIndex]
+
+      for (let directionIndex = 0; directionMask !== 0; directionIndex += 1, directionMask >>>= 1) {
+        if ((directionMask & 1) === 0) {
+          continue
+        }
+
+        const nextIndex = currentIndex + offsets[directionIndex]
+
+        if (components[nextIndex] !== -1) {
+          continue
+        }
+
+        components[nextIndex] = componentId
+        stack[stackLength] = nextIndex
+        stackLength += 1
+      }
+    }
+
+    componentId += 1
+  }
+
+  return components
 }
 
 function buildMovementMasks({ width, height, layer, tileCrosswalk, property, signalState }) {
@@ -1199,27 +1258,23 @@ function canUsePrecomputedStep({ currentIndex, nextIndex, directionIndex, width,
   }
 
   if (property === 'walkable') {
-    if (tileCrosswalk[nextIndex] !== 1) {
-      return true
+    if (tileCrosswalk[nextIndex] === 1 && tileCrosswalk[currentIndex] !== 1 && signalState !== 'green') {
+      return false
     }
 
-    if (tileCrosswalk[currentIndex] === 1) {
-      return true
-    }
-
-    if (signalState === 'green') {
-      return true
-    }
-
-    return false
+    return canUseDiagonalStep(currentIndex, directionIndex, width, layer)
   }
 
-  if (Math.abs(DIRECTION_DX[directionIndex]) === 1 && Math.abs(DIRECTION_DY[directionIndex]) === 1) {
-    return layer[currentIndex + DIRECTION_DX[directionIndex]] === 1 &&
-      layer[currentIndex + (DIRECTION_DY[directionIndex] * width)] === 1
+  return canUseDiagonalStep(currentIndex, directionIndex, width, layer)
+}
+
+function canUseDiagonalStep(currentIndex, directionIndex, width, layer) {
+  if (Math.abs(DIRECTION_DX[directionIndex]) !== 1 || Math.abs(DIRECTION_DY[directionIndex]) !== 1) {
+    return true
   }
 
-  return true
+  return layer[currentIndex + DIRECTION_DX[directionIndex]] === 1 &&
+    layer[currentIndex + (DIRECTION_DY[directionIndex] * width)] === 1
 }
 
 function getStepMasksForProperty(navigation, property, signalState) {
@@ -1267,6 +1322,21 @@ function createRouteFieldCache(length, offsets) {
       }
 
       return field
+    },
+    getHandle(endIndex, movementCacheKey, incomingMasks) {
+      const field = cache.get(endIndex, movementCacheKey, incomingMasks)
+
+      if (!field.handle) {
+        field.handle = {
+          endIndex,
+          movementCacheKey,
+          nextDirection: field.nextDirection,
+          nextIndex: field.nextIndex,
+          offsets
+        }
+      }
+
+      return field.handle
     }
   }
 

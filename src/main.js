@@ -10,6 +10,7 @@ import {
   SIMULATION_CONFIG
 } from './core/constants.js'
 import { createSeededRandom, createSystemRandom } from './core/random.js'
+import { REAL_WORLD_SCALE } from './core/scale.js'
 import { Game } from './engine/game.js'
 import {
   applyCameraToWorld,
@@ -21,6 +22,7 @@ import {
   refreshFollowedCamera
 } from './input/camera.js'
 import { installEntityContextMenu } from './input/entity-context-menu.js'
+import { createEntityControl } from './input/entity-control.js'
 import { installNpcHoverMenu } from './input/npc-hover-menu.js'
 import { createEntityPathSelection } from './input/entity-path-selection.js'
 import {
@@ -98,6 +100,7 @@ async function main() {
       npcCount: NPC_CONFIG.count,
       carCount: CAR_CONFIG.count,
       initialInfectiousCount: INFECTION_CONFIG.initialInfectiousCount,
+      inoculatedPercent: INFECTION_CONFIG.inoculatedPercent,
       infectionDistance: INFECTION_CONFIG.infectionDistance,
       infectionProbability: INFECTION_CONFIG.infectionProbability,
       incubationDays: INFECTION_CONFIG.incubationDays,
@@ -118,6 +121,17 @@ async function main() {
     }
     let npcSimulation = null
     let carSimulation = null
+    let activePolicyEffects = {
+      infectionProbabilityMultiplier: 1,
+      socialDistancingEnabled: false,
+      eventCancellationProbabilities: {
+        closeSchools: 0,
+        homeOffice: 0,
+        reduceShopping: 0,
+        reduceNightlife: 0
+      },
+      activePolicies: []
+    }
     const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
     const dayNightOverlay = createDayNightOverlay(city, entityLayer, simulationClock, {
       enabled: simulationState.dayNightOverlayEnabled
@@ -129,6 +143,13 @@ async function main() {
       camera,
       city,
       entityLayer,
+      getNpcSimulation: () => npcSimulation,
+      getCarSimulation: () => carSimulation,
+      requestRender: () => game.render()
+    })
+    const entityControl = createEntityControl({
+      city,
+      getClock: () => simulationClock,
       getNpcSimulation: () => npcSimulation,
       getCarSimulation: () => carSimulation,
       requestRender: () => game.render()
@@ -163,6 +184,7 @@ async function main() {
         ...NPC_CONFIG,
         count: simulationState.npcCount,
         initialInfectiousCount: simulationState.initialInfectiousCount,
+        inoculatedPercent: simulationState.inoculatedPercent,
         infectionDistance: simulationState.infectionDistance,
         infectionProbability: simulationState.infectionProbability,
         incubationDays: simulationState.incubationDays,
@@ -223,12 +245,24 @@ async function main() {
     function clampInitialInfectiousCount(count) {
       const { min, max } = INFECTION_CONFIG.initialInfectiousCountRange
       const value = Math.round(Number(count))
+      const susceptibleCapacity = Math.max(0, simulationState.npcCount - getInitialInoculatedCount())
 
       if (!Number.isFinite(value)) {
         return min
       }
 
-      return Math.min(Math.max(value, min), Math.min(max, simulationState.npcCount))
+      return Math.min(Math.max(value, min), Math.min(max, susceptibleCapacity))
+    }
+
+    function getInitialInoculatedCount() {
+      return Math.min(
+        simulationState.npcCount,
+        Math.round(simulationState.npcCount * clampInoculatedPercent(simulationState.inoculatedPercent) / 100)
+      )
+    }
+
+    function clampInoculatedPercent(percent) {
+      return clampRangeValue(percent, INFECTION_CONFIG.inoculatedPercentRange)
     }
 
     function clampInfectionDistance(distance) {
@@ -299,9 +333,11 @@ async function main() {
       city.resetTrafficSignals()
       clearCameraFollow(camera)
       entityContextMenu?.hide()
+      entityControl.clearControl()
       pathSelection.clearSelection()
       simulationClock.reset()
       npcSimulation = createConfiguredNpcSimulation()
+      applyPolicyEffects(activePolicyEffects)
       carSimulation = createConfiguredCarSimulation()
       game.addSystem(carSimulation)
       game.addSystem(npcSimulation)
@@ -317,6 +353,13 @@ async function main() {
       world,
       getNpcSimulation: () => npcSimulation,
       getCarSimulation: () => carSimulation,
+      assumeEntityControl: (kind, id) => {
+        pathSelection.selectEntity(kind, id)
+        entityControl.assumeControl(kind, id)
+      },
+      showEntityRoute: (kind, id) => pathSelection.showRouteFor(kind, id),
+      hideEntityRoute: (kind, id) => pathSelection.hideRouteFor(kind, id),
+      isEntityRouteVisible: (kind, id) => pathSelection.isRouteVisibleFor(kind, id),
       requestRender: () => game.render()
     })
     npcHoverMenu = installNpcHoverMenu({
@@ -338,6 +381,8 @@ async function main() {
       carCountRange: SIMULATION_CONFIG.carCountRange,
       initialInfectiousCount: simulationState.initialInfectiousCount,
       initialInfectiousCountRange: INFECTION_CONFIG.initialInfectiousCountRange,
+      inoculatedPercent: simulationState.inoculatedPercent,
+      inoculatedPercentRange: INFECTION_CONFIG.inoculatedPercentRange,
       infectionDistance: simulationState.infectionDistance,
       infectionDistanceRange: INFECTION_CONFIG.infectionDistanceRange,
       infectionProbability: simulationState.infectionProbability,
@@ -394,6 +439,13 @@ async function main() {
       },
       onInitialInfectiousCountChange: (count) => {
         simulationState.initialInfectiousCount = clampInitialInfectiousCount(count)
+        dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
+        restartSimulation()
+      },
+      onInoculatedPercentChange: (percent) => {
+        simulationState.inoculatedPercent = clampInoculatedPercent(percent)
+        simulationState.initialInfectiousCount = clampInitialInfectiousCount(simulationState.initialInfectiousCount)
+        dashboard.simulation.setInoculatedPercent(simulationState.inoculatedPercent)
         dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
         restartSimulation()
       },
@@ -473,6 +525,9 @@ async function main() {
       onHeatmapRadiusChange: (radius) => {
         simulationState.heatmapRadius = clampRangeValue(radius, SEIR_HEATMAP_CONFIG.radiusRange)
         game.render()
+      },
+      onPolicyEffectsChange: (effects) => {
+        applyPolicyEffects(effects)
       }
     })
 
@@ -482,9 +537,11 @@ async function main() {
     game.addSystem(dayNightOverlay)
     game.addSystem({ render: () => dashboard.render() })
     npcSimulation = createConfiguredNpcSimulation()
+    applyPolicyEffects(activePolicyEffects)
     carSimulation = createConfiguredCarSimulation()
     game.addSystem(carSimulation)
     game.addSystem(npcSimulation)
+    game.addSystem(entityControl)
     game.addSystem(pathSelection)
     game.addSystem({ render: applyCameraFollow })
     game.start()
@@ -495,6 +552,28 @@ async function main() {
       npcSimulation?.setEntityDebugOptions(options)
       carSimulation?.setEntityDebugOptions(options)
       game.render()
+    }
+
+    function applyPolicyEffects(effects) {
+      const multiplier = clampRangeValue(effects?.infectionProbabilityMultiplier ?? 1, { min: 0, max: 1 })
+
+      activePolicyEffects = {
+        infectionProbabilityMultiplier: multiplier,
+        socialDistancingEnabled: Boolean(effects?.socialDistancingEnabled),
+        eventCancellationProbabilities: {
+          closeSchools: clampRangeValue(effects?.eventCancellationProbabilities?.closeSchools ?? 0, { min: 0, max: 1 }),
+          homeOffice: clampRangeValue(effects?.eventCancellationProbabilities?.homeOffice ?? 0, { min: 0, max: 1 }),
+          reduceShopping: clampRangeValue(effects?.eventCancellationProbabilities?.reduceShopping ?? 0, { min: 0, max: 1 }),
+          reduceNightlife: clampRangeValue(effects?.eventCancellationProbabilities?.reduceNightlife ?? 0, { min: 0, max: 1 })
+        },
+        activePolicies: Array.isArray(effects?.activePolicies)
+          ? effects.activePolicies.map((policy) => ({ ...policy }))
+          : []
+      }
+
+      if (npcSimulation && typeof npcSimulation.setPolicyEffects === 'function') {
+        npcSimulation.setPolicyEffects(activePolicyEffects)
+      }
     }
 
     function playSimulation() {
@@ -545,6 +624,14 @@ async function main() {
       restartSimulation()
     }
 
+    function setInoculatedPercent(percent) {
+      simulationState.inoculatedPercent = clampInoculatedPercent(percent)
+      simulationState.initialInfectiousCount = clampInitialInfectiousCount(simulationState.initialInfectiousCount)
+      dashboard.simulation.setInoculatedPercent(simulationState.inoculatedPercent)
+      dashboard.simulation.setInitialInfectiousCount(simulationState.initialInfectiousCount)
+      restartSimulation()
+    }
+
     function setInfectionDistance(distance) {
       simulationState.infectionDistance = clampInfectionDistance(distance)
       dashboard.simulation.setInfectionDistance(simulationState.infectionDistance)
@@ -581,54 +668,11 @@ async function main() {
       dashboard.simulation.setDayNightOverlayEnabled(simulationState.dayNightOverlayEnabled)
     }
 
-    function setMapTextureEnabled(enabled) {
-      dashboard.setMapTextureEnabled(enabled)
-    }
-
-    function setMapTextureOpacity(opacity) {
-      dashboard.setMapTextureOpacity(opacity)
-    }
-
-    function setEntityRenderMode(mode) {
-      dashboard.setEntityRenderMode(mode)
-    }
-
-    function setInfectionRadiusVisible(visible) {
-      dashboard.setInfectionRadiusVisible(visible)
-    }
-
-    function setInfectionEdgesVisible(visible) {
-      dashboard.setInfectionEdgesVisible(visible)
-    }
-
-    function setContactEdgesVisible(visible) {
-      dashboard.setContactEdgesVisible(visible)
-    }
-
-    function setInfectionEdgeDuration(durationMinutes) {
-      dashboard.setInfectionEdgeDuration(durationMinutes)
-    }
-
-    function setContactEdgeDuration(durationMinutes) {
-      dashboard.setContactEdgeDuration(durationMinutes)
-    }
-
-    function setPathTrailsVisible(visible) {
-      dashboard.setPathTrailsVisible(visible)
-    }
-
-    function setPathTrailLength(length) {
-      dashboard.setPathTrailLength(length)
-    }
-
-    function setHeatmapRadius(radius) {
-      dashboard.setHeatmapRadius(radius)
-    }
-
     function destroy() {
       game.destroy()
       dashboard.destroy()
       cameraControls.destroy()
+      entityControl.destroy()
       entityContextMenu.destroy()
       npcHoverMenu.destroy()
       clearPixiContainer(entityLayer)
@@ -639,6 +683,7 @@ async function main() {
     window.citySim = {
       camera,
       city,
+      scale: REAL_WORLD_SCALE,
       dashboard,
       npcHoverMenu,
       simulationClock,
@@ -653,6 +698,9 @@ async function main() {
         return carSimulation
       },
       simulationState,
+      get policyEffects() {
+        return activePolicyEffects
+      },
       get npcs() {
         return npcSimulation.npcs
       },
@@ -668,23 +716,24 @@ async function main() {
       setNpcCount,
       setCarCount,
       setInitialInfectiousCount,
+      setInoculatedPercent,
       setInfectionDistance,
       setInfectionProbability,
       setIncubationDays,
       setInfectionDays,
       setImmunityDays,
       setDayNightOverlayEnabled,
-      setMapTextureEnabled,
-      setMapTextureOpacity,
-      setEntityRenderMode,
-      setInfectionRadiusVisible,
-      setInfectionEdgesVisible,
-      setContactEdgesVisible,
-      setInfectionEdgeDuration,
-      setContactEdgeDuration,
-      setPathTrailsVisible,
-      setPathTrailLength,
-      setHeatmapRadius,
+      setMapTextureEnabled: dashboard.setMapTextureEnabled,
+      setMapTextureOpacity: dashboard.setMapTextureOpacity,
+      setEntityRenderMode: dashboard.setEntityRenderMode,
+      setInfectionRadiusVisible: dashboard.setInfectionRadiusVisible,
+      setInfectionEdgesVisible: dashboard.setInfectionEdgesVisible,
+      setContactEdgesVisible: dashboard.setContactEdgesVisible,
+      setInfectionEdgeDuration: dashboard.setInfectionEdgeDuration,
+      setContactEdgeDuration: dashboard.setContactEdgeDuration,
+      setPathTrailsVisible: dashboard.setPathTrailsVisible,
+      setPathTrailLength: dashboard.setPathTrailLength,
+      setHeatmapRadius: dashboard.setHeatmapRadius,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
       clearCameraFollow: () => clearCameraFollow(camera),

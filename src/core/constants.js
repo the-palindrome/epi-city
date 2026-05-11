@@ -1,3 +1,9 @@
+import {
+  metersPerSecondToWorldUnitsPerSecond,
+  metersToWorldUnits,
+  milesPerHourToWorldUnitsPerSecond
+} from './scale.js'
+
 const TILE_TYPES = Object.freeze({
   road: 0,
   sidewalk: 1,
@@ -44,7 +50,21 @@ export const DEFAULT_CITY_MAP_PATHS = Object.freeze({
 })
 
 export const BUILDING_LAYOUT_ENCODING = 'row-spans-v1'
-export const DEFAULT_BUILDING_TYPE = 'residential'
+export const DEFAULT_BUILDING_TYPES = Object.freeze(['residential'])
+export const HOME_BUILDING_TYPES = Object.freeze(['residential'])
+export const WORK_BUILDING_TYPES = Object.freeze([
+  'commercial',
+  'school',
+  'restaurant',
+  'supermarket',
+  'hospital',
+  'mall',
+  'nightclub'
+])
+export const SCHOOL_BUILDING_TYPES = Object.freeze(['school'])
+export const RESTAURANT_BUILDING_TYPES = Object.freeze(['restaurant'])
+export const SHOPPING_BUILDING_TYPES = Object.freeze(['supermarket', 'mall'])
+export const NIGHTCLUB_BUILDING_TYPES = Object.freeze(['nightclub'])
 export const PIXEL_ART_SCALE_MODE = 'nearest'
 
 export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
@@ -60,11 +80,79 @@ export const NPC_CONFIG = Object.freeze({
   slotSpacing: 11,
   color: 0xe5c748,
   size: 9,
-  minSpeed: 1.9,
-  maxSpeed: 2.25,
+  minSpeed: metersPerSecondToWorldUnitsPerSecond(1.1),
+  maxSpeed: metersPerSecondToWorldUnitsPerSecond(1.4),
+  movementTimeScale: 4,
+  crowding: Object.freeze({
+    softTileCapacity: 4,
+    doorwayQueueCapacity: 3,
+    crosswalkQueueCapacity: 3,
+    maxSpeedPenalty: 0.55
+  }),
   workStartHour: 9,
   workEndHour: 17,
   scheduleVariationHours: 0.75,
+  lunchStartHour: 11,
+  lunchEndHour: 13,
+  lunchDurationHours: 1,
+  lunchRestaurantCandidateCount: 4,
+  shoppingChance: 0.35,
+  shoppingDurationHours: 1.25,
+  nightclubChance: 0.12,
+  nightclubStartHour: 21,
+  nightclubLatestStartHour: 23,
+  nightclubDurationHours: 3,
+  desires: Object.freeze({
+    initialMin: 55,
+    initialMax: 95,
+    lowThreshold: 35,
+    urgentThreshold: 20,
+    satisfiedThreshold: 70,
+    tripCooldownHours: 1,
+    destinationCandidateCount: 4,
+    socialGroupMinFriends: 1,
+    socialGroupMaxFriends: 3,
+    socialInviteThreshold: 100,
+    decayPerHour: Object.freeze({
+      hunger: 4,
+      energy: 3,
+      fun: 2,
+      social: 1.5
+    }),
+    satisfactionPerHour: Object.freeze({
+      home: Object.freeze({
+        hunger: 2,
+        energy: 12,
+        fun: 1,
+        social: 1
+      }),
+      restaurant: Object.freeze({
+        hunger: 45
+      }),
+      supermarket: Object.freeze({
+        hunger: 25
+      }),
+      mall: Object.freeze({
+        fun: 18,
+        social: 12
+      }),
+      nightclub: Object.freeze({
+        fun: 28,
+        social: 28
+      })
+    })
+  }),
+  familyTypeWeights: Object.freeze({
+    single: 0.35,
+    marriedWithoutChildren: 0.3,
+    marriedWithChildren: 0.35
+  }),
+  familyChildCountWeights: Object.freeze([
+    Object.freeze({ count: 1, weight: 0.45 }),
+    Object.freeze({ count: 2, weight: 0.35 }),
+    Object.freeze({ count: 3, weight: 0.15 }),
+    Object.freeze({ count: 4, weight: 0.05 })
+  ]),
   routePlanBudget: 24,
   routeRetrySeconds: 1,
   routeBlockedReplanSeconds: 2
@@ -72,7 +160,8 @@ export const NPC_CONFIG = Object.freeze({
 
 export const INFECTION_CONFIG = Object.freeze({
   initialInfectiousCount: 4,
-  infectionDistance: 48,
+  inoculatedPercent: 0,
+  infectionDistance: metersToWorldUnits(2),
   infectionProbability: 0.03,
   incubationDays: 1,
   infectionDays: 7,
@@ -88,10 +177,15 @@ export const INFECTION_CONFIG = Object.freeze({
     max: 10000,
     step: 1
   }),
+  inoculatedPercentRange: Object.freeze({
+    min: 0,
+    max: 100,
+    step: 1
+  }),
   infectionDistanceRange: Object.freeze({
     min: 0,
-    max: 256,
-    step: 1
+    max: metersToWorldUnits(25),
+    step: metersToWorldUnits(1)
   }),
   infectionProbabilityRange: Object.freeze({
     min: 0,
@@ -116,7 +210,7 @@ export const INFECTION_CONFIG = Object.freeze({
 })
 
 export const CAR_CONFIG = Object.freeze({
-  count: 500,
+  count: 200,
   zorder: 1,
   colorPalette: Object.freeze([0x3f6fd8, 0xd94a48, 0xf1d15c, 0x55b86b, 0xd8dce6, 0x22272e]),
   twoTileChance: 0.82,
@@ -127,8 +221,10 @@ export const CAR_CONFIG = Object.freeze({
   workDepartureEndHour: 10,
   homeDepartureHour: 17,
   homeDepartureEndHour: 20,
-  maxSpeed: 18,
-  speedLimitScale: 0.4,
+  maxSpeed: milesPerHourToWorldUnitsPerSecond(35),
+  speedLimitUnit: 'mph',
+  speedLimitScale: 1,
+  movementTimeScale: 2,
   minCruiseSpeedScale: 0.72,
   maxCruiseSpeedScale: 0.96,
   minAdaptiveSpeedScale: 0.45,
@@ -137,9 +233,9 @@ export const CAR_CONFIG = Object.freeze({
   speedAdjustmentRate: 1.8,
   movingLaneChangeWaitSeconds: 0.7,
   parkingSearchRadius: 64,
-  bodyWidth: 18,
-  roadBodyLength: 34,
-  longBodyLength: 44,
+  bodyWidth: metersToWorldUnits(1.85),
+  roadBodyLength: metersToWorldUnits(3.45),
+  longBodyLength: metersToWorldUnits(4.5),
   parkedRoadOffset: 0.24
 })
 
@@ -175,11 +271,11 @@ export const TILE_ZORDERS = Object.freeze({
 })
 
 export const SEIR_HEATMAP_CONFIG = Object.freeze({
-  radius: 96,
+  radius: metersToWorldUnits(10),
   radiusRange: Object.freeze({
-    min: 16,
-    max: 512,
-    step: 16
+    min: metersToWorldUnits(2),
+    max: metersToWorldUnits(50),
+    step: metersToWorldUnits(1)
   }),
   alpha: 0.72,
   minimumNormalizedDensity: 0.02,
@@ -272,6 +368,12 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     building: Object.freeze({
       residential: 0x3f6fa7,
       commercial: 0xe09b2d,
+      school: 0x5fa85f,
+      restaurant: 0xd85f45,
+      supermarket: 0x42a88f,
+      hospital: 0xd9578c,
+      mall: 0xb06bb6,
+      nightclub: 0x6d63d8,
       default: 0x8c8f94
     }),
     obstacle: 0xd1495b,
@@ -283,10 +385,16 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     sidewalk: 0xffffff,
     road: 0xd3d6d2,
     park: 0xf2f3f1,
-    water: 0xe5e8ea,
+    water: 0x86bdd8,
     building: Object.freeze({
       residential: 0xa8ada7,
       commercial: 0x8f9690,
+      school: 0x9da69d,
+      restaurant: 0xa59b96,
+      supermarket: 0x96a6a0,
+      hospital: 0xa8959f,
+      mall: 0xa197a7,
+      nightclub: 0x9898a8,
       default: 0xb7bcb6
     }),
     obstacle: 0xaeb4ae,
@@ -298,10 +406,16 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     sidewalk: 0x5f6661,
     road: 0x141816,
     park: 0x343a36,
-    water: 0x292f31,
+    water: 0x244b5f,
     building: Object.freeze({
       residential: 0x6f7871,
       commercial: 0x838c84,
+      school: 0x6f846f,
+      restaurant: 0x846f68,
+      supermarket: 0x668178,
+      hospital: 0x856a78,
+      mall: 0x7e6f84,
+      nightclub: 0x6f7088,
       default: 0x606861
     }),
     obstacle: 0x202522,
@@ -324,6 +438,12 @@ export const TILE_TYPE_OVERLAY_COLORS = Object.freeze({
   building: Object.freeze({
     residential: 0x3f6fa7,
     commercial: 0xe09b2d,
+    school: 0x5fa85f,
+    restaurant: 0xd85f45,
+    supermarket: 0x42a88f,
+    hospital: 0xd9578c,
+    mall: 0xb06bb6,
+    nightclub: 0x6d63d8,
     default: 0x8c8f94
   }),
   obstacle: 0xd1495b,

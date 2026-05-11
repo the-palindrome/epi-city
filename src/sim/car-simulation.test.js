@@ -147,10 +147,10 @@ function createTrafficCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work', types: ['restaurant'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
     rows: [
@@ -163,6 +163,46 @@ function createTrafficCity() {
     textureRows: [
       [0, 0, 0, 0, 0, 0, 0],
       [0, 1, 0, 0, 0, 1, 0],
+      [0, 0, 0, 0, 0, 0, 0],
+      [2, 2, 2, 3, 2, 2, 2],
+      [0, 0, 0, 0, 0, 0, 0]
+    ],
+    laneGraph: createLineLaneGraph(7, 3)
+  }))
+}
+
+function createTrafficCityWithShopping() {
+  return compileCityMap(validateCityMap({
+    width: 7,
+    height: 5,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      p: { category: 'sidewalk', walkable: true, drivable: false, parkable: true },
+      r: { category: 'road', walkable: false, drivable: true, parkable: false },
+      c: { category: 'crosswalk', walkable: true, drivable: true, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultTypes: ['residential'],
+      items: [
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'shop', types: ['supermarket'], entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+      ]
+    },
+    rows: [
+      'sssssss',
+      'sbsbsbs',
+      'ppppppp',
+      'rrrcrrr',
+      'sssssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0, 0],
+      [0, 1, 0, 1, 0, 1, 0],
       [0, 0, 0, 0, 0, 0, 0],
       [2, 2, 2, 3, 2, 2, 2],
       [0, 0, 0, 0, 0, 0, 0]
@@ -186,10 +226,10 @@ function createFirstEdgeCrosswalkCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 2, y: 1 }, spans: [[1, 2, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 2, y: 1 }, spans: [[1, 2, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
     rows: [
@@ -224,10 +264,10 @@ function createLaneChangeTrafficCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 6, y: 5 }, spans: [[5, 6, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 6, y: 5 }, spans: [[5, 6, 1]] }
       ]
     },
     rows: [
@@ -265,10 +305,10 @@ function createTrafficSignalCity() {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'home', type: 'residential', entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
-        { id: 'work', type: 'commercial', entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
+        { id: 'home', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work', types: ['commercial'], entrance: { x: 5, y: 1 }, spans: [[1, 5, 1]] }
       ]
     },
     rows: [
@@ -589,6 +629,7 @@ describe('car simulation', () => {
       twoOwnerChance: 0,
       twoTileChance: 1,
       maxSpeed: 1000,
+      movementTimeScale: 1,
       speedLimitScale: 100
     })
     const car = simulation.cars[0]
@@ -621,6 +662,7 @@ describe('car simulation', () => {
       twoOwnerChance: 0,
       twoTileChance: 1,
       maxSpeed: 1000,
+      movementTimeScale: 1,
       speedLimitScale: 100
     })
     const car = simulation.cars[0]
@@ -659,6 +701,152 @@ describe('car simulation', () => {
 
     simulation.destroy()
     npcSimulation.destroy()
+  })
+
+  it('drives real NPC owners to their active timetable destination', () => {
+    const city = createTrafficCityWithShopping()
+    const clock = createClock(17.5)
+    const npcSimulation = createNpcSimulationForTraffic(city, clock)
+    const npc = npcSimulation.npcs[0]
+    const shop = city.buildings.find((building) => building.id === 'shop')
+
+    npc.home = 'home'
+    npc.work = 'work'
+    npc.locationState = {
+      timetableElementId: 'home',
+      buildingId: 'home',
+      location: {
+        x: 1,
+        y: 1,
+        index: city.index(1, 1)
+      }
+    }
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'shopping',
+        buildingId: 'shop',
+        location: {
+          x: shop.entrance.x,
+          y: shop.entrance.y,
+          index: city.index(shop.entrance.x, shop.entrance.y)
+        }
+      })
+    }
+
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock,
+      random: createSeededRandom('real-owner-shopping'),
+      npcs: npcSimulation.npcs,
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      movementTimeScale: 1,
+      speedLimitScale: 100
+    })
+    const car = simulation.cars[0]
+
+    city.setCrosswalkSignalState('green')
+    simulation.update(0.1)
+    npcSimulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.destinationKind).toBe('shopping')
+    expect(car.destinationBuildingId).toBe('shop')
+    expect(npc.vehicleTrip).toMatchObject({
+      carId: car.id,
+      destinationKind: 'shopping',
+      destinationBuildingId: 'shop'
+    })
+
+    simulation.destroy()
+    npcSimulation.destroy()
+  })
+
+  it('drives real NPC owners to their active desire destination', () => {
+    const city = createTrafficCityWithShopping()
+    const clock = createClock(18)
+    const npcSimulation = createNpcSimulationForTraffic(city, clock)
+    const npc = npcSimulation.npcs[0]
+    const home = city.buildings.find((building) => building.id === 'home')
+    const shop = city.buildings.find((building) => building.id === 'shop')
+    const homeLocation = {
+      x: home.entrance.x,
+      y: home.entrance.y,
+      index: city.index(home.entrance.x, home.entrance.y)
+    }
+
+    Object.assign(npc.desires, {
+      hunger: 5,
+      energy: 80,
+      fun: 80,
+      social: 80
+    })
+    npc.locationState = {
+      timetableElementId: 'home',
+      buildingId: 'home',
+      location: homeLocation
+    }
+    npc.timetable = {
+      getActiveElement: () => ({
+        id: 'home',
+        buildingId: 'home',
+        location: homeLocation
+      })
+    }
+
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock,
+      random: createSeededRandom('real-owner-desire'),
+      npcs: npcSimulation.npcs,
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      movementTimeScale: 1,
+      speedLimitScale: 100
+    })
+    const car = simulation.cars[0]
+
+    city.setCrosswalkSignalState('green')
+    simulation.update(0.1)
+    npcSimulation.update(0.1)
+
+    expect(car.state).toBe('driving')
+    expect(car.destinationKind).toBe('desire:hunger')
+    expect(car.destinationBuildingId).toBe(shop.id)
+    expect(npc.vehicleTrip).toMatchObject({
+      carId: car.id,
+      destinationKind: 'desire:hunger',
+      destinationBuildingId: shop.id
+    })
+
+    simulation.destroy()
+    npcSimulation.destroy()
+  })
+
+  it('excludes minor NPCs from real car owner pools', () => {
+    const city = createTrafficCity()
+    const adult = { id: 1, age: 18, home: 'home', work: 'work', carId: null }
+    const minor = { id: 2, age: 17, home: 'home', work: 'work', carId: null }
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      random: createSeededRandom('minor-owner-pool'),
+      npcs: [minor, adult],
+      commuteChance: 0,
+      twoOwnerChance: 1,
+      twoTileChance: 1
+    })
+    const car = simulation.cars[0]
+
+    expect(car.owners).toHaveLength(1)
+    expect(car.owners[0].npc).toBe(adult)
+    expect(adult.carId).toBe(car.id)
+    expect(minor.carId).toBeNull()
+
+    simulation.destroy()
   })
 
   it('waits before entering a red crosswalk and can leave after entering', () => {
@@ -725,7 +913,7 @@ describe('car simulation', () => {
     simulation.destroy()
   })
 
-  it('advances driving movement using simulation-clock seconds', () => {
+  it('advances driving movement using the presentation movement scale', () => {
     const city = createTrafficCity()
     const clock = {
       secondsPerSimulationHour: 60,
@@ -735,6 +923,7 @@ describe('car simulation', () => {
       count: 0,
       clock,
       maxSpeed: 28,
+      movementTimeScale: 2,
       speedLimitScale: 1,
       minCruiseSpeedScale: 1,
       maxCruiseSpeedScale: 1
@@ -755,7 +944,8 @@ describe('car simulation', () => {
     simulation.update(0.01)
 
     expect(car.movement?.edgeIndex).toBe(edgeIndex)
-    expect(car.position.x).toBeGreaterThan(tileCenterPosition(city, 0, 3).x + 10)
+    expect(car.position.x).toBeGreaterThan(tileCenterPosition(city, 0, 3).x)
+    expect(car.position.x).toBeLessThan(tileCenterPosition(city, 0, 3).x + 2)
     expect(car.position.x).toBeLessThan(tileCenterPosition(city, 1, 3).x)
 
     simulation.destroy()
@@ -861,6 +1051,49 @@ describe('car simulation', () => {
     simulation.destroy()
   })
 
+  it('waits before entering an unsignalized turn when the maneuver clearance is blocked', () => {
+    const city = createTrafficSignalCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      clock: createClock(8.5),
+      random: createSeededRandom('unsignalized-turn-clearance'),
+      maxSpeed: 1000,
+      speedLimitScale: 100
+    })
+    const network = simulation.router.network
+    const [entryEdgeIndex, turnEdgeIndex, exitEdgeIndex] = routeIndexesByEdgeId(network, [
+      'east-2',
+      'north-3',
+      'north-2'
+    ])
+    const car = createManualDrivingCar({
+      id: 1,
+      routeEdges: [entryEdgeIndex, turnEdgeIndex, exitEdgeIndex],
+      currentNode: network.edgeFrom[entryEdgeIndex],
+      destinationNode: network.edgeTo[exitEdgeIndex],
+      position: tileCenterPosition(city, 2, 3)
+    })
+    const blocker = { id: 999, occupiedTiles: [] }
+
+    city.trafficSignals.groups[0].enabled = false
+    city.setCrosswalkSignalState('green')
+    simulation.cars.push(car)
+    simulation.parking.occupyTiles(car, [city.index(2, 3), city.index(1, 3)])
+    simulation.parking.occupyTiles(blocker, [city.index(3, 2)])
+    simulation.update(0.01)
+
+    expect(car.movement).toBeNull()
+    expect(car.occupiedTiles).not.toContain(city.index(3, 3))
+
+    simulation.parking.releaseOccupiedTiles(blocker)
+    simulation.update(0.01)
+
+    expect(car.movement?.edge.id).toBe('east-2')
+    expect(car.occupiedTiles).toContain(city.index(3, 3))
+
+    simulation.destroy()
+  })
+
   it('uses the right-hand rule so a left turn yields to oncoming straight traffic', () => {
     const city = createTrafficSignalCity()
     const simulation = createCarSimulation(city, createEntityLayer(), {
@@ -918,6 +1151,42 @@ describe('car simulation', () => {
     expect(leftTurningCar.occupiedTiles).not.toContain(city.index(3, 3))
     expect(straightCar.movement?.edge.id).toBe('west-4')
     expect(straightCar.occupiedTiles).toContain(city.index(3, 3))
+
+    simulation.destroy()
+  })
+
+  it('lets a reserved signal car clear the intersection before checking later maneuver clearance', () => {
+    const city = createTrafficSignalCity()
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      clock: createClock(8.5),
+      random: createSeededRandom('reserved-signal-clearance'),
+      maxSpeed: 1,
+      speedLimitScale: 1
+    })
+    const network = simulation.router.network
+    const [exitEdgeIndex, laterTurnEdgeIndex] = routeIndexesByEdgeId(network, ['west-3', 'north-3'])
+    const car = createManualDrivingCar({
+      id: 10,
+      routeEdges: [exitEdgeIndex, laterTurnEdgeIndex],
+      currentNode: network.edgeFrom[exitEdgeIndex],
+      destinationNode: network.edgeTo[laterTurnEdgeIndex],
+      position: tileCenterPosition(city, 3, 3)
+    })
+    const blocker = { id: 999, occupiedTiles: [] }
+
+    car.lengthTiles = 1
+    car.direction = { dx: -1, dy: 0 }
+    car.trafficSignalReservation = 'traffic-signal-3-3'
+    city.trafficSignals.groups[0].enabled = false
+    city.setCrosswalkSignalState('green')
+    simulation.cars.push(car)
+    simulation.parking.occupyTiles(car, [city.index(3, 3)])
+    simulation.parking.occupyTiles(blocker, [city.index(3, 2)])
+    simulation.update(0.01)
+
+    expect(car.movement?.edgeIndex).toBe(exitEdgeIndex)
+    expect(car.occupiedTiles).toContain(city.index(2, 3))
 
     simulation.destroy()
   })
@@ -1070,6 +1339,64 @@ describe('generated lane-change maneuver routing', () => {
 
     expect(car.movement?.edgeIndex).toBe(forwardEdgeIndex)
     expect(car.route.destinationNode).toBe(destinationNode)
+
+    simulation.destroy()
+  })
+
+  it('releases stale signal exit reservations when a blocked lane-change route is rewritten', () => {
+    const city = createGeneratedLaneChangeCity(createParallelLaneGraph())
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 0,
+      maxSpeed: 1000,
+      speedLimitScale: 100,
+      movingLaneChangeWaitSeconds: 0.001
+    })
+    const network = simulation.router.network
+    const nodeIndexes = new Map(network.laneGraph.nodes.map((node, index) => [node.id, index]))
+    const startNode = nodeIndexes.get('upper-0')
+    const destinationNode = nodeIndexes.get('lower-5')
+    const laneChangeEdgeIndex = network.edges.findIndex((edge) => edge.id === 'generated-lane-change-upper-0-lower-3')
+    const forwardEdgeIndex = network.edges.findIndex((edge) => edge.id === 'upper-0-1')
+    const tail = simulation.router.findRoute(nodeIndexes.get('lower-3'), destinationNode)
+    const car = createManualDrivingCar({
+      id: 1,
+      routeEdges: [laneChangeEdgeIndex, ...tail],
+      currentNode: startNode,
+      destinationNode,
+      position: tileCenterPosition(city, 0, 0)
+    })
+    const [waitingEdgeIndex, waitingExitEdgeIndex] = routeIndexesByEdgeId(network, ['lower-3-4', 'lower-4-5'])
+    const waitingCar = createManualDrivingCar({
+      id: 3,
+      routeEdges: [waitingEdgeIndex, waitingExitEdgeIndex],
+      currentNode: nodeIndexes.get('lower-3'),
+      destinationNode,
+      position: tileCenterPosition(city, 3, 1)
+    })
+    const blocker = { id: 2, occupiedTiles: [] }
+    const syntheticSignalGroup = { id: 'synthetic-signal' }
+    const syntheticSignalTileIndex = city.index(0, 0)
+    const staleReservedTileIndex = city.index(4, 1)
+
+    expect(laneChangeEdgeIndex).toBeGreaterThanOrEqual(0)
+    expect(forwardEdgeIndex).toBeGreaterThanOrEqual(0)
+    expect(isGeneratedLaneChangeEdge(network.edges[laneChangeEdgeIndex])).toBe(true)
+
+    simulation.cars.push(car, waitingCar)
+    simulation.parking.occupyTiles(car, [syntheticSignalTileIndex])
+    simulation.parking.occupyTiles(waitingCar, [city.index(3, 1), city.index(2, 1)])
+    simulation.parking.occupyTiles(blocker, [city.index(1, 1)])
+    simulation.trafficReservations.tileIndexesByGroupId.set(syntheticSignalGroup.id, new Set([syntheticSignalTileIndex]))
+    simulation.trafficReservations.reserve(syntheticSignalGroup, [staleReservedTileIndex], car)
+
+    expect(simulation.trafficReservations.tileReservations[staleReservedTileIndex]).toBe(car.id)
+    simulation.update(0.01)
+
+    expect(car.movement?.edgeIndex).toBe(forwardEdgeIndex)
+    expect(car.trafficSignalReservation).toBe(syntheticSignalGroup.id)
+    expect(simulation.trafficReservations.groupReservations.get(syntheticSignalGroup.id)).toBe(car.id)
+    expect(simulation.trafficReservations.tileReservations[staleReservedTileIndex]).toBe(-1)
+    expect(waitingCar.movement?.edgeIndex).toBe(waitingEdgeIndex)
 
     simulation.destroy()
   })

@@ -1,10 +1,16 @@
 import * as PIXI from 'pixi.js'
-import { CAR_CONFIG } from '../core/constants.js'
+import { CAR_CONFIG, HOME_BUILDING_TYPES, WORK_BUILDING_TYPES } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
+import {
+  kilometersPerHourToWorldUnitsPerSecond,
+  metersPerSecondToWorldUnitsPerSecond,
+  milesPerHourToWorldUnitsPerSecond
+} from '../core/scale.js'
 import { hourInRange } from '../core/time.js'
+import { buildingHasAnyType } from '../map/buildings.js'
 import { createCarSpriteRenderer } from '../render/car-sprite.js'
-import { toSimulationSeconds } from './simulation-clock.js'
+import { toMovementSeconds, toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
   getTimeOfDayHours: () => 0
@@ -34,6 +40,7 @@ const LANE_CHANGE_AHEAD_GAP_TILES = 0.5
 const MIN_EDGE_DURATION_SECONDS = 0.05
 const TRAFFIC_SIGNAL_CLEARANCE_GAP_TILES = 1
 const RIGHT_HAND_LOOKAHEAD_EDGES = 6
+const MANEUVER_CLEARANCE_LOOKAHEAD_EDGES = 2
 
 const RIGHT_TURN_DIRECTION = Object.freeze({
   north: 'east',
@@ -53,12 +60,6 @@ const OPPOSITE_DIRECTION = Object.freeze({
   south: 'north',
   west: 'east'
 })
-const DIRECTION_FROM_RIGHT = Object.freeze({
-  north: 'west',
-  east: 'north',
-  south: 'east',
-  west: 'south'
-})
 const TURN_PRIORITY = Object.freeze({
   right: 3,
   straight: 2,
@@ -77,8 +78,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   const router = createCarRoutePlanner(city, network)
   const parking = new ParkingManager(city, network, resolvedConfig)
   const trafficReservations = new TrafficSignalReservationManager(city)
-  const residentialBuildings = collectBuildings(city, 'residential')
-  const commercialBuildings = collectBuildings(city, 'commercial')
+  const homeBuildings = collectBuildings(city, HOME_BUILDING_TYPES)
+  const workBuildings = collectBuildings(city, WORK_BUILDING_TYPES)
   const buildingsById = new Map((city.buildings || []).map((building) => [building.id, building]))
   const ownerPools = collectCarOwnerPools(resolvedConfig.npcs, buildingsById)
   const cars = []
@@ -91,8 +92,10 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     parking,
     trafficReservations,
     cars,
+    carsById: cars,
     buildingsById,
     yieldIndex: null,
+    nextTrafficYieldTicket: 1,
     config: resolvedConfig
   }
   let destroyed = false
@@ -101,7 +104,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   entityLayer.sortableChildren = true
 
   for (let id = 0; id < resolvedConfig.count; id += 1) {
-    const car = createCarEntity(id, city, residentialBuildings, commercialBuildings, buildingsById, ownerPools, parking, random, resolvedConfig)
+    const car = createCarEntity(id, city, homeBuildings, workBuildings, buildingsById, ownerPools, parking, random, resolvedConfig)
 
     if (!car) {
       break
@@ -125,7 +128,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     }
 
     const safeDelta = Math.min(deltaSeconds, 0.1)
-    const movementDelta = toSimulationSeconds(clock, safeDelta)
+    const movementDelta = toMovementSeconds(safeDelta, resolvedConfig.movementTimeScale)
     const hour = clock.getTimeOfDayHours()
 
     for (const car of cars) {
@@ -133,7 +136,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     }
 
     for (const car of cars) {
-      if (car.state === 'parked') {
+      if (!car.manualControl && car.state === 'parked') {
         maybeStartCarTrip(car, hour, context)
       }
     }
@@ -141,7 +144,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     context.yieldIndex = createTrafficYieldIndex(context)
 
     for (const car of cars) {
-      if (car.state === 'driving') {
+      if (!car.manualControl && car.state === 'driving') {
         updateDrivingCar(car, movementDelta, context)
       }
     }
@@ -177,6 +180,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     cars,
     graphics,
     parking,
+    trafficReservations,
     router,
     update,
     render,
@@ -213,6 +217,20 @@ class CarRoutePlanner {
 
     const field = this.getRouteField(endNodeIndex)
     return extractLaneRoute(field, startNodeIndex, endNodeIndex, this.network)
+  }
+
+  findRouteAvoidingEdges(startNodeIndex, endNodeIndex, blockedEdgeIndexes) {
+    if (!Number.isInteger(startNodeIndex) ||
+        !Number.isInteger(endNodeIndex) ||
+        startNodeIndex < 0 ||
+        endNodeIndex < 0 ||
+        startNodeIndex >= this.network.nodeCount ||
+        endNodeIndex >= this.network.nodeCount ||
+        startNodeIndex === endNodeIndex) {
+      return []
+    }
+
+    return findLaneRouteAvoidingEdges(this.network, startNodeIndex, endNodeIndex, blockedEdgeIndexes)
   }
 
   getRouteField(endNodeIndex) {
@@ -608,6 +626,84 @@ function extractLaneRoute(field, startNodeIndex, endNodeIndex, network) {
   return route
 }
 
+function findLaneRouteAvoidingEdges(network, startNodeIndex, endNodeIndex, blockedEdgeIndexes) {
+  const blocked = blockedEdgeIndexes instanceof Set
+    ? blockedEdgeIndexes
+    : new Set(blockedEdgeIndexes || [])
+  const distance = new Float64Array(network.nodeCount)
+  const previousEdge = new Int32Array(network.nodeCount)
+  const visited = new Uint8Array(network.nodeCount)
+  const heap = new IndexPriorityQueue(Math.max(network.nodeCount, 16))
+
+  distance.fill(Infinity)
+  previousEdge.fill(-1)
+  distance[startNodeIndex] = 0
+  heap.push(startNodeIndex, 0)
+
+  while (heap.length > 0) {
+    const currentNode = heap.pop()
+
+    if (visited[currentNode]) {
+      continue
+    }
+
+    if (currentNode === endNodeIndex) {
+      break
+    }
+
+    visited[currentNode] = 1
+
+    for (let cursor = network.outgoingOffsets[currentNode]; cursor < network.outgoingOffsets[currentNode + 1]; cursor += 1) {
+      const edgeIndex = network.outgoingEdges[cursor]
+
+      if (blocked.has(edgeIndex)) {
+        continue
+      }
+
+      const nextNode = network.edgeTo[edgeIndex]
+
+      if (visited[nextNode]) {
+        continue
+      }
+
+      const tentative = distance[currentNode] + network.edgeCosts[edgeIndex]
+
+      if (tentative < distance[nextNode]) {
+        distance[nextNode] = tentative
+        previousEdge[nextNode] = edgeIndex
+        heap.push(nextNode, tentative)
+      }
+    }
+  }
+
+  if (previousEdge[endNodeIndex] < 0) {
+    return []
+  }
+
+  const route = []
+  let currentNode = endNodeIndex
+  let guard = 0
+
+  while (currentNode !== startNodeIndex && guard < network.nodeCount) {
+    const edgeIndex = previousEdge[currentNode]
+
+    if (edgeIndex < 0) {
+      return []
+    }
+
+    route.push(edgeIndex)
+    currentNode = network.edgeFrom[edgeIndex]
+    guard += 1
+  }
+
+  if (currentNode !== startNodeIndex) {
+    return []
+  }
+
+  route.reverse()
+  return route
+}
+
 function edgeBaseCost(edge) {
   return Math.max(1, Math.round(edge.length * 1000))
 }
@@ -622,6 +718,20 @@ function measureTilePolyline(path) {
   return length
 }
 
+function buildTravelLaneTileMask(network) {
+  const tileMask = new Uint8Array(network.city.tiles.length)
+
+  for (const lengthTiles of [1, 2, 3]) {
+    for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
+      for (const tileIndex of edgeDrivingFootprint(network, edgeIndex, lengthTiles)) {
+        tileMask[tileIndex] = 1
+      }
+    }
+  }
+
+  return tileMask
+}
+
 class ParkingManager {
   constructor(city, network, config) {
     this.city = city
@@ -630,6 +740,7 @@ class ParkingManager {
     this.occupancy = new Int32Array(city.tiles.length)
     this.reservations = new Int32Array(city.tiles.length)
     this.candidateCache = new Map()
+    this.travelLaneTileMask = buildTravelLaneTileMask(network)
     this.occupancy.fill(-1)
     this.reservations.fill(-1)
   }
@@ -680,7 +791,7 @@ class ParkingManager {
       for (let x = minX; x <= maxX; x += 1) {
         const tileIndex = city.index(x, y)
 
-        if (city.tileParkable[tileIndex] !== 1) {
+        if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTileMask[tileIndex] === 1) {
           continue
         }
 
@@ -721,7 +832,7 @@ class ParkingManager {
 
       const tileIndex = city.index(x, y)
 
-      if (city.tileParkable[tileIndex] !== 1) {
+      if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTileMask[tileIndex] === 1) {
         return null
       }
 
@@ -907,11 +1018,11 @@ class TrafficSignalReservationManager {
   }
 }
 
-function createCarEntity(id, city, residentialBuildings, commercialBuildings, buildingsById, ownerPools, parking, random, config) {
+function createCarEntity(id, city, homeBuildings, workBuildings, buildingsById, ownerPools, parking, random, config) {
   const ownerHome = takeOwnerHome(ownerPools, random)
   const home = ownerHome
     ? buildingsById.get(ownerHome.homeBuildingId)
-    : takeRandomItem(residentialBuildings, random)
+    : takeRandomItem(homeBuildings, random)
 
   if (!home) {
     return null
@@ -926,7 +1037,7 @@ function createCarEntity(id, city, residentialBuildings, commercialBuildings, bu
 
   const owners = ownerHome
     ? takeNpcOwnersForCar(id, ownerHome.homeBuildingId, ownerPools, random, config)
-    : createSyntheticOwnersForCar(id, home, commercialBuildings, random, config)
+    : createSyntheticOwnersForCar(id, home, workBuildings, random, config)
 
   if (owners.length === 0) {
     parking.releaseParkingReservation(parkingSpot.tileIndexes, id)
@@ -952,6 +1063,7 @@ function createCarEntity(id, city, residentialBuildings, commercialBuildings, bu
     movement: null,
     adaptiveSpeed: createCarAdaptiveSpeed(random, config),
     trafficSignalReservation: null,
+    trafficYield: null,
     driverOwnerId: null,
     riderOwners: []
   }
@@ -967,7 +1079,13 @@ function collectCarOwnerPools(npcs, buildingsById) {
   const homeIds = []
 
   for (const npc of npcs || []) {
-    if (!npc || npc.carId !== null || !npc.home || !npc.work || !buildingsById.has(npc.home)) {
+    if (!npc ||
+        npc.carId !== null ||
+        !npc.home ||
+        !npc.work ||
+        !Number.isInteger(npc.age) ||
+        npc.age < 18 ||
+        !buildingsById.has(npc.home)) {
       continue
     }
 
@@ -1032,14 +1150,14 @@ function takeNpcOwnersForCar(carId, homeBuildingId, ownerPools, random, config) 
   return owners
 }
 
-function createSyntheticOwnersForCar(carId, home, commercialBuildings, random, config) {
+function createSyntheticOwnersForCar(carId, home, workBuildings, random, config) {
   const maxOwners = Math.min(2, positiveIntegerOrDefault(config.maxOwners, CAR_CONFIG.maxOwners))
   const ownerCount = maxOwners >= 2 && random.next() < positiveNumberOrDefault(config.twoOwnerChance, CAR_CONFIG.twoOwnerChance) ? 2 : 1
   const commuteOwnerIndex = random.int(ownerCount)
   const owners = []
 
   for (let ownerIndex = 0; ownerIndex < ownerCount; ownerIndex += 1) {
-    const work = takeRandomItem(commercialBuildings, random)
+    const work = takeRandomItem(workBuildings, random)
     owners.push({
       id: `car-${carId}-owner-${ownerIndex}`,
       npcId: null,
@@ -1071,6 +1189,30 @@ function maybeStartCarTrip(car, hour, context) {
     return
   }
 
+  if (owner.npc) {
+    maybeStartNpcScheduleCarTrip(car, owner, hour, context)
+    return
+  }
+
+  maybeStartSyntheticCarTrip(car, owner, hour, context)
+}
+
+function maybeStartNpcScheduleCarTrip(car, owner, hour, context) {
+  const activeElement = activeNpcDestinationElement(owner.npc, hour)
+
+  if (!activeElement || !activeElement.buildingId || activeElement.buildingId === car.parkedBuildingId) {
+    return
+  }
+
+  const destinationBuilding = context.buildingsById.get(activeElement.buildingId)
+
+  if (destinationBuilding && isOwnerReadyForCarTrip(owner, activeElement.id, car.parkedBuildingId, destinationBuilding.id, hour)) {
+    markOwnerWaitingForCar(owner)
+    startCarTrip(car, destinationBuilding, activeElement.id, owner, context)
+  }
+}
+
+function maybeStartSyntheticCarTrip(car, owner, hour, context) {
   if (car.parkedAt === 'home' && hourInRange(hour, context.config.workDepartureHour, context.config.workDepartureEndHour)) {
     const workBuilding = context.buildingsById.get(owner.workBuildingId)
 
@@ -1111,9 +1253,7 @@ function isOwnerReadyForCarTrip(owner, destinationKind, originBuildingId, destin
     return false
   }
 
-  const activeElement = typeof owner.npc.getActiveTimetableElement === 'function'
-    ? owner.npc.getActiveTimetableElement(hour)
-    : null
+  const activeElement = activeNpcDestinationElement(owner.npc, hour)
 
   return Boolean(
     activeElement &&
@@ -1122,6 +1262,18 @@ function isOwnerReadyForCarTrip(owner, destinationKind, originBuildingId, destin
     owner.npc.locationState &&
     owner.npc.locationState.buildingId === originBuildingId
   )
+}
+
+function activeNpcDestinationElement(npc, hour) {
+  if (typeof npc?.getActiveDestinationElement === 'function') {
+    return npc.getActiveDestinationElement(hour)
+  }
+
+  if (typeof npc?.getActiveTimetableElement === 'function') {
+    return npc.getActiveTimetableElement(hour)
+  }
+
+  return null
 }
 
 function startCarTrip(car, destinationBuilding, destinationKind, owner, context) {
@@ -1152,6 +1304,7 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
   }
   car.movement = null
   car.trafficSignalReservation = null
+  car.trafficYield = null
   car.driverOwnerId = owner.id
   car.riderOwners = [owner]
   car.position = laneNodePosition(context.network, startNode)
@@ -1246,6 +1399,20 @@ function startNextDrivingEdge(car, context, attemptDeltaSeconds = 0) {
     return false
   }
 
+  const maneuverClearanceTiles = !trafficSignalGroup && !car.trafficSignalReservation && rightHandMovement
+    ? rightHandMovement.clearanceTileIndexes
+    : null
+
+  if (maneuverClearanceTiles && !context.parking.canOccupy(maneuverClearanceTiles, car.id)) {
+    if (rerouteAroundStaticManeuverBlock(car, context, rightHandMovement)) {
+      return startNextDrivingEdge(car, context, attemptDeltaSeconds)
+    }
+
+    if (hasStaticOccupancyBlocker(car, context, maneuverClearanceTiles)) {
+      return false
+    }
+  }
+
   if (!trafficSignalGroup &&
       !car.trafficSignalReservation &&
       isBlockedByCrosswalkSignal(context.city, context.network, fromNodeIndex, toNodeIndex)) {
@@ -1272,6 +1439,7 @@ function startNextDrivingEdge(car, context, attemptDeltaSeconds = 0) {
   }
 
   resetLaneChangeWait(car)
+  clearTrafficYieldState(car)
   context.parking.occupyTiles(car, nextFootprint)
   car.direction = DIRECTION_OFFSET[edge.direction] || car.direction
   car.route.cursor += 1
@@ -1381,6 +1549,8 @@ function deferBlockedLaneChange(car, context, blockedEdgeIndex) {
     return false
   }
 
+  releaseStaleTrafficReservationTilesForRouteRewrite(car, context)
+
   car.route = {
     ...car.route,
     edges: bestEdges,
@@ -1390,6 +1560,118 @@ function deferBlockedLaneChange(car, context, blockedEdgeIndex) {
   }
 
   return true
+}
+
+function rerouteAroundStaticManeuverBlock(car, context, movement) {
+  if (!movement || !car.route) {
+    return false
+  }
+
+  const blockedEdgeIndexes = staticBlockedManeuverEdgeIndexes(car, context, movement)
+
+  if (blockedEdgeIndexes.size === 0) {
+    return false
+  }
+
+  const currentEdgeIndex = car.route.edges[car.route.cursor]
+  const currentNode = context.network.edgeFrom[currentEdgeIndex]
+  const destinationNode = routeDestinationNode(car.route, context.network)
+
+  if (!Number.isInteger(currentNode) ||
+      !Number.isInteger(destinationNode) ||
+      currentNode < 0 ||
+      destinationNode < 0 ||
+      currentNode >= context.network.nodeCount ||
+      destinationNode >= context.network.nodeCount) {
+    return false
+  }
+
+  const route = context.router.findRouteAvoidingEdges(currentNode, destinationNode, blockedEdgeIndexes)
+
+  if (route.length === 0 || routesMatch(route, car.route.edges, car.route.cursor)) {
+    return false
+  }
+
+  releaseStaleTrafficReservationTilesForRouteRewrite(car, context)
+  clearTrafficYieldState(car)
+
+  car.route = {
+    ...car.route,
+    edges: route,
+    cursor: 0,
+    currentNode,
+    destinationNode
+  }
+
+  return true
+}
+
+function staticBlockedManeuverEdgeIndexes(car, context, movement) {
+  const blockedEdgeIndexes = new Set()
+
+  for (const edgeIndex of movement.clearanceEdgeIndexes || []) {
+    const footprint = edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles)
+
+    if (hasStaticOccupancyBlocker(car, context, footprint)) {
+      blockedEdgeIndexes.add(edgeIndex)
+    }
+  }
+
+  return blockedEdgeIndexes
+}
+
+function hasStaticOccupancyBlocker(car, context, tileIndexes) {
+  const occupancy = context.parking.occupancy
+
+  if (!occupancy) {
+    return false
+  }
+
+  for (const tileIndex of tileIndexes || []) {
+    const carId = occupancy[tileIndex]
+
+    if (carId === -1 || carId === car.id) {
+      continue
+    }
+
+    const blocker = findCarById(context, carId)
+
+    if (!blocker || blocker.state !== 'driving') {
+      return true
+    }
+  }
+
+  return false
+}
+
+function routesMatch(nextEdges, currentEdges, currentCursor) {
+  const remainingLength = currentEdges.length - currentCursor
+
+  if (nextEdges.length !== remainingLength) {
+    return false
+  }
+
+  for (let index = 0; index < nextEdges.length; index += 1) {
+    if (nextEdges[index] !== currentEdges[currentCursor + index]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function releaseStaleTrafficReservationTilesForRouteRewrite(car, context) {
+  if (!car.trafficSignalReservation) {
+    return
+  }
+
+  const groupTileIndexes = context.trafficReservations.groupTileIndexes(car.trafficSignalReservation)
+
+  context.trafficReservations.releaseReservedTiles(car.id)
+
+  if (!groupTileIndexes || !(car.occupiedTiles || []).some((tileIndex) => groupTileIndexes.has(tileIndex))) {
+    context.trafficReservations.releaseForCar(car)
+  }
 }
 
 function routeDestinationNode(route, network) {
@@ -1541,6 +1823,13 @@ function movingBlockersForTiles(car, context, tileIndexes) {
 }
 
 function findCarById(context, carId) {
+  const indexedCars = context.carsById
+  const indexedCar = indexedCars?.[carId]
+
+  if (indexedCar?.id === carId) {
+    return indexedCar
+  }
+
   for (const car of context.cars) {
     if (car.id === carId) {
       return car
@@ -1548,6 +1837,10 @@ function findCarById(context, carId) {
   }
 
   return null
+}
+
+export function __test__findCarById(context, carId) {
+  return findCarById(context, carId)
 }
 
 function resetLaneChangeWait(car) {
@@ -1569,6 +1862,7 @@ function parkCarAtDestination(car, context) {
   car.destinationParkingSpot = null
   car.route = null
   car.movement = null
+  car.trafficYield = null
   car.driverOwnerId = null
   car.riderOwners = []
   car.direction = car.parkingSpot.direction
@@ -1629,6 +1923,8 @@ function createRightHandMovement(car, context) {
     ? context.trafficReservations.groupTileIndexes(signalGroup.id)
     : null
   const tileIndexes = []
+  const clearanceTileIndexes = []
+  const clearanceEdgeIndexes = []
   let explicitTurn = normalizeMovementTurn(startEdge.turn)
   let lastDirection = startDirection
   let sawDirectionChange = false
@@ -1640,8 +1936,14 @@ function createRightHandMovement(car, context) {
     const edge = context.network.edges[edgeIndex]
     const toNodeIndex = context.network.edgeTo[edgeIndex]
     const toTileIndex = context.network.nodeTileIndexes[toNodeIndex]
+    const footprint = edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles)
 
-    appendUniqueTileIndexes(tileIndexes, edgeDrivingFootprint(context.network, edgeIndex, car.lengthTiles))
+    appendUniqueTileIndexes(tileIndexes, footprint)
+
+    if (cursor < startCursor + MANEUVER_CLEARANCE_LOOKAHEAD_EDGES) {
+      appendUniqueTileIndexes(clearanceTileIndexes, footprint)
+      clearanceEdgeIndexes.push(edgeIndex)
+    }
 
     if (edge.direction !== startDirection) {
       sawDirectionChange = true
@@ -1687,7 +1989,9 @@ function createRightHandMovement(car, context) {
     turn,
     priority: TURN_PRIORITY[turn] ?? TURN_PRIORITY.straight,
     signalGroupId: signalGroup?.id || null,
-    tileIndexes: uniqueTileIndexes(tileIndexes)
+    tileIndexes: uniqueTileIndexes(tileIndexes),
+    clearanceTileIndexes: uniqueTileIndexes(clearanceTileIndexes),
+    clearanceEdgeIndexes
   }
 }
 
@@ -1697,16 +2001,19 @@ function createTrafficYieldIndex(context) {
   const byTileIndex = new Map()
 
   for (const car of context.cars) {
-    if (car.state !== 'driving' || car.movement || !car.route || car.route.cursor >= car.route.edges.length) {
+    if (car.manualControl || car.state !== 'driving' || car.movement || !car.route || car.route.cursor >= car.route.edges.length) {
+      clearTrafficYieldState(car)
       continue
     }
 
     const movement = createRightHandMovement(car, context)
 
     if (!movement) {
+      clearTrafficYieldState(car)
       continue
     }
 
+    syncTrafficYieldState(car, movement, context)
     movementByCarId.set(car.id, movement)
 
     if (movement.signalGroupId) {
@@ -1734,6 +2041,30 @@ function appendIndexedCar(index, key, car) {
   }
 
   cars.push(car)
+}
+
+function syncTrafficYieldState(car, movement, context) {
+  const key = trafficYieldKey(movement)
+
+  if (car.trafficYield?.key === key && Number.isInteger(car.trafficYield.ticket)) {
+    return
+  }
+
+  car.trafficYield = {
+    key,
+    ticket: context.nextTrafficYieldTicket
+  }
+  context.nextTrafficYieldTicket += 1
+}
+
+function clearTrafficYieldState(car) {
+  if (car.trafficYield) {
+    car.trafficYield = null
+  }
+}
+
+function trafficYieldKey(movement) {
+  return `${movement.signalGroupId || 'free'}:${movement.edgeIndex}:${movement.approachDirection}:${movement.turn}`
 }
 
 function getRightHandMovementForCar(car, context) {
@@ -1825,6 +2156,14 @@ function rightHandCandidateCanEnter(car, movement, context) {
     return false
   }
 
+  const maneuverClearanceTiles = !trafficSignalGroup && !car.trafficSignalReservation
+    ? movement.clearanceTileIndexes
+    : null
+
+  if (maneuverClearanceTiles && hasStaticOccupancyBlocker(car, context, maneuverClearanceTiles)) {
+    return false
+  }
+
   if (clearanceTiles &&
       (!context.parking.canOccupy(clearanceTiles, car.id) ||
        !context.trafficReservations.canOccupy(clearanceTiles, car.id))) {
@@ -1852,39 +2191,37 @@ function rightHandMovementsConflict(a, b) {
 }
 
 function rightHandMovementMustYield(car, movement, other, otherMovement) {
-  const oncoming = OPPOSITE_DIRECTION[movement.approachDirection] === otherMovement.approachDirection
+  return compareTrafficYieldPriority(other, otherMovement, car, movement) > 0
+}
 
-  if (oncoming) {
-    const myLeftTurnYields = movement.turn === 'left' &&
-      otherMovement.turn !== 'left' &&
-      otherMovement.turn !== 'u-turn'
+function compareTrafficYieldPriority(aCar, aMovement, bCar, bMovement) {
+  const aClearing = aCar.trafficSignalReservation ? 1 : 0
+  const bClearing = bCar.trafficSignalReservation ? 1 : 0
 
-    if (myLeftTurnYields) {
-      return true
-    }
-
-    const otherLeftTurnYields = otherMovement.turn === 'left' &&
-      movement.turn !== 'left' &&
-      movement.turn !== 'u-turn'
-
-    if (otherLeftTurnYields) {
-      return false
-    }
+  if (aClearing !== bClearing) {
+    return aClearing - bClearing
   }
 
-  if (movement.priority !== otherMovement.priority) {
-    return movement.priority < otherMovement.priority
+  if (aMovement.priority !== bMovement.priority) {
+    return aMovement.priority - bMovement.priority
   }
 
-  if (otherMovement.approachDirection === DIRECTION_FROM_RIGHT[movement.approachDirection]) {
-    return true
+  const aTicket = trafficYieldTicket(aCar)
+  const bTicket = trafficYieldTicket(bCar)
+
+  if (aTicket !== bTicket) {
+    return bTicket - aTicket
   }
 
-  if (movement.approachDirection === DIRECTION_FROM_RIGHT[otherMovement.approachDirection]) {
-    return false
+  return bCar.id - aCar.id
+}
+
+function trafficYieldTicket(car) {
+  if (Number.isInteger(car.trafficYield?.ticket)) {
+    return car.trafficYield.ticket
   }
 
-  return car.id > other.id
+  return Number.MAX_SAFE_INTEGER
 }
 
 function normalizeMovementTurn(turn) {
@@ -2074,16 +2411,39 @@ function deterministicCarCruiseScale(carId, config) {
 }
 
 function edgeSpeedLimit(edge, config) {
+  const edgeLimit = speedLimitToWorldUnitsPerSecond(
+    edge.speedLimit,
+    config.speedLimitUnit ?? CAR_CONFIG.speedLimitUnit
+  )
   const configuredLimit = Math.max(
     1,
     Math.min(
       positiveNumberOrDefault(config.maxSpeed, CAR_CONFIG.maxSpeed),
-      edge.speedLimit * positiveNumberOrDefault(config.speedLimitScale, CAR_CONFIG.speedLimitScale)
+      edgeLimit * positiveNumberOrDefault(config.speedLimitScale, CAR_CONFIG.speedLimitScale)
     )
   )
   const durationLimitedSpeed = Math.max(1, edge.worldLength / MIN_EDGE_DURATION_SECONDS)
 
   return Math.min(configuredLimit, durationLimitedSpeed)
+}
+
+function speedLimitToWorldUnitsPerSecond(speedLimit, unit) {
+  const value = positiveNumberOrDefault(speedLimit, 1)
+
+  switch (unit) {
+    case 'world-units-per-second':
+    case 'worldUnitsPerSecond':
+      return value
+    case 'km/h':
+    case 'kph':
+      return kilometersPerHourToWorldUnitsPerSecond(value)
+    case 'm/s':
+    case 'mps':
+      return metersPerSecondToWorldUnitsPerSecond(value)
+    case 'mph':
+    default:
+      return milesPerHourToWorldUnitsPerSecond(value)
+  }
 }
 
 function edgeSpeedForCar(edge, car, config, knownSpeedLimit = null) {
@@ -2223,8 +2583,8 @@ function precomputeEdgeFootprints(network, lengthTiles) {
   return footprints
 }
 
-function collectBuildings(city, type) {
-  return (city.buildings || []).filter((building) => building.type === type && building.entrance)
+function collectBuildings(city, types) {
+  return (city.buildings || []).filter((building) => buildingHasAnyType(building, types) && building.entrance)
 }
 
 function takeRandomItem(items, random) {

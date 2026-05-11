@@ -15,9 +15,9 @@ function createMap(overrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: [
-        { id: 'building-0001', type: 'residential', spans: [[1, 1, 1]] }
+        { id: 'building-0001', types: ['residential'], spans: [[1, 1, 1]] }
       ]
     },
     rows: [
@@ -47,7 +47,7 @@ function createCrosswalkMap(overrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: []
     },
     rows: [
@@ -73,7 +73,7 @@ function createOpenSidewalkMap(overrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: []
     },
     rows: [
@@ -90,6 +90,37 @@ function createOpenSidewalkMap(overrides = {}) {
   }
 }
 
+function createCornerCuttingMap(overrides = {}) {
+  return {
+    width: 4,
+    height: 4,
+    tileSize: 32,
+    textureSet: 'test',
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      x: { category: 'obstacle', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultTypes: ['residential'],
+      items: []
+    },
+    rows: [
+      'ssss',
+      'ssxs',
+      'sxss',
+      'ssss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0],
+      [0, 0, 1, 0],
+      [0, 1, 0, 0],
+      [0, 0, 0, 0]
+    ],
+    ...overrides
+  }
+}
+
 function createSignalMap(laneGraphOverrides = {}) {
   return {
     width: 5,
@@ -101,7 +132,7 @@ function createSignalMap(laneGraphOverrides = {}) {
     },
     buildings: {
       encoding: 'row-spans-v1',
-      defaultType: 'residential',
+      defaultTypes: ['residential'],
       items: []
     },
     rows: [
@@ -175,7 +206,8 @@ describe('city map validation and compile', () => {
       textureId: 1,
       zorder: 2,
       buildingId: 'building-0001',
-      buildingType: 'residential'
+      buildingType: 'residential',
+      buildingTypes: ['residential']
     })
     expect(city.getTileVariant(0, 0)).toMatchObject({
       category: 'sidewalk',
@@ -185,6 +217,50 @@ describe('city map validation and compile', () => {
     expect(city.tileZOrders[city.index(0, 0)]).toBe(0)
     expect(city.isWalkable(0, 0)).toBe(true)
     expect(city.isDrivable(0, 2)).toBe(true)
+  })
+
+  it('normalizes buildings with multiple types into runtime building objects', () => {
+    const map = validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultTypes: ['residential'],
+        items: [
+          { id: 'building-0001', types: ['residential', 'restaurant'], spans: [[1, 1, 1]] }
+        ]
+      }
+    }))
+    const city = compileCityMap(map)
+    const building = city.getBuilding(1, 1)
+
+    expect(map.buildings.defaultTypes).toEqual(['residential'])
+    expect(map.buildings.items[0].types).toEqual(['residential', 'restaurant'])
+    expect(building.types).toEqual(['residential', 'restaurant'])
+    expect(city.getTileVariant(1, 1)).toMatchObject({
+      buildingType: 'residential',
+      buildingTypes: ['residential', 'restaurant']
+    })
+  })
+
+  it('rejects legacy singular building type metadata', () => {
+    expect(() => validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultType: 'residential',
+        items: [
+          { id: 'building-0001', types: ['commercial', 'mall'], spans: [[1, 1, 1]] }
+        ]
+      }
+    }))).toThrow(/defaultTypes/)
+
+    expect(() => validateCityMap(createMap({
+      buildings: {
+        encoding: 'row-spans-v1',
+        defaultTypes: ['residential'],
+        items: [
+          { id: 'building-0001', type: 'commercial', spans: [[1, 1, 1]] }
+        ]
+      }
+    }))).toThrow(/types/)
   })
 
   it('normalizes and compiles fixed vehicle lane graph metadata', () => {
@@ -336,7 +412,7 @@ describe('city map validation and compile', () => {
       },
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: []
       },
       rows: ['rrr', 'rdr', 'rrr'],
@@ -382,11 +458,11 @@ describe('city map validation and compile', () => {
     const city = compileCityMap(validateCityMap(createMap({
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: [
           {
             id: 'building-0001',
-            type: 'residential',
+            types: ['residential'],
             entrance: { x: 1, y: 1 },
             spans: [[1, 1, 1]]
           }
@@ -448,6 +524,30 @@ describe('city map validation and compile', () => {
     expect(stats.routeFields).toBeGreaterThanOrEqual(2)
   })
 
+  it('precomputes pedestrian connected components using green crosswalk reachability', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap({
+      width: 7,
+      rows: [
+        'sccsrrs',
+        'rrrrrrr'
+      ],
+      textureRows: [
+        [0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 1, 1]
+      ]
+    })))
+    const left = city.index(0, 0)
+    const acrossCrosswalk = city.index(3, 0)
+    const isolated = city.index(6, 0)
+
+    city.setCrosswalkSignalState('red')
+
+    expect(city.arePedestrianConnectedByIndex(left, acrossCrosswalk)).toBe(true)
+    expect(city.arePedestrianConnectedByIndex(left, isolated)).toBe(false)
+    expect(city.getPedestrianComponentIndexByIndex(left)).toBe(city.getPedestrianComponentIndexByIndex(acrossCrosswalk))
+    expect(city.getPedestrianComponentIndexByIndex(isolated)).not.toBe(city.getPedestrianComponentIndexByIndex(left))
+  })
+
   it('keeps cached route extraction deterministic', () => {
     const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
     const first = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')
@@ -455,6 +555,30 @@ describe('city map validation and compile', () => {
 
     expect(first).toContainEqual({ x: 1, y: 1 })
     expect(second).toEqual(first)
+  })
+
+  it('blocks pedestrian diagonal steps between blocked orthogonal neighbors', () => {
+    const city = compileCityMap(validateCityMap(createCornerCuttingMap()))
+    const fromIndex = city.index(1, 1)
+    const toIndex = city.index(2, 2)
+
+    expect(city.canStep(1, 1, 2, 2, 'pedestrian')).toBe(false)
+    expect(city.canStepIndex(fromIndex, toIndex, 'pedestrian')).toBe(false)
+    expect(city.canStepPedestrianIndex(fromIndex, toIndex)).toBe(false)
+  })
+
+  it('routes pedestrians around anti-diagonal blocked corners', () => {
+    const city = compileCityMap(validateCityMap(createCornerCuttingMap()))
+    const start = { x: 1, y: 1 }
+    const end = { x: 2, y: 2 }
+    const startIndex = city.index(start.x, start.y)
+    const endIndex = city.index(end.x, end.y)
+    const directPathIndexes = [startIndex, endIndex]
+    const cachedPathIndexes = city.findCachedPathIndexesByIndex(startIndex, endIndex, 'pedestrian')
+
+    expect(city.findPath(start, end, 'pedestrian')).not.toEqual([start, end])
+    expect(cachedPathIndexes).not.toEqual(directPathIndexes)
+    expect(cachedPathIndexes.at(-1)).toBe(endIndex)
   })
 
   it('exposes cached route fields for allocation-free next-hop movement', () => {
@@ -574,7 +698,7 @@ describe('city map validation and compile', () => {
     expect(() => validateCityMap(createMap({
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: []
       }
     }))).toThrow(/do not cover building tile 1,1/)
@@ -584,11 +708,11 @@ describe('city map validation and compile', () => {
     expect(() => validateCityMap(createMap({
       buildings: {
         encoding: 'row-spans-v1',
-        defaultType: 'residential',
+        defaultTypes: ['residential'],
         items: [
           {
             id: 'building-0001',
-            type: 'residential',
+            types: ['residential'],
             entrance: { x: 0, y: 0 },
             spans: [[1, 1, 1]]
           }

@@ -1,5 +1,4 @@
-import { canvasPoint } from '../core/math.js'
-import { findSelectableEntityAt } from './entity-path-selection.js'
+import { findSelectableEntityFromPointer } from './entity-path-selection.js'
 
 const MENU_MARGIN_PX = 8
 const CURSOR_OFFSET_PX = 14
@@ -49,17 +48,13 @@ export function installNpcHoverMenu({
     }
 
     const npcSimulation = getNpcSimulation()
-    const point = canvasPoint(app.canvas, lastEvent)
-    const worldPoint = {
-      x: (point.x - camera.x) / camera.zoom,
-      y: (point.y - camera.y) / camera.zoom
-    }
-    const hit = findSelectableEntityAt(
-      worldPoint,
+    const hit = findSelectableEntityFromPointer({
+      app,
+      camera,
       city,
-      npcSimulation?.npcs || [],
-      getCarSimulation()?.cars || []
-    )
+      getNpcSimulation,
+      getCarSimulation
+    }, lastEvent)
 
     if (!hit || hit.kind !== 'npc' || !npcSimulation?.infection) {
       targetId = null
@@ -86,11 +81,23 @@ export function installNpcHoverMenu({
   function renderStatus(npc, status) {
     menu.replaceChildren()
     menu.appendChild(createTitle(`NPC ${npc.id}`))
-    menu.appendChild(createStatusRow('infection', status.infection, status.color))
-    menu.appendChild(createRow('contagious', status.contagious ? 'yes' : 'no'))
-    menu.appendChild(createRow('can be infected', status.canBeInfected ? 'yes' : 'no'))
-    menu.appendChild(createRow('immune', status.immune ? 'yes' : 'no'))
-    menu.appendChild(createRow(phaseTimerLabel(status), phaseTimerValue(status)))
+    menu.appendChild(createRow('age', formatNpcAge(npc)))
+    menu.appendChild(createRow('home', formatAssignedBuilding(npc.home)))
+    menu.appendChild(createRow('work', formatAssignedBuilding(npc.work)))
+    menu.appendChild(createRow('school', formatAssignedBuilding(assignedTimetableBuilding(npc, 'school'))))
+    menu.appendChild(createRow('lunch', formatAssignedBuilding(assignedTimetableBuilding(npc, 'lunch'))))
+    menu.appendChild(createRow('shopping', formatAssignedBuilding(assignedTimetableBuilding(npc, 'shopping'))))
+    menu.appendChild(createRow('nightlife', formatAssignedBuilding(assignedTimetableBuilding(npc, 'nightclub'))))
+    menu.appendChild(createRow('current', currentNpcStatus(npc)))
+    menu.appendChild(createRow('goal', npcGoalStatus(npc)))
+    menu.appendChild(createRow('car', npcCarStatus(npc)))
+    appendDesireRows(menu, npc)
+    menu.appendChild(createStatusRow('health', formatInfectionState(status.infection), status.color))
+    menu.appendChild(createRow('health note', infectionSummary(status)))
+
+    if (status.nextState) {
+      menu.appendChild(createRow('next change', nextInfectionChange(status)))
+    }
   }
 
   function showAt(clientX, clientY) {
@@ -141,6 +148,118 @@ export function installNpcHoverMenu({
   }
 }
 
+function formatNpcAge(npc) {
+  return Number.isInteger(npc.age) ? String(npc.age) : 'unknown'
+}
+
+function formatAssignedBuilding(buildingId) {
+  return buildingId === null || buildingId === undefined || buildingId === '' ? 'none' : String(buildingId)
+}
+
+function assignedTimetableBuilding(npc, elementId) {
+  const element = npc.timetable?.elements?.find((candidate) => candidate.id === elementId)
+
+  return element?.buildingId || null
+}
+
+function currentNpcStatus(npc) {
+  if (npc.vehicleTrip) {
+    const carId = formatAssignedBuilding(npc.vehicleTrip.carId)
+    const destination = [npc.vehicleTrip.destinationKind, npc.vehicleTrip.destinationBuildingId]
+      .filter(Boolean)
+      .join(' ')
+
+    return destination ? `in car ${carId} to ${destination}` : `in car ${carId}`
+  }
+
+  if (npc.waitingForCar) {
+    return npc.carId === null || npc.carId === undefined
+      ? 'waiting for car'
+      : `waiting for car ${npc.carId}`
+  }
+
+  if (npc.locationState?.buildingId) {
+    return `inside ${npc.locationState.buildingId}`
+  }
+
+  if (npc.present && npc.tile) {
+    return `outside ${formatTile(npc.tile)}`
+  }
+
+  return 'unknown'
+}
+
+function npcGoalStatus(npc) {
+  if (npc.activeDesire) {
+    return desireGoalStatus(npc.activeDesire)
+  }
+
+  if (!npc.goal) {
+    return 'none'
+  }
+
+  return [npc.goal.id, npc.goal.buildingId].filter(Boolean).join(' ') || 'none'
+}
+
+function desireGoalStatus(activeDesire) {
+  const action = activeDesire.action || activeDesire.need || 'need'
+  const buildingId = activeDesire.buildingId || activeDesire.element?.buildingId
+
+  return buildingId ? `${action} at ${buildingId}` : action
+}
+
+function npcCarStatus(npc) {
+  if (npc.carId === null || npc.carId === undefined) {
+    return 'none'
+  }
+
+  return npc.commuteByCar ? `${npc.carId} commute` : String(npc.carId)
+}
+
+function appendDesireRows(menu, npc) {
+  if (!npc.desires) {
+    return
+  }
+
+  for (const need of ['hunger', 'energy', 'fun', 'social']) {
+    menu.appendChild(createRow(need, formatDesireScore(npc.desires[need])))
+  }
+}
+
+function formatDesireScore(score) {
+  const value = Number(score)
+
+  if (!Number.isFinite(value)) {
+    return 'unknown'
+  }
+
+  return `${Math.round(value)}% ${desireStatusLabel(value)}`
+}
+
+function desireStatusLabel(score) {
+  if (score < 20) {
+    return 'urgent'
+  }
+
+  if (score < 35) {
+    return 'low'
+  }
+
+  if (score < 70) {
+    return 'okay'
+  }
+
+  return 'good'
+}
+
+function formatTile(tile) {
+  if (!Number.isFinite(tile.x) || !Number.isFinite(tile.y)) {
+    return 'unknown tile'
+  }
+
+  return `${tile.x},${tile.y}`
+}
+
 function createTitle(text) {
   const title = document.createElement('div')
 
@@ -181,20 +300,31 @@ function createRow(labelText, valueText) {
   return row
 }
 
-function phaseTimerLabel(status) {
-  if (!status.nextState) {
-    return 'phase timer'
+function formatInfectionState(infection) {
+  if (typeof infection !== 'string' || infection.length === 0) {
+    return 'Unknown'
   }
 
-  return `${status.nextState} in`
+  return `${infection.charAt(0).toUpperCase()}${infection.slice(1)}`
 }
 
-function phaseTimerValue(status) {
-  if (!status.nextState) {
-    return 'none'
+function infectionSummary(status) {
+  switch (status.infection) {
+    case 'susceptible':
+      return 'Healthy; can catch infection'
+    case 'exposed':
+      return 'Incubating; not contagious yet'
+    case 'infectious':
+      return 'Contagious; can infect nearby NPCs'
+    case 'recovered':
+      return 'Recovered; temporarily immune'
+    default:
+      return 'Status unavailable'
   }
+}
 
-  return formatDuration(status.remainingSeconds)
+function nextInfectionChange(status) {
+  return `${formatInfectionState(status.nextState)} in ${formatDuration(status.remainingSeconds)}`
 }
 
 function formatDuration(seconds) {

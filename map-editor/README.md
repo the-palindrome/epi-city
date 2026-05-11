@@ -11,7 +11,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-Open `http://localhost:5174`.
+Open the local URL printed by the command. It starts at `http://localhost:5174` and tries the next port if that one is already in use.
 
 The dependency command creates or repairs `map-editor/.venv` and installs the Python training packages there. The server automatically uses that local Python environment when it exists.
 
@@ -78,7 +78,7 @@ The editor always displays the current editable map state. There is no separate 
 Use the `Paint layer` selector to choose what the brush updates:
 
 - `tile type` sets the tile to empty, `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, or `obstacle`.
-- `building` sets the clicked connected building component to `residential`, `commercial`, or `hospital`.
+- `building` sets the clicked connected building component to one or more of `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, or `nightclub`.
 - `texture` picks and paints manifest frame IDs in `textureRows`.
 - `walkable` sets the current tile's walkable value to empty, `true`, or `false`.
 - `parkable` sets the current tile's parkable value to empty, `true`, or `false`.
@@ -131,7 +131,7 @@ The saved `tile-layout.json` preserves `textureSet`, `width`, `height`, `tileSiz
 - Right drag, middle drag, or hold `Space` to pan.
 - Mouse wheel zooms around the cursor.
 - For tile type: `1` road, `2` sidewalk, `3` park, `4` water, `5` building, `6` obstacle, `7` crosswalk, `e` empty.
-- For building type: `r` residential, `c` commercial, `h` hospital.
+- For building type: `r` residential, `c` commercial, `s` school, `t` restaurant, `u` supermarket, `h` hospital, `m` mall, `n` nightclub.
 - For texture: `p` switches back to the texture picker.
 - For behavior layers: `t` true, `f` false, and `e` empty.
 - `Ctrl+S` saves the current map folder.
@@ -169,11 +169,11 @@ The editor saves semantic tile configuration JSON in this format:
   },
   "buildings": {
     "encoding": "row-spans-v1",
-    "defaultType": "residential",
+    "defaultTypes": ["residential"],
     "items": [
       {
         "id": "building-0001",
-        "type": "residential",
+        "types": ["residential", "restaurant"],
         "entrance": { "x": 1, "y": 0 },
         "spans": [[0, 0, 3]]
       }

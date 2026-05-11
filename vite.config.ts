@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url))
-const sourceMapsDir = path.join(repoRoot, 'public', 'maps')
+const mapAssetsDir = path.join(repoRoot, 'public', 'maps')
 
-function sourceMapContentType(filePath) {
+function mapAssetContentType(filePath) {
   const extension = path.extname(filePath).toLowerCase()
 
   if (extension === '.json') {
@@ -21,7 +21,7 @@ function sourceMapContentType(filePath) {
   return 'application/octet-stream'
 }
 
-async function sendSourceMapFile(request, response, next) {
+async function sendMapAssetFile(request, response, next) {
   if (!request.url || !['GET', 'HEAD'].includes(request.method || '')) {
     next()
     return
@@ -35,8 +35,8 @@ async function sendSourceMapFile(request, response, next) {
   }
 
   const requestedPath = decodeURIComponent(url.pathname.slice('/maps/'.length))
-  const filePath = path.resolve(sourceMapsDir, requestedPath)
-  const relativePath = path.relative(sourceMapsDir, filePath)
+  const filePath = path.resolve(mapAssetsDir, requestedPath)
+  const relativePath = path.relative(mapAssetsDir, filePath)
 
   if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
     response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
@@ -60,7 +60,7 @@ async function sendSourceMapFile(request, response, next) {
   }
 
   response.writeHead(200, {
-    'content-type': sourceMapContentType(filePath),
+    'content-type': mapAssetContentType(filePath),
     'content-length': info.size,
     'cache-control': 'no-store'
   })
@@ -73,23 +73,23 @@ async function sendSourceMapFile(request, response, next) {
   createReadStream(filePath).pipe(response)
 }
 
-function useSourceMapFiles(server) {
+function useMapAssetFiles(server) {
   server.middlewares.use((request, response, next) => {
-    sendSourceMapFile(request, response, next).catch(next)
+    sendMapAssetFile(request, response, next).catch(next)
   })
 }
 
-function sourceMapsFromPublicPlugin() {
+function mapAssetsFromPublicPlugin() {
   return {
-    name: 'source-maps-from-public',
-    configureServer: useSourceMapFiles,
-    configurePreviewServer: useSourceMapFiles
+    name: 'map-assets-from-public',
+    configureServer: useMapAssetFiles,
+    configurePreviewServer: useMapAssetFiles
   }
 }
 
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || '/',
-  plugins: [sourceMapsFromPublicPlugin()],
+  plugins: [mapAssetsFromPublicPlugin()],
   server: {
     host: '0.0.0.0',
     port: 5173,

@@ -1,6 +1,6 @@
 # Epi City
 
-Epi City is a top-down city simulation prototype built with Pixi.js and Vite. The current version renders a 256x256 Liberty City tile map, supports mouse camera controls, and exposes grid/pathfinding helpers for future simulation work.
+Epi City is a top-down Pixi.js and Vite city simulation with Liberty City map rendering, NPC and car movement, SEIR infection dynamics, debug dashboards, and local map-editing tools.
 
 ## Quick Start
 
@@ -17,16 +17,17 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph.
+- Press `Space` to play or pause the simulation, press `q` to toggle the simulation dashboard, press `r` to toggle rendering options, press `p` to toggle the policy dashboard, and press `g` to toggle the epidemic graph.
 - Use rendering options to show or hide the map texture, tune texture opacity, switch NPC/car rendering between `sprite` and `geometric`, show the tile overlay, choose its color scheme, tune tile overlay opacity, enable optional SEIR heatmaps, and turn on entity debug overlays.
 - In `geometric` entity rendering, NPCs draw as infection-colored disks and cars draw as rectangles colored by any passengers inside them.
 - Entity debug overlays can show infectious NPC radius circles, recent infection arrows, recent contact edges, and short NPC/car path trails. Infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp from 1 game minute to 2 game hours.
-- The tile overlay has `tile type`, `monochrome-light`, and `monochrome-dark` color schemes. The `tile type` scheme uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, blue residential buildings, and amber commercial buildings.
+- The tile overlay has `tile type`, `monochrome-light`, and `monochrome-dark` color schemes. The `tile type` scheme uses white sidewalks, blackish roads, light gray crosswalks, green parks, blue water, red obstacles, and primary building-type colors.
 - SEIR heatmaps use kernel density estimation for susceptible, exposed, infectious, and recovered NPC positions. The rendering panel includes a kernel-radius slider plus exact number input.
 - The epidemic graph plots S/E/I/R counts over simulated time, includes one tickbox per state, can be resized, labels its time/case axes, and supports drag-to-pan plus wheel-to-zoom on the time axis.
+- The policy dashboard builds editable `if ... then ... until ...` rules from SEIR metrics. Policy actions include binary social distancing, school closures, home office, shopping reduction, and nightlife reduction. Active social distancing keeps NPCs from entering occupied tiles. School closures, home office, shopping reduction, and nightlife reduction specify a cancellation probability `p` that skips matching school, work, shopping, or nightlife events for that NPC/day. The default rule turns on social distancing when infected cases E+I are at least 5% of the population and keeps it active until they fall to 2% or lower.
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
-- Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 500.
-- Use the simulation dashboard infection controls to tune initial infected count, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
+- Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 200.
+- Use the simulation dashboard infection controls to tune initial infected count, inoculated percentage, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
 - Hover an NPC to inspect its infection status, contagiousness, immunity, and phase timer.
 - Right-click an NPC and choose `infect` to manually make that NPC infectious.
 - The simulation dashboard shows the simulated day/time, can run up to 24x speed, and can toggle the darker day-night overlay.
@@ -65,11 +66,11 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
   },
   "buildings": {
     "encoding": "row-spans-v1",
-    "defaultType": "residential",
+    "defaultTypes": ["residential"],
     "items": [
       {
         "id": "building-0001",
-        "type": "residential",
+        "types": ["residential", "restaurant"],
         "entrance": { "x": 1, "y": 0 },
         "spans": [[0, 0, 3]]
       }
@@ -88,7 +89,11 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
-The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `type`, and optional `entrance` coordinate on the building footprint.
+The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, and `nightclub`.
+
+## Real-World Scale
+
+The map still renders at 32 world units per tile, but simulation defaults now treat one tile as 3.25 meters. One world unit is therefore 0.1015625 meters, and the default 256x256 map spans 832 meters on each side. Runtime defaults for walking speed, car speed limits, car body size, infection radius, and heatmap radius are derived from that scale. Visible locomotion uses a smaller presentation movement scale than the day clock, so realistic speeds do not get multiplied by the full one-hour-per-minute clock compression. `window.citySim.scale` exposes the conversion constants for console work.
 
 ## Movement Rules
 
@@ -96,29 +101,31 @@ Vehicles use the directed lane graph when it exists and park on tiles marked `pa
 
 ## NPC Prototype
 
-The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `home`, `work`, `timetable`, `goal`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable goals. Each NPC receives a residential home building id and a commercial work building id when the simulation starts. The default runtime uses the `epi-city` seed so building assignments, timetable variation, spawn anchors, NPC speeds, and infection events can repeat after a restart. Route extraction is deterministic.
+The app creates 1000 pedestrian NPCs when the city loads. NPCs keep `age`, `home`, `school`, `work`, `friendIds`, `timetable`, `goal`, `desires`, `position`, `tile`, `slot`, `zorder`, `movement`, `sprite`, and `infection` state, render as animated top-down pixel pedestrians while they are outside, and route toward timetable or flexible desire goals. NPC generation samples transient families, assigns every member of one family to the same residential home building, then creates a bounded reciprocal friendship graph biased toward household, school/work, and age-peer connections. Ages drive schedules: ages 0-5 stay home, ages 6-17 commute to a `school` building when the map has one, and ages 18-99 commute to a work building chosen from commercial, school, restaurant, supermarket, hospital, mall, or nightclub buildings. Adult schedules can include a one-hour lunch at a nearby restaurant between 11:00 and 13:00, a probabilistic after-work shopping stop at a supermarket or mall, and occasional nighttime nightclub plans for adults from childless households. NPC desires track hunger, energy, fun, and social satisfaction from 0-100; low needs can redirect flexible home time toward restaurants, supermarkets, malls, nightclubs, or home without overriding hard timetable stops. Socializing trips invite available friends to the same mall, restaurant, or nightclub destination. The default runtime uses the `epi-city` seed so family composition, building assignments, friendship links, timetable variation, spawn anchors, NPC speeds, desire scores, and infection events can repeat after a restart. Route extraction is deterministic.
 
-Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, uses a 48 world-unit infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows.
+Infection uses a SEIR model with temporary recovered immunity. NPC infection state is one of `susceptible`, `exposed`, `infectious`, or `recovered`; recovered NPCs become susceptible again after the configured immunity time. Susceptible NPC clothing renders yellow, exposed orange, infectious red, and recovered green. The default starts four infectious NPCs, starts 0% of the population inoculated in the recovered state, uses a 2-meter infection distance, a `0.03` per-minute contact probability, a 1-day incubation period, a 7-day infectious period, and 90 days of immunity. Transmission uses a spatial hash of infectious NPC positions, so contact checks stay near-linear as the NPC count grows. Active policy rules can reduce the effective transmission probability without restarting the simulation.
 
 Tiles and NPCs use `zorder` to decide what draws on top. Normal tiles render at `0`, NPCs render at `1`, and building tiles render at `2`. Tile overlays inherit the z-order of the tile they cover, while SEIR heatmaps render above map tiles and below the day-night overlay.
 
 Each walkable tile has nine visual NPC anchors arranged in a compact 3x3 grid, but tile occupancy is unrestricted. Any number of NPCs can share a normal tile logically; the renderer draws at most nine NPCs per tile so crowded spots stay readable. NPCs interpolate smoothly between anchor positions.
 
-The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The simulation dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time.
+The runtime uses a single browser animation loop with the game-development shape `dt = getDeltaTime()`, fixed-step `update(dt)`, then `render()`. Simulation systems update first; rendering systems draw their retained Pixi objects; finally Pixi presents the stage. The simulation dashboard can pause, play, restart, change the seed, set the NPC count, show the clock, toggle the day-night overlay, and speed up simulation time. The policy dashboard evaluates enabled rules during dashboard render and applies active movement or event-cancellation effects to the NPC simulation.
 
 ## Car Prototype
 
-The app creates 500 cars by default. Cars have one or two real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
+The app creates 200 cars by default. Cars have one or two adult real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Real NPC owners can drive to active timetable stops such as work, lunch, shopping, or home. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
 
-Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
+Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. Authored lane speed limits are interpreted as mph and converted through the real-world scale before movement. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
 
 ## Debugging From The Console
 
 After the app loads, `window.citySim.city` exposes the main runtime API:
 
 ```js
-const { city } = window.citySim
+const { city, scale } = window.citySim
 
+scale.metersPerTile
+scale.worldUnitsPerMeter
 city.getTile(10, 10)
 city.getTileVariant(10, 10)
 city.getTextureId(10, 10)
@@ -137,6 +144,7 @@ window.citySim.simulationClock.formatTimeOfDay()
 window.citySim.npcs.length
 window.citySim.npcSimulation.infection.getStats()
 window.citySim.cars.length
+window.citySim.npcs[0].age
 window.citySim.npcs[0].home
 window.citySim.npcs[0].work
 window.citySim.npcs[0].infection
@@ -152,7 +160,7 @@ window.citySim.setSpeed(4)
 window.citySim.setNpcCount(2500)
 window.citySim.setCarCount(250)
 window.citySim.setInitialInfectiousCount(10)
-window.citySim.setInfectionDistance(64)
+window.citySim.setInfectionDistance(scale.worldUnitsPerMeter * 2)
 window.citySim.setInfectionProbability(0.05)
 window.citySim.setIncubationDays(4)
 window.citySim.setInfectionDays(8)
@@ -166,16 +174,17 @@ window.citySim.setInfectionEdgeDuration(10)
 window.citySim.setContactEdgeDuration(10)
 window.citySim.setPathTrailsVisible(true)
 window.citySim.setPathTrailLength(5)
-window.citySim.setHeatmapRadius(128)
+window.citySim.setHeatmapRadius(scale.worldUnitsPerMeter * 10)
 ```
 
 The API supports two movement modes: `vehicle` and `pedestrian`. Pathfinding snaps invalid start and end points to the nearest passable tile for the selected mode.
 
-The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus `setMapTextureEnabled(enabled)`, `setMapTextureOpacity(opacity)`, `setEntityRenderMode(mode)`, entity debug overlay setters, `setOverlay(id, enabled)`, `setTileOverlayScheme(schemeId)`, `setTileOverlayOpacity(opacity)`, `setHeatmapRadius(radius)`, `toggle(force)`, `toggleRenderingOptions(force)`, `toggleGraph(force)`, and `render()` for quick checks from the console:
+The dashboard controller is available through `window.citySim.dashboard`. It exposes simulation controls plus policy controls, `setMapTextureEnabled(enabled)`, `setMapTextureOpacity(opacity)`, `setEntityRenderMode(mode)`, entity debug overlay setters, `setOverlay(id, enabled)`, `setTileOverlayScheme(schemeId)`, `setTileOverlayOpacity(opacity)`, `setHeatmapRadius(radius)`, `toggle(force)`, `toggleRenderingOptions(force)`, `togglePolicy(force)`, `toggleGraph(force)`, and `render()` for quick checks from the console:
 
 ```js
 window.citySim.dashboard.toggle(true)
 window.citySim.dashboard.toggleRenderingOptions(true)
+window.citySim.dashboard.togglePolicy(true)
 window.citySim.dashboard.toggleGraph(true)
 window.citySim.dashboard.setMapTextureEnabled(false)
 window.citySim.dashboard.setMapTextureOpacity(0.45)
@@ -191,7 +200,7 @@ window.citySim.dashboard.setOverlay('tileType', true)
 window.citySim.dashboard.setOverlay('heatmapInfectious', true)
 window.citySim.dashboard.setTileOverlayScheme('monochrome-dark')
 window.citySim.dashboard.setTileOverlayOpacity(0.5)
-window.citySim.dashboard.setHeatmapRadius(128)
+window.citySim.dashboard.setHeatmapRadius(window.citySim.scale.worldUnitsPerMeter * 10)
 ```
 
 ## Map Editor
@@ -203,7 +212,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open `http://localhost:5174`. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open the local URL printed by the command; it starts at `http://localhost:5174` and tries the next port if that one is already in use. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
 
 ## Texture Sets
 
