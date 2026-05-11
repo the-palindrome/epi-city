@@ -833,6 +833,10 @@ describe('debug dashboard overlays', () => {
       color: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-dark'].building.residential,
       alpha: TILE_TYPE_OVERLAY_COLORS.alpha
     })
+    expect(darkFillAt(2, 1)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-dark'].water,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
 
     dashboard.setTileOverlayScheme('monochrome-light')
 
@@ -842,6 +846,10 @@ describe('debug dashboard overlays', () => {
     expect(schemeSelect.value).toBe('monochrome-light')
     expect(lightFillAt(0, 0)).toMatchObject({
       color: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-light'].sidewalk,
+      alpha: TILE_TYPE_OVERLAY_COLORS.alpha
+    })
+    expect(lightFillAt(2, 1)).toMatchObject({
+      color: TILE_TYPE_OVERLAY_COLOR_SCHEMES['monochrome-light'].water,
       alpha: TILE_TYPE_OVERLAY_COLORS.alpha
     })
 

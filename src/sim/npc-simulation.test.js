@@ -152,6 +152,41 @@ function createCityWithDailyLifeBuildings() {
   })
 }
 
+function createDisconnectedDailyLifeCity() {
+  return createCity({
+    width: 9,
+    height: 3,
+    legend: {
+      s: { category: 'sidewalk', walkable: true, drivable: false, parkable: false },
+      b: { category: 'building', walkable: false, drivable: false, parkable: false },
+      o: { category: 'obstacle', walkable: false, drivable: false, parkable: false }
+    },
+    buildings: {
+      encoding: 'row-spans-v1',
+      defaultTypes: ['residential'],
+      items: [
+        { id: 'home-left', types: ['residential'], entrance: { x: 1, y: 1 }, spans: [[1, 1, 1]] },
+        { id: 'work-left', types: ['commercial'], entrance: { x: 3, y: 1 }, spans: [[1, 3, 1]] },
+        { id: 'school-left', types: ['school'], entrance: { x: 2, y: 1 }, spans: [[1, 2, 1]] },
+        { id: 'diner-left', types: ['restaurant'], entrance: { x: 0, y: 1 }, spans: [[1, 0, 1]] },
+        { id: 'work-right', types: ['commercial'], entrance: { x: 7, y: 1 }, spans: [[1, 7, 1]] },
+        { id: 'school-right', types: ['school'], entrance: { x: 6, y: 1 }, spans: [[1, 6, 1]] },
+        { id: 'diner-right', types: ['restaurant'], entrance: { x: 8, y: 1 }, spans: [[1, 8, 1]] }
+      ]
+    },
+    rows: [
+      'ssssossss',
+      'bbbbosbbb',
+      'ssssossss'
+    ],
+    textureRows: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]
+  })
+}
+
 function createCornerCity() {
   return createCity({
     width: 3,
@@ -1038,6 +1073,38 @@ describe('NPC simulation randomness', () => {
     }
   })
 
+  it('assigns timetable destinations on the same pedestrian component as home', () => {
+    const city = createDisconnectedDailyLifeCity()
+    const simulation = createSimulation('reachable-assignments', city, {
+      count: 16,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: TWO_CHILDREN_FAMILY,
+      scheduleVariationHours: 0,
+      shoppingChance: 1,
+      nightclubChance: 0,
+      initialUpdate: false
+    })
+    const buildingsById = new Map(city.buildings.map((building) => [building.id, building]))
+
+    for (const npc of simulation.npcs) {
+      const home = buildingsById.get(npc.home)
+      const homeIndex = city.index(home.entrance.x, home.entrance.y)
+
+      for (const buildingId of [npc.work, npc.school]) {
+        if (!buildingId) {
+          continue
+        }
+
+        const building = buildingsById.get(buildingId)
+        const buildingIndex = city.index(building.entrance.x, building.entrance.y)
+
+        expect(city.arePedestrianConnectedByIndex(homeIndex, buildingIndex)).toBe(true)
+      }
+    }
+
+    simulation.destroy()
+  })
+
   it('enforces social distancing by queuing pedestrians before occupied tiles', () => {
     const city = createCity({
       width: 2,
@@ -1410,6 +1477,34 @@ describe('NPC simulation randomness', () => {
       id: 'desire:social',
       buildingId: 'club'
     })
+  })
+
+  it('keeps desire destinations on the origin pedestrian component', () => {
+    const city = createDisconnectedDailyLifeCity()
+    const simulation = createSimulation('reachable-desire-destination', city, {
+      count: 1,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      clock: createMutableClock(18),
+      scheduleVariationHours: 0,
+      shoppingChance: 0,
+      nightclubChance: 0,
+      desires: {
+        destinationCandidateCount: 4
+      },
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    setNpcDesires(npc, { hunger: 10 })
+
+    const element = npc.getActiveDestinationElement(18)
+
+    expect(element).toMatchObject({
+      id: 'desire:hunger',
+      buildingId: 'diner-left'
+    })
+
+    simulation.destroy()
   })
 
   it('coordinates social desire trips with available friends', () => {

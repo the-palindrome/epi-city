@@ -5,7 +5,7 @@ import { NPC_CONFIG } from '../core/constants.js'
 import { createSeededRandom } from '../core/random.js'
 import { buildingHasAnyType } from '../map/buildings.js'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
-import { createNpcSimulation } from './npc-simulation.js'
+import { createNpcCrowdingState, createNpcSimulation, updateNpcCrowdingState } from './npc-simulation.js'
 
 vi.mock('pixi.js', () => ({
   Graphics: class {
@@ -349,6 +349,125 @@ function runUpdates(simulation, frames) {
   return checksum
 }
 
+function createCrowdingFixture(count, tileCount = 256 * 256, tileCapacity = NPC_CONFIG.tileCapacity) {
+  const city = {
+    tiles: new Uint8Array(tileCount)
+  }
+  const npcs = new Array(count)
+
+  for (let index = 0; index < count; index += 1) {
+    const tileIndex = (index * 37) % tileCount
+    const targetIndex = (tileIndex + 257) % tileCount
+
+    npcs[index] = {
+      present: true,
+      tile: { index: tileIndex },
+      slot: { id: index % tileCapacity },
+      movement: index % 2 === 0
+        ? {
+            target: {
+              tile: { index: targetIndex },
+              slot: { id: (index + 3) % tileCapacity }
+            }
+          }
+        : { target: null }
+    }
+  }
+
+  return {
+    city,
+    npcs,
+    config: {
+      tileCapacity,
+      crowding: NPC_CONFIG.crowding
+    }
+  }
+}
+
+function createLegacyCrowdingState(city, config) {
+  const tileCapacity = config.tileCapacity
+
+  return {
+    tileCapacity,
+    tileCounts: new Uint16Array(city.tiles.length),
+    incomingTileCounts: new Uint16Array(city.tiles.length),
+    slotCounts: new Uint16Array(city.tiles.length * tileCapacity)
+  }
+}
+
+function updateLegacyCrowdingState(crowding, npcs) {
+  crowding.tileCounts.fill(0)
+  crowding.incomingTileCounts.fill(0)
+  crowding.slotCounts.fill(0)
+
+  for (const npc of npcs) {
+    if (!npc.present) {
+      continue
+    }
+
+    addLegacyCrowdingOccupancy(crowding, npc.tile?.index, npc.slot?.id, true)
+
+    if (npc.movement.target) {
+      addLegacyCrowdingOccupancy(
+        crowding,
+        npc.movement.target.tile?.index,
+        npc.movement.target.slot?.id,
+        false
+      )
+    }
+  }
+}
+
+function addLegacyCrowdingOccupancy(crowding, tileIndex, slotId, isCurrentTile) {
+  if (!Number.isInteger(tileIndex) || tileIndex < 0 || tileIndex >= crowding.tileCounts.length) {
+    return
+  }
+
+  if (isCurrentTile) {
+    crowding.tileCounts[tileIndex] += 1
+  } else {
+    crowding.incomingTileCounts[tileIndex] += 1
+  }
+
+  if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.tileCapacity) {
+    crowding.slotCounts[tileIndex * crowding.tileCapacity + slotId] += 1
+  }
+}
+
+function crowdingChecksum(crowding, npcs) {
+  let checksum = 0
+
+  for (const npc of npcs) {
+    checksum += crowdingCount(crowding, 'tile', npc.tile.index)
+    checksum += crowdingCount(crowding, 'slot', npc.tile.index * crowding.tileCapacity + npc.slot.id)
+
+    if (npc.movement.target) {
+      checksum += crowdingCount(crowding, 'incoming', npc.movement.target.tile.index)
+      checksum += crowdingCount(crowding, 'slot', npc.movement.target.tile.index * crowding.tileCapacity + npc.movement.target.slot.id)
+    }
+  }
+
+  return checksum
+}
+
+function crowdingCount(crowding, type, index) {
+  if (type === 'slot') {
+    return crowding.slotStamps && !crowding.dense
+      ? (crowding.slotStamps[index] === crowding.stamp ? crowding.slotCounts[index] : 0)
+      : crowding.slotCounts[index]
+  }
+
+  if (type === 'incoming') {
+    return crowding.incomingTileStamps && !crowding.dense
+      ? (crowding.incomingTileStamps[index] === crowding.stamp ? crowding.incomingTileCounts[index] : 0)
+      : crowding.incomingTileCounts[index]
+  }
+
+  return crowding.tileStamps && !crowding.dense
+    ? (crowding.tileStamps[index] === crowding.stamp ? crowding.tileCounts[index] : 0)
+    : crowding.tileCounts[index]
+}
+
 describe('NPC simulation performance', () => {
   it('generates family-heavy NPC social profiles with near-linear creation cost', () => {
     const city = loadLibertyCity()
@@ -555,6 +674,33 @@ describe('NPC simulation performance', () => {
     expect(speedup).toBeGreaterThanOrEqual(10)
 
     simulation.destroy()
+  }, 30000)
+
+  it('updates sparse NPC crowding at least 10x faster than dense map resets', () => {
+    const { city, npcs, config } = createCrowdingFixture(250, 512 * 512)
+    const legacyCrowding = createLegacyCrowdingState(city, config)
+    const sparseCrowding = createNpcCrowdingState(city, config)
+    const repetitions = 250
+
+    updateLegacyCrowdingState(legacyCrowding, npcs)
+    updateNpcCrowdingState(sparseCrowding, npcs)
+
+    expect(crowdingChecksum(sparseCrowding, npcs)).toBe(crowdingChecksum(legacyCrowding, npcs))
+
+    const legacy = measureBest(() => {
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        updateLegacyCrowdingState(legacyCrowding, npcs)
+      }
+    }, 4)
+    const sparse = measureBest(() => {
+      for (let repetition = 0; repetition < repetitions; repetition += 1) {
+        updateNpcCrowdingState(sparseCrowding, npcs)
+      }
+    }, 4)
+    const speedup = legacy.ms / Math.max(sparse.ms, 0.001)
+
+    expect(crowdingChecksum(sparseCrowding, npcs)).toBe(crowdingChecksum(legacyCrowding, npcs))
+    expect(speedup).toBeGreaterThanOrEqual(10)
   }, 30000)
 
   it('keeps steady-state NPC update cost close to linear as population grows', () => {

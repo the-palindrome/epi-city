@@ -385,7 +385,7 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     sidewalk: 0xffffff,
     road: 0xd3d6d2,
     park: 0xf2f3f1,
-    water: 0xe5e8ea,
+    water: 0x86bdd8,
     building: Object.freeze({
       residential: 0xa8ada7,
       commercial: 0x8f9690,
@@ -406,7 +406,7 @@ export const TILE_TYPE_OVERLAY_COLOR_SCHEMES = Object.freeze({
     sidewalk: 0x5f6661,
     road: 0x141816,
     park: 0x343a36,
-    water: 0x292f31,
+    water: 0x244b5f,
     building: Object.freeze({
       residential: 0x6f7871,
       commercial: 0x838c84,

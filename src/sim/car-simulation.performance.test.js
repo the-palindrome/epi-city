@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import { describe, expect, it, vi } from 'vitest'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
-import { createCarRoutePlanner } from './car-simulation.js'
+import { __test__findCarById, createCarRoutePlanner } from './car-simulation.js'
 
 vi.mock('pixi.js', () => ({
   Graphics: class {}
@@ -66,6 +66,16 @@ function measureBest(fn, attempts = 5) {
   }
 
   return bestMs
+}
+
+function legacyFindCarById(context, carId) {
+  for (const car of context.cars) {
+    if (car.id === carId) {
+      return car
+    }
+  }
+
+  return null
 }
 
 describe('car simulation performance', () => {
@@ -143,6 +153,42 @@ describe('car simulation performance', () => {
     const speedup = dynamicMs / Math.max(precomputedMs, 0.001)
 
     expect(precomputedTotal).toBe(dynamicTotal)
+    expect(speedup).toBeGreaterThanOrEqual(10)
+  }, 30000)
+
+  it('looks up cars by dense id at least 10x faster than scanning all cars', () => {
+    const cars = Array.from({ length: 5000 }, (_, id) => ({ id }))
+    const context = { cars, carsById: cars }
+    const lookupIds = new Int32Array(20000)
+
+    for (let index = 0; index < lookupIds.length; index += 1) {
+      lookupIds[index] = (index * 997) % cars.length
+    }
+
+    let legacyChecksum = 0
+    const legacyMs = measureBest(() => {
+      legacyChecksum = 0
+
+      for (let repetition = 0; repetition < 20; repetition += 1) {
+        for (const carId of lookupIds) {
+          legacyChecksum += legacyFindCarById(context, carId)?.id ?? -1
+        }
+      }
+    })
+
+    let indexedChecksum = 0
+    const indexedMs = measureBest(() => {
+      indexedChecksum = 0
+
+      for (let repetition = 0; repetition < 20; repetition += 1) {
+        for (const carId of lookupIds) {
+          indexedChecksum += __test__findCarById(context, carId)?.id ?? -1
+        }
+      }
+    })
+    const speedup = legacyMs / Math.max(indexedMs, 0.001)
+
+    expect(indexedChecksum).toBe(legacyChecksum)
     expect(speedup).toBeGreaterThanOrEqual(10)
   }, 30000)
 })

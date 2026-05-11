@@ -524,6 +524,30 @@ describe('city map validation and compile', () => {
     expect(stats.routeFields).toBeGreaterThanOrEqual(2)
   })
 
+  it('precomputes pedestrian connected components using green crosswalk reachability', () => {
+    const city = compileCityMap(validateCityMap(createCrosswalkMap({
+      width: 7,
+      rows: [
+        'sccsrrs',
+        'rrrrrrr'
+      ],
+      textureRows: [
+        [0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 1, 1]
+      ]
+    })))
+    const left = city.index(0, 0)
+    const acrossCrosswalk = city.index(3, 0)
+    const isolated = city.index(6, 0)
+
+    city.setCrosswalkSignalState('red')
+
+    expect(city.arePedestrianConnectedByIndex(left, acrossCrosswalk)).toBe(true)
+    expect(city.arePedestrianConnectedByIndex(left, isolated)).toBe(false)
+    expect(city.getPedestrianComponentIndexByIndex(left)).toBe(city.getPedestrianComponentIndexByIndex(acrossCrosswalk))
+    expect(city.getPedestrianComponentIndexByIndex(isolated)).not.toBe(city.getPedestrianComponentIndexByIndex(left))
+  })
+
   it('keeps cached route extraction deterministic', () => {
     const city = compileCityMap(validateCityMap(createOpenSidewalkMap()))
     const first = city.findCachedPath({ x: 0, y: 1 }, { x: 2, y: 1 }, 'pedestrian')

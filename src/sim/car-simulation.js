@@ -92,6 +92,7 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     parking,
     trafficReservations,
     cars,
+    carsById: cars,
     buildingsById,
     yieldIndex: null,
     nextTrafficYieldTicket: 1,
@@ -717,18 +718,18 @@ function measureTilePolyline(path) {
   return length
 }
 
-function buildTravelLaneTileSet(network) {
-  const tileIndexes = new Set()
+function buildTravelLaneTileMask(network) {
+  const tileMask = new Uint8Array(network.city.tiles.length)
 
   for (const lengthTiles of [1, 2, 3]) {
     for (let edgeIndex = 0; edgeIndex < network.edgeCount; edgeIndex += 1) {
       for (const tileIndex of edgeDrivingFootprint(network, edgeIndex, lengthTiles)) {
-        tileIndexes.add(tileIndex)
+        tileMask[tileIndex] = 1
       }
     }
   }
 
-  return tileIndexes
+  return tileMask
 }
 
 class ParkingManager {
@@ -739,7 +740,7 @@ class ParkingManager {
     this.occupancy = new Int32Array(city.tiles.length)
     this.reservations = new Int32Array(city.tiles.length)
     this.candidateCache = new Map()
-    this.travelLaneTiles = buildTravelLaneTileSet(network)
+    this.travelLaneTileMask = buildTravelLaneTileMask(network)
     this.occupancy.fill(-1)
     this.reservations.fill(-1)
   }
@@ -790,7 +791,7 @@ class ParkingManager {
       for (let x = minX; x <= maxX; x += 1) {
         const tileIndex = city.index(x, y)
 
-        if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTiles.has(tileIndex)) {
+        if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTileMask[tileIndex] === 1) {
           continue
         }
 
@@ -831,7 +832,7 @@ class ParkingManager {
 
       const tileIndex = city.index(x, y)
 
-      if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTiles.has(tileIndex)) {
+      if (city.tileParkable[tileIndex] !== 1 || this.travelLaneTileMask[tileIndex] === 1) {
         return null
       }
 
@@ -1822,6 +1823,13 @@ function movingBlockersForTiles(car, context, tileIndexes) {
 }
 
 function findCarById(context, carId) {
+  const indexedCars = context.carsById
+  const indexedCar = indexedCars?.[carId]
+
+  if (indexedCar?.id === carId) {
+    return indexedCar
+  }
+
   for (const car of context.cars) {
     if (car.id === carId) {
       return car
@@ -1829,6 +1837,10 @@ function findCarById(context, carId) {
   }
 
   return null
+}
+
+export function __test__findCarById(context, carId) {
+  return findCarById(context, carId)
 }
 
 function resetLaneChangeWait(car) {

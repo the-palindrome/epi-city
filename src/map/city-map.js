@@ -834,6 +834,20 @@ export function compileCityMap(data) {
     return nextIndex === undefined ? -1 : nextIndex
   }
 
+  function getPedestrianComponentIndexByIndex(tileIndex) {
+    if (!Number.isInteger(tileIndex) || tileIndex < 0 || tileIndex >= tiles.length) {
+      return -1
+    }
+
+    return navigation.pedestrianComponents[tileIndex]
+  }
+
+  function arePedestrianConnectedByIndex(firstIndex, secondIndex) {
+    const firstComponent = getPedestrianComponentIndexByIndex(firstIndex)
+
+    return firstComponent !== -1 && firstComponent === getPedestrianComponentIndexByIndex(secondIndex)
+  }
+
   return {
     width,
     height,
@@ -883,6 +897,8 @@ export function compileCityMap(data) {
     findCachedPathIndexesByIndex,
     getCachedRouteFieldByIndex,
     getRouteFieldNextIndex,
+    getPedestrianComponentIndexByIndex,
+    arePedestrianConnectedByIndex,
     navigationCacheKey: navigation.cacheKey,
     getNavigationCacheStats: () => ({
       cacheKey: navigation.cacheKey,
@@ -1128,6 +1144,7 @@ function createNavigationData(cacheKey, width, height, tileWalkable, tileDrivabl
     cacheKey,
     offsets,
     pedestrian,
+    pedestrianComponents: buildPedestrianComponents(width, height, tileWalkable, pedestrian.green.outgoing, offsets),
     vehicle: buildMovementMasks({
       width,
       height,
@@ -1138,6 +1155,53 @@ function createNavigationData(cacheKey, width, height, tileWalkable, tileDrivabl
     }),
     routeFields: createRouteFieldCache(length, offsets)
   }
+}
+
+function buildPedestrianComponents(width, height, tileWalkable, outgoingMasks, offsets) {
+  const length = width * height
+  const components = new Int32Array(length)
+  const stack = new Int32Array(length)
+  let componentId = 0
+
+  components.fill(-1)
+
+  for (let startIndex = 0; startIndex < length; startIndex += 1) {
+    if (tileWalkable[startIndex] !== 1 || components[startIndex] !== -1) {
+      continue
+    }
+
+    let stackLength = 1
+
+    components[startIndex] = componentId
+    stack[0] = startIndex
+
+    while (stackLength > 0) {
+      stackLength -= 1
+
+      const currentIndex = stack[stackLength]
+      let directionMask = outgoingMasks[currentIndex]
+
+      for (let directionIndex = 0; directionMask !== 0; directionIndex += 1, directionMask >>>= 1) {
+        if ((directionMask & 1) === 0) {
+          continue
+        }
+
+        const nextIndex = currentIndex + offsets[directionIndex]
+
+        if (components[nextIndex] !== -1) {
+          continue
+        }
+
+        components[nextIndex] = componentId
+        stack[stackLength] = nextIndex
+        stackLength += 1
+      }
+    }
+
+    componentId += 1
+  }
+
+  return components
 }
 
 function buildMovementMasks({ width, height, layer, tileCrosswalk, property, signalState }) {

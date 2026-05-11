@@ -80,6 +80,7 @@ const DESIRE_ACTIONS = Object.freeze({
 const DESIRE_ACTIONS_BY_INDEX = Object.freeze(DESIRE_NAMES.map((need) => DESIRE_ACTIONS[need]))
 const NIGHTCLUB_DESIRE_START_HOUR = 20
 const NIGHTCLUB_DESIRE_END_HOUR = 4
+const NPC_CROWDING_SPARSE_UPDATE_LIMIT = 3000
 const DESIRE_ZERO_RATES = new Float64Array(DESIRE_COUNT)
 const DEFAULT_SOCIAL_GRAPH_CONFIG = Object.freeze({
   minFriends: 2,
@@ -128,7 +129,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   }
   let destroyed = false
   let entityDebugOptions = { ...(config.entityDebugOptions || {}) }
-  const npcProfiles = createNpcFamilyProfiles(buildingsByPurpose, random, config.count, config)
+  const npcProfiles = createNpcFamilyProfiles(city, buildingsByPurpose, random, config.count, config)
 
   entityLayer.eventMode = 'none'
   entityLayer.sortableChildren = true
@@ -545,6 +546,7 @@ class NpcDesireDynamics {
       this.mallSatisfactionRates,
       this.nightclubSatisfactionRates
     )
+    this.destinationCache = Array.from({ length: DESIRE_COUNT }, () => new Map())
     this.socialGraph = null
     this.routePlanner = null
     this.nextSocialGroupId = 1
@@ -708,13 +710,23 @@ class NpcDesireDynamics {
       return null
     }
 
+    const cache = this.destinationCache[needIndex]
+    const cached = cache.get(building.id)
+
+    if (cached) {
+      return cached
+    }
+
     const need = DESIRE_NAMES[needIndex]
     const element = createTimetableElement(DESIRE_DESTINATION_IDS_BY_INDEX[needIndex], building, 0, 0, this.city)
 
     element.desire = need
     element.action = DESIRE_ACTIONS_BY_INDEX[needIndex]
 
-    return { need, building, element }
+    const destination = { need, building, element }
+
+    cache.set(building.id, destination)
+    return destination
   }
 
   chooseBuildingForNeed(npc, needIndex, timeOfDayHours) {
@@ -841,10 +853,15 @@ class NpcDesireDynamics {
       return null
     }
 
-    const candidateCount = Math.min(buildings.length, this.config.destinationCandidateCount)
     const candidates = originBuilding?.id
-      ? this.cityData.nearestBuildingsByPurpose[purpose]?.get(originBuilding.id) || buildings
+      ? this.cityData.nearestBuildingsByPurpose[purpose]?.get(originBuilding.id)
       : buildings
+
+    if (!candidates || candidates.length === 0) {
+      return null
+    }
+
+    const candidateCount = Math.min(candidates.length, this.config.destinationCandidateCount)
 
     return candidates[this.random.int(Math.min(candidateCount, candidates.length))]
   }
@@ -1605,10 +1622,10 @@ function getDesireCityData(city) {
     buildingsByPurpose,
     buildingsById: new Map(buildings.map((building) => [building.id, building])),
     nearestBuildingsByPurpose: {
-      mall: precomputeNearestBuildings(buildings, buildingsByPurpose.mall),
-      nightclub: precomputeNearestBuildings(buildings, buildingsByPurpose.nightclub),
-      restaurant: precomputeNearestBuildings(buildings, buildingsByPurpose.restaurant),
-      supermarket: precomputeNearestBuildings(buildings, buildingsByPurpose.supermarket)
+      mall: precomputeNearestBuildings(city, buildings, buildingsByPurpose.mall),
+      nightclub: precomputeNearestBuildings(city, buildings, buildingsByPurpose.nightclub),
+      restaurant: precomputeNearestBuildings(city, buildings, buildingsByPurpose.restaurant),
+      supermarket: precomputeNearestBuildings(city, buildings, buildingsByPurpose.supermarket)
     }
   }
 
@@ -1630,7 +1647,7 @@ function cityBuildingSignature(city) {
   return parts.join('|')
 }
 
-function precomputeNearestBuildings(origins, targets) {
+function precomputeNearestBuildings(city, origins, targets) {
   const byOriginId = new Map()
 
   if (!targets || targets.length === 0) {
@@ -1642,7 +1659,7 @@ function precomputeNearestBuildings(origins, targets) {
       continue
     }
 
-    byOriginId.set(origin.id, [...targets].sort(
+    byOriginId.set(origin.id, targets.filter((building) => buildingReachableFromBuilding(city, origin, building)).sort(
       (a, b) => squaredEntranceDistance(origin, a) - squaredEntranceDistance(origin, b) ||
         String(a.id).localeCompare(String(b.id))
     ))
@@ -2099,7 +2116,7 @@ function takeRandomItem(items, random) {
   return items[random.int(items.length)]
 }
 
-function createNpcFamilyProfiles(buildingsByPurpose, random, count, config) {
+function createNpcFamilyProfiles(city, buildingsByPurpose, random, count, config) {
   const profiles = []
   const targetCount = nonNegativeIntegerOrDefault(count, NPC_CONFIG.count)
 
@@ -2113,7 +2130,7 @@ function createNpcFamilyProfiles(buildingsByPurpose, random, count, config) {
     for (const age of ages) {
       profiles.push({
         age,
-        buildingAssignment: createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, !familyHasChildren, random, config)
+        buildingAssignment: createNpcBuildingAssignmentForAge(city, buildingsByPurpose, home, age, !familyHasChildren, random, config)
       })
     }
   }
@@ -2121,24 +2138,45 @@ function createNpcFamilyProfiles(buildingsByPurpose, random, count, config) {
   return profiles
 }
 
-function createNpcBuildingAssignmentForAge(buildingsByPurpose, home, age, adultWithoutChildren, random, config) {
-  const work = isAdultAge(age) ? takeRandomItem(buildingsByPurpose.work, random) : null
+function createNpcBuildingAssignmentForAge(city, buildingsByPurpose, home, age, adultWithoutChildren, random, config) {
+  const work = isAdultAge(age) ? takeRandomReachableBuilding(city, buildingsByPurpose.work, home, random) : null
 
   return {
     home,
-    school: isSchoolAge(age) ? takeRandomItem(buildingsByPurpose.school, random) : null,
+    school: isSchoolAge(age) ? takeRandomReachableBuilding(city, buildingsByPurpose.school, home, random) : null,
     work,
-    lunch: work ? takeNearbyBuilding(buildingsByPurpose.restaurant, work, random, config) : null,
+    lunch: work ? takeNearbyBuilding(city, buildingsByPurpose.restaurant, work, random, config) : null,
     shopping: work && random.next() < unitIntervalOrDefault(config.shoppingChance, NPC_CONFIG.shoppingChance)
-      ? takeRandomItem(buildingsByPurpose.shopping, random)
+      ? takeRandomReachableBuilding(city, buildingsByPurpose.shopping, work, random)
       : null,
     nightclub: work && adultWithoutChildren && random.next() < unitIntervalOrDefault(config.nightclubChance, NPC_CONFIG.nightclubChance)
-      ? takeRandomItem(buildingsByPurpose.nightclub, random)
+      ? takeRandomReachableBuilding(city, buildingsByPurpose.nightclub, work, random)
       : null
   }
 }
 
-function takeNearbyBuilding(buildings, originBuilding, random, config) {
+function takeRandomReachableBuilding(city, buildings, originBuilding, random) {
+  if (!buildings || buildings.length === 0) {
+    return null
+  }
+
+  if (!originBuilding?.entrance || typeof city?.arePedestrianConnectedByIndex !== 'function') {
+    return takeRandomItem(buildings, random)
+  }
+
+  const originIndex = city.index(originBuilding.entrance.x, originBuilding.entrance.y)
+  const candidates = []
+
+  for (const building of buildings) {
+    if (buildingReachableFromIndex(city, originIndex, building)) {
+      candidates.push(building)
+    }
+  }
+
+  return takeRandomItem(candidates, random)
+}
+
+function takeNearbyBuilding(city, buildings, originBuilding, random, config) {
   if (!buildings || buildings.length === 0 || !originBuilding?.entrance) {
     return null
   }
@@ -2148,13 +2186,38 @@ function takeNearbyBuilding(buildings, originBuilding, random, config) {
     positiveIntegerOrDefault(config.lunchRestaurantCandidateCount, NPC_CONFIG.lunchRestaurantCandidateCount)
   )
   const nearby = buildings
+    .filter((building) => buildingReachableFromBuilding(city, originBuilding, building))
     .map((building) => ({
       building,
       distance: squaredEntranceDistance(originBuilding, building)
     }))
     .sort((a, b) => a.distance - b.distance || String(a.building.id).localeCompare(String(b.building.id)))
 
-  return nearby[random.int(candidateCount)].building
+  if (nearby.length === 0) {
+    return null
+  }
+
+  return nearby[random.int(Math.min(candidateCount, nearby.length))].building
+}
+
+function buildingReachableFromBuilding(city, originBuilding, building) {
+  if (!originBuilding?.entrance) {
+    return true
+  }
+
+  const originIndex = city?.index(originBuilding.entrance.x, originBuilding.entrance.y)
+
+  return buildingReachableFromIndex(city, originIndex, building)
+}
+
+function buildingReachableFromIndex(city, originIndex, building) {
+  if (!building?.entrance || typeof city?.arePedestrianConnectedByIndex !== 'function') {
+    return true
+  }
+
+  const targetIndex = city.index(building.entrance.x, building.entrance.y)
+
+  return city.arePedestrianConnectedByIndex(originIndex, targetIndex)
 }
 
 function squaredEntranceDistance(first, second) {
@@ -3023,7 +3086,7 @@ function chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding
   let occupiedCount = 0
 
   for (let slot = 0; slot < tileCapacity; slot += 1) {
-    const count = crowding.slotCounts[baseIndex + slot]
+    const count = npcCrowdingSlotCount(crowding, baseIndex + slot)
     occupiedCount += count
 
     if (count < bestCount) {
@@ -3037,7 +3100,7 @@ function chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding
   }
 
   if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
-    const preferredCount = crowding.slotCounts[baseIndex + preferredSlot]
+    const preferredCount = npcCrowdingSlotCount(crowding, baseIndex + preferredSlot)
 
     if (preferredCount <= bestCount) {
       return preferredSlot
@@ -3055,7 +3118,7 @@ function reserveNpcCrowdingTarget(tileIndex, slotId, context) {
   addNpcCrowdingOccupancy(context.crowding, tileIndex, slotId, false)
 }
 
-function createNpcCrowdingState(city, config) {
+export function createNpcCrowdingState(city, config) {
   const tileCapacity = positiveIntegerOrDefault(config.tileCapacity, NPC_CONFIG.tileCapacity)
 
   return {
@@ -3063,11 +3126,48 @@ function createNpcCrowdingState(city, config) {
     tileCapacity,
     tileCounts: new Uint16Array(city.tiles.length),
     incomingTileCounts: new Uint16Array(city.tiles.length),
-    slotCounts: new Uint16Array(city.tiles.length * tileCapacity)
+    slotCounts: new Uint16Array(city.tiles.length * tileCapacity),
+    tileStamps: new Uint32Array(city.tiles.length),
+    incomingTileStamps: new Uint32Array(city.tiles.length),
+    slotStamps: new Uint32Array(city.tiles.length * tileCapacity),
+    stamp: 0,
+    dense: false,
+    occupancyCount: 0,
+    lastOccupancyCount: 0
   }
 }
 
-function updateNpcCrowdingState(crowding, npcs) {
+export function updateNpcCrowdingState(crowding, npcs) {
+  if (crowding.lastOccupancyCount > NPC_CROWDING_SPARSE_UPDATE_LIMIT) {
+    updateDenseNpcCrowdingState(crowding, npcs)
+    return
+  }
+
+  beginSparseNpcCrowdingUpdate(crowding)
+
+  for (const npc of npcs) {
+    if (!npc.present) {
+      continue
+    }
+
+    addNpcCrowdingOccupancy(crowding, npc.tile?.index, npc.slot?.id, true)
+
+    if (npc.movement.target) {
+      addNpcCrowdingOccupancy(
+        crowding,
+        npc.movement.target.tile?.index,
+        npc.movement.target.slot?.id,
+        false
+      )
+    }
+  }
+
+  finishNpcCrowdingUpdate(crowding)
+}
+
+function updateDenseNpcCrowdingState(crowding, npcs) {
+  crowding.dense = true
+  crowding.occupancyCount = 0
   crowding.tileCounts.fill(0)
   crowding.incomingTileCounts.fill(0)
   crowding.slotCounts.fill(0)
@@ -3088,6 +3188,27 @@ function updateNpcCrowdingState(crowding, npcs) {
       )
     }
   }
+
+  finishNpcCrowdingUpdate(crowding)
+}
+
+function beginSparseNpcCrowdingUpdate(crowding) {
+  crowding.dense = false
+  crowding.occupancyCount = 0
+  crowding.stamp += 1
+
+  if (crowding.stamp < 0xffffffff) {
+    return
+  }
+
+  crowding.tileStamps.fill(0)
+  crowding.incomingTileStamps.fill(0)
+  crowding.slotStamps.fill(0)
+  crowding.stamp = 1
+}
+
+function finishNpcCrowdingUpdate(crowding) {
+  crowding.lastOccupancyCount = crowding.occupancyCount
 }
 
 function addNpcCrowdingOccupancy(crowding, tileIndex, slotId, isCurrentTile) {
@@ -3095,14 +3216,26 @@ function addNpcCrowdingOccupancy(crowding, tileIndex, slotId, isCurrentTile) {
     return
   }
 
-  if (isCurrentTile) {
-    crowding.tileCounts[tileIndex] += 1
-  } else {
-    crowding.incomingTileCounts[tileIndex] += 1
+  const counts = isCurrentTile ? crowding.tileCounts : crowding.incomingTileCounts
+  const stamps = isCurrentTile ? crowding.tileStamps : crowding.incomingTileStamps
+
+  if (!crowding.dense && stamps[tileIndex] !== crowding.stamp) {
+    stamps[tileIndex] = crowding.stamp
+    counts[tileIndex] = 0
   }
 
+  counts[tileIndex] += 1
+  crowding.occupancyCount += 1
+
   if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.tileCapacity) {
-    crowding.slotCounts[tileIndex * crowding.tileCapacity + slotId] += 1
+    const slotIndex = tileIndex * crowding.tileCapacity + slotId
+
+    if (!crowding.dense && crowding.slotStamps[slotIndex] !== crowding.stamp) {
+      crowding.slotStamps[slotIndex] = crowding.stamp
+      crowding.slotCounts[slotIndex] = 0
+    }
+
+    crowding.slotCounts[slotIndex] += 1
   }
 }
 
@@ -3113,7 +3246,24 @@ function npcCrowdCount(tileIndex, context) {
     return 0
   }
 
-  return crowding.tileCounts[tileIndex] + crowding.incomingTileCounts[tileIndex]
+  if (crowding.dense) {
+    return crowding.tileCounts[tileIndex] + crowding.incomingTileCounts[tileIndex]
+  }
+
+  return npcCrowdingStampedCount(crowding.tileCounts, crowding.tileStamps, crowding.stamp, tileIndex) +
+    npcCrowdingStampedCount(crowding.incomingTileCounts, crowding.incomingTileStamps, crowding.stamp, tileIndex)
+}
+
+function npcCrowdingSlotCount(crowding, slotIndex) {
+  if (crowding.dense) {
+    return crowding.slotCounts[slotIndex]
+  }
+
+  return npcCrowdingStampedCount(crowding.slotCounts, crowding.slotStamps, crowding.stamp, slotIndex)
+}
+
+function npcCrowdingStampedCount(counts, stamps, stamp, index) {
+  return stamps[index] === stamp ? counts[index] : 0
 }
 
 function npcCrowdSpeedScale(npc, target, context) {
