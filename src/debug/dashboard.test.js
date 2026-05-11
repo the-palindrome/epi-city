@@ -498,6 +498,7 @@ describe('debug dashboard overlays', () => {
     expect(threshold.value).toBe('5')
     expect(unit.value).toBe('percentPopulation')
     expect(action.value).toBe('socialDistancing')
+    expect(action.children.map((option) => [option.value, option.textContent])).toContainEqual(['wearMask', 'wear mask'])
     expect(action.children.map((option) => [option.value, option.textContent])).toContainEqual(['homeOffice', 'home office'])
     expect(action.children.map((option) => option.value)).not.toContain('closeWorkplaces')
     expect(intensity.hidden).toBe(true)
@@ -624,7 +625,6 @@ describe('debug dashboard overlays', () => {
 
     const rules = findAllByDataset(dashboard.policyElement, 'policyRule')
     const actions = findAllByDataset(dashboard.policyElement, 'policyThenAction')
-    const intensities = findAllByDataset(dashboard.policyElement, 'policyIntensity')
     const probabilities = findAllByDataset(dashboard.policyElement, 'policyCancellationProbability')
     const thresholds = findAllByDataset(dashboard.policyElement, 'policyThreshold')
     const effects = findByDataset(dashboard.policyElement, 'policyEffects')
@@ -633,8 +633,6 @@ describe('debug dashboard overlays', () => {
 
     actions[1].value = 'reduceNightlife'
     actions[1].eventListeners.change()
-    intensities[1].value = 'strict'
-    intensities[1].eventListeners.change()
     probabilities[1].value = '0.75'
     probabilities[1].eventListeners.change()
     thresholds[1].value = '1'
@@ -643,7 +641,6 @@ describe('debug dashboard overlays', () => {
 
     expect(dashboard.policy.state.policies[1]).toMatchObject({
       action: 'reduceNightlife',
-      intensity: 'strict',
       cancellationProbability: 0.75
     })
     expect(dashboard.policy.state.effects.eventCancellationProbabilities.reduceNightlife).toBe(0.75)
@@ -653,6 +650,51 @@ describe('debug dashboard overlays', () => {
 
     expect(effects.textContent).toBe('none')
     expect(dashboard.policy.state.policies.every((policy) => policy.enabled === false)).toBe(true)
+
+    dashboard.destroy()
+  })
+
+  it('applies wear-mask policy intensity as an infection probability multiplier', () => {
+    const dashboard = installDebugDashboard(createCity(), createEntityLayer(), {
+      getInfectionStats() {
+        return { susceptible: 94, exposed: 3, infectious: 3, recovered: 0 }
+      },
+      policies: [
+        {
+          id: 'mask-policy',
+          enabled: true,
+          metric: 'activeCases',
+          operator: '>=',
+          threshold: 5,
+          unit: 'percentPopulation',
+          action: 'wearMask',
+          intensity: 'strict',
+          cancellationProbability: 0,
+          untilOperator: '<=',
+          untilThreshold: 2,
+          untilUnit: 'percentPopulation'
+        }
+      ]
+    })
+    const intensity = findByDataset(dashboard.policyElement, 'policyIntensity')
+    const cancellationProbability = findByDataset(dashboard.policyElement, 'policyCancellationProbability')
+    const effects = findByDataset(dashboard.policyElement, 'policyEffects')
+    const ruleEffect = findByDataset(dashboard.policyElement, 'policyEffect')
+
+    dashboard.render()
+
+    expect(intensity.hidden).toBe(false)
+    expect(cancellationProbability.hidden).toBe(true)
+    expect(effects.textContent).toBe('transmission x0.2 (1 active)')
+    expect(ruleEffect.textContent).toBe('wear mask strict: transmission x0.2')
+    expect(dashboard.policy.state.effects.infectionProbabilityMultiplier).toBe(0.2)
+    expect(dashboard.policy.state.effects.activePolicies).toEqual([
+      expect.objectContaining({
+        action: 'wearMask',
+        intensity: 'strict',
+        infectionProbabilityMultiplier: 0.2
+      })
+    ])
 
     dashboard.destroy()
   })

@@ -47,6 +47,7 @@ const POLICY_UNITS = Object.freeze([
 ])
 const POLICY_ACTIONS = Object.freeze([
   Object.freeze({ id: 'socialDistancing', label: 'social distancing' }),
+  Object.freeze({ id: 'wearMask', label: 'wear mask' }),
   Object.freeze({ id: 'closeSchools', label: 'close schools' }),
   Object.freeze({ id: 'homeOffice', label: 'home office' }),
   Object.freeze({ id: 'reduceShopping', label: 'reduce shopping' }),
@@ -57,13 +58,12 @@ const POLICY_INTENSITIES = Object.freeze([
   Object.freeze({ id: 'moderate', label: 'moderate' }),
   Object.freeze({ id: 'strict', label: 'strict' })
 ])
-const POLICY_ACTION_EFFECTS = Object.freeze({
-  socialDistancing: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
-  closeSchools: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
-  homeOffice: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
-  reduceShopping: Object.freeze({ light: 1, moderate: 1, strict: 1 }),
-  reduceNightlife: Object.freeze({ light: 1, moderate: 1, strict: 1 })
+const MASK_INFECTION_PROBABILITY_MULTIPLIERS = Object.freeze({
+  light: 0.65,
+  moderate: 0.4,
+  strict: 0.2
 })
+const POLICY_TRANSMISSION_ACTIONS = Object.freeze(['wearMask'])
 const POLICY_EVENT_ACTIONS = Object.freeze(['closeSchools', 'homeOffice', 'reduceShopping', 'reduceNightlife'])
 const POLICY_BINARY_ACTIONS = Object.freeze(['socialDistancing'])
 const POLICY_EVENT_CANCELLATION_PROBABILITIES = Object.freeze({
@@ -1724,10 +1724,10 @@ function comparePolicyValues(left, operator, right) {
 }
 
 function createPolicyEffects(activePolicies) {
-  const multipliers = activePolicies.map(getPolicyMultiplier)
-  const infectionProbabilityMultiplier = multipliers.length > 0
-    ? Math.min(...multipliers)
-    : 1
+  const infectionProbabilityMultiplier = activePolicies.reduce(
+    (multiplier, policy) => Math.min(multiplier, getPolicyInfectionProbabilityMultiplier(policy)),
+    1
+  )
   const eventCancellationProbabilities = { ...POLICY_EVENT_CANCELLATION_PROBABILITIES }
   const socialDistancingEnabled = activePolicies.some((policy) => policy.action === 'socialDistancing')
 
@@ -1749,20 +1749,23 @@ function createPolicyEffects(activePolicies) {
       action: policy.action,
       intensity: policy.intensity,
       cancellationProbability: normalizePolicyProbability(policy.cancellationProbability),
-      multiplier: getPolicyMultiplier(policy)
+      infectionProbabilityMultiplier: getPolicyInfectionProbabilityMultiplier(policy)
     }))
   }
 }
 
-function getPolicyMultiplier(policy) {
-  const actionEffects = POLICY_ACTION_EFFECTS[policy.action] || POLICY_ACTION_EFFECTS.socialDistancing
-  const multiplier = Number(actionEffects[policy.intensity])
+function getPolicyInfectionProbabilityMultiplier(policy) {
+  if (!POLICY_TRANSMISSION_ACTIONS.includes(policy.action)) {
+    return 1
+  }
+
+  const multiplier = Number(MASK_INFECTION_PROBABILITY_MULTIPLIERS[policy.intensity])
 
   return Number.isFinite(multiplier) ? Math.min(Math.max(multiplier, 0), 1) : 1
 }
 
 function usesPolicyIntensity(action) {
-  return !POLICY_BINARY_ACTIONS.includes(action) && !POLICY_EVENT_ACTIONS.includes(action)
+  return POLICY_TRANSMISSION_ACTIONS.includes(action)
 }
 
 function usesPolicyCancellationProbability(action) {
@@ -1786,7 +1789,11 @@ function formatPolicyRuleEffect(policy) {
     return `${getPolicyActionLabel(policy.action)}: cancel ${formatPolicyPercent(policy.cancellationProbability)} of matching events`
   }
 
-  return `${getPolicyActionLabel(policy.action)} ${getPolicyIntensityLabel(policy.intensity)}: transmission x${formatPolicyMultiplier(getPolicyMultiplier(policy))}`
+  if (POLICY_TRANSMISSION_ACTIONS.includes(policy.action)) {
+    return `${getPolicyActionLabel(policy.action)} ${getPolicyIntensityLabel(policy.intensity)}: transmission x${formatPolicyMultiplier(getPolicyInfectionProbabilityMultiplier(policy))}`
+  }
+
+  return getPolicyActionLabel(policy.action)
 }
 
 function formatPolicyEffects(effects) {
