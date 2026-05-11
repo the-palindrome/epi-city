@@ -1,0 +1,44 @@
+{
+  "simulation": {
+    "duration": 60,
+    "sampleInterval": 30,
+    "step": 2,
+    "parameters": {
+      "seedEnabled": true,
+      "seed": "epi-city-smoke",
+      "npcCount": 20,
+      "carCount": 4,
+      "initialInfectiousCount": 1,
+      "dayNightOverlayEnabled": false,
+      "entityRenderMode": "geometric"
+    }
+  },
+  "render": {
+    "duration": 2
+  },
+  "script": [
+    {
+      "at": 0,
+      "action": "playback",
+      "from": 0,
+      "to": 60,
+      "duration": 2
+    },
+    {
+      "at": 0,
+      "action": "setCamera",
+      "zoom": 0.14
+    },
+    {
+      "at": 0.5,
+      "action": "moveCamera",
+      "delta": {
+        "x": -160,
+        "y": -100,
+        "zoom": 0.04
+      },
+      "duration": 1,
+      "easing": "smooth"
+    }
+  ]
+}

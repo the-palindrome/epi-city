@@ -90,6 +90,14 @@ function mapAssetsFromPublicPlugin() {
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || '/',
   plugins: [mapAssetsFromPublicPlugin()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(repoRoot, 'index.html'),
+        playback: path.resolve(repoRoot, 'playback.html')
+      }
+    }
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

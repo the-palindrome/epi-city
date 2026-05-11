@@ -13,6 +13,16 @@ npm run dev
 
 Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/maps/`, and the app loads the `liberty-city` map package by default. Local dev and preview requests for `/maps/...` are served from `public/maps/...` with `no-store`, so editor changes to the source map files show up without relying on stale `dist/maps` copies.
 
+Open `http://localhost:5173/playback.html` to use the simulation playback app. It wraps the same Epi City runtime as the main app, generates a scripted simulation recording, and lets you scrub or play the render timeline.
+
+Render an MP4 from the example script with:
+
+```bash
+npm run render:video
+```
+
+See [docs/video-renderer.md](docs/video-renderer.md) for the scripting language, playback API, and renderer CLI.
+
 ## Controls
 
 - Hold the left mouse button and drag to pan the camera.
@@ -44,6 +54,7 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
 - `map-editor/` contains the interactive map editor, random-forest training loop, and Epi City JSON load/save tools.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
+- `docs/video-renderer.md` explains simulation playback, the scripting language, and MP4 rendering.
 - `vite.config.ts` configures local development and preview server ports.
 
 ## Map Format

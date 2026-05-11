@@ -1,0 +1,82 @@
+{
+  "simulation": {
+    "durationHours": 12,
+    "sampleInterval": 120,
+    "step": 2,
+    "parameters": {
+      "seedEnabled": true,
+      "seed": "epi-city-video",
+      "npcCount": 700,
+      "carCount": 120,
+      "initialInfectiousCount": 8,
+      "dayNightOverlayEnabled": true,
+      "entityRenderMode": "sprite"
+    },
+    "actions": [
+      {
+        "at": 14400,
+        "action": "call",
+        "method": "setInfectionProbability",
+        "args": [0.05]
+      }
+    ]
+  },
+  "render": {
+    "duration": 24
+  },
+  "script": [
+    {
+      "at": 0,
+      "action": "playback",
+      "from": 0,
+      "to": 43200,
+      "duration": 24
+    },
+    {
+      "at": 0,
+      "action": "setCamera",
+      "zoom": 0.16
+    },
+    {
+      "at": 3,
+      "action": "moveCamera",
+      "delta": {
+        "x": -520,
+        "y": -240,
+        "zoom": 0.12
+      },
+      "duration": 7,
+      "easing": "ease-in-out"
+    },
+    {
+      "at": 11,
+      "action": "call",
+      "method": "setEntityRenderMode",
+      "args": ["geometric"]
+    },
+    {
+      "at": 12,
+      "action": "moveCamera",
+      "delta": {
+        "x": 340,
+        "y": 420,
+        "zoom": 0.08
+      },
+      "duration": 8,
+      "easing": "smooth"
+    },
+    {
+      "at": 18,
+      "action": "followNpc",
+      "id": 12,
+      "zoom": 1.2,
+      "duration": 3
+    },
+    {
+      "at": 20,
+      "action": "call",
+      "method": "setEntityRenderMode",
+      "args": ["sprite"]
+    }
+  ]
+}

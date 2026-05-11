@@ -49,6 +49,12 @@ main()
 async function main() {
   const status = document.getElementById('status')
   const app = new PIXI.Application()
+  const searchParams = new URLSearchParams(window.location.search)
+  const renderModeEnabled = searchParams.has('render') || searchParams.has('playback') || searchParams.has('embed')
+
+  if (renderModeEnabled) {
+    document.body.classList.add('epi-render-mode')
+  }
 
   function setStatus(message, isError = false) {
     status.textContent = message
@@ -64,6 +70,7 @@ async function main() {
       autoDensity: true,
       antialias: false,
       roundPixels: true,
+      preserveDrawingBuffer: renderModeEnabled,
       resolution: window.devicePixelRatio || 1
     })
 
@@ -668,6 +675,43 @@ async function main() {
       dashboard.simulation.setDayNightOverlayEnabled(simulationState.dayNightOverlayEnabled)
     }
 
+    function getCameraState() {
+      return {
+        x: camera.x,
+        y: camera.y,
+        zoom: camera.zoom
+      }
+    }
+
+    function setCameraState(state = {}) {
+      const x = Number(state.x)
+      const y = Number(state.y)
+      const zoom = Number(state.zoom)
+
+      clearCameraFollow(camera)
+
+      if (Number.isFinite(x)) {
+        camera.x = x
+      }
+
+      if (Number.isFinite(y)) {
+        camera.y = y
+      }
+
+      if (Number.isFinite(zoom) && zoom > 0) {
+        camera.zoom = zoom
+      }
+
+      applyCamera()
+      game.render()
+      return getCameraState()
+    }
+
+    function captureFrame(options = {}) {
+      game.render()
+      return app.canvas.toDataURL(options.mimeType || 'image/png', options.quality)
+    }
+
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -681,6 +725,9 @@ async function main() {
     }
 
     window.citySim = {
+      app,
+      world,
+      entityLayer,
       camera,
       city,
       scale: REAL_WORLD_SCALE,
@@ -734,6 +781,10 @@ async function main() {
       setPathTrailsVisible: dashboard.setPathTrailsVisible,
       setPathTrailLength: dashboard.setPathTrailLength,
       setHeatmapRadius: dashboard.setHeatmapRadius,
+      getCameraState,
+      setCameraState,
+      render: () => game.render(),
+      captureFrame,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
       clearCameraFollow: () => clearCameraFollow(camera),

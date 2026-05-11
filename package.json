@@ -8,11 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "render:video": "node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json --output ./tmp/epi-city-video.mp4 --fps 30 --width 1920 --height 1080",
     "check": "npm run test && npm run build && node --check map-editor/server.mjs && node --check map-editor/setup-python-env.mjs && PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile map-editor/train_random_forest.py process_gta_map/build-gta-tilemap.py",
     "map-editor": "node map-editor/server.mjs",
     "map-editor:deps": "node map-editor/setup-python-env.mjs"
   },
   "devDependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "playwright-core": "^1.59.1",
     "vite": "^8.0.10",
     "vitest": "^4.1.5"
   },
