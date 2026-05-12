@@ -1,6 +1,6 @@
 # Epi City Video Renderer
 
-Epi City includes a deterministic scripting and rendering flow for producing MP4 videos from the browser simulation. The playback page uses the same `src/main.js` app that powers the normal interactive city, then records snapshots and seeks through those snapshots frame by frame. The command-line renderer drives that page with Playwright Core, captures PNG frames from the Pixi canvas, and streams them into ffmpeg.
+Epi City includes a deterministic scripting and rendering flow for producing MP4 videos from the browser simulation. The playback page uses the same `src/main.js` app that powers the normal interactive city, then records snapshots and seeks through those snapshots frame by frame. The command-line renderer drives that page with Playwright Core, captures raw RGBA frames from the Pixi canvas for direct ffmpeg streaming, and falls back to PNG frames when writing an intermediate frame directory.
 
 ## Quick Start
 
@@ -47,9 +47,9 @@ The rendering flow has three parts:
 
 1. `src/main.js` creates the normal Epi City runtime and exposes `window.citySim`.
 2. `playback.html` loads the normal app as `index.html?embed=1&playback=1&render=1`, then exposes `window.epiCityVideo`.
-3. `scripts/render-epi-video.mjs` opens `playback.html`, calls `epiCityVideo.runScript()`, seeks each frame, captures a PNG, and encodes the MP4 with ffmpeg.
+3. `scripts/render-epi-video.mjs` opens `playback.html`, calls `epiCityVideo.runScript()`, seeks each frame, captures raw RGBA pixels, and encodes the MP4 with ffmpeg.
 
-During playback and rendering, the iframe uses `preserveDrawingBuffer` so canvas captures are stable. The normal dashboards and hover/context menus are hidden in render mode. The city map also switches to a stable viewport renderer: instead of moving many independently cached map chunks under the camera, it rasterizes the visible map tiles into final-resolution canvas layers by z-order and lets entities render between those layers.
+During playback and rendering, the iframe uses `preserveDrawingBuffer` so canvas captures are stable. The normal dashboards and hover/context menus are hidden in render mode. The city map also switches to pre-rasterized full-map canvas layers by z-order, so scripted camera motion moves static map textures instead of redrawing every visible tile on every frame while still letting entities render between ground and building layers.
 
 ## Browser Playback API
 
@@ -59,7 +59,7 @@ During playback and rendering, the iframe uses `preserveDrawingBuffer` so canvas
 window.epiCityVideo = {
   async runScript(script) {},
   async seek(renderSeconds) {},
-  async captureFrame({ mimeType = 'image/png', quality } = {}) {},
+  async captureFrame({ mimeType = 'image/png', quality, format } = {}) {},
   getDuration() {},
   getRecording() {}
 }
@@ -69,7 +69,7 @@ window.epiCityVideo = {
 
 `seek(renderSeconds)` reconstructs a frame from the precomputed recording. It applies the recorded simulation snapshot, render-time API calls, scripted NPC/car position overrides, and scripted camera state.
 
-`captureFrame()` renders the shared Pixi app and returns a PNG data URL. The Node renderer decodes this URL and sends the bytes to ffmpeg.
+`captureFrame()` renders the shared Pixi app. The CLI uses `format: "rgba"` to stream raw pixels into ffmpeg without PNG/base64 round-trips. PNG data URLs are still supported for browser previews and `--frames-dir` output.
 
 ## Renderer CLI
 

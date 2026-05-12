@@ -10,6 +10,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
 import { build as buildVite } from 'vite'
+import {
+  decodeDataUrl,
+  getPngPipeFfmpegInputArgs,
+  getRawVideoFfmpegInputArgs,
+  normalizeRgbaFramePayload
+} from '../src/render/video-frame-transport.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -162,25 +168,11 @@ function runCommand(command, args, options = {}) {
   })
 }
 
-function decodeDataUrl(dataUrl) {
-  if (typeof dataUrl !== 'string') {
-    throw new Error('Expected captureFrame to return a data URL string.')
-  }
-
-  const match = /^data:(.+);base64,(.+)$/s.exec(dataUrl)
-
-  if (!match) {
-    throw new Error('Unexpected frame data URL payload.')
-  }
-
-  return Buffer.from(match[2], 'base64')
-}
-
 function getFfmpegVideoEncodeArgs({ highQuality }) {
   if (highQuality) {
     return [
       '-c:v', 'libx264',
-      '-preset', 'veryslow',
+      '-preset', 'fast',
       '-crf', '0',
       '-pix_fmt', 'yuv444p',
       '-profile:v', 'high444',
@@ -197,16 +189,21 @@ function getFfmpegVideoEncodeArgs({ highQuality }) {
 }
 
 function startFfmpegEncoder(ffmpegPath, args) {
+  const inputArgs = args.frameInputFormat === 'raw'
+    ? getRawVideoFfmpegInputArgs(args)
+    : getPngPipeFfmpegInputArgs(args)
+  const videoFilters = args.frameInputFormat === 'raw'
+    ? 'vflip,pad=ceil(iw/2)*2:ceil(ih/2)*2'
+    : 'pad=ceil(iw/2)*2:ceil(ih/2)*2'
+
   const child = spawn(ffmpegPath, [
     '-y',
     '-hide_banner',
     '-loglevel', 'warning',
     '-threads', '1',
     '-filter_threads', '1',
-    '-f', 'png_pipe',
-    '-framerate', String(args.fps),
-    '-i', 'pipe:0',
-    '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+    ...inputArgs,
+    '-vf', videoFilters,
     ...getFfmpegVideoEncodeArgs(args),
     args.output
   ], {
@@ -444,11 +441,13 @@ async function main() {
     ? path.resolve(args.framesDir || path.join(projectRoot, 'tmp', `epi-city-video-frames-${Date.now()}`))
     : null
 
+  const frameInputFormat = frameRoot ? 'png' : 'raw'
+
   if (frameRoot) {
     await fs.mkdir(frameRoot, { recursive: true })
     logger.info(`Frame directory: ${frameRoot}`)
   } else {
-    logger.info('Frame output: streaming PNG frames directly to ffmpeg.')
+    logger.info('Frame output: streaming raw RGBA frames directly to ffmpeg.')
   }
 
   let localServer = null
@@ -523,27 +522,40 @@ async function main() {
     logger.info(`Rendering ${frameCount} frame(s) at ${args.fps} fps...`)
 
     if (!frameRoot) {
-      ffmpegEncoder = startFfmpegEncoder(ffmpegPath, args)
+      ffmpegEncoder = startFfmpegEncoder(ffmpegPath, {
+        ...args,
+        frameInputFormat
+      })
     }
 
     const progress = createProgressReporter({ logger, frameCount, fps: args.fps })
 
     for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
       const renderSeconds = frameIndex / args.fps
-      const dataUrl = await page.evaluate(async (timeSeconds) => {
-        await window.epiCityVideo.seek(timeSeconds)
-        return window.epiCityVideo.captureFrame({ mimeType: 'image/png' })
-      }, renderSeconds)
-      const pngBuffer = decodeDataUrl(dataUrl)
-
-      if (pngBuffer.length === 0) {
-        throw new Error(`Captured an empty PNG frame at index ${frameIndex}.`)
-      }
-
       if (frameRoot) {
+        const dataUrl = await page.evaluate(async (timeSeconds) => {
+          await window.epiCityVideo.seek(timeSeconds)
+          return window.epiCityVideo.captureFrame({ mimeType: 'image/png', render: false })
+        }, renderSeconds)
+        const pngBuffer = decodeDataUrl(dataUrl)
+
+        if (pngBuffer.length === 0) {
+          throw new Error(`Captured an empty PNG frame at index ${frameIndex}.`)
+        }
+
         await fs.writeFile(path.join(frameRoot, `frame-${String(frameIndex).padStart(6, '0')}.png`), pngBuffer)
       } else {
-        await ffmpegEncoder.writeFrame(pngBuffer)
+        const rawFrame = await page.evaluate(async (timeSeconds) => {
+          await window.epiCityVideo.seek(timeSeconds)
+          return window.epiCityVideo.captureFrame({ format: 'rgba', render: false })
+        }, renderSeconds)
+        const { buffer } = normalizeRgbaFramePayload(rawFrame, {
+          width: args.width,
+          height: args.height,
+          origin: 'bottom-left'
+        })
+
+        await ffmpegEncoder.writeFrame(buffer)
       }
 
       progress.tick(frameIndex + 1)

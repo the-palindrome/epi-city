@@ -200,6 +200,41 @@ describe('city renderer z-ordering', () => {
     })
   })
 
+  it('renders full-canvas map layers for video exports', () => {
+    const city = createCity()
+    const layer = new PIXI.Container()
+    const canvases = installFakeDocument()
+    const textureSet = {
+      atlasImage: { id: 'atlas' },
+      frames: [
+        [0, 0, 13, 13],
+        [13, 0, 13, 13]
+      ],
+      getTexture: (id) => ({ id })
+    }
+
+    const mapTextures = renderCity(city, layer, textureSet, {
+      mapRenderMode: 'full-canvas'
+    })
+
+    expect(canvases).toHaveLength(2)
+    expect(canvases.every((canvas) => canvas.width === 64 && canvas.height === 64)).toBe(true)
+    expect(layer.children.map((sprite) => sprite.zorder)).toEqual([0, 2])
+    expect(layer.children.every((sprite) => sprite.roundPixels === false)).toBe(true)
+    expect(layer.children.every((sprite) => sprite.eventMode === 'none')).toBe(true)
+    expect(layer.children[0]).toMatchObject({
+      x: 0,
+      y: 0,
+      width: 64,
+      height: 64
+    })
+    expect(layer.children[0].texture.source.updateCount).toBe(1)
+    expect(layer.children[1].texture.source.updateCount).toBe(1)
+    expect(canvases[0].context.drawImageCalls).toHaveLength(3)
+    expect(canvases[1].context.drawImageCalls).toHaveLength(1)
+    expect(mapTextures.chunks).toEqual(layer.children)
+  })
+
   it('controls static map texture visibility and opacity', () => {
     const city = createCity()
     const layer = new PIXI.Container()

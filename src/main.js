@@ -97,7 +97,7 @@ async function main() {
 
     validateCityTextureBindings(city, textureSet)
     const mapTextures = renderCity(city, entityLayer, textureSet, {
-      mapRenderMode: renderModeEnabled ? 'stable' : 'chunked',
+      mapRenderMode: renderModeEnabled ? 'full-canvas' : 'chunked',
       stableMapOversample: 2
     })
     centerCameraOnCity(camera, world, city)
@@ -687,7 +687,7 @@ async function main() {
       }
     }
 
-    function setCameraState(state = {}) {
+    function setCameraState(state = {}, options = {}) {
       const x = Number(state.x)
       const y = Number(state.y)
       const zoom = Number(state.zoom)
@@ -707,12 +707,40 @@ async function main() {
       }
 
       applyCamera()
-      game.render()
+      if (options.render !== false) {
+        game.render()
+      }
       return getCameraState()
     }
 
     function captureFrame(options = {}) {
-      game.render()
+      if (options.render !== false) {
+        game.render()
+      }
+
+      if (options.format === 'rgba' || options.pixelFormat === 'rgba') {
+        const width = Math.max(1, Math.round(app.renderer.width))
+        const height = Math.max(1, Math.round(app.renderer.height))
+        const gl = app.renderer.gl
+
+        if (!gl) {
+          throw new Error('Raw RGBA capture requires the WebGL renderer.')
+        }
+
+        const pixels = new Uint8Array(width * height * 4)
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+        app.renderer.resetState?.()
+
+        return {
+          width,
+          height,
+          origin: 'bottom-left',
+          pixels
+        }
+      }
+
       return app.canvas.toDataURL(options.mimeType || 'image/png', options.quality)
     }
 

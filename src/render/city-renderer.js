@@ -5,6 +5,10 @@ export function renderCity(city, entityLayer, textureSet, options = {}) {
   clearPixiContainer(entityLayer)
   entityLayer.sortableChildren = true
 
+  if (options.mapRenderMode === 'full-canvas' && canRenderStableMap(textureSet)) {
+    return renderFullCanvasCity(city, entityLayer, textureSet, options)
+  }
+
   if (options.mapRenderMode === 'stable' && canRenderStableMap(textureSet)) {
     return renderStableCity(city, entityLayer, textureSet, options)
   }
@@ -65,6 +69,84 @@ function renderChunkedCity(city, entityLayer, textureSet, options = {}) {
   }
 
   return createMapTextureRenderer(chunks)
+}
+
+function renderFullCanvasCity(city, entityLayer, textureSet) {
+  const zorders = uniqueSortedZorders(city.tileZOrders)
+  const sprites = zorders.map((zorder) => renderFullCanvasMapLayer(city, entityLayer, textureSet, zorder))
+
+  return createMapTextureRenderer(sprites)
+}
+
+function renderFullCanvasMapLayer(city, entityLayer, textureSet, zorder) {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d', { alpha: true })
+  const atlasImage = resolveAtlasImage(textureSet)
+  const worldWidth = city.width * city.tileSize
+  const worldHeight = city.height * city.tileSize
+
+  canvas.width = worldWidth
+  canvas.height = worldHeight
+  context.imageSmoothingEnabled = true
+
+  if ('imageSmoothingQuality' in context) {
+    context.imageSmoothingQuality = 'high'
+  }
+
+  for (let tileY = 0; tileY < city.height; tileY += 1) {
+    const rowOffset = tileY * city.width
+
+    for (let tileX = 0; tileX < city.width; tileX += 1) {
+      const index = rowOffset + tileX
+
+      if (city.tileZOrders[index] !== zorder) {
+        continue
+      }
+
+      const frame = textureSet.frames[city.tileTextureIds[index]]
+
+      if (!frame) {
+        continue
+      }
+
+      context.drawImage(
+        atlasImage,
+        frame[0],
+        frame[1],
+        frame[2],
+        frame[3],
+        tileX * city.tileSize,
+        tileY * city.tileSize,
+        city.tileSize,
+        city.tileSize
+      )
+    }
+  }
+
+  const source = new PIXI.CanvasSource({
+    resource: canvas,
+    width: worldWidth,
+    height: worldHeight,
+    resolution: 1,
+    scaleMode: 'linear',
+    magFilter: 'linear',
+    minFilter: 'linear'
+  })
+  const texture = new PIXI.Texture({ source })
+  const sprite = new PIXI.Sprite(texture)
+
+  sprite.eventMode = 'none'
+  sprite.roundPixels = false
+  sprite.zIndex = zorder
+  sprite.zorder = zorder
+  sprite.x = 0
+  sprite.y = 0
+  sprite.width = worldWidth
+  sprite.height = worldHeight
+  source.update?.()
+  entityLayer.addChild(sprite)
+
+  return sprite
 }
 
 function renderStableCity(city, entityLayer, textureSet, options = {}) {

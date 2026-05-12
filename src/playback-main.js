@@ -434,7 +434,7 @@ function applyTimelineCamera(runtime, script, renderSeconds) {
     }
   }
 
-  runtime.setCameraState?.(camera)
+  runtime.setCameraState?.(camera, { render: false })
 }
 
 function resolveCameraSource(action, currentCamera) {
