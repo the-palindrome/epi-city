@@ -80,11 +80,13 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
   let debugOptions = normalizeEntityDebugOptions(options.entityDebugOptions ?? config.entityDebugOptions)
 
   configureDisplay(container, config)
-  configureDisplay(overlayGraphics, config)
+  configureDisplay(overlayGraphics, {
+    ...config,
+    zorder: ENTITY_RENDER_DEBUG_CONFIG.zorder
+  })
   container.sortableChildren = false
   container.addChild(spriteRenderer.display)
   container.addChild(geometricRenderer.display)
-  container.addChild(overlayGraphics)
   applyNpcRenderModeVisibility()
 
   function applyNpcRenderModeVisibility() {
@@ -129,6 +131,9 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
   function destroy() {
     spriteRenderer.destroy()
     geometricRenderer.destroy()
+    if (overlayGraphics.parent) {
+      overlayGraphics.parent.removeChild(overlayGraphics)
+    }
     overlayGraphics.destroy()
 
     if (container.parent) {
@@ -143,6 +148,7 @@ function createModeAwareNpcRenderer(spriteRenderer, npcs, city, config, infectio
   return {
     display: container,
     spriteDisplay: spriteRenderer.display,
+    debugDisplay: overlayGraphics,
     sprites: spriteRenderer.sprites || [],
     particles: spriteRenderer.particles || [],
     textureAtlas: spriteRenderer.textureAtlas,
@@ -511,10 +517,11 @@ function drawNpcDebugOverlays(graphics, npcs, infection, context) {
   }
 
   const visibleNpcs = []
+  const infectionRadiusNpcs = []
   const npcById = new Map()
 
   for (const npc of npcs || []) {
-    if (!npc || !npc.position) {
+    if (!npc || !finitePosition(npc.position)) {
       continue
     }
 
@@ -522,6 +529,10 @@ function drawNpcDebugOverlays(graphics, npcs, infection, context) {
 
     if (npc.present) {
       visibleNpcs.push(npc)
+    }
+
+    if (!npc.vehicleTrip) {
+      infectionRadiusNpcs.push(npc)
     }
   }
 
@@ -537,7 +548,7 @@ function drawNpcDebugOverlays(graphics, npcs, infection, context) {
   }
 
   if (options.infectionRadiusVisible) {
-    drawInfectionRadiusOverlays(graphics, visibleNpcs, infection)
+    drawInfectionRadiusOverlays(graphics, infectionRadiusNpcs, infection)
   }
 
   if (options.contactEdgesVisible) {
@@ -560,10 +571,15 @@ function drawInfectionRadiusOverlays(graphics, npcs, infection) {
     if (npc.infection !== 'infectious') {
       continue
     }
+    const position = finitePosition(npc.position)
+
+    if (!position) {
+      continue
+    }
 
     graphics
-      .circle(npc.position.x, npc.position.y, radius)
-      .stroke({ width: 2, color: getNpcRenderColor(infection, npc), alpha: 0.44 })
+      .circle(position.x, position.y, radius)
+      .stroke({ width: 2, color: getNpcRenderColor(infection, npc), alpha: 0.44, pixelLine: true })
   }
 }
 

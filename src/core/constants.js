@@ -321,6 +321,7 @@ export const ENTITY_RENDER_MODE_OPTIONS = Object.freeze([
 ])
 
 export const ENTITY_RENDER_DEBUG_CONFIG = Object.freeze({
+  zorder: 3,
   infectionRadiusVisible: false,
   infectionEdgesVisible: false,
   contactEdgesVisible: false,

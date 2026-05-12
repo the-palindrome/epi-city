@@ -182,6 +182,9 @@ export function createNpcSimulation(city, entityLayer, config) {
   const graphics = npcRenderer.spriteDisplay || display
 
   entityLayer.addChild(display)
+  if (npcRenderer.debugDisplay && npcRenderer.debugDisplay !== display) {
+    entityLayer.addChild(npcRenderer.debugDisplay)
+  }
 
   function update(deltaSeconds) {
     if (destroyed) {
