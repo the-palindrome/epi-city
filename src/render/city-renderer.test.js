@@ -1,9 +1,35 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as PIXI from 'pixi.js'
 import { compileCityMap, validateCityMap } from '../map/city-map.js'
 import { renderCity } from './city-renderer.js'
 
 vi.mock('pixi.js', () => ({
+  CanvasSource: class {
+    constructor(options = {}) {
+      this.resource = options.resource
+      this.width = options.width || 1
+      this.height = options.height || 1
+      this.resolution = options.resolution || 1
+      this.scaleMode = options.scaleMode
+      this.magFilter = options.magFilter
+      this.minFilter = options.minFilter
+      this.resizeCalls = []
+      this.updateCount = 0
+    }
+
+    resize(width, height, resolution = this.resolution) {
+      this.width = width
+      this.height = height
+      this.resolution = resolution
+      this.resource.width = Math.round(width * resolution)
+      this.resource.height = Math.round(height * resolution)
+      this.resizeCalls.push({ width, height, resolution })
+    }
+
+    update() {
+      this.updateCount += 1
+    }
+  },
   Container: class {
     constructor() {
       this.children = []
@@ -38,6 +64,11 @@ vi.mock('pixi.js', () => ({
       this.cacheAsTextureOptions = options
     }
   },
+  Texture: class {
+    constructor(options = {}) {
+      this.source = options.source
+    }
+  },
   Sprite: class {
     constructor(texture) {
       this.texture = texture
@@ -47,6 +78,8 @@ vi.mock('pixi.js', () => ({
       this.y = 0
       this.width = 0
       this.height = 0
+      this.visible = true
+      this.alpha = 1
     }
 
     destroy() {}
@@ -81,6 +114,16 @@ function createCity() {
   }))
 }
 
+const originalDocument = globalThis.document
+
+afterEach(() => {
+  if (originalDocument === undefined) {
+    delete globalThis.document
+  } else {
+    globalThis.document = originalDocument
+  }
+})
+
 describe('city renderer z-ordering', () => {
   it('groups tiles into z-ordered render chunks', () => {
     const city = createCity()
@@ -99,8 +142,12 @@ describe('city renderer z-ordering', () => {
     expect(chunkZorders).toEqual([0, 2])
     expect(groundChunk.children).toHaveLength(3)
     expect(groundChunk.cacheAsTextureOptions).toEqual({ scaleMode: 'nearest' })
+    expect(groundChunk.children.every((sprite) => sprite.eventMode === 'none')).toBe(true)
+    expect(groundChunk.children.every((sprite) => sprite.roundPixels === true)).toBe(true)
     expect(buildingChunk.children).toHaveLength(1)
     expect(buildingChunk.cacheAsTextureOptions).toEqual({ scaleMode: 'nearest' })
+    expect(buildingChunk.children[0].eventMode).toBe('none')
+    expect(buildingChunk.children[0].roundPixels).toBe(true)
     expect(buildingChunk.children[0]).toMatchObject({
       zorder: 2,
       zIndex: 2,
@@ -109,6 +156,48 @@ describe('city renderer z-ordering', () => {
     })
     expect(mapTextures.chunks).toEqual(layer.children)
     expect(mapTextures.state).toEqual({ visible: true, opacity: 1 })
+  })
+
+  it('renders stable viewport map layers for video mode', () => {
+    const city = createCity()
+    const layer = new PIXI.Container()
+    const canvases = installFakeDocument()
+    const textureSet = {
+      atlasImage: { id: 'atlas' },
+      frames: [
+        [0, 0, 13, 13],
+        [13, 0, 13, 13]
+      ],
+      getTexture: (id) => ({ id })
+    }
+
+    const mapTextures = renderCity(city, layer, textureSet, {
+      mapRenderMode: 'stable',
+      stableMapOversample: 2
+    })
+
+    expect(layer.children.map((sprite) => sprite.zorder)).toEqual([0, 2])
+    expect(layer.children.every((sprite) => sprite.roundPixels === false)).toBe(true)
+    expect(layer.children.every((sprite) => sprite.eventMode === 'none')).toBe(true)
+    expect(layer.children.every((sprite) => sprite.cacheAsTextureOptions === undefined)).toBe(true)
+
+    mapTextures.render(
+      { x: 0, y: 0, zoom: 0.5 },
+      { screen: { width: 64, height: 64 }, resolution: 1 }
+    )
+
+    expect(canvases).toHaveLength(2)
+    expect(canvases.every((canvas) => canvas.width === 128 && canvas.height === 128)).toBe(true)
+    expect(mapTextures.layers[0].context.drawImageCalls).toHaveLength(3)
+    expect(mapTextures.layers[1].context.drawImageCalls).toHaveLength(1)
+    expect(mapTextures.layers[0].source.updateCount).toBe(1)
+    expect(mapTextures.layers[1].source.updateCount).toBe(1)
+    expect(layer.children[0]).toMatchObject({
+      x: -0,
+      y: -0,
+      width: 128,
+      height: 128
+    })
   })
 
   it('controls static map texture visibility and opacity', () => {
@@ -135,3 +224,60 @@ describe('city renderer z-ordering', () => {
     expect(layer.children.every((chunk) => chunk.alpha === 1)).toBe(true)
   })
 })
+
+function installFakeDocument() {
+  const canvases = []
+
+  globalThis.document = {
+    createElement(tagName) {
+      if (tagName !== 'canvas') {
+        throw new Error(`Unexpected element: ${tagName}`)
+      }
+
+      const canvas = new FakeCanvas()
+
+      canvases.push(canvas)
+      return canvas
+    }
+  }
+
+  return canvases
+}
+
+class FakeCanvas {
+  constructor() {
+    this.width = 1
+    this.height = 1
+    this.context = new FakeContext()
+  }
+
+  getContext(type) {
+    if (type !== '2d') {
+      return null
+    }
+
+    return this.context
+  }
+}
+
+class FakeContext {
+  constructor() {
+    this.drawImageCalls = []
+    this.clearRectCalls = []
+    this.setTransformCalls = []
+    this.imageSmoothingEnabled = false
+    this.imageSmoothingQuality = 'low'
+  }
+
+  setTransform(...args) {
+    this.setTransformCalls.push(args)
+  }
+
+  clearRect(...args) {
+    this.clearRectCalls.push(args)
+  }
+
+  drawImage(...args) {
+    this.drawImageCalls.push(args)
+  }
+}

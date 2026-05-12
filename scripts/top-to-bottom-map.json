@@ -1,0 +1,39 @@
+{
+  "simulation": {
+    "duration": 60,
+    "sampleInterval": 60,
+    "step": 2,
+    "parameters": {
+      "seedEnabled": true,
+      "seed": "map-scan",
+      "npcCount": 0,
+      "carCount": 0,
+      "dayNightOverlayEnabled": false,
+      "mapTextureEnabled": true,
+      "entityRenderMode": "sprite"
+    }
+  },
+  "render": {
+    "duration": 10
+  },
+  "script": [
+    {
+      "at": 0,
+      "action": "setCamera",
+      "x": 0,
+      "y": 0,
+      "zoom": 0.234375
+    },
+    {
+      "at": 0,
+      "action": "moveCamera",
+      "to": {
+        "x": 0,
+        "y": -840,
+        "zoom": 0.234375
+      },
+      "duration": 10,
+      "easing": "linear"
+    }
+  ]
+}

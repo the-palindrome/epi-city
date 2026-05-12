@@ -49,7 +49,7 @@ The rendering flow has three parts:
 2. `playback.html` loads the normal app as `index.html?embed=1&playback=1&render=1`, then exposes `window.epiCityVideo`.
 3. `scripts/render-epi-video.mjs` opens `playback.html`, calls `epiCityVideo.runScript()`, seeks each frame, captures a PNG, and encodes the MP4 with ffmpeg.
 
-During playback and rendering, the iframe uses `preserveDrawingBuffer` so canvas captures are stable. The normal dashboards and hover/context menus are hidden in render mode, but the simulation and Pixi renderer are unchanged.
+During playback and rendering, the iframe uses `preserveDrawingBuffer` so canvas captures are stable. The normal dashboards and hover/context menus are hidden in render mode. The city map also switches to a stable viewport renderer: instead of moving many independently cached map chunks under the camera, it rasterizes the visible map tiles into final-resolution canvas layers by z-order and lets entities render between those layers.
 
 ## Browser Playback API
 

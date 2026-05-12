@@ -65,6 +65,7 @@ export async function loadTextureSet(name) {
     name: manifest.name || name,
     tileSize: manifest.tileSize,
     atlas: atlasTexture,
+    atlasImage: atlasTexture.source?.resource || null,
     frames: manifest.frames,
     getTexture
   }

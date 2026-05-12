@@ -69,7 +69,7 @@ async function main() {
       autoStart: false,
       autoDensity: true,
       antialias: false,
-      roundPixels: true,
+      roundPixels: !renderModeEnabled,
       preserveDrawingBuffer: renderModeEnabled,
       resolution: window.devicePixelRatio || 1
     })
@@ -96,7 +96,10 @@ async function main() {
     const textureSet = await loadTextureSet(city.textureSetName)
 
     validateCityTextureBindings(city, textureSet)
-    const mapTextures = renderCity(city, entityLayer, textureSet)
+    const mapTextures = renderCity(city, entityLayer, textureSet, {
+      mapRenderMode: renderModeEnabled ? 'stable' : 'chunked',
+      stableMapOversample: 2
+    })
     centerCameraOnCity(camera, world, city)
 
     const game = new Game(app)
@@ -551,6 +554,7 @@ async function main() {
     game.addSystem(entityControl)
     game.addSystem(pathSelection)
     game.addSystem({ render: applyCameraFollow })
+    game.addSystem({ render: () => mapTextures.render?.(camera, app.renderer) })
     game.start()
 
     function applyEntityDebugOptions() {
