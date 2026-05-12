@@ -58,18 +58,24 @@ During playback and rendering, the iframe uses `preserveDrawingBuffer` so canvas
 ```js
 window.epiCityVideo = {
   async runScript(script) {},
+  async loadRecording(recording, renderScript) {},
   async seek(renderSeconds) {},
   async captureFrame({ mimeType = 'image/png', quality, format } = {}) {},
   getDuration() {},
-  getRecording() {}
+  getRecording() {},
+  getRecordingBundle() {}
 }
 ```
 
 `runScript()` normalizes the JSON script, applies simulation parameters, restarts the city, generates all simulation snapshots first, and seeks to render time `0`.
 
+`loadRecording()` loads a JSON recording bundle created by `scripts/run-simulation.mjs`. If a second render script is provided, its render duration, camera actions, and visual calls override the bundle's script while the recorded simulation snapshots stay fixed.
+
 `seek(renderSeconds)` reconstructs a frame from the precomputed recording. It applies the recorded simulation snapshot, render-time API calls, scripted NPC/car position overrides, and scripted camera state.
 
 `captureFrame()` renders the shared Pixi app. The CLI uses `format: "rgba"` to stream raw pixels into ffmpeg without PNG/base64 round-trips. PNG data URLs are still supported for browser previews and `--frames-dir` output.
+
+`getRecordingBundle()` returns a self-contained JSON bundle with the normalized script, the generated recording snapshots, and summary metadata.
 
 ## Renderer CLI
 
@@ -81,7 +87,8 @@ node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json
 
 Options:
 
-- `--script, -s <path>`: JSON script file. Required.
+- `--script, -s <path>`: JSON script file. Required unless `--recording` includes an embedded script. When used with `--recording`, this is a render/camera override.
+- `--recording, -r <path>`: pre-recorded simulation JSON from `scripts/run-simulation.mjs`.
 - `--output, -o <path>`: output MP4 path. Defaults to `./tmp/epi-city-video.mp4`.
 - `--fps <number>`: frame rate. Defaults to `30`.
 - `--width <number>`: browser viewport width. Defaults to `1920`.
@@ -95,6 +102,88 @@ Options:
 - `--help, -h`: print usage.
 
 When `--url` is omitted, the renderer builds the Vite app, serves `dist/` from a local static server, and opens `playback.html`. If Chrome is not in a standard path, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, `CHROME_PATH`, or pass `--chrome`.
+
+## Simulation Recording CLI
+
+Use `scripts/run-simulation.mjs` to run a deterministic epidemic simulation once and save the snapshots to disk:
+
+```bash
+node scripts/run-simulation.mjs \
+  --script ./scripts/epi-city-video.example.json \
+  --output ./tmp/epi-city-recording.json \
+  --duration-days 20
+```
+
+Useful options:
+
+- `--duration-days <number>`, `--duration-hours <number>`, or `--duration-seconds <number>`: override the script's simulation duration.
+- `--sample-interval <seconds>`: override snapshot spacing.
+- `--step <seconds>`: override the simulation generation step.
+- `--url <url>` and `--chrome <path>`: use the same browser controls as the video renderer.
+
+The output file has this shape:
+
+```json
+{
+  "format": "epi-city-simulation-recording",
+  "version": 1,
+  "createdAt": "2026-05-12T00:00:00.000Z",
+  "script": {},
+  "recording": {
+    "durationSeconds": 1728000,
+    "sampleIntervalSeconds": 120,
+    "stepSeconds": 2,
+    "parameters": {},
+    "snapshots": []
+  },
+  "summary": {}
+}
+```
+
+Render from the saved recording without regenerating the simulation:
+
+```bash
+node scripts/render-epi-video.mjs \
+  --recording ./tmp/epi-city-recording.json \
+  --output ./tmp/epi-city-video.mp4 \
+  --fps 30 \
+  --width 1920 \
+  --height 1080
+```
+
+You can also supply a render-only override script:
+
+```bash
+node scripts/render-epi-video.mjs \
+  --recording ./tmp/epi-city-recording.json \
+  --script ./scripts/top-to-bottom-map.json \
+  --output ./tmp/epi-city-video.mp4
+```
+
+For interactive playback, run the dev server and open a URL that points at a served recording JSON:
+
+```text
+http://localhost:5173/playback.html?recording=/recordings/epi-city-recording.json
+```
+
+You can add `&script=/path/to/render-script.json` to use a render override. The file picker in `playback.html` also accepts recording bundles directly.
+
+### Recorded Replay Rules
+
+When a recording file is loaded, the epidemic history is fixed. Replay scripts may change camera motion and presentation, but they cannot mutate the recorded simulation.
+
+Allowed:
+
+- `playback`, `setCamera`, `moveCamera`, `followEntity`, `followNpc`, and `followCar`.
+- Presentation-only `call` actions such as `setEntityRenderMode`, map texture opacity/visibility, overlay toggles, path trail visibility, and heatmap radius.
+
+Rejected for render overrides:
+
+- Non-empty `simulation.actions`; generation-time actions must be baked into the recording by `run-simulation`.
+- Render-time entity mutation actions: `setNpcPosition`, `moveNpc`, `setCarPosition`, and `moveCar`.
+- `call` actions that can change simulation state, such as population setters, seed setters, speed/play/pause/restart controls, and infection parameter setters.
+
+Recording bundles may keep the original `simulation.actions` in their embedded script as provenance. Those actions are stripped during replay because their effects are already in the snapshots.
 
 ## Script Payload
 

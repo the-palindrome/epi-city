@@ -9,6 +9,11 @@ import {
   getRecordingDuration,
   setEntityPosition
 } from './playback/simulation-snapshot.js'
+import {
+  createReplayScript,
+  createSimulationRecordingFile,
+  normalizeSimulationRecordingFile
+} from './playback/simulation-recording.js'
 
 const DEFAULT_SCRIPT = Object.freeze({
   simulation: {
@@ -97,9 +102,13 @@ async function boot() {
     citySim = await waitForCitySim(elements.frame)
     setStatus('Ready')
 
-    const scriptUrl = new URLSearchParams(window.location.search).get('script')
+    const searchParams = new URLSearchParams(window.location.search)
+    const scriptUrl = searchParams.get('script')
+    const recordingUrl = searchParams.get('recording')
 
-    if (scriptUrl) {
+    if (recordingUrl) {
+      await loadRecordingFromUrl(recordingUrl, scriptUrl)
+    } else if (scriptUrl) {
       await runScriptFromUrl(scriptUrl)
     }
   } catch (error) {
@@ -111,6 +120,7 @@ async function boot() {
 function installVideoApi() {
   window.epiCityVideo = {
     runScript,
+    loadRecording,
     seek,
     captureFrame,
     getDuration() {
@@ -118,6 +128,9 @@ function installVideoApi() {
     },
     getRecording() {
       return activeRecording
+    },
+    getRecordingBundle() {
+      return getRecordingBundle()
     }
   }
 }
@@ -136,7 +149,13 @@ function installUi() {
 
     try {
       const text = await file.text()
-      await runScript(text)
+      const payload = JSON.parse(text)
+
+      if (isRecordingPayload(payload)) {
+        await loadRecording(payload)
+      } else {
+        await runScript(payload)
+      }
     } catch (error) {
       setStatus(formatError(error), true)
     }
@@ -154,13 +173,29 @@ function installUi() {
 
 async function runScriptFromUrl(scriptUrl) {
   setStatus(`Loading ${scriptUrl}...`)
-  const response = await fetch(scriptUrl)
+  return runScript(await fetchJson(scriptUrl))
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url)
 
   if (!response.ok) {
-    throw new Error(`Unable to load script ${scriptUrl}: ${response.status}`)
+    throw new Error(`Unable to load ${url}: ${response.status}`)
   }
 
-  return runScript(await response.json())
+  return response.json()
+}
+
+function isRecordingPayload(payload) {
+  return Boolean(payload?.recording || payload?.format === 'epi-city-simulation-recording')
+}
+
+async function loadRecordingFromUrl(recordingUrl, scriptUrl = null) {
+  setStatus(`Loading ${recordingUrl}...`)
+  const recordingPayload = await fetchJson(recordingUrl)
+  const scriptPayload = scriptUrl ? await fetchJson(scriptUrl) : null
+
+  return loadRecording(recordingPayload, scriptPayload)
 }
 
 async function runScript(scriptInput) {
@@ -194,6 +229,36 @@ async function runScript(scriptInput) {
       recordingDuration: getRecordingDuration(activeRecording),
       snapshotCount: activeRecording.snapshots.length
     }
+  } finally {
+    setBusy(false)
+  }
+}
+
+async function loadRecording(recordingInput, scriptInput = null) {
+  if (!citySim) {
+    citySim = await waitForCitySim(elements.frame)
+  }
+
+  setBusy(true)
+  setPlaying(false)
+  document.body.classList.toggle('video-render-mode', Boolean(new URLSearchParams(window.location.search).has('renderUiHidden')))
+
+  try {
+    setStatus('Loading recording...')
+    const recordingFile = normalizeSimulationRecordingFile(recordingInput)
+    const script = createReplayScript(recordingFile, scriptInput)
+    const recording = recordingFile.recording
+
+    prepareRuntimeForRecording(citySim, script, recording)
+    assertRuntimeMatchesRecording(citySim, recording)
+    activeRecording = recording
+    activeScript = script
+    currentRenderTime = 0
+    configureScrubber(getScriptDuration(activeScript))
+    await seek(0)
+    setStatus(`Ready: ${activeRecording.snapshots.length} recorded snapshots`)
+
+    return summarizeActivePlayback({ recordingLoaded: true })
   } finally {
     setBusy(false)
   }
@@ -282,6 +347,61 @@ async function generateSimulationRecording(runtime, script, options = {}) {
     stepSeconds,
     parameters: { ...script.simulation.parameters },
     snapshots
+  }
+}
+
+function prepareRuntimeForRecording(runtime, script, recording) {
+  runtime.game?.stop?.()
+  applySimulationParameters(runtime, {
+    ...script.simulation.parameters,
+    ...recording.parameters
+  })
+  runtime.restart?.()
+  runtime.game?.stop?.()
+}
+
+function assertRuntimeMatchesRecording(runtime, recording) {
+  const firstSnapshot = recording.snapshots[0]
+  const npcs = Array.isArray(runtime?.npcs) ? runtime.npcs : []
+  const cars = Array.isArray(runtime?.cars) ? runtime.cars : []
+
+  assertEntityIdsMatch('NPC', npcs, firstSnapshot.npcs || [])
+  assertEntityIdsMatch('car', cars, firstSnapshot.cars || [])
+}
+
+function assertEntityIdsMatch(label, runtimeEntities, snapshotEntities) {
+  if (runtimeEntities.length !== snapshotEntities.length) {
+    throw new Error(`Recording ${label} count ${snapshotEntities.length} does not match runtime count ${runtimeEntities.length}.`)
+  }
+
+  const runtimeIds = new Set(runtimeEntities.map((entity) => entity.id))
+
+  for (const entity of snapshotEntities) {
+    if (!runtimeIds.has(entity.id)) {
+      throw new Error(`Recording references missing ${label} id ${entity.id}.`)
+    }
+  }
+}
+
+function getRecordingBundle() {
+  if (!activeScript || !activeRecording) {
+    return null
+  }
+
+  return createSimulationRecordingFile({
+    script: activeScript,
+    recording: activeRecording,
+    summary: summarizeActivePlayback()
+  })
+}
+
+function summarizeActivePlayback(extra = {}) {
+  return {
+    duration: activeScript ? getScriptDuration(activeScript) : 0,
+    actionCount: activeScript?.actions?.length ?? 0,
+    recordingDuration: activeRecording ? getRecordingDuration(activeRecording) : 0,
+    snapshotCount: activeRecording?.snapshots?.length ?? 0,
+    ...extra
   }
 }
 

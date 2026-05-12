@@ -32,9 +32,10 @@ function printUsage() {
   node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json [options]
 
 Required:
-  --script, -s       Path to Epi City JSON script
+  --script, -s       Path to Epi City JSON script, unless --recording includes one
 
 Options:
+  --recording, -r    Path to pre-recorded Epi City simulation JSON
   --output, -o       Output video path (default: ./tmp/epi-city-video.mp4)
   --fps              Frames per second (default: 30)
   --width            Viewport width (default: 1920)
@@ -57,6 +58,7 @@ function parseArgs(argv) {
     height: DEFAULT_HEIGHT,
     url: null,
     scriptPath: null,
+    recordingPath: null,
     framesDir: null,
     keepFrames: false,
     highQuality: false,
@@ -76,6 +78,11 @@ function parseArgs(argv) {
       case '--script':
       case '-s':
         parsed.scriptPath = next
+        index += 1
+        break
+      case '--recording':
+      case '-r':
+        parsed.recordingPath = next
         index += 1
         break
       case '--output':
@@ -424,13 +431,15 @@ async function main() {
     return
   }
 
-  if (!args.scriptPath) {
+  if (!args.scriptPath && !args.recordingPath) {
     printUsage()
-    throw new Error('Missing required --script argument.')
+    throw new Error('Missing required --script or --recording argument.')
   }
 
-  const scriptPath = path.resolve(args.scriptPath)
-  const scriptPayload = JSON.parse(await fs.readFile(scriptPath, 'utf8'))
+  const scriptPath = args.scriptPath ? path.resolve(args.scriptPath) : null
+  const recordingPath = args.recordingPath ? path.resolve(args.recordingPath) : null
+  const scriptPayload = scriptPath ? JSON.parse(await fs.readFile(scriptPath, 'utf8')) : null
+  const recordingPayload = recordingPath ? JSON.parse(await fs.readFile(recordingPath, 'utf8')) : null
   const ffmpegPath = await resolveFfmpegPath()
   const chromiumPath = await resolveChromiumPath(args.chromePath)
 
@@ -507,8 +516,21 @@ async function main() {
       { timeout: API_READY_TIMEOUT_MS }
     )
 
-    logger.info(`Loading script: ${scriptPath}`)
-    const summary = await page.evaluate((payload) => window.epiCityVideo.runScript(payload), scriptPayload)
+    let summary
+
+    if (recordingPayload) {
+      logger.info(`Loading recording: ${recordingPath}`)
+      if (scriptPath) {
+        logger.info(`Using render script override: ${scriptPath}`)
+      }
+      summary = await page.evaluate(
+        ({ recording, script }) => window.epiCityVideo.loadRecording(recording, script),
+        { recording: recordingPayload, script: scriptPayload }
+      )
+    } else {
+      logger.info(`Loading script: ${scriptPath}`)
+      summary = await page.evaluate((payload) => window.epiCityVideo.runScript(payload), scriptPayload)
+    }
     const duration = Number(summary?.duration ?? await page.evaluate(() => window.epiCityVideo.getDuration()))
 
     if (!Number.isFinite(duration) || duration <= 0) {

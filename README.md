@@ -21,7 +21,13 @@ Render an MP4 from the example script with:
 npm run render:video
 ```
 
-See [docs/video-renderer.md](docs/video-renderer.md) for the scripting language, playback API, and renderer CLI.
+Pre-record a simulation to JSON for later interactive playback or rendering with:
+
+```bash
+npm run run-simulation
+```
+
+See [docs/video-renderer.md](docs/video-renderer.md) for the scripting language, playback API, simulation recording CLI, and renderer CLI.
 
 ## Controls
 
