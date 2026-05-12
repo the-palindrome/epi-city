@@ -2,6 +2,12 @@
 
 The map editor is a local maintenance tool for correcting semantic tile types, behavior attributes, building metadata, and texture-row assignments while keeping atlas pixels and manifest frames unchanged. It keeps one editable 256x256 map state in the browser, trains from sparse labels, and loads or saves complete map package folders.
 
+## Prerequisites
+
+- Node.js 20.19+ or 22.12+ with repository dependencies installed by `npm install`.
+- Python 3.10+ for the random-forest training environment created by `npm run map-editor:deps`.
+- Chrome or Edge on `localhost` for `Load Map Folder` and `Save Map Folder`, because those buttons use the File System Access API.
+
 ## Run
 
 From the repository root:
@@ -200,4 +206,4 @@ The editor saves texture rows JSON in this format:
 
 The map editor includes a `lane graph` paint layer. Use `draw segment` to click a road or crosswalk tile, then click road or crosswalk tiles in travel order to add directed lane graph edges. Clicking farther along the same row or column fills every intermediate tile until the endpoint. Each tile owns one centered lane node; clicking an existing node closes the active segment. Use `new segment` to start another sequence, `delete tile` to remove the node on one tile, and `clear graph` to remove the authored graph.
 
-The editor also renders auto-generated traffic signal markers on lane graph intersections. Use `toggle signal` to save an override that enables or disables a generated signal, and `offset signal` to shift that signal's phase timing. Saving writes top-level `laneGraph` metadata when the graph has nodes, edges, or traffic signal overrides. The editor accepts only this manual centered format; legacy generated metadata, lane offsets, layered lane fields, and connector edges must be removed from old maps.
+Lane edges use a default 28 mph speed limit; turn edges use 12 mph. The editor also renders auto-generated traffic signal markers on lane graph intersections. Use `toggle signal` to save an override that enables or disables a generated signal, and `offset signal` to shift that signal's phase timing. Saving writes top-level `laneGraph` metadata when the graph has nodes, edges, or traffic signal overrides. The editor accepts only this manual centered format; legacy generated metadata, lane offsets, layered lane fields, and connector edges must be removed from old maps.

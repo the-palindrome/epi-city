@@ -41,6 +41,17 @@ http://localhost:5173/playback.html
 
 The playback app loads the normal Epi City app inside an iframe, generates a recording, and lets you scrub or play the render timeline. This keeps the map rendering, NPC rendering, car rendering, simulation defaults, and exposed runtime functions in one source of truth.
 
+## Playback URLs
+
+The playback page can load a script or recording from a URL after the dev server starts:
+
+```text
+http://localhost:5173/playback.html?script=/scripts/epi-city-video.example.json
+http://localhost:5173/playback.html?recording=/recordings/epi-city-recording.json
+```
+
+Add `&script=/path/to/render-script.json` to a recording URL to use a render/camera override while keeping the recorded simulation snapshots fixed. The file picker accepts either an Epi script or a recording bundle, and the `Load Default` button runs the built-in demo script.
+
 ## Architecture
 
 The rendering flow has three parts:
@@ -81,13 +92,16 @@ window.epiCityVideo = {
 
 Use `scripts/render-epi-video.mjs` for MP4 generation.
 
+Provide one of `--script` or `--recording`:
+
 ```bash
 node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json [options]
+node scripts/render-epi-video.mjs --recording ./tmp/epi-city-recording.json [options]
 ```
 
 Options:
 
-- `--script, -s <path>`: JSON script file. Required unless `--recording` includes an embedded script. When used with `--recording`, this is a render/camera override.
+- `--script, -s <path>`: JSON script file. Required when `--recording` is not supplied. When used with `--recording`, this is a render/camera override.
 - `--recording, -r <path>`: pre-recorded simulation JSON from `scripts/run-simulation.mjs`.
 - `--output, -o <path>`: output MP4 path. Defaults to `./tmp/epi-city-video.mp4`.
 - `--fps <number>`: frame rate. Defaults to `30`.
@@ -95,13 +109,15 @@ Options:
 - `--height <number>`: browser viewport height. Defaults to `1080`.
 - `--url <url>`: use an already-running playback page instead of building and serving `dist/`.
 - `--frames-dir <path>`: write PNG frames to a directory before encoding.
-- `--keep-frames`: keep generated PNG frames.
+- `--keep-frames`: keep generated PNG frames. Without `--frames-dir`, this creates a timestamped `tmp/epi-city-video-frames-*` directory.
 - `--high-quality`: encode lossless H.264 4:4:4. Files are much larger.
 - `--chrome <path>`: explicit Chrome or Chromium executable.
 - `--verbose, -v`: print page console diagnostics.
 - `--help, -h`: print usage.
 
 When `--url` is omitted, the renderer builds the Vite app, serves `dist/` from a local static server, and opens `playback.html`. If Chrome is not in a standard path, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, `CHROME_PATH`, or pass `--chrome`.
+
+If a recording has no embedded script and no override script is supplied, Epi City generates a default replay that maps the full recording duration 1:1. `--frames-dir` PNGs are deleted after encoding unless `--keep-frames` is set.
 
 ## Simulation Recording CLI
 
@@ -116,19 +132,37 @@ node scripts/run-simulation.mjs \
 
 Useful options:
 
+- `--script, -s <path>`: JSON script or preset. Required.
+- `--output, -o <path>`: output recording JSON path. Defaults to `./tmp/epi-city-recording.json`.
 - `--duration-days <number>`, `--duration-hours <number>`, or `--duration-seconds <number>`: override the script's simulation duration.
 - `--sample-interval <seconds>`: override snapshot spacing.
 - `--step <seconds>`: override the simulation generation step.
-- `--url <url>` and `--chrome <path>`: use the same browser controls as the video renderer.
+- `--url <url>`: use an already-running playback page instead of building and serving `dist/`.
+- `--chrome <path>`: explicit Chrome or Chromium executable. The same `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` and `CHROME_PATH` environment variables are supported.
+- `--verbose, -v`: print page console diagnostics.
+- `--help, -h`: print usage.
 
-The output file has this shape:
+Use only one duration override at a time.
+
+The output file is a self-contained recording bundle with a normalized script and summary metadata:
 
 ```json
 {
   "format": "epi-city-simulation-recording",
   "version": 1,
   "createdAt": "2026-05-12T00:00:00.000Z",
-  "script": {},
+  "script": {
+    "simulation": {
+      "durationSeconds": 1728000,
+      "sampleIntervalSeconds": 120,
+      "stepSeconds": 2,
+      "parameters": {},
+      "actions": []
+    },
+    "render": { "durationSeconds": 24 },
+    "cameraStart": null,
+    "actions": []
+  },
   "recording": {
     "durationSeconds": 1728000,
     "sampleIntervalSeconds": 120,
@@ -136,7 +170,11 @@ The output file has this shape:
     "parameters": {},
     "snapshots": []
   },
-  "summary": {}
+  "summary": {
+    "duration": 24,
+    "recordingDuration": 1728000,
+    "snapshotCount": 14401
+  }
 }
 ```
 
@@ -166,7 +204,7 @@ For interactive playback, run the dev server and open a URL that points at a ser
 http://localhost:5173/playback.html?recording=/recordings/epi-city-recording.json
 ```
 
-You can add `&script=/path/to/render-script.json` to use a render override. The file picker in `playback.html` also accepts recording bundles directly.
+You can add `&script=/path/to/render-script.json` to use a render override.
 
 ### Recorded Replay Rules
 
@@ -177,11 +215,12 @@ Allowed:
 - `playback`, `setCamera`, `moveCamera`, `followEntity`, `followNpc`, and `followCar`.
 - Presentation-only `call` actions such as `setEntityRenderMode`, map texture opacity/visibility, overlay toggles, path trail visibility, and heatmap radius.
 
-Rejected for render overrides:
+Rejected for replay scripts:
 
-- Non-empty `simulation.actions`; generation-time actions must be baked into the recording by `run-simulation`.
+- Non-empty `simulation.actions` in override scripts; generation-time actions must be baked into the recording by `run-simulation`.
 - Render-time entity mutation actions: `setNpcPosition`, `moveNpc`, `setCarPosition`, and `moveCar`.
 - `call` actions that can change simulation state, such as population setters, seed setters, speed/play/pause/restart controls, and infection parameter setters.
+- Unknown render actions.
 
 Recording bundles may keep the original `simulation.actions` in their embedded script as provenance. Those actions are stripped during replay because their effects are already in the snapshots.
 
@@ -246,6 +285,15 @@ Supported `parameters` keys map to existing city controls:
 - `pathTrailsVisible`, `pathTrailLength`
 - `heatmapRadius`
 
+## Render Block
+
+The optional `render` block controls default video duration before timeline actions are considered.
+
+- `durationSeconds` or `duration`: render length in video seconds.
+- `durationHours`: render length in video hours.
+
+If no render duration is supplied, Epi City uses the end time of the last render action, or 10 seconds for an empty timeline.
+
 ## Simulation Actions
 
 Simulation actions run while snapshots are generated. Their `at` values use simulation seconds.
@@ -305,7 +353,7 @@ Maps render time to simulation time.
 
 This example plays 12 simulated hours over 24 video seconds. Without a `playback` action, the whole recording maps linearly across the render duration.
 
-Alias: `playSimulation`.
+Aliases: `playSimulation`; `start` and `simulationStart` can replace `from`, and `end`, `simulationEnd`, or `simulationTime` can replace `to`.
 
 ### `setCamera`
 
@@ -319,7 +367,7 @@ Alias: `cameraSet`.
 
 ### `moveCamera`
 
-Animates the camera. You can provide `to`, top-level camera fields, or a `delta`.
+Animates the camera. You can provide `to`, `camera`, `target`, top-level camera fields, or a `delta`/`offset`.
 
 ```json
 {
@@ -378,7 +426,7 @@ Applies a render-time visual override to one entity. This does not alter the pre
 }
 ```
 
-Use `setNpcPosition` or `setCarPosition` for instant render-time placement.
+Use `setNpcPosition` or `setCarPosition` for instant render-time placement. Positions can be `[x, y]`, `{ "x": ..., "y": ... }`, or `{ "worldX": ..., "worldY": ... }`.
 
 ## Validation Rules
 
@@ -389,7 +437,7 @@ The parser validates these conditions:
 - Durations, intervals, and step sizes must be positive when present.
 - `durationSeconds`/`duration` and `durationHours` cannot be specified together.
 - Actions are sorted by `at`, then by optional `index`.
-- Unknown action names are preserved, but only supported actions affect playback.
+- For fresh script generation, unknown action names are preserved but only supported actions affect playback. Pre-recorded replay scripts reject unknown render actions.
 
 The renderer reports runtime errors for missing script files, missing ffmpeg, missing Chrome/Chromium, page startup failures, invalid frame captures, and ffmpeg encode failures.
 

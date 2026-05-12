@@ -30,11 +30,13 @@ const PAGE_GOTO_TIMEOUT_MS = 60000
 function printUsage() {
   console.log(`Usage:
   node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json [options]
+  node scripts/render-epi-video.mjs --recording ./tmp/epi-city-recording.json [options]
 
 Required:
-  --script, -s       Path to Epi City JSON script, unless --recording includes one
+  Provide --script, --recording, or both
 
 Options:
+  --script, -s       Path to Epi City JSON script or render override
   --recording, -r    Path to pre-recorded Epi City simulation JSON
   --output, -o       Output video path (default: ./tmp/epi-city-video.mp4)
   --fps              Frames per second (default: 30)
