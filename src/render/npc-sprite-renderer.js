@@ -879,10 +879,7 @@ function configureDisplay(display, config) {
 }
 
 function getVisibleNpcLimit(config) {
-  return Math.min(
-    positiveIntegerOrDefault(config.maxVisiblePerTile, NPC_CONFIG.maxVisiblePerTile),
-    positiveIntegerOrDefault(config.tileCapacity, NPC_CONFIG.tileCapacity)
-  )
+  return positiveIntegerOrDefault(config.maxVisiblePerTile, NPC_CONFIG.maxVisiblePerTile)
 }
 
 function tileIndexAtPosition(city, position) {

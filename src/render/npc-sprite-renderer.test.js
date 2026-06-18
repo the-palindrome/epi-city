@@ -160,7 +160,7 @@ describe('NPC sprite renderer', () => {
     const renderer = createNpcSpriteRenderer(npcs, city, {
       ...NPC_CONFIG,
       maxVisiblePerTile: 2,
-      tileCapacity: 4
+      visualSlotCount: 4
     }, infection, {
       pixi: createMockPixi(),
       textureAtlas: createTextureAtlas(colors)

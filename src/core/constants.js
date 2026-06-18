@@ -75,7 +75,7 @@ export const MOVEMENT_PROPERTY_BY_MODE = Object.freeze({
 export const NPC_CONFIG = Object.freeze({
   count: 1000,
   zorder: 1,
-  tileCapacity: 9,
+  visualSlotCount: 9,
   maxVisiblePerTile: 9,
   slotSpacing: 11,
   color: 0xe5c748,
@@ -85,8 +85,6 @@ export const NPC_CONFIG = Object.freeze({
   movementTimeScale: 4,
   crowding: Object.freeze({
     softTileCapacity: 4,
-    doorwayQueueCapacity: 3,
-    crosswalkQueueCapacity: 3,
     maxSpeedPenalty: 0.55
   }),
   workStartHour: 9,

@@ -19,9 +19,8 @@ describe('scale-derived simulation defaults', () => {
   })
 
   it('keeps pedestrian crowding defaults soft rather than hard-capping tiles', () => {
+    expect(NPC_CONFIG.visualSlotCount).toBeGreaterThan(0)
     expect(NPC_CONFIG.crowding.softTileCapacity).toBeGreaterThan(0)
-    expect(NPC_CONFIG.crowding.doorwayQueueCapacity).toBeGreaterThan(0)
-    expect(NPC_CONFIG.crowding.crosswalkQueueCapacity).toBeGreaterThan(0)
     expect(NPC_CONFIG.crowding.maxSpeedPenalty).toBeGreaterThan(0)
     expect(NPC_CONFIG.crowding.maxSpeedPenalty).toBeLessThan(1)
   })

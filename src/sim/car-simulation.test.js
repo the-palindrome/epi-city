@@ -114,7 +114,7 @@ function createNpcSimulationForTraffic(city, clock) {
   return createNpcSimulation(city, createEntityLayer(), {
     count: 1,
     zorder: 1,
-    tileCapacity: 9,
+    visualSlotCount: 9,
     maxVisiblePerTile: 9,
     slotSpacing: 11,
     color: 0xe5c748,
@@ -698,6 +698,52 @@ describe('car simulation', () => {
       timetableElementId: 'work',
       buildingId: npc.work
     })
+
+    simulation.destroy()
+    npcSimulation.destroy()
+  })
+
+  it('lets real NPC owners walk when the commute car cannot park at the destination', () => {
+    const city = createTrafficCity()
+    const clock = createClock(8)
+    const npcSimulation = createNpcSimulationForTraffic(city, clock)
+    const npc = npcSimulation.npcs[0]
+    const simulation = createCarSimulation(city, createEntityLayer(), {
+      count: 1,
+      clock,
+      random: createSeededRandom('real-owner'),
+      npcs: npcSimulation.npcs,
+      commuteChance: 1,
+      twoOwnerChance: 0,
+      twoTileChance: 1,
+      maxSpeed: 1000,
+      movementTimeScale: 1,
+      speedLimitScale: 100
+    })
+    const car = simulation.cars[0]
+
+    expect(car.parkedBuildingId).toBe('home')
+
+    for (let tileIndex = 0; tileIndex < city.tiles.length; tileIndex += 1) {
+      if (city.tileParkable[tileIndex] === 1) {
+        simulation.parking.reservations[tileIndex] = 999
+      }
+    }
+
+    city.setCrosswalkSignalState('green')
+    clock.hour = 9.5
+    simulation.update(0.1)
+
+    expect(car.state).toBe('parked')
+    expect(car.parkedBuildingId).toBe('home')
+    expect(npc.vehicleTrip).toBeNull()
+    expect(npc.waitingForCar).toBe(false)
+
+    npcSimulation.update(0.1)
+
+    expect(npc.present).toBe(true)
+    expect(npc.locationState).toBeNull()
+    expect(npc.movement.target).toBeTruthy()
 
     simulation.destroy()
     npcSimulation.destroy()

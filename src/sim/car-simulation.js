@@ -1207,7 +1207,6 @@ function maybeStartNpcScheduleCarTrip(car, owner, hour, context) {
   const destinationBuilding = context.buildingsById.get(activeElement.buildingId)
 
   if (destinationBuilding && isOwnerReadyForCarTrip(owner, activeElement.id, car.parkedBuildingId, destinationBuilding.id, hour)) {
-    markOwnerWaitingForCar(owner)
     startCarTrip(car, destinationBuilding, activeElement.id, owner, context)
   }
 }
@@ -1217,14 +1216,12 @@ function maybeStartSyntheticCarTrip(car, owner, hour, context) {
     const workBuilding = context.buildingsById.get(owner.workBuildingId)
 
     if (workBuilding && isOwnerReadyForCarTrip(owner, 'work', car.homeBuildingId, workBuilding.id, hour)) {
-      markOwnerWaitingForCar(owner)
       startCarTrip(car, workBuilding, 'work', owner, context)
     }
   } else if (car.parkedAt === 'work' && hourInRange(hour, context.config.homeDepartureHour, context.config.homeDepartureEndHour)) {
     const homeBuilding = context.buildingsById.get(owner.homeBuildingId)
 
     if (homeBuilding && isOwnerReadyForCarTrip(owner, 'home', car.parkedBuildingId, homeBuilding.id, hour)) {
-      markOwnerWaitingForCar(owner)
       startCarTrip(car, homeBuilding, 'home', owner, context)
     }
   }
@@ -1235,12 +1232,6 @@ function clearCarOwnerWaitingState(car) {
     if (owner.npc && !owner.npc.vehicleTrip) {
       owner.npc.waitingForCar = false
     }
-  }
-}
-
-function markOwnerWaitingForCar(owner) {
-  if (owner.npc && !owner.npc.vehicleTrip) {
-    owner.npc.waitingForCar = true
   }
 }
 
@@ -1280,7 +1271,7 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
   const destinationParking = context.parking.findAndReserveSpot(destinationBuilding, car.id, car.lengthTiles)
 
   if (!destinationParking) {
-    return
+    return false
   }
 
   const startNode = context.network.nearestNodeByTile[car.parkingSpot.anchorIndex]
@@ -1289,7 +1280,7 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
 
   if (route.length === 0) {
     context.parking.releaseParkingReservation(destinationParking.tileIndexes, car.id)
-    return
+    return false
   }
 
   car.state = 'driving'
@@ -1309,6 +1300,8 @@ function startCarTrip(car, destinationBuilding, destinationKind, owner, context)
   car.riderOwners = [owner]
   car.position = laneNodePosition(context.network, startNode)
   boardCarRiders(car, destinationKind, destinationBuilding)
+
+  return true
 }
 
 function boardCarRiders(car, destinationKind, destinationBuilding) {

@@ -134,7 +134,7 @@ describe('NPC sprite rendering performance', () => {
     const config = {
       ...NPC_CONFIG,
       maxVisiblePerTile: 1,
-      tileCapacity: 1
+      visualSlotCount: 1
     }
     const npcs = createNpcBatch(count, city)
     const infection = createInfection(COLORS)

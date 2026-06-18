@@ -250,7 +250,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
   const simulation = createNpcSimulation(city, createActorLayer(), {
     count: options.count ?? 8,
     zorder: 1,
-    tileCapacity: options.tileCapacity ?? NPC_CONFIG.tileCapacity,
+    visualSlotCount: options.visualSlotCount ?? NPC_CONFIG.visualSlotCount,
     maxVisiblePerTile: options.maxVisiblePerTile ?? NPC_CONFIG.maxVisiblePerTile,
     slotSpacing: NPC_CONFIG.slotSpacing,
     color: 0xe5c748,
@@ -382,10 +382,10 @@ describe('NPC simulation randomness', () => {
     const minCenter = NPC_CONFIG.size / 2
     const maxCenter = city.tileSize - NPC_CONFIG.size / 2
 
-    expect(simulation.tileCapacity).toBe(9)
+    expect(simulation.visualSlotCount).toBe(9)
     expect(simulation.npcs).toHaveLength(24)
     expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc.slot, 'index'))).toBe(true)
-    expect(simulation.npcs.every((npc) => npc.slot.id >= 0 && npc.slot.id < simulation.tileCapacity)).toBe(true)
+    expect(simulation.npcs.every((npc) => npc.slot.id >= 0 && npc.slot.id < simulation.visualSlotCount)).toBe(true)
     expect(simulation.npcs.every((npc) => npc.tile.x === 0 && npc.tile.y === 0)).toBe(true)
     expect(simulation.npcs.every((npc) => (
       npc.position.x >= minCenter &&
@@ -472,7 +472,7 @@ describe('NPC simulation randomness', () => {
     }
     const simulation = createSimulation('clock-walk', city, {
       count: 1,
-      tileCapacity: 1,
+      visualSlotCount: 1,
       clock,
       initialUpdate: false
     })
@@ -518,11 +518,9 @@ describe('NPC simulation randomness', () => {
     const createWalker = (seed, count) => {
       const simulation = createSimulation(seed, city, {
         count,
-        tileCapacity: 1,
+        visualSlotCount: 1,
         crowding: {
           softTileCapacity: 1,
-          doorwayQueueCapacity: 9,
-          crosswalkQueueCapacity: 9,
           maxSpeedPenalty: 0.5
         },
         initialUpdate: false
@@ -567,7 +565,7 @@ describe('NPC simulation randomness', () => {
     crowded.destroy()
   })
 
-  it('keeps pedestrians inside a location while the doorway tile is queued', () => {
+  it('lets pedestrians exit onto already occupied doorway tiles', () => {
     const city = createCity({
       width: 2,
       height: 1,
@@ -578,8 +576,6 @@ describe('NPC simulation randomness', () => {
       count: 3,
       crowding: {
         softTileCapacity: 1,
-        doorwayQueueCapacity: 2,
-        crosswalkQueueCapacity: 9,
         maxSpeedPenalty: 0.5
       },
       initialUpdate: false
@@ -617,14 +613,15 @@ describe('NPC simulation randomness', () => {
 
     simulation.update(1 / 60)
 
-    expect(exitingNpc.present).toBe(false)
-    expect(exitingNpc.locationState).toMatchObject({ buildingId: 'home' })
-    expect(exitingNpc.movement.target).toBeNull()
+    expect(exitingNpc.present).toBe(true)
+    expect(exitingNpc.locationState).toBeNull()
+    expect(exitingNpc.tile).toMatchObject(doorway)
+    expect(exitingNpc.movement.target).toBeTruthy()
 
     simulation.destroy()
   })
 
-  it('queues before entering a crowded crosswalk', () => {
+  it('allows pedestrians to enter occupied crosswalk tiles', () => {
     const city = createCity({
       width: 3,
       height: 1,
@@ -641,8 +638,6 @@ describe('NPC simulation randomness', () => {
       count: 2,
       crowding: {
         softTileCapacity: 1,
-        doorwayQueueCapacity: 9,
-        crosswalkQueueCapacity: 1,
         maxSpeedPenalty: 0.5
       },
       initialUpdate: false
@@ -677,14 +672,15 @@ describe('NPC simulation randomness', () => {
 
     simulation.update(1 / 60)
 
-    expect(waitingNpc.movement.target).toBeNull()
+    expect(waitingNpc.movement.target).toBeTruthy()
+    expect(waitingNpc.movement.target.tile).toMatchObject(crosswalk)
     expect(waitingNpc.tile).toMatchObject(start)
-    expect(waitingNpc.routing.blockedSeconds).toBeGreaterThan(0)
+    expect(waitingNpc.routing.blockedSeconds).toBe(0)
 
     simulation.destroy()
   })
 
-  it('counts same-tick crosswalk reservations when queueing pedestrians', () => {
+  it('allows same-tick crosswalk reservations to share a tile', () => {
     const city = createCity({
       width: 3,
       height: 1,
@@ -701,8 +697,6 @@ describe('NPC simulation randomness', () => {
       count: 2,
       crowding: {
         softTileCapacity: 1,
-        doorwayQueueCapacity: 9,
-        crosswalkQueueCapacity: 1,
         maxSpeedPenalty: 0.5
       },
       initialUpdate: false
@@ -729,8 +723,9 @@ describe('NPC simulation randomness', () => {
     simulation.update(1 / 60)
 
     expect(simulation.npcs[0].movement.target).not.toBeNull()
-    expect(simulation.npcs[1].movement.target).toBeNull()
-    expect(simulation.npcs[1].routing.blockedSeconds).toBeGreaterThan(0)
+    expect(simulation.npcs[1].movement.target).not.toBeNull()
+    expect(simulation.npcs[0].movement.target.tile).toMatchObject({ x: 1, y: 0, index: city.index(1, 0) })
+    expect(simulation.npcs[1].movement.target.tile).toMatchObject({ x: 1, y: 0, index: city.index(1, 0) })
 
     simulation.destroy()
   })
@@ -744,7 +739,7 @@ describe('NPC simulation randomness', () => {
     })
     const simulation = createSimulation('crowded-slot-avoidance', city, {
       count: 2,
-      tileCapacity: 5,
+      visualSlotCount: 5,
       initialUpdate: false
     })
     const walker = simulation.npcs[0]
@@ -785,7 +780,7 @@ describe('NPC simulation randomness', () => {
     const city = createCornerCity()
     const simulation = createSimulation('bezier-turn', city, {
       count: 1,
-      tileCapacity: 1,
+      visualSlotCount: 1,
       initialUpdate: false
     })
     const npc = simulation.npcs[0]
@@ -1105,7 +1100,7 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
-  it('enforces social distancing by queuing pedestrians before occupied tiles', () => {
+  it('allows occupied destination tiles even when social distancing policy is active', () => {
     const city = createCity({
       width: 2,
       height: 1,
@@ -1162,11 +1157,86 @@ describe('NPC simulation randomness', () => {
     distanced.simulation.update(1 / 60)
     normal.simulation.update(1 / 60)
 
-    expect(distanced.walker.movement.target).toBeNull()
+    expect(distanced.walker.movement.target).toBeTruthy()
     expect(normal.walker.movement.target).toBeTruthy()
 
     distanced.simulation.destroy()
     normal.simulation.destroy()
+  })
+
+  it('allows opposing pedestrians to share corridor tiles while social distancing is active', () => {
+    const city = createCity({
+      width: 3,
+      height: 1,
+      rows: ['sss'],
+      textureRows: [[0, 0, 0]]
+    })
+    const simulation = createSimulation('social-distance-deadlock', city, {
+      count: 2,
+      visualSlotCount: 1,
+      policyEffects: {
+        infectionProbabilityMultiplier: 1,
+        socialDistancingEnabled: true,
+        eventCancellationProbabilities: {
+          closeSchools: 0,
+          homeOffice: 0,
+          reduceShopping: 0,
+          reduceNightlife: 0
+        }
+      },
+      initialUpdate: false
+    })
+    const left = { x: 0, y: 0, index: city.index(0, 0) }
+    const middle = { x: 1, y: 0, index: city.index(1, 0) }
+    const right = { x: 2, y: 0, index: city.index(2, 0) }
+    const leftNpc = simulation.npcs[0]
+    const middleNpc = simulation.npcs[1]
+
+    leftNpc.present = true
+    leftNpc.locationState = null
+    leftNpc.position = { x: 16, y: 16 }
+    leftNpc.tile = { ...left }
+    leftNpc.slot = { id: 0 }
+    leftNpc.movement.speed = 32
+    leftNpc.movement.target = null
+    leftNpc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk-right',
+        buildingId: 'right-target',
+        location: right
+      })
+    }
+
+    middleNpc.present = true
+    middleNpc.locationState = null
+    middleNpc.position = { x: 48, y: 16 }
+    middleNpc.tile = { ...middle }
+    middleNpc.slot = { id: 0 }
+    middleNpc.movement.speed = 32
+    middleNpc.movement.target = null
+    middleNpc.timetable = {
+      getActiveElement: () => ({
+        id: 'walk-left',
+        buildingId: 'left-target',
+        location: left
+      })
+    }
+
+    simulation.update(1 / 60)
+
+    expect(leftNpc.movement.target).toBeTruthy()
+    expect(middleNpc.movement.target).toBeTruthy()
+
+    for (let frame = 0; frame < 360; frame += 1) {
+      simulation.update(1 / 60)
+    }
+
+    expect(leftNpc.present).toBe(false)
+    expect(leftNpc.locationState?.location).toMatchObject(right)
+    expect(middleNpc.present).toBe(false)
+    expect(middleNpc.locationState?.location).toMatchObject(left)
+
+    simulation.destroy()
   })
 
   it('records recent contact events when contact edge display is enabled', () => {
