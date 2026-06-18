@@ -21,13 +21,17 @@ The generated `process_gta_map/output/` files are local inspection outputs ignor
 
 ## Requirements
 
-Use Python 3 with Pillow and NumPy available:
+Use Python 3.10+ with Pillow and NumPy available:
 
 ```bash
 python3 -m pip install pillow numpy
 ```
 
-The current dev container already has these packages installed.
+You can also reuse the map-editor virtualenv after running `npm run map-editor:deps`:
+
+```bash
+map-editor/.venv/bin/python process_gta_map/build-gta-tilemap.py
+```
 
 ## Regenerate The Map
 
@@ -36,6 +40,19 @@ From the repository root, run:
 ```bash
 python3 process_gta_map/build-gta-tilemap.py
 ```
+
+Useful options:
+
+| Option | Purpose |
+| --- | --- |
+| `--source <path>` | Source image. Defaults to `process_gta_map/source/gta1-liberty-city-hd.webp`. |
+| `--output-map <path>` | Semantic tile-layout output path. |
+| `--output-texture-layout <path>` | Texture-row output path. |
+| `--output-textures <dir>` | Atlas and manifest output directory. |
+| `--preview <path>` | Preview PNG output path. |
+| `--grid-size <number>` | Number of cells per side. Defaults to `256`. |
+| `--tile-size <number>` | Runtime tile size written to the semantic layout. Defaults to `32`. |
+| `--texture-size <number>` | Preview tile size. Defaults to `32`. |
 
 The script performs these steps:
 

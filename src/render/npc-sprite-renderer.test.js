@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
+import { ENTITY_RENDER_DEBUG_CONFIG, INFECTION_CONFIG, NPC_CONFIG } from '../core/constants.js'
 import { NPC_SPRITE_FRAME_DISTANCE, createNpcSpriteState } from './npc-sprite.js'
 import { createNpcSpriteRenderer } from './npc-sprite-renderer.js'
 
@@ -160,7 +160,7 @@ describe('NPC sprite renderer', () => {
     const renderer = createNpcSpriteRenderer(npcs, city, {
       ...NPC_CONFIG,
       maxVisiblePerTile: 2,
-      tileCapacity: 4
+      visualSlotCount: 4
     }, infection, {
       pixi: createMockPixi(),
       textureAtlas: createTextureAtlas(colors)
@@ -310,7 +310,7 @@ describe('NPC sprite renderer', () => {
     clock.seconds = 60
     renderer.render()
 
-    const overlay = renderer.display.children[2]
+    const overlay = renderer.debugDisplay
 
     expect(overlay.circleStrokes).toEqual([
       expect.objectContaining({ x: 24, y: 16, radius: 24, color: colors[0] })
@@ -333,6 +333,44 @@ describe('NPC sprite renderer', () => {
 
     expect(overlay.circleStrokes).toEqual([])
     expect(overlay.strokes).toEqual([])
+
+    renderer.destroy()
+  })
+
+  it('draws infection radius overlays for hidden infection participants above map layers', () => {
+    const city = {
+      width: 2,
+      height: 1,
+      tileSize: 32,
+      tiles: [{}, {}]
+    }
+    const npcs = [
+      { ...createNpc(0, 16, 16), infection: 'infectious', present: false },
+      { ...createNpc(1, 48, 16), infection: 'infectious', present: false, vehicleTrip: { carId: 1 } }
+    ]
+    const infection = {
+      infectionDistance: 24,
+      getNpcColor() {
+        return 0xdb3b34
+      }
+    }
+    const renderer = createNpcSpriteRenderer(npcs, city, {
+      ...NPC_CONFIG,
+      entityRenderMode: 'geometric'
+    }, infection, {
+      pixi: createRenderModeMockPixi(),
+      textureAtlas: createTextureAtlas([0xdb3b34]),
+      entityDebugOptions: {
+        infectionRadiusVisible: true
+      }
+    })
+
+    renderer.render()
+
+    expect(renderer.debugDisplay.zIndex).toBe(ENTITY_RENDER_DEBUG_CONFIG.zorder)
+    expect(renderer.debugDisplay.circleStrokes).toEqual([
+      expect.objectContaining({ x: 16, y: 16, radius: 24, color: 0xdb3b34 })
+    ])
 
     renderer.destroy()
   })

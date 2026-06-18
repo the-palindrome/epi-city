@@ -11,7 +11,7 @@
     "--pids-limit=512"
   ],
   "mounts": [
-    "source=${localEnv:HOME}/.codex,target=/home/codex/.codex,type=bind"
+    "source=${localWorkspaceFolder}/.devcontainer/codex-home,target=/home/codex/.codex,type=bind"
   ],
   "customizations": {
     "vscode": {

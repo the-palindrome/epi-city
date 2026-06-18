@@ -2,6 +2,12 @@
 
 Epi City is a top-down Pixi.js and Vite city simulation with Liberty City map rendering, NPC and car movement, SEIR infection dynamics, debug dashboards, and local map-editing tools.
 
+## Prerequisites
+
+- Node.js 20.19+ or 22.12+.
+- Python 3.10+ for map-editor training and map-processing tools.
+- Chrome or Chromium for video rendering and simulation recording.
+
 ## Quick Start
 
 Install dependencies and start the Vite development server:
@@ -13,11 +19,50 @@ npm run dev
 
 Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/maps/`, and the app loads the `liberty-city` map package by default. Local dev and preview requests for `/maps/...` are served from `public/maps/...` with `no-store`, so editor changes to the source map files show up without relying on stale `dist/maps` copies.
 
+Open `http://localhost:5173/playback.html` to use the simulation playback app. It wraps the same Epi City runtime as the main app, generates a scripted simulation recording, and lets you scrub or play the render timeline.
+
+Render an MP4 from the example script with:
+
+```bash
+npm run render:video
+```
+
+Pre-record a simulation to JSON for later interactive playback or rendering with:
+
+```bash
+npm run run-simulation
+```
+
+See [docs/video-renderer.md](docs/video-renderer.md) for the scripting language, playback API, simulation recording CLI, and renderer CLI.
+
+## Common Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Vite development server for the main app and playback app. |
+| `npm test` | Run the Vitest unit and performance test suite. |
+| `npm run check` | Run tests, build the Vite app, and syntax-check Node/Python tooling. |
+| `npm run build` | Build both `index.html` and `playback.html` into `dist/`. |
+| `npm run preview` | Preview the production build. |
+| `npm run map-editor:deps` | Create or repair `map-editor/.venv` and install the Python training dependencies. |
+| `npm run map-editor` | Start the local map editor. |
+| `npm run run-simulation` | Generate `tmp/epi-city-recording.json`. |
+| `npm run render:video` | Generate `tmp/epi-city-video.mp4`. |
+
+Generated outputs such as `dist/`, `tmp/*.mp4`, `tmp/*recording.json`, optional frame directories, `map-editor/.venv/`, and `process_gta_map/output/` are local build or tooling artifacts.
+
 ## Controls
+
+### Basic Controls
 
 - Hold the left mouse button and drag to pan the camera.
 - Use the mouse wheel to zoom around the cursor.
-- Press `Space` to play or pause the simulation, press `q` to toggle the simulation dashboard, press `r` to toggle rendering options, press `p` to toggle the policy dashboard, and press `g` to toggle the epidemic graph.
+- Press `Space` to play or pause the simulation.
+- Use the browser console to inspect `window.citySim`.
+
+### Dashboards
+
+- Press `q` to toggle the simulation dashboard, `r` to toggle rendering options, `p` to toggle the policy dashboard, and `g` to toggle the epidemic graph.
 - Use rendering options to show or hide the map texture, tune texture opacity, switch NPC/car rendering between `sprite` and `geometric`, show the tile overlay, choose its color scheme, tune tile overlay opacity, enable optional SEIR heatmaps, and turn on entity debug overlays.
 - In `geometric` entity rendering, NPCs draw as infection-colored disks and cars draw as rectangles colored by any passengers inside them.
 - Entity debug overlays can show infectious NPC radius circles, recent infection arrows, recent contact edges, and short NPC/car path trails. Infection and contact edge windows are tuned separately, default to 10 game minutes, and clamp from 1 game minute to 2 game hours.
@@ -28,10 +73,14 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - Use the simulation dashboard NPC control to restart the simulation with 100 to 10000 pedestrians. The default is 1000.
 - Use the simulation dashboard car control to restart the simulation with the selected number of cars. The default is 200.
 - Use the simulation dashboard infection controls to tune initial infected count, inoculated percentage, SEIR distance, per-minute transmission probability, incubation time, infectious time, and recovered immunity time.
-- Hover an NPC to inspect its infection status, contagiousness, immunity, and phase timer.
-- Right-click an NPC and choose `infect` to manually make that NPC infectious.
 - The simulation dashboard shows the simulated day/time, can run up to 24x speed, and can toggle the darker day-night overlay.
-- Use the browser console to inspect `window.citySim`.
+
+### Entity Interaction
+
+- Hover an NPC to inspect its infection status, contagiousness, immunity, and phase timer.
+- Left-click an NPC or car to select it without showing a route.
+- Right-click an NPC or car to `follow`, `assume control`, or show/hide its route. When control is assumed, use WASD or the arrow keys to move the entity.
+- Right-click an NPC and choose `infect` to manually make that NPC infectious.
 
 ## Project Structure
 
@@ -40,11 +89,18 @@ Open `http://localhost:5173` in your browser. Vite serves `public/maps/` as `/ma
 - `public/maps/liberty-city/tile-layout.json` contains the default static Liberty City semantic tile layout.
 - `public/maps/liberty-city/texture-layout.json` contains one atlas-frame texture ID per map cell.
 - `public/maps/liberty-city/manifest.json` describes the Liberty City atlas frames used by the default texture set.
-- `public/maps/liberty-city/liberty-city-atlas.webp` is the generated runtime atlas copy used by the renderer.
+- `public/maps/liberty-city/liberty-city-atlas.webp` is the generated atlas copy used by the runtime texture set, renderer, and map editor preview.
 - `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
 - `map-editor/` contains the interactive map editor, random-forest training loop, and Epi City JSON load/save tools.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
+- `docs/video-renderer.md` explains simulation playback, the scripting language, and MP4 rendering.
 - `vite.config.ts` configures local development and preview server ports.
+
+## Map Asset Workflow
+
+The checked-in runtime map in `public/maps/liberty-city/` is the curated package loaded by the app. The raw importer in `process_gta_map/` can regenerate exact source-image texture assets into ignored local output. The map editor then loads a map package, applies semantic labels, building metadata, texture-row edits, and lane graph metadata, and saves the reviewed `tile-layout.json` plus `texture-layout.json` back together.
+
+Use the map editor for semantic, building, texture-row, and lane graph edits. Use `process_gta_map/build-gta-tilemap.py` only when you need to regenerate raw assets from the source image.
 
 ## Map Format
 
@@ -89,6 +145,38 @@ The map stores semantics and visuals in separate JSON files. `tile-layout.json` 
 }
 ```
 
+`tile-layout.json` can also contain manual centered lane graph metadata for vehicle routing and traffic signals:
+
+```json
+{
+  "laneGraph": {
+    "encoding": "directed-lanes-v1",
+    "drivingSide": "right",
+    "coordinateSpace": "tile",
+    "nodes": [
+      { "id": "lane-node-1", "tile": { "x": 10, "y": 20 }, "x": 10.5, "y": 20.5, "direction": "east" },
+      { "id": "lane-node-2", "tile": { "x": 11, "y": 20 }, "x": 11.5, "y": 20.5, "direction": "east" }
+    ],
+    "edges": [
+      {
+        "id": "lane-edge-1",
+        "from": "lane-node-1",
+        "to": "lane-node-2",
+        "type": "lane",
+        "direction": "east",
+        "turn": null,
+        "speedLimit": 28,
+        "path": [[10.5, 20.5], [11.5, 20.5]]
+      }
+    ],
+    "trafficSignals": {
+      "encoding": "traffic-signals-v1",
+      "overrides": []
+    }
+  }
+}
+```
+
 The runtime supports seven base categories: `road`, `sidewalk`, `crosswalk`, `park`, `water`, `building`, and `obstacle`. Each legend entry also stores `walkable`, `drivable`, and `parkable` booleans generated from tile behavior rules. Building components are stored as 8-connected row spans with an `id`, `types`, and optional `entrance` coordinate on the building footprint. Supported editor types are `residential`, `commercial`, `school`, `restaurant`, `supermarket`, `hospital`, `mall`, and `nightclub`.
 
 ## Real-World Scale
@@ -97,7 +185,7 @@ The map still renders at 32 world units per tile, but simulation defaults now tr
 
 ## Movement Rules
 
-Vehicles use the directed lane graph when it exists and park on tiles marked `parkable`. Pedestrians use tiles marked `walkable`. Crosswalks are both walkable and drivable, and their shared signal cycles through `red`, `green`, and `yellow`; NPCs and cars enter only on green, but entities already on a crosswalk can keep moving or step off at any signal. Vehicle traffic signals are generated from lane graph intersections and can be overridden from the map editor. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
+Vehicles use the directed lane graph when it exists and park on tiles marked `parkable`. Pedestrians use tiles marked `walkable`. Crosswalk tiles are signal-controlled crossings: pedestrians may enter them only on green, and vehicle lane traffic can traverse authored lane graph nodes on road or crosswalk tiles. Do not infer vehicle lane traversal solely from `isDrivable()`. Entities already on a crosswalk can keep moving or step off at any signal. Vehicle traffic signals are generated from lane graph intersections and can be overridden from the map editor. In the default map, roads are drivable only; sidewalks, parks, and crosswalks are walkable only; water, obstacles, and non-entrance building tiles are blocked. A building entrance remains a `building` tile, but the runtime marks that cell walkable from building metadata.
 
 ## NPC Prototype
 
@@ -113,7 +201,7 @@ The runtime uses a single browser animation loop with the game-development shape
 
 ## Car Prototype
 
-The app creates 200 cars by default. Cars have one or two adult real NPC owners from the same residential building, park in available parkable spots near home or work, and occupy two or three tiles with one car allowed per occupied tile. Commuting owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Real NPC owners can drive to active timetable stops such as work, lunch, shopping, or home. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
+The app creates 200 cars by default. Cars have one or two adult owner records, use real NPC owners from the same residential building when available, and fall back to synthetic owners for any remaining cars. Cars park in available parkable spots near home or work and occupy two or three tiles with one car allowed per occupied tile. Commuting real NPC owners wait for their car instead of walking, ride hidden inside it, and get dropped into the destination building when the car parks. Real NPC owners can drive to active timetable stops such as work, lunch, shopping, or home; synthetic owners follow a simpler home/work commute. Parked cars render shifted toward the neighboring road, while moving cars render on lane graph node centers.
 
 Car routing compiles the lane graph into compact typed arrays and caches reverse destination route fields plus exact extracted lane routes. Route cost uses lane distance only; speed limits affect movement speed, not path choice. Authored lane speed limits are interpreted as mph and converted through the real-world scale before movement. At runtime, the car network also generates smooth lane-change maneuver edges wherever two same-direction lanes are one tile apart and three to six tiles forward. These maneuvers avoid crosswalks, check their swept road area for clearance, and keep the car body occupying only its normal two or three tiles. Traffic lights are movement gates rather than route-cache inputs, so cars wait before entering a red or yellow controlled intersection without invalidating cached routes. The cached lane route benchmark on Liberty City's 18,260-node lane graph is covered by a performance test requiring at least a 10x speedup for warmed cached route data.
 
@@ -212,7 +300,7 @@ npm run map-editor:deps
 npm run map-editor
 ```
 
-The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `scikit-learn` there. Open the local URL printed by the command; it starts at `http://localhost:5174` and tries the next port if that one is already in use. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
+The dependency command creates or repairs a local Python environment in `map-editor/.venv` and installs `numpy`, `pillow`, and `scikit-learn` there. Open the local URL printed by the command; it starts at `http://localhost:5174` and tries the next port if that one is already in use. The editor starts from an empty semantic layout plus the current Liberty City texture rows, atlas, and texture manifest. Use `Load Map Folder` to open a package such as `public/maps/liberty-city`, and `Save Map Folder` to write `tile-layout.json` plus `texture-layout.json` back together.
 
 ## Texture Sets
 
@@ -220,11 +308,13 @@ The default texture set is `liberty-city`. The app loads `public/maps/liberty-ci
 
 ## Build
 
-Run the unit tests and production build with:
+Run the full local verification suite with:
 
 ```bash
 npm run check
 ```
+
+This runs `npm test`, builds the Vite app, syntax-checks the Node tooling, and byte-compiles the Python map tools.
 
 Create a production build with:
 

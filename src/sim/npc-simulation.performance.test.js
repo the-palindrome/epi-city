@@ -123,7 +123,7 @@ function createConfiguredNpcSimulation(city, count, hour = 18, overrides = {}) {
   return createNpcSimulation(city, createActorLayer(), {
     count,
     zorder: 1,
-    tileCapacity: NPC_CONFIG.tileCapacity,
+    visualSlotCount: NPC_CONFIG.visualSlotCount,
     maxVisiblePerTile: NPC_CONFIG.maxVisiblePerTile,
     slotSpacing: NPC_CONFIG.slotSpacing,
     color: NPC_CONFIG.color,
@@ -349,7 +349,7 @@ function runUpdates(simulation, frames) {
   return checksum
 }
 
-function createCrowdingFixture(count, tileCount = 256 * 256, tileCapacity = NPC_CONFIG.tileCapacity) {
+function createCrowdingFixture(count, tileCount = 256 * 256, visualSlotCount = NPC_CONFIG.visualSlotCount) {
   const city = {
     tiles: new Uint8Array(tileCount)
   }
@@ -362,12 +362,12 @@ function createCrowdingFixture(count, tileCount = 256 * 256, tileCapacity = NPC_
     npcs[index] = {
       present: true,
       tile: { index: tileIndex },
-      slot: { id: index % tileCapacity },
+      slot: { id: index % visualSlotCount },
       movement: index % 2 === 0
         ? {
             target: {
               tile: { index: targetIndex },
-              slot: { id: (index + 3) % tileCapacity }
+              slot: { id: (index + 3) % visualSlotCount }
             }
           }
         : { target: null }
@@ -378,20 +378,20 @@ function createCrowdingFixture(count, tileCount = 256 * 256, tileCapacity = NPC_
     city,
     npcs,
     config: {
-      tileCapacity,
+      visualSlotCount,
       crowding: NPC_CONFIG.crowding
     }
   }
 }
 
 function createLegacyCrowdingState(city, config) {
-  const tileCapacity = config.tileCapacity
+  const visualSlotCount = config.visualSlotCount
 
   return {
-    tileCapacity,
+    visualSlotCount,
     tileCounts: new Uint16Array(city.tiles.length),
     incomingTileCounts: new Uint16Array(city.tiles.length),
-    slotCounts: new Uint16Array(city.tiles.length * tileCapacity)
+    slotCounts: new Uint16Array(city.tiles.length * visualSlotCount)
   }
 }
 
@@ -429,8 +429,8 @@ function addLegacyCrowdingOccupancy(crowding, tileIndex, slotId, isCurrentTile) 
     crowding.incomingTileCounts[tileIndex] += 1
   }
 
-  if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.tileCapacity) {
-    crowding.slotCounts[tileIndex * crowding.tileCapacity + slotId] += 1
+  if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.visualSlotCount) {
+    crowding.slotCounts[tileIndex * crowding.visualSlotCount + slotId] += 1
   }
 }
 
@@ -439,11 +439,11 @@ function crowdingChecksum(crowding, npcs) {
 
   for (const npc of npcs) {
     checksum += crowdingCount(crowding, 'tile', npc.tile.index)
-    checksum += crowdingCount(crowding, 'slot', npc.tile.index * crowding.tileCapacity + npc.slot.id)
+    checksum += crowdingCount(crowding, 'slot', npc.tile.index * crowding.visualSlotCount + npc.slot.id)
 
     if (npc.movement.target) {
       checksum += crowdingCount(crowding, 'incoming', npc.movement.target.tile.index)
-      checksum += crowdingCount(crowding, 'slot', npc.movement.target.tile.index * crowding.tileCapacity + npc.movement.target.slot.id)
+      checksum += crowdingCount(crowding, 'slot', npc.movement.target.tile.index * crowding.visualSlotCount + npc.movement.target.slot.id)
     }
   }
 

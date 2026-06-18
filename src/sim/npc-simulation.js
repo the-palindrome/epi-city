@@ -103,10 +103,11 @@ export function createNpcSimulation(city, entityLayer, config) {
   const desireRandom = config.desireRandom || (random.seed ? createSeededRandom(`${random.seed}:desires`) : createSystemRandom())
   const socialRandom = config.socialRandom || (random.seed ? createSeededRandom(`${random.seed}:social`) : createSystemRandom())
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
+  const visualSlotCount = resolveNpcVisualSlotCount(config)
   const clock = config.clock || STATIC_CLOCK
   const visibleTileCounts = new Uint8Array(city.tiles.length)
   const visibleTileIndexes = []
-  const slotOffsets = createNpcSlotOffsets(city, config)
+  const slotOffsets = createNpcSlotOffsets(city, config, visualSlotCount)
   const spawnTiles = collectNpcSpawnTiles(city)
   const desireCityData = getDesireCityData(city)
   const buildingsByPurpose = desireCityData.buildingsByPurpose
@@ -124,6 +125,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     random,
     policies: policyController,
     routePlanner,
+    visualSlotCount,
     zorder,
     config
   }
@@ -137,7 +139,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   for (let id = 0; id < npcProfiles.length; id += 1) {
     const profile = npcProfiles[id]
     const timetable = createNpcTimetable(city, profile.buildingAssignment, profile.age, random, config)
-    const spawnState = createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets)
+    const spawnState = createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets, visualSlotCount)
 
     if (!spawnState) {
       break
@@ -182,6 +184,9 @@ export function createNpcSimulation(city, entityLayer, config) {
   const graphics = npcRenderer.spriteDisplay || display
 
   entityLayer.addChild(display)
+  if (npcRenderer.debugDisplay && npcRenderer.debugDisplay !== display) {
+    entityLayer.addChild(npcRenderer.debugDisplay)
+  }
 
   function update(deltaSeconds) {
     if (destroyed) {
@@ -253,7 +258,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   return {
     npcs,
     socialGraph,
-    tileCapacity: config.tileCapacity,
+    visualSlotCount,
     routePlanner,
     desires,
     infection,
@@ -2510,7 +2515,7 @@ function createTimetableElement(id, building, startHour, endHour, city) {
   }
 }
 
-function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets) {
+function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config, slotOffsets, visualSlotCount) {
   const activeElement = timetable.getActiveElement(clock.getTimeOfDayHours())
 
   if (activeElement) {
@@ -2531,9 +2536,8 @@ function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config,
     return null
   }
 
-  const spawnAnchor = random.int(spawnTiles.length * config.tileCapacity)
-  const tileIndex = spawnTiles[Math.floor(spawnAnchor / config.tileCapacity)]
-  const slot = spawnAnchor % config.tileCapacity
+  const tileIndex = spawnTiles[random.int(spawnTiles.length)]
+  const slot = random.int(visualSlotCount)
   const tileX = tileIndex % city.width
   const tileY = Math.floor(tileIndex / city.width)
 
@@ -2609,7 +2613,10 @@ function prepareNpcForRouting(npc, deltaSeconds, context) {
     }
 
     if (tryExitCurrentLocation(npc, context)) {
+      npc.routing.blockedSeconds = 0
       context.routePlanner.request(npc)
+    } else {
+      npc.routing.blockedSeconds += deltaSeconds
     }
 
     return
@@ -2732,7 +2739,17 @@ function followRoute(npc, deltaSeconds, context) {
 
   npc.routing.blockedSeconds += deltaSeconds
 
-  if (npc.routing.blockedSeconds >= finiteNumberOrDefault(context.config.routeBlockedReplanSeconds, NPC_CONFIG.routeBlockedReplanSeconds)) {
+  const blockedReplanSeconds = Math.max(
+    0,
+    finiteNumberOrDefault(context.config.routeBlockedReplanSeconds, NPC_CONFIG.routeBlockedReplanSeconds)
+  )
+
+  if (npc.routing.blockedSeconds >= blockedReplanSeconds && tryStartMoveToIndex(npc, nextIndex, context)) {
+    npc.routing.blockedSeconds = 0
+    return
+  }
+
+  if (npc.routing.blockedSeconds >= blockedReplanSeconds) {
     npc.routing.blockedSeconds = 0
     npc.routing.routeField = null
     context.routePlanner.request(npc)
@@ -2789,18 +2806,10 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
     return false
   }
 
-  if (shouldQueueForCrowdedCrosswalk(targetIndex, context)) {
-    return false
-  }
-
-  if (shouldQueueForSocialDistance(targetIndex, context)) {
-    return false
-  }
-
   const targetSlot = findAvailableNpcSlot(
     targetIndex,
     random,
-    config.tileCapacity,
+    context.visualSlotCount,
     context.unlimitedCapacityTiles,
     npc.slot.id,
     context.crowding
@@ -3002,18 +3011,10 @@ function normalizeVector(x, y) {
 function tryExitCurrentLocation(npc, context) {
   const location = npc.locationState.location
 
-  if (shouldQueueForCrowdedDoorway(location.index, context)) {
-    return false
-  }
-
-  if (shouldQueueForSocialDistance(location.index, context)) {
-    return false
-  }
-
   const targetSlot = findAvailableNpcSlot(
     location.index,
     context.random,
-    context.config.tileCapacity,
+    context.visualSlotCount,
     context.unlimitedCapacityTiles,
     null,
     context.crowding
@@ -3057,35 +3058,35 @@ function enterGoalLocation(npc, context) {
   npc.routing = createEmptyRouteState()
 }
 
-function findAvailableNpcSlot(tileIndex, random, tileCapacity, unlimitedCapacityTiles, preferredSlot = null, crowding = null) {
+function findAvailableNpcSlot(tileIndex, random, visualSlotCount, unlimitedCapacityTiles, preferredSlot = null, crowding = null) {
   if (unlimitedCapacityTiles && unlimitedCapacityTiles[tileIndex]) {
     return { slot: -1, unlimited: true }
   }
 
-  const avoidedSlot = chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding)
+  const avoidedSlot = chooseAvoidanceNpcSlot(tileIndex, visualSlotCount, preferredSlot, crowding)
 
   if (avoidedSlot !== -1) {
     return { slot: avoidedSlot, unlimited: false }
   }
 
-  if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
+  if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < visualSlotCount) {
     return { slot: preferredSlot, unlimited: false }
   }
 
-  return { slot: random.int(tileCapacity), unlimited: false }
+  return { slot: random.int(visualSlotCount), unlimited: false }
 }
 
-function chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding) {
-  if (!crowding?.slotCounts || tileCapacity <= 0 || tileIndex < 0) {
+function chooseAvoidanceNpcSlot(tileIndex, visualSlotCount, preferredSlot, crowding) {
+  if (!crowding?.slotCounts || visualSlotCount <= 0 || tileIndex < 0) {
     return -1
   }
 
-  const baseIndex = tileIndex * tileCapacity
+  const baseIndex = tileIndex * visualSlotCount
   let bestSlot = -1
   let bestCount = Infinity
   let occupiedCount = 0
 
-  for (let slot = 0; slot < tileCapacity; slot += 1) {
+  for (let slot = 0; slot < visualSlotCount; slot += 1) {
     const count = npcCrowdingSlotCount(crowding, baseIndex + slot)
     occupiedCount += count
 
@@ -3099,7 +3100,7 @@ function chooseAvoidanceNpcSlot(tileIndex, tileCapacity, preferredSlot, crowding
     return -1
   }
 
-  if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < tileCapacity) {
+  if (Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < visualSlotCount) {
     const preferredCount = npcCrowdingSlotCount(crowding, baseIndex + preferredSlot)
 
     if (preferredCount <= bestCount) {
@@ -3119,17 +3120,17 @@ function reserveNpcCrowdingTarget(tileIndex, slotId, context) {
 }
 
 export function createNpcCrowdingState(city, config) {
-  const tileCapacity = positiveIntegerOrDefault(config.tileCapacity, NPC_CONFIG.tileCapacity)
+  const visualSlotCount = resolveNpcVisualSlotCount(config)
 
   return {
     config: normalizeNpcCrowdingConfig(config.crowding),
-    tileCapacity,
+    visualSlotCount,
     tileCounts: new Uint16Array(city.tiles.length),
     incomingTileCounts: new Uint16Array(city.tiles.length),
-    slotCounts: new Uint16Array(city.tiles.length * tileCapacity),
+    slotCounts: new Uint16Array(city.tiles.length * visualSlotCount),
     tileStamps: new Uint32Array(city.tiles.length),
     incomingTileStamps: new Uint32Array(city.tiles.length),
-    slotStamps: new Uint32Array(city.tiles.length * tileCapacity),
+    slotStamps: new Uint32Array(city.tiles.length * visualSlotCount),
     stamp: 0,
     dense: false,
     occupancyCount: 0,
@@ -3227,8 +3228,8 @@ function addNpcCrowdingOccupancy(crowding, tileIndex, slotId, isCurrentTile) {
   counts[tileIndex] += 1
   crowding.occupancyCount += 1
 
-  if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.tileCapacity) {
-    const slotIndex = tileIndex * crowding.tileCapacity + slotId
+  if (Number.isInteger(slotId) && slotId >= 0 && slotId < crowding.visualSlotCount) {
+    const slotIndex = tileIndex * crowding.visualSlotCount + slotId
 
     if (!crowding.dense && crowding.slotStamps[slotIndex] !== crowding.stamp) {
       crowding.slotStamps[slotIndex] = crowding.stamp
@@ -3287,64 +3288,26 @@ function npcCrowdSpeedScale(npc, target, context) {
   return Math.max(1 - config.maxSpeedPenalty, 1 - config.maxSpeedPenalty * crowdRatio)
 }
 
-function shouldQueueForCrowdedDoorway(tileIndex, context) {
-  const capacity = context.crowding?.config.doorwayQueueCapacity
-
-  return Number.isFinite(capacity) &&
-    capacity > 0 &&
-    npcCrowdCount(tileIndex, context) >= capacity
-}
-
-function shouldQueueForCrowdedCrosswalk(tileIndex, context) {
-  const capacity = context.crowding?.config.crosswalkQueueCapacity
-
-  return Boolean(
-    Number.isFinite(capacity) &&
-    capacity > 0 &&
-    isNpcCrosswalkTile(tileIndex, context.city) &&
-    npcCrowdCount(tileIndex, context) >= capacity
-  )
-}
-
-function shouldQueueForSocialDistance(tileIndex, context) {
-  if (!context.policies?.shouldKeepDistanceFromTile(tileIndex)) {
-    return false
-  }
-
-  return npcCrowdCount(tileIndex, context) > 0
-}
-
-function isNpcCrosswalkTile(tileIndex, city) {
-  if (!Number.isInteger(tileIndex) || tileIndex < 0) {
-    return false
-  }
-
-  if (city.tileCrosswalk) {
-    return city.tileCrosswalk[tileIndex] === 1
-  }
-
-  if (typeof city.isCrosswalk !== 'function') {
-    return false
-  }
-
-  return city.isCrosswalk(tileIndex % city.width, Math.floor(tileIndex / city.width))
-}
-
 function normalizeNpcCrowdingConfig(config = NPC_CONFIG.crowding) {
   const fallback = NPC_CONFIG.crowding
 
   return {
     softTileCapacity: positiveIntegerOrDefault(config?.softTileCapacity, fallback.softTileCapacity),
-    doorwayQueueCapacity: nonNegativeIntegerOrDefault(config?.doorwayQueueCapacity, fallback.doorwayQueueCapacity),
-    crosswalkQueueCapacity: nonNegativeIntegerOrDefault(config?.crosswalkQueueCapacity, fallback.crosswalkQueueCapacity),
     maxSpeedPenalty: Math.min(0.95, Math.max(0, finiteNumberOrDefault(config?.maxSpeedPenalty, fallback.maxSpeedPenalty)))
   }
 }
 
-function createNpcSlotOffsets(city, config) {
-  const offsets = new Array(config.tileCapacity)
-  const columns = Math.ceil(Math.sqrt(config.tileCapacity))
-  const rows = Math.ceil(config.tileCapacity / columns)
+function resolveNpcVisualSlotCount(config) {
+  return positiveIntegerOrDefault(
+    config?.visualSlotCount,
+    NPC_CONFIG.visualSlotCount
+  )
+}
+
+function createNpcSlotOffsets(city, config, visualSlotCount) {
+  const offsets = new Array(visualSlotCount)
+  const columns = Math.ceil(Math.sqrt(visualSlotCount))
+  const rows = Math.ceil(visualSlotCount / columns)
   const horizontalSpacing = columns > 1
     ? Math.min(config.slotSpacing, Math.max(0, city.tileSize - config.size) / (columns - 1))
     : 0
@@ -3352,7 +3315,7 @@ function createNpcSlotOffsets(city, config) {
     ? Math.min(config.slotSpacing, Math.max(0, city.tileSize - config.size) / (rows - 1))
     : 0
 
-  for (let slot = 0; slot < config.tileCapacity; slot += 1) {
+  for (let slot = 0; slot < visualSlotCount; slot += 1) {
     const column = slot % columns
     const row = Math.floor(slot / columns)
 

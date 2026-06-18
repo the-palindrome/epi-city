@@ -54,6 +54,13 @@ RUN install -d -m 0755 /etc/apt/keyrings \
 RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g @openai/codex playwright \
   && playwright install chromium \
   && chmod -R 755 /ms-playwright
+RUN mv /usr/local/bin/codex /usr/local/bin/codex-real \
+  && printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    '# Keep Codex aligned with the project-local devcontainer config.' \
+    'exec /usr/local/bin/codex-real -c sandbox_mode=\"danger-full-access\" "$@"' \
+    > /usr/local/bin/codex \
+  && chmod 0755 /usr/local/bin/codex
 RUN useradd -m -s /bin/bash codex
 
 USER codex

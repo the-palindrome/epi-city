@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Devcontainer
+.devcontainer/codex-home/
+
 # Build output
 dist/
 .vite/

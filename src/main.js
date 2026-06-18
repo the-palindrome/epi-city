@@ -49,6 +49,12 @@ main()
 async function main() {
   const status = document.getElementById('status')
   const app = new PIXI.Application()
+  const searchParams = new URLSearchParams(window.location.search)
+  const renderModeEnabled = searchParams.has('render') || searchParams.has('playback') || searchParams.has('embed')
+
+  if (renderModeEnabled) {
+    document.body.classList.add('epi-render-mode')
+  }
 
   function setStatus(message, isError = false) {
     status.textContent = message
@@ -63,7 +69,8 @@ async function main() {
       autoStart: false,
       autoDensity: true,
       antialias: false,
-      roundPixels: true,
+      roundPixels: !renderModeEnabled,
+      preserveDrawingBuffer: renderModeEnabled,
       resolution: window.devicePixelRatio || 1
     })
 
@@ -89,7 +96,10 @@ async function main() {
     const textureSet = await loadTextureSet(city.textureSetName)
 
     validateCityTextureBindings(city, textureSet)
-    const mapTextures = renderCity(city, entityLayer, textureSet)
+    const mapTextures = renderCity(city, entityLayer, textureSet, {
+      mapRenderMode: renderModeEnabled ? 'full-canvas' : 'chunked',
+      stableMapOversample: 2
+    })
     centerCameraOnCity(camera, world, city)
 
     const game = new Game(app)
@@ -544,6 +554,7 @@ async function main() {
     game.addSystem(entityControl)
     game.addSystem(pathSelection)
     game.addSystem({ render: applyCameraFollow })
+    game.addSystem({ render: () => mapTextures.render?.(camera, app.renderer) })
     game.start()
 
     function applyEntityDebugOptions() {
@@ -668,6 +679,71 @@ async function main() {
       dashboard.simulation.setDayNightOverlayEnabled(simulationState.dayNightOverlayEnabled)
     }
 
+    function getCameraState() {
+      return {
+        x: camera.x,
+        y: camera.y,
+        zoom: camera.zoom
+      }
+    }
+
+    function setCameraState(state = {}, options = {}) {
+      const x = Number(state.x)
+      const y = Number(state.y)
+      const zoom = Number(state.zoom)
+
+      clearCameraFollow(camera)
+
+      if (Number.isFinite(x)) {
+        camera.x = x
+      }
+
+      if (Number.isFinite(y)) {
+        camera.y = y
+      }
+
+      if (Number.isFinite(zoom) && zoom > 0) {
+        camera.zoom = zoom
+      }
+
+      applyCamera()
+      if (options.render !== false) {
+        game.render()
+      }
+      return getCameraState()
+    }
+
+    function captureFrame(options = {}) {
+      if (options.render !== false) {
+        game.render()
+      }
+
+      if (options.format === 'rgba' || options.pixelFormat === 'rgba') {
+        const width = Math.max(1, Math.round(app.renderer.width))
+        const height = Math.max(1, Math.round(app.renderer.height))
+        const gl = app.renderer.gl
+
+        if (!gl) {
+          throw new Error('Raw RGBA capture requires the WebGL renderer.')
+        }
+
+        const pixels = new Uint8Array(width * height * 4)
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+        app.renderer.resetState?.()
+
+        return {
+          width,
+          height,
+          origin: 'bottom-left',
+          pixels
+        }
+      }
+
+      return app.canvas.toDataURL(options.mimeType || 'image/png', options.quality)
+    }
+
     function destroy() {
       game.destroy()
       dashboard.destroy()
@@ -681,6 +757,9 @@ async function main() {
     }
 
     window.citySim = {
+      app,
+      world,
+      entityLayer,
       camera,
       city,
       scale: REAL_WORLD_SCALE,
@@ -734,6 +813,10 @@ async function main() {
       setPathTrailsVisible: dashboard.setPathTrailsVisible,
       setPathTrailLength: dashboard.setPathTrailLength,
       setHeatmapRadius: dashboard.setHeatmapRadius,
+      getCameraState,
+      setCameraState,
+      render: () => game.render(),
+      captureFrame,
       centerCameraOnCity: () => centerCameraOnCity(camera, world, city),
       followEntityWithCamera: (entity) => followEntityWithCamera(camera, world, entity),
       clearCameraFollow: () => clearCameraFollow(camera),

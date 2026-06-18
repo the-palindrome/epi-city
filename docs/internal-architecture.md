@@ -14,7 +14,7 @@ Startup follows this sequence:
 4. `loadCityMap()` fetches the semantic tile layout, fetches the texture rows layout, validates both files, and returns normalized map data.
 5. `compileCityMap()` converts the normalized semantic rows and texture rows into typed arrays.
 6. `loadTextureSet()` validates the selected texture manifest, loads the atlas image, and `validateCityTextureBindings()` checks map texture IDs against the frame count.
-7. `renderCity()` draws one sprite per map cell, grouped into 16x16 z-ordered containers.
+7. `renderCity()` builds the static map layers. Normal interactive mode uses per-cell sprites grouped into 16x16 z-ordered chunks; render/playback mode uses pre-rasterized full-map canvas layers by z-order.
 8. `centerCameraOnCity()` fits the 8192x8192 world into the viewport.
 9. `installDebugDashboard()` adds simulation controls, the clock display, map texture rendering controls, graphing controls, keyboard-controlled overlays, and cached overlay layers after their first build.
 10. `SimulationClock`, `createNpcSimulation()`, and `createCarSimulation()` create the clock and entity systems with their configured random sources, then `Game` starts one `GameLoop` that runs `getDeltaTime()`, fixed-step `update(dt)`, and `render()` each animation frame.
@@ -60,6 +60,38 @@ Startup follows this sequence:
   "height": 256,
   "textureSet": "liberty-city",
   "textureRows": [[0, 1, 2]]
+}
+```
+
+`tile-layout.json` can also include optional `laneGraph` metadata:
+
+```json
+{
+  "laneGraph": {
+    "encoding": "directed-lanes-v1",
+    "drivingSide": "right",
+    "coordinateSpace": "tile",
+    "nodes": [
+      { "id": "lane-node-1", "tile": { "x": 10, "y": 20 }, "x": 10.5, "y": 20.5, "direction": "east" },
+      { "id": "lane-node-2", "tile": { "x": 11, "y": 20 }, "x": 11.5, "y": 20.5, "direction": "east" }
+    ],
+    "edges": [
+      {
+        "id": "lane-edge-1",
+        "from": "lane-node-1",
+        "to": "lane-node-2",
+        "type": "lane",
+        "direction": "east",
+        "turn": null,
+        "speedLimit": 28,
+        "path": [[10.5, 20.5], [11.5, 20.5]]
+      }
+    ],
+    "trafficSignals": {
+      "encoding": "traffic-signals-v1",
+      "overrides": []
+    }
+  }
 }
 ```
 
@@ -109,7 +141,7 @@ The typed-array representation keeps simulation code numeric and predictable. JS
 
 ## Movement And Pathfinding
 
-Movement uses generated behavior layers. Pedestrians use `walkable` tiles, while cars prefer the authored lane graph and use `drivable`/`crosswalk` tiles for occupancy checks. Parking systems use `parkable` tiles. Crosswalks are both pedestrian and vehicle crossing points, but entering them is controlled by the city crosswalk signal. In the default map, roads are drivable only; sidewalks and parks are walkable only; water, obstacles, and non-entrance building tiles are blocked. Building entrance cells keep the `building` category, but `compileCityMap()` marks them walkable after validating the entrance metadata.
+Movement uses generated behavior layers. Pedestrians use `walkable` tiles, while cars prefer the authored lane graph and use tile behavior plus lane-node occupancy checks for movement and parking. Parking systems use `parkable` tiles. Crosswalk tiles are signal-controlled crossings: pedestrians may enter them only on green, and vehicle lane traffic can traverse authored lane graph nodes on road or crosswalk tiles. Do not infer vehicle lane traversal solely from `isDrivable()`. In the default map, roads are drivable only; sidewalks, parks, and crosswalks are walkable only; water, obstacles, and non-entrance building tiles are blocked. Building entrance cells keep the `building` category, but `compileCityMap()` marks them walkable after validating the entrance metadata.
 
 The shared crosswalk signal cycles through `red`, `green`, and `yellow`. NPCs can step onto a crosswalk only on green. During yellow or red, NPCs outside the crossing cannot begin entering it, but any NPC already on a crosswalk can continue moving through crosswalk tiles or step off to another walkable tile.
 
@@ -179,7 +211,7 @@ Successful transmissions append compact source/target snapshots to a bounded rec
 
 ## Car Simulation
 
-`createCarSimulation()` builds cars after the map renders. Each car receives one or two adult real NPC owner records, and all owners for one car share the same residential home building. A commuting owner waits inside the origin building while the car is pending, rides hidden inside the car, and is dropped into the destination building when the car parks. Real NPC owners drive toward their active timetable destination, so richer adult stops such as lunch or shopping can use the car; synthetic owners keep the simpler home/work commute windows.
+`createCarSimulation()` builds cars after the map renders. Each car receives one or two adult owner records. The simulation uses real adult NPC owners from a shared residential building when available and falls back to synthetic owners for any remaining cars. A commuting real owner waits inside the origin building while the car is pending, rides hidden inside the car, and is dropped into the destination building when the car parks. Real NPC owners drive toward their active timetable destination, so richer adult stops such as lunch or shopping can use the car; synthetic owners keep the simpler home/work commute windows.
 
 Cars park on `tileParkable` cells near the relevant building entrance. The parking manager uses typed `Int32Array` occupancy and reservation layers so each occupied tile belongs to at most one car. Two-tile cars are the common case, with some three-tile cars. Parked rendering shifts the car body toward the nearest road or lane tile.
 
@@ -217,7 +249,7 @@ The extraction script checks every map cell against the original image. Each `te
 
 The `world` container has one sortable entity layer. Ground tile chunks render at `zorder: 0`, NPC and car graphics render at `zorder: 1`, building tile chunks render at `zorder: 2`, SEIR heatmaps render at `zorder: 2.5`, and the day-night overlay renders above the city at `zorder: 3`. Tile overlay chunks inherit the z-order of the tiles they cover, so ground overlays stay below entities while building overlays stay above building tiles.
 
-`renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
+In normal interactive mode, `renderCity()` groups sprites into 16x16 tile containers per z-order. Grouping keeps the display tree structured by map region while preserving per-cell source textures and still allowing buildings to draw above NPCs. In render/playback mode, it pre-rasterizes full-map canvas layers by z-order so scripted camera motion can move static map texture layers cheaply. Map and manifest validation run before rendering, so missing texture frames fail fast instead of producing partial fallback art.
 
 Pixi automatic rendering is disabled during app initialization. The app-level `GameLoop` owns frame timing instead: it clamps delta time, calls each system's `update(deltaSeconds)`, calls each system's `render()`, then calls `app.render()` once. Static tile rendering builds the entity layer once at startup.
 
@@ -225,7 +257,7 @@ The source texture set is extracted from `process_gta_map/source/gta1-liberty-ci
 
 ## Debug Dashboards
 
-Press `Space` to play or pause the simulation, press `s` to toggle the simulation dashboard, press `r` to toggle rendering options, and press `g` to toggle the epidemic graph. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, entity debug overlays, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. The bottom-left epidemic graph samples S/E/I/R counts against simulation time, has one visibility tickbox per state, labels the time and case axes, can be resized, and lets users drag to pan or wheel to zoom the time axis while the case axis auto-fits visible data. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
+Press `Space` to play or pause the simulation, press `q` to toggle the simulation dashboard, press `r` to toggle rendering options, press `p` to toggle the policy dashboard, and press `g` to toggle the epidemic graph. The simulation dashboard displays the simulation clock, exposes a day-night overlay checkbox, shows SEIR infection counts, and exposes infection parameters including the initial infected count. Rendering options include a map texture checkbox, a map texture opacity slider, an entity rendering dropdown, entity debug overlays, the tile overlay, a color-scheme dropdown, an opacity slider for the tile overlay, optional S/E/I/R heatmap overlays, and a kernel-radius slider plus exact number input for those heatmaps. The policy dashboard edits `if ... then ... until ...` rules that can enable social distancing, reduce transmission through masks, or cancel school/work/shopping/nightlife events. The bottom-left epidemic graph samples S/E/I/R counts against simulation time, has one visibility tickbox per state, labels the time and case axes, can be resized, and lets users drag to pan or wheel to zoom the time axis while the case axis auto-fits visible data. Hovering an NPC shows a fixed-position infection tooltip with the NPC id, infection state, contagiousness, susceptibility, immunity, and current phase timer.
 
 Entity rendering has two modes. `sprite` uses the existing pixel-art NPC and car sprites. `geometric` draws NPCs as disks colored by infection state and cars as rectangles colored by the highest-priority infection state among passengers currently inside the car; empty cars keep their normal car color.
 
@@ -268,7 +300,7 @@ The dependency command creates or repairs `map-editor/.venv`, then installs the 
 
 ## Debugging Hooks
 
-`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. Left-clicking an NPC or car selects it without displaying its route. Right-clicking an entity opens a context menu with `follow` and a route toggle that displays `show route` or `hide route` for the selected entity; NPCs also expose `infect`, which marks that NPC infectious through the same infection state API used by the simulation. This keeps the console useful without exposing every Pixi container and loader helper.
+`window.citySim` exposes the compiled city, camera, game loop, NPC state, dashboard, camera-centering helper, and teardown hook. Left-clicking an NPC or car selects it without displaying its route. Right-clicking an entity opens a context menu with `follow`, `assume control`, and a route toggle that displays `show route` or `hide route` for the selected entity; NPCs also expose `infect`, which marks that NPC infectious through the same infection state API used by the simulation. Manual control uses WASD or the arrow keys. This keeps the console useful without exposing every Pixi container and loader helper.
 
 Useful console checks:
 
