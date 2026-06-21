@@ -1,0 +1,16 @@
+{
+  "format": "epi-city-headless-world-config",
+  "version": 1,
+  "seed": {
+    "enabled": true,
+    "value": "epi-city"
+  },
+  "population": {
+    "npcCount": 1000,
+    "carCount": 200
+  },
+  "initialSeir": {
+    "initialInfectiousCount": 4,
+    "inoculatedPercent": 0
+  }
+}

@@ -1,4 +1,3 @@
-import * as PIXI from 'pixi.js'
 import {
   ENTITY_RENDER_DEBUG_CONFIG,
   HOME_BUILDING_TYPES,
@@ -20,6 +19,7 @@ import {
   idleNpcSprite,
   stepNpcSpriteAnimation
 } from '../render/npc-sprite.js'
+import { createGraphicsPixiShim } from '../render/pixi-shim.js'
 import { toMovementSeconds, toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
@@ -102,6 +102,8 @@ export function createNpcSimulation(city, entityLayer, config) {
   const policyRandom = config.policyRandom || (random.seed ? createSeededRandom(`${random.seed}:policy`) : createSystemRandom())
   const desireRandom = config.desireRandom || (random.seed ? createSeededRandom(`${random.seed}:desires`) : createSystemRandom())
   const socialRandom = config.socialRandom || (random.seed ? createSeededRandom(`${random.seed}:social`) : createSystemRandom())
+  const renderEnabled = config.render !== false
+  const pixi = config.pixi || globalThis.PIXI || createGraphicsPixiShim()
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
   const visualSlotCount = resolveNpcVisualSlotCount(config)
   const clock = config.clock || STATIC_CLOCK
@@ -133,8 +135,10 @@ export function createNpcSimulation(city, entityLayer, config) {
   let entityDebugOptions = { ...(config.entityDebugOptions || {}) }
   const npcProfiles = createNpcFamilyProfiles(city, buildingsByPurpose, random, config.count, config)
 
-  entityLayer.eventMode = 'none'
-  entityLayer.sortableChildren = true
+  if (renderEnabled && entityLayer) {
+    entityLayer.eventMode = 'none'
+    entityLayer.sortableChildren = true
+  }
 
   for (let id = 0; id < npcProfiles.length; id += 1) {
     const profile = npcProfiles[id]
@@ -171,21 +175,25 @@ export function createNpcSimulation(city, entityLayer, config) {
     Boolean(entityDebugOptions.contactEdgesVisible),
     entityDebugOptions.contactEdgeDurationSeconds
   )
-  const npcRenderer = createNpcSpriteRenderer(npcs, city, config, infection, {
-    pixi: PIXI,
-    visibleTileCounts,
-    visibleTileIndexes,
-    clock,
-    getContactEvents: (options) => infection.getRecentContactEvents(options),
-    getTransmissionEvents: (options) => infection.getRecentTransmissionEvents(options),
-    entityDebugOptions
-  })
+  const npcRenderer = renderEnabled
+    ? createNpcSpriteRenderer(npcs, city, config, infection, {
+        pixi,
+        visibleTileCounts,
+        visibleTileIndexes,
+        clock,
+        getContactEvents: (options) => infection.getRecentContactEvents(options),
+        getTransmissionEvents: (options) => infection.getRecentTransmissionEvents(options),
+        entityDebugOptions
+      })
+    : createNoopNpcRenderer()
   const display = npcRenderer.display
   const graphics = npcRenderer.spriteDisplay || display
 
-  entityLayer.addChild(display)
-  if (npcRenderer.debugDisplay && npcRenderer.debugDisplay !== display) {
-    entityLayer.addChild(npcRenderer.debugDisplay)
+  if (renderEnabled && entityLayer && display) {
+    entityLayer.addChild(display)
+    if (npcRenderer.debugDisplay && npcRenderer.debugDisplay !== display) {
+      entityLayer.addChild(npcRenderer.debugDisplay)
+    }
   }
 
   function update(deltaSeconds) {
@@ -273,6 +281,18 @@ export function createNpcSimulation(city, entityLayer, config) {
 
       npcRenderer.destroy()
     }
+  }
+}
+
+function createNoopNpcRenderer() {
+  return {
+    display: null,
+    spriteDisplay: null,
+    debugDisplay: null,
+    render() {},
+    setRenderMode() {},
+    setDebugOptions() {},
+    destroy() {}
   }
 }
 
@@ -974,6 +994,7 @@ class NpcInfectionDynamics {
     this.city = city
     this.random = random
     this.clock = clock
+    this.eventRecorder = config.eventRecorder || null
     this.infectionDistance = nonNegativeNumberOrDefault(config.infectionDistance, INFECTION_CONFIG.infectionDistance)
     this.baseInfectionProbability = clampUnitInterval(config.infectionProbability ?? INFECTION_CONFIG.infectionProbability)
     this.policyInfectionProbabilityMultiplier = 1
@@ -1022,6 +1043,7 @@ class NpcInfectionDynamics {
     this.advanceTimers(simulationDeltaSeconds)
     this.recordRecentContacts()
     this.transmit(simulationDeltaSeconds)
+    this.eventRecorder?.closeInactiveContacts?.(this.getElapsedSimulationSeconds())
     this.pruneTransmissionEvents(this.getElapsedSimulationSeconds() - MAX_TRANSMISSION_EVENT_AGE_SECONDS)
     this.pruneContactEvents(this.getElapsedSimulationSeconds() - this.contactEventRetentionSeconds)
   }
@@ -1121,7 +1143,7 @@ class NpcInfectionDynamics {
     }
   }
 
-  setNpcState(npcOrIndex, infection, timerSeconds = null) {
+  setNpcState(npcOrIndex, infection, timerSeconds = null, options = {}) {
     const index = typeof npcOrIndex === 'number' ? npcOrIndex : npcOrIndex?.id
     const state = INFECTION_STATE_IDS[infection]
 
@@ -1133,7 +1155,7 @@ class NpcInfectionDynamics {
       throw new Error(`Unknown NPC infection state "${infection}".`)
     }
 
-    this.setStateByIndex(index, state, timerSeconds ?? this.getDefaultTimerSeconds(state))
+    this.setStateByIndex(index, state, timerSeconds ?? this.getDefaultTimerSeconds(state), options)
   }
 
   getElapsedSimulationSeconds() {
@@ -1149,6 +1171,7 @@ class NpcInfectionDynamics {
   }
 
   recordTransmissionEvent(sourceNpc, targetNpc, dx, dy) {
+    const distance = Math.hypot(dx, dy)
     const event = {
       id: this.nextTransmissionEventId,
       simulationSeconds: this.getElapsedSimulationSeconds(),
@@ -1158,16 +1181,24 @@ class NpcInfectionDynamics {
       targetPosition: clonePosition(targetNpc.position),
       sourceTile: cloneTile(sourceNpc.tile),
       targetTile: cloneTile(targetNpc.tile),
-      distance: Math.hypot(dx, dy),
+      distance,
       targetState: 'exposed'
     }
 
     this.nextTransmissionEventId += 1
     this.transmissionEvents.push(event)
+    event.exportedEventId = this.eventRecorder?.recordInfection?.({
+      sourceNpc,
+      targetNpc,
+      distanceWorldUnits: distance,
+      at: event.simulationSeconds
+    }) || null
 
     if (this.transmissionEvents.length > MAX_TRANSMISSION_EVENTS) {
       this.transmissionEvents.splice(0, this.transmissionEvents.length - MAX_TRANSMISSION_EVENTS)
     }
+
+    return event
   }
 
   recordContactEvent(sourceNpc, targetNpc, dx, dy) {
@@ -1187,6 +1218,7 @@ class NpcInfectionDynamics {
     event.sourceTile = cloneTile(source.tile)
     event.targetTile = cloneTile(target.tile)
     event.distance = Math.hypot(dx, dy)
+    this.eventRecorder?.recordContactObservation?.(source, target, event.distance, event.simulationSeconds)
 
     if (!existing) {
       this.nextContactEventId += 1
@@ -1263,7 +1295,7 @@ class NpcInfectionDynamics {
 
       indexes[selectedIndex] = indexes[index]
       indexes[index] = npcIndex
-      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.infectious, this.infectionSeconds)
+      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.infectious, this.infectionSeconds, { emit: false })
     }
   }
 
@@ -1287,7 +1319,7 @@ class NpcInfectionDynamics {
 
       indexes[selectedIndex] = indexes[index]
       indexes[index] = npcIndex
-      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.recovered, this.immunitySeconds)
+      this.setStateByIndex(npcIndex, INFECTION_STATE_IDS.recovered, this.immunitySeconds, { emit: false })
     }
   }
 
@@ -1386,7 +1418,7 @@ class NpcInfectionDynamics {
 
             if (this.random.next() < transmissionProbability) {
               this.recordTransmissionEvent(infectiousNpc, npc, dx, dy)
-              this.setStateByIndex(index, INFECTION_STATE_IDS.exposed, this.incubationSeconds)
+              this.setStateByIndex(index, INFECTION_STATE_IDS.exposed, this.incubationSeconds, { emit: false })
               continue susceptibleLoop
             }
           }
@@ -1396,7 +1428,7 @@ class NpcInfectionDynamics {
   }
 
   recordRecentContacts() {
-    if (!this.contactTracingEnabled || this.infectionDistance <= 0) {
+    if ((!this.contactTracingEnabled && !this.eventRecorder) || this.infectionDistance <= 0) {
       return
     }
 
@@ -1545,17 +1577,41 @@ class NpcInfectionDynamics {
     return null
   }
 
-  setStateByIndex(index, state, timerSeconds) {
+  setStateByIndex(index, state, timerSeconds, options = {}) {
     const previousState = this.states[index]
 
     if (previousState !== state) {
       this.counts[previousState] -= 1
       this.counts[state] += 1
       this.states[index] = state
+      this.recordStateTransitionEvent(index, previousState, state, options)
     }
 
     this.timers[index] = timerSeconds
     this.npcs[index].infection = INFECTION_STATE_NAMES[state]
+  }
+
+  recordStateTransitionEvent(index, previousState, state, options) {
+    if (!this.eventRecorder || options.emit === false) {
+      return
+    }
+
+    const npc = this.npcs[index]
+    const at = this.getElapsedSimulationSeconds()
+
+    if (previousState === INFECTION_STATE_IDS.exposed && state === INFECTION_STATE_IDS.infectious) {
+      this.eventRecorder.recordIncubation(npc, at)
+      return
+    }
+
+    if (previousState === INFECTION_STATE_IDS.infectious && state === INFECTION_STATE_IDS.recovered) {
+      this.eventRecorder.recordRecovery(npc, at)
+      return
+    }
+
+    if (previousState === INFECTION_STATE_IDS.recovered && state === INFECTION_STATE_IDS.susceptible) {
+      this.eventRecorder.recordImmunityWaned(npc, at)
+    }
   }
 }
 

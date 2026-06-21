@@ -202,6 +202,7 @@ async function main() {
         immunityDays: simulationState.immunityDays,
         clock: simulationClock,
         random: createNpcRandom(),
+        pixi: PIXI,
         entityRenderMode: simulationState.entityRenderMode,
         entityDebugOptions: getEntityDebugOptions()
       })
@@ -213,6 +214,7 @@ async function main() {
         count: simulationState.carCount,
         clock: simulationClock,
         random: createCarRandom(),
+        pixi: PIXI,
         npcs: npcSimulation ? npcSimulation.npcs : [],
         entityRenderMode: simulationState.entityRenderMode,
         entityDebugOptions: getEntityDebugOptions()

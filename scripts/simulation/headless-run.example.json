@@ -1,0 +1,30 @@
+{
+  "format": "epi-city-headless-run-config",
+  "version": 1,
+  "world": {
+    "seed": {
+      "enabled": true,
+      "value": "epi-city"
+    },
+    "population": {
+      "npcCount": 1000,
+      "carCount": 200
+    },
+    "initialSeir": {
+      "initialInfectiousCount": 4,
+      "inoculatedPercent": 0
+    }
+  },
+  "run": {
+    "durationSeconds": 86400,
+    "stepSeconds": 2
+  },
+  "infection": {
+    "distanceMeters": 2,
+    "transmissionProbabilityPerMinute": 0.03,
+    "incubationDays": 1,
+    "infectiousDays": 7,
+    "immunityDays": 90
+  },
+  "policies": []
+}

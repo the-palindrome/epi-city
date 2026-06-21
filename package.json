@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "run-simulation": "node scripts/run-simulation.mjs --script ./scripts/epi-city-video.example.json --output ./tmp/epi-city-recording.json",
+    "generate-headless-world": "node scripts/generate-headless-world.mjs --config ./scripts/headless-world.example.json --output ./tmp/epi-city-world.json",
+    "run-headless-simulation": "node scripts/run-headless-simulation.mjs --config ./scripts/headless-run.example.json --world ./tmp/epi-city-world.json --output ./tmp/epi-city-results.json",
     "render:video": "node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json --output ./tmp/epi-city-video.mp4 --fps 30 --width 1920 --height 1080",
     "check": "npm run test && npm run build && node --check map-editor/server.mjs && node --check map-editor/setup-python-env.mjs && PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile map-editor/train_random_forest.py process_gta_map/build-gta-tilemap.py",
     "map-editor": "node map-editor/server.mjs",

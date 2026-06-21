@@ -1,4 +1,3 @@
-import * as PIXI from 'pixi.js'
 import { CAR_CONFIG, HOME_BUILDING_TYPES, WORK_BUILDING_TYPES } from '../core/constants.js'
 import { IndexPriorityQueue } from '../core/index-priority-queue.js'
 import { createSystemRandom } from '../core/random.js'
@@ -10,6 +9,7 @@ import {
 import { hourInRange } from '../core/time.js'
 import { buildingHasAnyType } from '../map/buildings.js'
 import { createCarSpriteRenderer } from '../render/car-sprite.js'
+import { createSpritePixiShim } from '../render/pixi-shim.js'
 import { toMovementSeconds, toSimulationSeconds } from './simulation-clock.js'
 
 const STATIC_CLOCK = Object.freeze({
@@ -74,6 +74,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   const resolvedConfig = { ...CAR_CONFIG, ...config }
   const random = resolvedConfig.random || createSystemRandom()
   const clock = resolvedConfig.clock || STATIC_CLOCK
+  const renderEnabled = resolvedConfig.render !== false
+  const pixi = resolvedConfig.pixi || globalThis.PIXI || createSpritePixiShim()
   const network = getCarTrafficNetwork(city)
   const router = createCarRoutePlanner(city, network)
   const parking = new ParkingManager(city, network, resolvedConfig)
@@ -100,8 +102,10 @@ export function createCarSimulation(city, entityLayer, config = {}) {
   }
   let destroyed = false
 
-  entityLayer.eventMode = 'none'
-  entityLayer.sortableChildren = true
+  if (renderEnabled && entityLayer) {
+    entityLayer.eventMode = 'none'
+    entityLayer.sortableChildren = true
+  }
 
   for (let id = 0; id < resolvedConfig.count; id += 1) {
     const car = createCarEntity(id, city, homeBuildings, workBuildings, buildingsById, ownerPools, parking, random, resolvedConfig)
@@ -113,14 +117,18 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     cars.push(car)
   }
 
-  const carRenderer = createCarSpriteRenderer(cars, city, resolvedConfig, {
-    pixi: PIXI,
-    entityDebugOptions: resolvedConfig.entityDebugOptions
-  })
+  const carRenderer = renderEnabled
+    ? createCarSpriteRenderer(cars, city, resolvedConfig, {
+        pixi,
+        entityDebugOptions: resolvedConfig.entityDebugOptions
+      })
+    : createNoopCarRenderer()
   const display = carRenderer.display
   const graphics = carRenderer.spriteDisplay || display
 
-  entityLayer.addChild(display)
+  if (renderEnabled && entityLayer && display) {
+    entityLayer.addChild(display)
+  }
 
   function update(deltaSeconds) {
     if (destroyed || !Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
@@ -192,6 +200,17 @@ export function createCarSimulation(city, entityLayer, config = {}) {
       parking.clear()
       carRenderer.destroy()
     }
+  }
+}
+
+function createNoopCarRenderer() {
+  return {
+    display: null,
+    spriteDisplay: null,
+    render() {},
+    setRenderMode() {},
+    setDebugOptions() {},
+    destroy() {}
   }
 }
 
