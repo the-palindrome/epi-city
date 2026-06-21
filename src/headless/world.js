@@ -12,13 +12,15 @@ export async function createHeadlessWorldFile(worldConfigInput) {
   const city = await loadDefaultHeadlessCity()
   const runtime = createHeadlessRuntime({
     city,
-    worldConfig: config,
+    seed: config.seed,
+    population: config.population,
+    initialSeir: { initialInfectiousCount: 0, inoculatedPercent: 0 },
     infectionConfig: normalizeInfectionBlock({}),
     policies: []
   })
 
   try {
-    return serializeHeadlessWorld(runtime, config)
+    return serializeHeadlessWorld(runtime)
   } finally {
     runtime.destroy()
   }
@@ -37,50 +39,26 @@ export function normalizeHeadlessWorld(input) {
     throw new Error(`Unsupported world format "${input.format}".`)
   }
 
-  const config = normalizeWorldConfig(input.config || {})
   const npcs = Array.isArray(input.npcs) ? input.npcs.map(normalizeWorldNpc) : []
   const cars = Array.isArray(input.cars) ? input.cars.map(normalizeWorldCar) : []
-  const initialSeir = normalizeExplicitInitialSeir(input.initialSeir, npcs)
 
   return {
     format: HEADLESS_WORLD_FORMAT,
     version: HEADLESS_WORLD_VERSION,
     generatedAt: input.generatedAt || null,
-    config,
     npcs,
-    cars,
-    initialSeir
+    cars
   }
 }
 
-export function serializeHeadlessWorld(runtime, config) {
+export function serializeHeadlessWorld(runtime) {
   return {
     format: HEADLESS_WORLD_FORMAT,
     version: HEADLESS_WORLD_VERSION,
     generatedAt: new Date().toISOString(),
-    config,
     npcs: runtime.npcs.map(serializeNpc),
-    cars: runtime.cars.map(serializeCar),
-    initialSeir: serializeInitialSeir(runtime.npcSimulation.infection)
+    cars: runtime.cars.map(serializeCar)
   }
-}
-
-export function getInitialSeirStateByNpcId(world, npcCount) {
-  const states = new Map()
-
-  for (let index = 0; index < npcCount; index += 1) {
-    states.set(formatNpcId(index), 'susceptible')
-  }
-
-  for (const id of world?.initialSeir?.inoculatedNpcIds || []) {
-    states.set(id, 'recovered')
-  }
-
-  for (const id of world?.initialSeir?.infectedNpcIds || []) {
-    states.set(id, 'infectious')
-  }
-
-  return states
 }
 
 function serializeNpc(npc) {
@@ -118,23 +96,6 @@ function serializeCar(car) {
   }
 }
 
-function serializeInitialSeir(infection) {
-  const infectedNpcIds = []
-  const inoculatedNpcIds = []
-
-  for (const npc of infection.npcs || []) {
-    const status = infection.getNpcStatus(npc.id)
-
-    if (status?.infection === 'infectious') {
-      infectedNpcIds.push(formatNpcId(npc.id))
-    } else if (status?.infection === 'recovered') {
-      inoculatedNpcIds.push(formatNpcId(npc.id))
-    }
-  }
-
-  return { infectedNpcIds, inoculatedNpcIds }
-}
-
 function normalizeWorldNpc(npc) {
   return {
     ...npc,
@@ -160,37 +121,6 @@ function normalizeWorldCar(car) {
     ownerNpcIds: Array.isArray(car?.ownerNpcIds) ? car.ownerNpcIds.map((id) => normalizeEntityId(id, 'npc')) : [],
     position: normalizePoint(car?.position)
   }
-}
-
-function normalizeExplicitInitialSeir(initialSeir = {}, npcs) {
-  const validIds = new Set(npcs.map((npc) => npc.id))
-  const infectedNpcIds = normalizeNpcIdList(initialSeir?.infectedNpcIds, validIds, 'infectedNpcIds')
-  const inoculatedNpcIds = normalizeNpcIdList(initialSeir?.inoculatedNpcIds, validIds, 'inoculatedNpcIds')
-  const infected = new Set(infectedNpcIds)
-
-  for (const id of inoculatedNpcIds) {
-    if (infected.has(id)) {
-      throw new Error(`NPC ${id} cannot be both infected and inoculated.`)
-    }
-  }
-
-  return { infectedNpcIds, inoculatedNpcIds }
-}
-
-function normalizeNpcIdList(ids, validIds, label) {
-  if (!Array.isArray(ids)) {
-    return []
-  }
-
-  return ids.map((id) => {
-    const normalized = normalizeEntityId(id, 'npc')
-
-    if (!validIds.has(normalized)) {
-      throw new Error(`${label} references unknown NPC id "${normalized}".`)
-    }
-
-    return normalized
-  })
 }
 
 function normalizeEntityId(id, kind) {

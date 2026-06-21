@@ -2,17 +2,17 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { createHeadlessWorldFile } from '../src/headless/world.js'
+import { createHeadlessWorldFile } from '../../src/headless/world.js'
 
 function printUsage() {
   console.log(`Usage:
-  node scripts/generate-headless-world.mjs --config ./scripts/headless-world.example.json --output ./tmp/epi-city-world.json
+  node scripts/simulation/generate-headless-world.mjs --config ./scripts/simulation/headless-world-config.example.json --output ./scripts/simulation/epi-city-world.json
 
 Required:
   --config, -c   Path to headless world config JSON
 
 Options:
-  --output, -o   Output world JSON path (default: ./tmp/epi-city-world.json)
+  --output, -o   Output world JSON path (default: ./scripts/simulation/epi-city-world.json)
   --help, -h     Show this help
 `)
 }
@@ -20,7 +20,7 @@ Options:
 function parseArgs(argv) {
   const args = {
     configPath: null,
-    output: path.resolve('tmp', 'epi-city-world.json'),
+    output: path.resolve('scripts', 'simulation', 'epi-city-world.json'),
     help: false
   }
 

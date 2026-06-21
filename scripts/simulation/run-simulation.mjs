@@ -11,14 +11,14 @@ import { build as buildVite } from 'vite'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const projectRoot = path.resolve(__dirname, '..')
+const projectRoot = path.resolve(__dirname, '..', '..')
 
 const API_READY_TIMEOUT_MS = 240000
 const PAGE_GOTO_TIMEOUT_MS = 60000
 
 function printUsage() {
   console.log(`Usage:
-  node scripts/run-simulation.mjs --script ./scripts/epi-city-video.example.json --output ./tmp/epi-city-recording.json [options]
+  node scripts/simulation/run-simulation.mjs --script ./scripts/render/epi-city-video.example.json --output ./tmp/epi-city-recording.json [options]
 
 Required:
   --script, -s              Path to Epi City JSON script/preset

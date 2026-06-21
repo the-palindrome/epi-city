@@ -2,17 +2,17 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { runHeadlessSimulation } from '../src/headless/simulation.js'
+import { runHeadlessSimulation } from '../../src/headless/simulation.js'
 
 function printUsage() {
   console.log(`Usage:
-  node scripts/run-headless-simulation.mjs --config ./scripts/headless-run.example.json --output ./tmp/epi-city-results.json [options]
+  node scripts/simulation/run-headless-simulation.mjs --config ./scripts/simulation/headless-run-config.example.json --world ./scripts/simulation/epi-city-world.json --output ./tmp/epi-city-results.json [options]
 
 Required:
   --config, -c              Path to headless run config JSON
+  --world, -w               Generated world JSON path
 
 Options:
-  --world, -w               Optional generated world JSON path
   --output, -o              Output results JSON path (default: ./tmp/epi-city-results.json)
   --duration-days <number>  Override run duration in simulation days
   --duration-hours <number> Override run duration in simulation hours
@@ -78,6 +78,10 @@ function parseArgs(argv) {
 
   if (!args.help && !args.configPath) {
     throw new Error('Missing required --config argument.')
+  }
+
+  if (!args.help && !args.worldPath) {
+    throw new Error('Missing required --world argument.')
   }
 
   return args

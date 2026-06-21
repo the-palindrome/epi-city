@@ -20,8 +20,7 @@ export function normalizeWorldConfig(input = {}) {
     format: HEADLESS_WORLD_CONFIG_FORMAT,
     version: HEADLESS_CONFIG_VERSION,
     seed: normalizeSeed(source.seed),
-    population: normalizePopulation(source.population),
-    initialSeir: normalizeInitialSeir(source.initialSeir)
+    population: normalizePopulation(source.population)
   }
 }
 
@@ -31,7 +30,8 @@ export function normalizeRunConfig(input = {}, overrides = {}) {
   return {
     format: HEADLESS_RUN_CONFIG_FORMAT,
     version: HEADLESS_CONFIG_VERSION,
-    world: normalizeWorldConfig(source.world || {}),
+    seed: normalizeSeed(source.seed),
+    initialSeir: normalizeInitialSeir(source.initialSeir),
     run: normalizeRunBlock(source.run, overrides),
     infection: normalizeInfectionBlock(source.infection),
     policies: normalizePolicyList(source.policies)
@@ -58,6 +58,15 @@ export function normalizePopulation(population = {}) {
 
 export function normalizeInitialSeir(initialSeir = {}) {
   const source = initialSeir && typeof initialSeir === 'object' && !Array.isArray(initialSeir) ? initialSeir : {}
+  const infectedNpcIds = normalizeNpcIdList(source.infectedNpcIds, 'infectedNpcIds')
+  const inoculatedNpcIds = normalizeNpcIdList(source.inoculatedNpcIds, 'inoculatedNpcIds')
+  const infected = new Set(infectedNpcIds)
+
+  for (const id of inoculatedNpcIds) {
+    if (infected.has(id)) {
+      throw new Error(`NPC ${id} cannot be both infected and inoculated.`)
+    }
+  }
 
   return {
     initialInfectiousCount: clampInteger(
@@ -69,7 +78,9 @@ export function normalizeInitialSeir(initialSeir = {}) {
       source.inoculatedPercent ?? INFECTION_CONFIG.inoculatedPercent,
       INFECTION_CONFIG.inoculatedPercentRange.min,
       INFECTION_CONFIG.inoculatedPercentRange.max
-    )
+    ),
+    infectedNpcIds,
+    inoculatedNpcIds
   }
 }
 
@@ -183,4 +194,41 @@ function clampInteger(value, min, max) {
   }
 
   return Math.min(Math.max(number, min), max)
+}
+
+function normalizeNpcIdList(ids, label) {
+  if (ids == null) {
+    return []
+  }
+
+  if (!Array.isArray(ids)) {
+    throw new TypeError(`${label} must be an array.`)
+  }
+
+  const seen = new Set()
+
+  return ids.map((id) => {
+    const normalized = normalizeNpcId(id)
+
+    if (seen.has(normalized)) {
+      throw new Error(`${label} contains duplicate NPC id "${normalized}".`)
+    }
+
+    seen.add(normalized)
+    return normalized
+  })
+}
+
+function normalizeNpcId(id) {
+  if (Number.isInteger(id) && id >= 0) {
+    return `npc_${id}`
+  }
+
+  const match = String(id || '').match(/^npc_(\d+)$/)
+
+  if (!match) {
+    throw new Error(`Invalid NPC id "${id}".`)
+  }
+
+  return `npc_${Number(match[1])}`
 }

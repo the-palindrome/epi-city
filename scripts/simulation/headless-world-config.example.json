@@ -6,11 +6,7 @@
     "value": "epi-city"
   },
   "population": {
-    "npcCount": 1000,
-    "carCount": 200
-  },
-  "initialSeir": {
-    "initialInfectiousCount": 4,
-    "inoculatedPercent": 0
+    "npcCount": 500,
+    "carCount": 100
   }
 }

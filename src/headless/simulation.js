@@ -2,25 +2,29 @@ import { normalizeRunConfig } from './config.js'
 import { HeadlessEventRecorder } from './event-recorder.js'
 import { loadDefaultHeadlessCity } from './map-loader.js'
 import { createHeadlessRuntime } from './runtime.js'
-import {
-  createHeadlessWorldFile,
-  getInitialSeirStateByNpcId,
-  readHeadlessWorldFile
-} from './world.js'
+import { readHeadlessWorldFile } from './world.js'
 
 export const HEADLESS_RESULTS_FORMAT = 'epi-city-headless-results'
 export const HEADLESS_RESULTS_VERSION = 1
 
 export async function runHeadlessSimulation(runConfigInput, options = {}) {
   const config = normalizeRunConfig(runConfigInput, options.overrides || {})
-  const world = options.worldPath
-    ? await readHeadlessWorldFile(options.worldPath)
-    : await createHeadlessWorldFile(config.world)
+
+  if (!options.worldPath) {
+    throw new Error('Headless simulation requires a generated world file. Pass --world <path>.')
+  }
+
+  const world = await readHeadlessWorldFile(options.worldPath)
   const city = await loadDefaultHeadlessCity()
   const eventRecorder = new HeadlessEventRecorder({ city })
   const runtime = createHeadlessRuntime({
     city,
-    worldConfig: config.world,
+    seed: config.seed,
+    population: {
+      npcCount: world.npcs.length,
+      carCount: world.cars.length
+    },
+    initialSeir: config.initialSeir,
     infectionConfig: config.infection,
     policies: config.policies,
     world,
@@ -36,8 +40,7 @@ export async function runHeadlessSimulation(runConfigInput, options = {}) {
     return createResultsFile({
       config,
       world,
-      worldPath: options.worldPath || null,
-      worldSource: options.worldPath ? 'file' : 'generated',
+      worldPath: options.worldPath,
       runtime,
       events: eventRecorder.getEvents()
     })
@@ -59,18 +62,15 @@ function runRuntime(runtime, run) {
   }
 }
 
-function createResultsFile({ config, world, worldPath, worldSource, runtime, events }) {
-  const initialStates = getInitialSeirStateByNpcId(world, runtime.npcs.length)
-
+function createResultsFile({ config, worldPath, runtime, events }) {
   return {
     format: HEADLESS_RESULTS_FORMAT,
     version: HEADLESS_RESULTS_VERSION,
     createdAt: new Date().toISOString(),
     config,
     world: {
-      source: worldSource,
-      path: worldPath,
-      runConfigWorldIgnored: Boolean(worldPath)
+      source: 'file',
+      path: worldPath
     },
     summary: {
       durationSeconds: config.run.durationSeconds,
@@ -83,7 +83,7 @@ function createResultsFile({ config, world, worldPath, worldSource, runtime, eve
     npcs: runtime.npcs.map((npc) => ({
       id: `npc_${npc.id}`,
       index: npc.id,
-      initialSeirState: initialStates.get(`npc_${npc.id}`) || 'susceptible'
+      initialSeirState: runtime.initialSeirStateByNpcId.get(`npc_${npc.id}`) || 'susceptible'
     })),
     events
   }

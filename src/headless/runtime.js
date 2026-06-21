@@ -9,7 +9,7 @@ import { createCarSimulation } from '../sim/car-simulation.js'
 import { createNpcSimulation } from '../sim/npc-simulation.js'
 import { createSignalUpdateSystem } from '../sim/signal-update-system.js'
 import { SimulationClock } from '../sim/simulation-clock.js'
-import { parseNpcId } from './event-recorder.js'
+import { formatNpcId, parseNpcId } from './event-recorder.js'
 import {
   createPolicyEffects,
   createPolicyEvaluator,
@@ -18,29 +18,30 @@ import {
 
 export function createHeadlessRuntime({
   city,
-  worldConfig,
+  seed,
+  population,
+  initialSeir = {},
   infectionConfig,
   policies = [],
   world = null,
   eventRecorder = null
 }) {
-  const effectiveWorldConfig = world?.config || worldConfig
-  const seed = effectiveWorldConfig.seed
-  const population = effectiveWorldConfig.population
-  const initialSeir = world ? { initialInfectiousCount: 0, inoculatedPercent: 0 } : effectiveWorldConfig.initialSeir
+  const effectiveSeed = seed || { enabled: true, value: 'epi-city' }
+  const effectivePopulation = normalizeRuntimePopulation(population, world)
   const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
   const signalSystem = createSignalUpdateSystem(city, simulationClock)
-  const npcRandom = createRandom(seed, '')
-  const carRandom = createRandom(seed, ':cars')
-  const policyEvaluator = createPolicyEvaluator(policies, population.npcCount)
+  const npcRandom = createRandom(effectiveSeed, '')
+  const carRandom = createRandom(effectiveSeed, ':cars')
+  const initialSeirRandom = createRandom(effectiveSeed, ':initial-seir')
+  const policyEvaluator = createPolicyEvaluator(policies, effectivePopulation.npcCount)
   const emptyPolicyEffects = createPolicyEffects([])
   let policyEffectsKey = ''
 
   const npcSimulation = createNpcSimulation(city, createEntityLayer(), {
     ...NPC_CONFIG,
-    count: population.npcCount,
-    initialInfectiousCount: initialSeir.initialInfectiousCount,
-    inoculatedPercent: initialSeir.inoculatedPercent,
+    count: effectivePopulation.npcCount,
+    initialInfectiousCount: 0,
+    inoculatedPercent: 0,
     infectionDistance: infectionConfig.distanceWorldUnits,
     infectionProbability: infectionConfig.transmissionProbabilityPerMinute,
     incubationDays: infectionConfig.incubationDays,
@@ -56,12 +57,13 @@ export function createHeadlessRuntime({
 
   if (world) {
     applySerializedNpcState(npcSimulation.npcs, world.npcs)
-    applyWorldInitialSeir(npcSimulation.infection, world)
   }
+
+  const initialSeirStateByNpcId = applyRunInitialSeir(npcSimulation.infection, initialSeir, initialSeirRandom)
 
   const carSimulation = createCarSimulation(city, createEntityLayer(), {
     ...CAR_CONFIG,
-    count: population.carCount,
+    count: effectivePopulation.carCount,
     clock: simulationClock,
     random: carRandom,
     npcs: npcSimulation.npcs,
@@ -104,6 +106,7 @@ export function createHeadlessRuntime({
     get cars() {
       return carSimulation.cars
     },
+    initialSeirStateByNpcId,
     update,
     getFinalSeir() {
       return npcSimulation.infection.getStats()
@@ -115,10 +118,12 @@ export function createHeadlessRuntime({
   }
 }
 
-export function applyWorldInitialSeir(infection, world) {
+export function applyRunInitialSeir(infection, initialSeir = {}, random = createSystemRandom()) {
   const npcs = infection.npcs || []
-  const infected = new Set((world.initialSeir?.infectedNpcIds || []).map(parseNpcId))
-  const inoculated = new Set((world.initialSeir?.inoculatedNpcIds || []).map(parseNpcId))
+  const explicitInfected = parseNpcIdSet(initialSeir.infectedNpcIds, npcs, 'infectedNpcIds')
+  const explicitInoculated = parseNpcIdSet(initialSeir.inoculatedNpcIds, npcs, 'inoculatedNpcIds')
+  const infected = new Set(explicitInfected)
+  const inoculated = new Set(explicitInoculated)
 
   for (const id of infected) {
     validateNpcIndex(id, npcs, 'infectedNpcIds')
@@ -131,17 +136,41 @@ export function applyWorldInitialSeir(infection, world) {
     }
   }
 
+  if (explicitInoculated.length === 0) {
+    const inoculatedCount = clampInteger((npcs.length * (Number(initialSeir.inoculatedPercent) || 0)) / 100, 0, npcs.length)
+
+    for (const id of chooseRandomNpcIndexes(npcs, inoculatedCount, random, infected)) {
+      inoculated.add(id)
+    }
+  }
+
+  if (explicitInfected.length === 0) {
+    const infectionCount = clampInteger(Number(initialSeir.initialInfectiousCount) || 0, 0, npcs.length)
+    const excluded = new Set([...inoculated])
+
+    for (const id of chooseRandomNpcIndexes(npcs, infectionCount, random, excluded)) {
+      infected.add(id)
+    }
+  }
+
+  const states = new Map()
+
   for (let index = 0; index < npcs.length; index += 1) {
     infection.setNpcState(index, 'susceptible', 0, { emit: false })
+    states.set(formatNpcId(index), 'susceptible')
   }
 
   for (const id of inoculated) {
     infection.setNpcState(id, 'recovered', null, { emit: false })
+    states.set(formatNpcId(id), 'recovered')
   }
 
   for (const id of infected) {
     infection.setNpcState(id, 'infectious', null, { emit: false })
+    states.set(formatNpcId(id), 'infectious')
   }
+
+  return states
 }
 
 export function applySerializedNpcState(npcs, worldNpcs = []) {
@@ -178,6 +207,81 @@ function validateNpcIndex(index, npcs, field) {
   if (!Number.isInteger(index) || index < 0 || index >= npcs.length) {
     throw new Error(`${field} references unknown NPC id "npc_${index}".`)
   }
+}
+
+function parseNpcIdSet(ids, npcs, field) {
+  if (!Array.isArray(ids)) {
+    return []
+  }
+
+  const parsed = []
+  const seen = new Set()
+
+  for (const rawId of ids) {
+    const id = parseNpcId(rawId)
+
+    if (!Number.isInteger(id)) {
+      throw new Error(`${field} references invalid NPC id "${rawId}".`)
+    }
+
+    validateNpcIndex(id, npcs, field)
+
+    if (seen.has(id)) {
+      throw new Error(`${field} contains duplicate NPC id "${formatNpcId(id)}".`)
+    }
+
+    seen.add(id)
+    parsed.push(id)
+  }
+
+  return parsed
+}
+
+function chooseRandomNpcIndexes(npcs, count, random, excluded = new Set()) {
+  const candidates = []
+
+  for (let index = 0; index < npcs.length; index += 1) {
+    if (!excluded.has(index)) {
+      candidates.push(index)
+    }
+  }
+
+  const selectedCount = Math.min(clampInteger(count, 0, candidates.length), candidates.length)
+  const selected = []
+
+  for (let index = 0; index < selectedCount; index += 1) {
+    const selectedIndex = index + random.int(candidates.length - index)
+    const npcIndex = candidates[selectedIndex]
+
+    candidates[selectedIndex] = candidates[index]
+    candidates[index] = npcIndex
+    selected.push(npcIndex)
+  }
+
+  return selected
+}
+
+function normalizeRuntimePopulation(population, world) {
+  return {
+    npcCount: nonNegativeInteger(population?.npcCount ?? world?.npcs?.length ?? NPC_CONFIG.count),
+    carCount: nonNegativeInteger(population?.carCount ?? world?.cars?.length ?? CAR_CONFIG.count)
+  }
+}
+
+function nonNegativeInteger(value) {
+  const number = Math.round(Number(value))
+
+  return Number.isFinite(number) && number >= 0 ? number : 0
+}
+
+function clampInteger(value, min, max) {
+  const number = Math.round(Number(value))
+
+  if (!Number.isFinite(number)) {
+    return min
+  }
+
+  return Math.min(Math.max(number, min), max)
 }
 
 function createRandom(seed, suffix) {
