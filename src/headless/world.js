@@ -7,9 +7,16 @@ import { createHeadlessRuntime } from './runtime.js'
 export const HEADLESS_WORLD_FORMAT = 'epi-city-headless-world'
 export const HEADLESS_WORLD_VERSION = 1
 
-export async function createHeadlessWorldFile(worldConfigInput) {
+export async function createHeadlessWorldFile(worldConfigInput, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null
+
+  emitProgress(onProgress, 0, 'Normalizing config')
   const config = normalizeWorldConfig(worldConfigInput)
+
+  emitProgress(onProgress, 0.1, 'Loading map')
   const city = await loadDefaultHeadlessCity()
+
+  emitProgress(onProgress, 0.35, `Generating ${config.population.npcCount} NPCs and ${config.population.carCount} cars`)
   const runtime = createHeadlessRuntime({
     city,
     seed: config.seed,
@@ -20,7 +27,11 @@ export async function createHeadlessWorldFile(worldConfigInput) {
   })
 
   try {
-    return serializeHeadlessWorld(runtime)
+    emitProgress(onProgress, 0.85, 'Serializing world')
+    const world = serializeHeadlessWorld(runtime)
+
+    emitProgress(onProgress, 1, 'World generated')
+    return world
   } finally {
     runtime.destroy()
   }
@@ -169,4 +180,8 @@ function cloneLocationState(locationState) {
     ...locationState,
     location: locationState.location ? { ...locationState.location } : null
   }
+}
+
+function emitProgress(onProgress, progress, message) {
+  onProgress?.({ progress, message })
 }

@@ -3,6 +3,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { runHeadlessSimulation } from '../../src/headless/simulation.js'
+import { createProgressBar } from './progress-bar.mjs'
 
 function printUsage() {
   console.log(`Usage:
@@ -89,21 +90,33 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  let progress = null
 
   if (args.help) {
     printUsage()
     return
   }
 
-  const config = JSON.parse(await fs.readFile(path.resolve(args.configPath), 'utf8'))
-  const results = await runHeadlessSimulation(config, {
-    worldPath: args.worldPath,
-    overrides: args.overrides
-  })
+  try {
+    progress = createProgressBar({ label: 'Headless simulation' })
+    progress.start('Reading config')
 
-  await fs.mkdir(path.dirname(args.output), { recursive: true })
-  await fs.writeFile(args.output, `${JSON.stringify(results, null, 2)}\n`, 'utf8')
-  console.log(`Results written to ${args.output}`)
+    const config = JSON.parse(await fs.readFile(path.resolve(args.configPath), 'utf8'))
+    const results = await runHeadlessSimulation(config, {
+      worldPath: args.worldPath,
+      overrides: args.overrides,
+      onProgress: ({ progress: value, message }) => progress.update(value * 0.95, message)
+    })
+
+    progress.update(0.98, 'Writing results')
+    await fs.mkdir(path.dirname(args.output), { recursive: true })
+    await fs.writeFile(args.output, `${JSON.stringify(results, null, 2)}\n`, 'utf8')
+    progress.finish('Results written')
+    console.log(`Results written to ${args.output}`)
+  } catch (error) {
+    progress?.fail('Failed')
+    throw error
+  }
 }
 
 function positiveNumber(value, label) {

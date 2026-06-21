@@ -3,6 +3,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { createHeadlessWorldFile } from '../../src/headless/world.js'
+import { createProgressBar } from './progress-bar.mjs'
 
 function printUsage() {
   console.log(`Usage:
@@ -57,18 +58,31 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  let progress = null
 
   if (args.help) {
     printUsage()
     return
   }
 
-  const config = JSON.parse(await fs.readFile(path.resolve(args.configPath), 'utf8'))
-  const world = await createHeadlessWorldFile(config)
+  try {
+    progress = createProgressBar({ label: 'World generation' })
+    progress.start('Reading config')
 
-  await fs.mkdir(path.dirname(args.output), { recursive: true })
-  await fs.writeFile(args.output, `${JSON.stringify(world, null, 2)}\n`, 'utf8')
-  console.log(`World written to ${args.output}`)
+    const config = JSON.parse(await fs.readFile(path.resolve(args.configPath), 'utf8'))
+    const world = await createHeadlessWorldFile(config, {
+      onProgress: ({ progress: value, message }) => progress.update(value * 0.9, message)
+    })
+
+    progress.update(0.95, 'Writing output')
+    await fs.mkdir(path.dirname(args.output), { recursive: true })
+    await fs.writeFile(args.output, `${JSON.stringify(world, null, 2)}\n`, 'utf8')
+    progress.finish('World written')
+    console.log(`World written to ${args.output}`)
+  } catch (error) {
+    progress?.fail('Failed')
+    throw error
+  }
 }
 
 main().catch((error) => {

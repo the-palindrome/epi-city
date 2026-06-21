@@ -24,6 +24,8 @@ This writes a generated, git-ignored world file:
 scripts/simulation/epi-city-world.json
 ```
 
+The command shows a terminal progress bar while it loads the map, generates entities, serializes the world, and writes the file.
+
 Run the simulation against that world:
 
 ```bash
@@ -35,6 +37,8 @@ This writes:
 ```text
 tmp/epi-city-results.json
 ```
+
+The command shows a terminal progress bar while it loads the world, initializes the runtime, runs simulation steps, flushes contacts, and writes the result file.
 
 To run a short smoke simulation:
 
