@@ -1,4 +1,6 @@
-import { worldUnitsToMeters } from '../core/scale.js'
+import { METERS_PER_WORLD_UNIT, worldUnitsToMeters } from '../core/scale.js'
+
+const CONTACT_PAIR_KEY_BASE = 0x4000000
 
 export class HeadlessEventRecorder {
   constructor({ city, clock }) {
@@ -18,33 +20,68 @@ export class HeadlessEventRecorder {
   }
 
   recordContactObservation(firstNpc, secondNpc, distanceWorldUnits, at = this.getAt()) {
-    const pair = orderedNpcIds(firstNpc, secondNpc)
-    const key = pair.join(':')
-    const distanceMeters = roundMetric(worldUnitsToMeters(distanceWorldUnits))
-    let contact = this.activeContacts.get(key)
+    return this.recordContactObservationSquared(
+      firstNpc,
+      secondNpc,
+      Number(distanceWorldUnits) * Number(distanceWorldUnits),
+      at
+    )
+  }
+
+  recordContactObservationSquared(firstNpc, secondNpc, distanceWorldUnitsSquared, at = this.getAt()) {
+    const pair = orderedNpcPair(firstNpc, secondNpc)
+    return this.recordOrderedContactObservationSquared(
+      firstNpc,
+      secondNpc,
+      pair.firstId,
+      pair.secondId,
+      pair.key,
+      distanceWorldUnitsSquared,
+      at
+    )
+  }
+
+  recordOrderedContactObservationSquared(
+    firstNpc,
+    secondNpc,
+    firstNpcId,
+    secondNpcId,
+    pairKey,
+    distanceWorldUnitsSquared,
+    at = this.getAt()
+  ) {
+    const rawDistanceSquared = Number(distanceWorldUnitsSquared)
+    const distanceSquared = Number.isFinite(rawDistanceSquared) && rawDistanceSquared >= 0
+      ? rawDistanceSquared
+      : 0
+    let contact = this.activeContacts.get(pairKey)
 
     if (!contact) {
       contact = {
         event: 'contact',
         id: this.nextId('contact'),
-        npcs: pair.map(formatNpcId),
+        npcs: [formatNpcId(firstNpcId), formatNpcId(secondNpcId)],
         at,
         until: at,
         durationSeconds: 0,
-        where: this.whereBetween(firstNpc, secondNpc),
-        minDistanceMeters: distanceMeters,
+        minDistanceWorldUnitsSquared: distanceSquared,
         observationCount: 0,
         order: this.nextOrder()
       }
-      this.activeContacts.set(key, contact)
+      setContactTileBetween(contact, this.city, firstNpc, secondNpc)
+      this.activeContacts.set(pairKey, contact)
     }
 
     contact.until = at
-    contact.durationSeconds = Math.max(0, contact.until - contact.at)
-    contact.minDistanceMeters = Math.min(contact.minDistanceMeters, distanceMeters)
+    contact.durationSeconds = contact.until - contact.at
+    if (distanceSquared < contact.minDistanceWorldUnitsSquared) {
+      contact.minDistanceWorldUnitsSquared = distanceSquared
+    }
     contact.observationCount += 1
     contact.lastObservedAt = at
-    contact.where = this.whereBetween(firstNpc, secondNpc)
+    if (!isSameUnchangedTile(contact, firstNpc, secondNpc)) {
+      setContactTileBetween(contact, this.city, firstNpc, secondNpc)
+    }
   }
 
   closeInactiveContacts(at = this.getAt()) {
@@ -199,17 +236,41 @@ export function formatCarId(id) {
   return `car_${id}`
 }
 
-function orderedNpcIds(firstNpc, secondNpc) {
+function orderedNpcPair(firstNpc, secondNpc) {
   const firstId = Number(firstNpc?.id)
   const secondId = Number(secondNpc?.id)
+  const orderedFirstId = firstId <= secondId ? firstId : secondId
+  const orderedSecondId = firstId <= secondId ? secondId : firstId
+  const numericKey = orderedFirstId * CONTACT_PAIR_KEY_BASE + orderedSecondId
 
-  return firstId <= secondId ? [firstId, secondId] : [secondId, firstId]
+  return {
+    firstId: orderedFirstId,
+    secondId: orderedSecondId,
+    key: Number.isSafeInteger(numericKey)
+      ? numericKey
+      : `${orderedFirstId}:${orderedSecondId}`
+  }
 }
 
 function cleanContactEvent(contact) {
-  const { lastObservedAt, ...event } = contact
+  const {
+    lastObservedAt,
+    minDistanceWorldUnitsSquared,
+    tileX,
+    tileY,
+    tileIndex,
+    ...event
+  } = contact
 
-  return event
+  return {
+    ...event,
+    minDistanceMeters: roundMetric(Math.sqrt(minDistanceWorldUnitsSquared) * METERS_PER_WORLD_UNIT),
+    where: {
+      tile: Number.isInteger(tileIndex)
+        ? { x: tileX, y: tileY, index: tileIndex }
+        : null
+    }
+  }
 }
 
 function stripOrder(event) {
@@ -262,6 +323,65 @@ function tileForPosition(city, position) {
   }
 }
 
+function setContactTileBetween(contact, city, firstNpc, secondNpc) {
+  const firstTile = firstNpc?.tile
+  const secondTile = secondNpc?.tile
+
+  if (firstTile && firstTile.index === secondTile?.index) {
+    if (contact.tileIndex !== firstTile.index) {
+      contact.tileX = firstTile.x
+      contact.tileY = firstTile.y
+      contact.tileIndex = firstTile.index
+    }
+    return
+  }
+
+  if (!city) {
+    setContactTile(contact, cloneTile(firstTile) || cloneTile(secondTile))
+    return
+  }
+
+  const midpointX = ((Number(firstNpc?.position?.x) || 0) + (Number(secondNpc?.position?.x) || 0)) / 2
+  const midpointY = ((Number(firstNpc?.position?.y) || 0) + (Number(secondNpc?.position?.y) || 0)) / 2
+
+  if (Number.isFinite(midpointX) && Number.isFinite(midpointY)) {
+    const x = Math.floor(midpointX / city.tileSize)
+    const y = Math.floor(midpointY / city.tileSize)
+
+    if (city.inBounds?.(x, y)) {
+      contact.tileX = x
+      contact.tileY = y
+      contact.tileIndex = city.index(x, y)
+      return
+    }
+  }
+
+  setContactTile(contact, cloneTile(firstTile) || cloneTile(secondTile))
+}
+
+function isSameUnchangedTile(contact, firstNpc, secondNpc) {
+  const firstTile = firstNpc?.tile
+
+  return Boolean(
+    firstTile &&
+    firstTile.index === secondNpc?.tile?.index &&
+    contact.tileIndex === firstTile.index
+  )
+}
+
+function setContactTile(contact, tile) {
+  if (!tile) {
+    contact.tileX = null
+    contact.tileY = null
+    contact.tileIndex = null
+    return
+  }
+
+  contact.tileX = tile.x
+  contact.tileY = tile.y
+  contact.tileIndex = tile.index
+}
+
 function roundMetric(value) {
-  return Number(Number(value).toFixed(4))
+  return Math.round(Number(value) * 10000) / 10000
 }

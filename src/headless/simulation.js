@@ -60,6 +60,7 @@ export async function runHeadlessSimulation(runConfigInput, options = {}) {
     emitProgress(onProgress, 1, 'Simulation complete')
     return results
   } finally {
+    city.flushRouteFieldPersistentStore?.()
     runtime.destroy()
   }
 }

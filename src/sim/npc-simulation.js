@@ -94,6 +94,7 @@ const DEFAULT_SOCIAL_GRAPH_CONFIG = Object.freeze({
 })
 const DEFAULT_SOCIAL_GROUP_MIN_FRIENDS = 1
 const DEFAULT_SOCIAL_GROUP_MAX_FRIENDS = 3
+const CONTACT_PAIR_KEY_BASE = 0x4000000
 const desireCityDataCache = new WeakMap()
 
 export function createNpcSimulation(city, entityLayer, config) {
@@ -128,6 +129,7 @@ export function createNpcSimulation(city, entityLayer, config) {
     policies: policyController,
     routePlanner,
     visualSlotCount,
+    renderEnabled,
     zorder,
     config
   }
@@ -160,6 +162,7 @@ export function createNpcSimulation(city, entityLayer, config) {
       age: profile.age,
       timetable,
       random,
+      renderEnabled,
       zorder,
       config
     }))
@@ -207,17 +210,20 @@ export function createNpcSimulation(city, entityLayer, config) {
 
     updateNpcCrowdingState(crowding, npcs)
 
-    for (const npc of npcs) {
+    for (let index = 0; index < npcs.length; index += 1) {
+      const npc = npcs[index]
       refreshNpcGoal(npc, timeOfDayHours, context)
     }
 
-    for (const npc of npcs) {
+    for (let index = 0; index < npcs.length; index += 1) {
+      const npc = npcs[index]
       prepareNpcForRouting(npc, movementDelta, context)
     }
 
     routePlanner.process(context)
 
-    for (const npc of npcs) {
+    for (let index = 0; index < npcs.length; index += 1) {
+      const npc = npcs[index]
       updateNpcMovement(npc, movementDelta, context)
     }
 
@@ -297,9 +303,10 @@ function createNoopNpcRenderer() {
 }
 
 class NpcEntity {
-  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, age, timetable, random, zorder, config }) {
+  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, age, timetable, random, renderEnabled, zorder, config }) {
     this.id = id
     this.zorder = zorder
+    this.renderEnabled = renderEnabled !== false
     this.age = age
     this.home = buildingAssignment.home ? buildingAssignment.home.id : null
     this.school = buildingAssignment.school ? buildingAssignment.school.id : null
@@ -380,7 +387,9 @@ class NpcEntity {
     this.locationState = null
     this.movement.target = null
     clearNpcMovementHeading(this)
-    idleNpcSprite(this)
+    if (this.renderEnabled) {
+      idleNpcSprite(this)
+    }
     this.routing = createEmptyRouteState()
   }
 
@@ -414,7 +423,9 @@ class NpcEntity {
     this.slot = { id: -1 }
     this.movement.target = null
     clearNpcMovementHeading(this)
-    idleNpcSprite(this)
+    if (this.renderEnabled) {
+      idleNpcSprite(this)
+    }
     this.routing = createEmptyRouteState()
   }
 }
@@ -493,6 +504,7 @@ class NpcPolicyController {
     this.effects = normalizeNpcPolicyEffects(null)
     this.decisions = new Map()
     this.effectKey = getNpcPolicyEffectsKey(this.effects)
+    this.hasEventCancellations = hasNpcPolicyEventCancellations(this.effects)
   }
 
   setEffects(effects) {
@@ -505,9 +517,14 @@ class NpcPolicyController {
     }
 
     this.effects = nextEffects
+    this.hasEventCancellations = hasNpcPolicyEventCancellations(nextEffects)
   }
 
   getAdjustedDestinationElement(npc, element) {
+    if (!this.hasEventCancellations) {
+      return element
+    }
+
     const eventAction = getPolicyEventActionForElement(this.city, element)
 
     if (!eventAction) {
@@ -1013,6 +1030,10 @@ class NpcInfectionDynamics {
     this.gridStamps = new Uint32Array(this.gridHeads.length)
     this.gridNext = new Int32Array(npcs.length)
     this.gridStamp = 0
+    this.participantGridStamp = -1
+    this.participantIndexes = new Int32Array(npcs.length)
+    this.participantCount = 0
+    this.numericContactPairKeys = npcs.length < CONTACT_PAIR_KEY_BASE
     this.elapsedSimulationSeconds = 0
     this.transmissionEvents = []
     this.contactEvents = []
@@ -1201,7 +1222,38 @@ class NpcInfectionDynamics {
     return event
   }
 
-  recordContactEvent(sourceNpc, targetNpc, dx, dy) {
+  recordContactEvent(sourceNpc, targetNpc, dx, dy, simulationSeconds = this.getElapsedSimulationSeconds()) {
+    const distanceSquared = dx * dx + dy * dy
+
+    if (!this.contactTracingEnabled) {
+      if (typeof this.eventRecorder?.recordOrderedContactObservationSquared === 'function') {
+        const sourceId = sourceNpc.id
+        const targetId = targetNpc.id
+        const firstNpcId = sourceId <= targetId ? sourceId : targetId
+        const secondNpcId = sourceId <= targetId ? targetId : sourceId
+        const pairKey = this.numericContactPairKeys
+          ? firstNpcId * CONTACT_PAIR_KEY_BASE + secondNpcId
+          : `${firstNpcId}:${secondNpcId}`
+
+        this.eventRecorder.recordOrderedContactObservationSquared(
+          sourceNpc,
+          targetNpc,
+          firstNpcId,
+          secondNpcId,
+          pairKey,
+          distanceSquared,
+          simulationSeconds
+        )
+      } else if (typeof this.eventRecorder?.recordContactObservationSquared === 'function') {
+        this.eventRecorder.recordContactObservationSquared(sourceNpc, targetNpc, distanceSquared, simulationSeconds)
+      } else {
+        this.eventRecorder?.recordContactObservation?.(sourceNpc, targetNpc, Math.sqrt(distanceSquared), simulationSeconds)
+      }
+      return
+    }
+
+    const distance = Math.sqrt(distanceSquared)
+
     const pairKey = contactPairKey(sourceNpc.id, targetNpc.id)
     const existing = this.contactEventsByPair.get(pairKey)
     const event = existing || {
@@ -1212,12 +1264,12 @@ class NpcInfectionDynamics {
     const source = sourceNpc.id === event.sourceNpcId ? sourceNpc : targetNpc
     const target = targetNpc.id === event.targetNpcId ? targetNpc : sourceNpc
 
-    event.simulationSeconds = this.getElapsedSimulationSeconds()
+    event.simulationSeconds = simulationSeconds
     event.sourcePosition = clonePosition(source.position)
     event.targetPosition = clonePosition(target.position)
     event.sourceTile = cloneTile(source.tile)
     event.targetTile = cloneTile(target.tile)
-    event.distance = Math.hypot(dx, dy)
+    event.distance = distance
     this.eventRecorder?.recordContactObservation?.(source, target, event.distance, event.simulationSeconds)
 
     if (!existing) {
@@ -1376,19 +1428,27 @@ class NpcInfectionDynamics {
       return
     }
 
-    this.indexInfectiousNpcs()
+    const useParticipantGrid = this.participantGridStamp === this.gridStamp
+
+    if (!useParticipantGrid) {
+      this.indexInfectiousNpcs()
+    }
 
     const infectionDistanceSquared = this.infectionDistance * this.infectionDistance
 
+    const candidateCount = useParticipantGrid ? this.participantCount : this.npcs.length
+
     susceptibleLoop:
-    for (let index = 0; index < this.npcs.length; index += 1) {
+    for (let candidateIndex = 0; candidateIndex < candidateCount; candidateIndex += 1) {
+      const index = useParticipantGrid ? this.participantIndexes[candidateIndex] : candidateIndex
+
       if (this.states[index] !== INFECTION_STATE_IDS.susceptible) {
         continue
       }
 
       const npc = this.npcs[index]
 
-      if (!canParticipateInInfection(npc)) {
+      if (!useParticipantGrid && !canParticipateInInfection(npc)) {
         continue
       }
 
@@ -1408,6 +1468,10 @@ class NpcInfectionDynamics {
           }
 
           for (let infectiousIndex = this.gridHeads[cellIndex]; infectiousIndex !== -1; infectiousIndex = this.gridNext[infectiousIndex]) {
+            if (useParticipantGrid && this.states[infectiousIndex] !== INFECTION_STATE_IDS.infectious) {
+              continue
+            }
+
             const infectiousNpc = this.npcs[infectiousIndex]
             const dx = infectiousNpc.position.x - npc.position.x
             const dy = infectiousNpc.position.y - npc.position.y
@@ -1440,6 +1504,13 @@ class NpcInfectionDynamics {
     }
 
     const infectionDistanceSquared = this.infectionDistance * this.infectionDistance
+    const simulationSeconds = this.getElapsedSimulationSeconds()
+    const useFastEventRecorder = !this.contactTracingEnabled &&
+      typeof this.eventRecorder?.recordOrderedContactObservationSquared === 'function'
+    const eventRecorder = this.eventRecorder
+    const numericContactPairKeys = this.numericContactPairKeys
+
+    this.participantCount = 0
 
     for (let index = 0; index < this.npcs.length; index += 1) {
       const npc = this.npcs[index]
@@ -1468,8 +1539,26 @@ class NpcInfectionDynamics {
             const dx = otherNpc.position.x - npc.position.x
             const dy = otherNpc.position.y - npc.position.y
 
-            if (dx * dx + dy * dy <= infectionDistanceSquared) {
-              this.recordContactEvent(otherNpc, npc, dx, dy)
+            const distanceSquared = dx * dx + dy * dy
+
+            if (distanceSquared <= infectionDistanceSquared) {
+              if (useFastEventRecorder) {
+                const pairKey = numericContactPairKeys
+                  ? otherIndex * CONTACT_PAIR_KEY_BASE + index
+                  : `${otherIndex}:${index}`
+
+                eventRecorder.recordOrderedContactObservationSquared(
+                  otherNpc,
+                  npc,
+                  otherIndex,
+                  index,
+                  pairKey,
+                  distanceSquared,
+                  simulationSeconds
+                )
+              } else {
+                this.recordContactEvent(otherNpc, npc, dx, dy, simulationSeconds)
+              }
             }
           }
         }
@@ -1484,11 +1573,16 @@ class NpcInfectionDynamics {
 
       this.gridNext[index] = this.gridHeads[cellIndex]
       this.gridHeads[cellIndex] = index
+      this.participantIndexes[this.participantCount] = index
+      this.participantCount += 1
     }
+
+    this.participantGridStamp = this.gridStamp
   }
 
   indexInfectiousNpcs() {
     this.gridStamp += 1
+    this.participantGridStamp = -1
 
     if (this.gridStamp === 0) {
       this.gridStamps.fill(0)
@@ -2013,6 +2107,20 @@ function normalizeNpcPolicyEffects(effects) {
       reduceNightlife: normalizePolicyProbability(effects?.eventCancellationProbabilities?.reduceNightlife)
     }
   }
+}
+
+function hasNpcPolicyEventCancellations(effects) {
+  const cancellations = effects?.eventCancellationProbabilities
+
+  return Boolean(
+    cancellations &&
+    (
+      cancellations.closeSchools > 0 ||
+      cancellations.homeOffice > 0 ||
+      cancellations.reduceShopping > 0 ||
+      cancellations.reduceNightlife > 0
+    )
+  )
 }
 
 function getNpcPolicyEffectsKey(effects) {
@@ -2698,12 +2806,16 @@ function updateNpcMovement(npc, deltaSeconds, context) {
   }
 
   if (npc.vehicleTrip || npc.waitingForCar) {
-    idleNpcSprite(npc)
+    if (context.renderEnabled) {
+      idleNpcSprite(npc)
+    }
     return
   }
 
   if (!npc.present) {
-    idleNpcSprite(npc)
+    if (context.renderEnabled) {
+      idleNpcSprite(npc)
+    }
     return
   }
 
@@ -2717,7 +2829,9 @@ function updateNpcMovement(npc, deltaSeconds, context) {
     return
   }
 
-  idleNpcSprite(npc)
+  if (context.renderEnabled) {
+    idleNpcSprite(npc)
+  }
 
   if (npc.goal) {
     followRoute(npc, deltaSeconds, context)
@@ -2740,7 +2854,9 @@ function moveNpcTowardTarget(npc, deltaSeconds, context) {
   const directionX = movedDistance > 0.0001 ? deltaX / movedDistance : target.directionX
   const directionY = movedDistance > 0.0001 ? deltaY / movedDistance : target.directionY
 
-  stepNpcSpriteAnimation(npc, directionX, directionY, movedDistance)
+  if (context.renderEnabled) {
+    stepNpcSpriteAnimation(npc, directionX, directionY, movedDistance)
+  }
   npc.movement.headingX = directionX
   npc.movement.headingY = directionY
 
@@ -2883,7 +2999,9 @@ function tryStartMoveToTile(npc, tileX, tileY, context, knownTargetIndex = null)
 
   npc.movement.target = movementTarget
   reserveNpcCrowdingTarget(targetIndex, targetSlot.slot, context)
-  faceNpcSprite(npc, movementTarget.directionX, movementTarget.directionY)
+  if (context.renderEnabled) {
+    faceNpcSprite(npc, movementTarget.directionX, movementTarget.directionY)
+  }
 
   return true
 }
@@ -2945,6 +3063,7 @@ function createNpcMovementCurve(start, end, startDirection, endDirection, tileSi
     p2,
     p3,
     samples,
+    sampleCursor: 1,
     length
   }
 }
@@ -2980,14 +3099,20 @@ function pointOnNpcMovementCurve(curve, distance, out = { x: 0, y: 0 }) {
   }
 
   const samples = curve.samples
+  let startIndex = curve.sampleCursor || 1
 
-  for (let index = 1; index < samples.length; index += 1) {
+  if (startIndex >= samples.length || distance <= samples[startIndex - 1].distance) {
+    startIndex = 1
+  }
+
+  for (let index = startIndex; index < samples.length; index += 1) {
     const sample = samples[index]
 
     if (distance > sample.distance) {
       continue
     }
 
+    curve.sampleCursor = index
     const previous = samples[index - 1]
     const span = sample.distance - previous.distance
     const ratio = span === 0 ? 0 : (distance - previous.distance) / span
@@ -3089,7 +3214,9 @@ function tryExitCurrentLocation(npc, context) {
   npc.tile.index = location.index
   npc.slot.id = targetSlot.slot
   clearNpcMovementHeading(npc)
-  idleNpcSprite(npc)
+  if (context.renderEnabled) {
+    idleNpcSprite(npc)
+  }
 
   return true
 }
@@ -3110,7 +3237,9 @@ function enterGoalLocation(npc, context) {
   npc.slot = { id: -1 }
   npc.movement.target = null
   clearNpcMovementHeading(npc)
-  idleNpcSprite(npc)
+  if (context.renderEnabled) {
+    idleNpcSprite(npc)
+  }
   npc.routing = createEmptyRouteState()
 }
 

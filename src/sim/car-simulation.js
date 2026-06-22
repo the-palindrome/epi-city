@@ -139,11 +139,13 @@ export function createCarSimulation(city, entityLayer, config = {}) {
     const movementDelta = toMovementSeconds(safeDelta, resolvedConfig.movementTimeScale)
     const hour = clock.getTimeOfDayHours()
 
-    for (const car of cars) {
+    for (let index = 0; index < cars.length; index += 1) {
+      const car = cars[index]
       clearCarOwnerWaitingState(car)
     }
 
-    for (const car of cars) {
+    for (let index = 0; index < cars.length; index += 1) {
+      const car = cars[index]
       if (!car.manualControl && car.state === 'parked') {
         maybeStartCarTrip(car, hour, context)
       }
@@ -151,7 +153,8 @@ export function createCarSimulation(city, entityLayer, config = {}) {
 
     context.yieldIndex = createTrafficYieldIndex(context)
 
-    for (const car of cars) {
+    for (let index = 0; index < cars.length; index += 1) {
+      const car = cars[index]
       if (!car.manualControl && car.state === 'driving') {
         updateDrivingCar(car, movementDelta, context)
       }

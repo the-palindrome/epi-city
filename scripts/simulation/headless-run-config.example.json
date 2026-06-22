@@ -12,7 +12,7 @@
     "inoculatedNpcIds": []
   },
   "run": {
-    "durationSeconds": 259200,
+    "durationSeconds": 864000,
     "stepSeconds": 2
   },
   "infection": {

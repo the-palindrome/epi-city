@@ -6,7 +6,7 @@
     "value": "epi-city"
   },
   "population": {
-    "npcCount": 500,
+    "npcCount": 1000,
     "carCount": 100
   }
 }
