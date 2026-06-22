@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(TOOL_DIR, '..')
 const D3_BUNDLE_PATH = path.join(REPO_ROOT, 'node_modules', 'd3', 'dist', 'd3.min.js')
+const DATA_WORKER_PATH = path.join(TOOL_DIR, 'data-worker.js')
 const DEFAULT_PORT = 5175
 const START_PORT = Number(process.env.PORT || DEFAULT_PORT)
 const MAX_PORT = 65535
@@ -71,6 +72,11 @@ async function handleRequest(request, response) {
 
     if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/vendor/d3.min.js') {
       await sendFile(request, response, D3_BUNDLE_PATH, 'text/javascript; charset=utf-8')
+      return
+    }
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/data-worker.js') {
+      await sendFile(request, response, DATA_WORKER_PATH, 'text/javascript; charset=utf-8')
       return
     }
 

@@ -39,13 +39,24 @@
         font: 13px/1.4 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
+      #edgeCanvas,
       #viz {
         position: fixed;
         inset: 0;
         width: 100vw;
         height: 100vh;
+      }
+
+      #edgeCanvas {
+        z-index: 0;
         display: block;
-        background: var(--bg);
+        pointer-events: none;
+      }
+
+      #viz {
+        display: block;
+        z-index: 1;
+        background: transparent;
         cursor: grab;
       }
 
@@ -120,6 +131,7 @@
       }
 
       input[type="number"],
+      select,
       button,
       .file-control {
         height: 34px;
@@ -133,6 +145,11 @@
       input[type="number"] {
         width: 84px;
         padding: 0 8px;
+      }
+
+      select {
+        min-width: 118px;
+        padding: 0 28px 0 8px;
       }
 
       .time-inputs {
@@ -233,6 +250,13 @@
         flex-wrap: wrap;
       }
 
+      .layout-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
       .control-title {
         color: var(--muted);
         font-size: 11px;
@@ -262,6 +286,7 @@
       }
 
       button:hover,
+      select:hover,
       .file-control:hover {
         border-color: rgba(189, 136, 0, 0.58);
       }
@@ -433,18 +458,6 @@
         color: var(--muted);
       }
 
-      .contact-link {
-        stroke: var(--contact);
-        stroke-linecap: round;
-        vector-effect: non-scaling-stroke;
-      }
-
-      .infection-link {
-        stroke: var(--infection);
-        stroke-linecap: round;
-        vector-effect: non-scaling-stroke;
-      }
-
       .node {
         cursor: pointer;
       }
@@ -489,6 +502,10 @@
           justify-content: flex-start;
         }
 
+        .layout-control {
+          flex-wrap: wrap;
+        }
+
         body[data-view="seir"] .actions {
           grid-column: auto;
         }
@@ -506,6 +523,7 @@
     </style>
   </head>
   <body data-view="contact">
+    <canvas id="edgeCanvas" aria-hidden="true"></canvas>
     <svg id="viz" aria-label="Simulation explorer visualization"></svg>
     <div class="topbar">
       <div class="brand">
@@ -526,6 +544,15 @@
         </div>
       </div>
       <div class="actions">
+        <div class="layout-control graph-control">
+          <label for="layoutSelect">Layout</label>
+          <select id="layoutSelect" aria-label="Graph layout">
+            <option value="force">Force</option>
+            <option value="spherical">Spherical</option>
+            <option value="hierarchical">Hierarchical</option>
+            <option value="infectionMap">Infection map</option>
+          </select>
+        </div>
         <div class="display-control graph-control" aria-label="Display edges">
           <span class="control-title">Display edges</span>
           <label class="checkbox-control">
@@ -589,7 +616,6 @@
         axisLeft,
         curveLinear,
         drag,
-        extent,
         forceCenter,
         forceCollide,
         forceLink,
@@ -597,7 +623,6 @@
         forceSimulation,
         format,
         line,
-        max,
         scaleLinear,
         scaleTime,
         select,
@@ -606,6 +631,8 @@
         zoomIdentity
       } = d3
 
+      const edgeCanvas = document.getElementById('edgeCanvas')
+      const edgeContext = edgeCanvas.getContext('2d')
       const svg = select('#viz')
       const sourceEl = document.getElementById('source')
       const statusEl = document.getElementById('status')
@@ -616,6 +643,7 @@
       const endNumber = document.getElementById('endNumber')
       const showContactsInput = document.getElementById('showContacts')
       const showInfectionsInput = document.getElementById('showInfections')
+      const layoutSelect = document.getElementById('layoutSelect')
       const showSusceptibleInput = document.getElementById('showSusceptible')
       const showExposedInput = document.getElementById('showExposed')
       const showInfectiousInput = document.getElementById('showInfectious')
@@ -636,62 +664,41 @@
         recovered: '#07974d'
       }
       const stateKeys = ['susceptible', 'exposed', 'infectious', 'recovered']
-      const eventOrder = {
-        infection: 0,
-        incubation: 1,
-        recovery: 2,
-        immunity_waned: 3
-      }
+      const stateNames = ['susceptible', 'exposed', 'infectious', 'recovered']
+      const colorByStateCode = stateNames.map((stateName) => colorByState[stateName])
+      const integerFormat = format(',')
 
       const root = svg.append('g')
       const graphRoot = root.append('g').attr('class', 'contact-graph')
-      const contactLinkGroup = graphRoot.append('g').attr('class', 'contact-links')
-      const infectionLinkGroup = graphRoot.append('g').attr('class', 'infection-links')
       const nodeGroup = graphRoot.append('g').attr('class', 'nodes')
       const chartRoot = root.append('g').attr('class', 'seir-chart').style('display', 'none')
-      const chartGridGroup = chartRoot.append('g').attr('class', 'grid')
-      const chartAxisGroup = chartRoot.append('g').attr('class', 'axes')
-      const chartLineGroup = chartRoot.append('g').attr('class', 'curves')
-
-      svg.append('defs')
-        .append('marker')
-        .attr('id', 'infection-arrow')
-        .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 12)
-        .attr('refY', 0)
-        .attr('markerWidth', 7)
-        .attr('markerHeight', 7)
-        .attr('orient', 'auto')
-        .append('path')
-        .attr('d', 'M0,-4L9,0L0,4')
-        .attr('fill', 'var(--infection)')
-        .attr('opacity', 0.75)
-
-      const graphZoom = zoom()
-        .scaleExtent([0.08, 8])
-        .on('zoom', (event) => {
-          if (state.activeTab === 'contact') {
-            state.graphTransform = event.transform
-            graphRoot.attr('transform', event.transform)
-          } else {
-            state.chartTransform = event.transform
-            chartRoot.attr('transform', event.transform)
-          }
-        })
+      const chartPlotGroup = chartRoot.append('g').attr('class', 'plot')
+      const chartGridGroup = chartPlotGroup.append('g').attr('class', 'grid')
+      const chartAxisGroup = chartPlotGroup.append('g').attr('class', 'axes')
+      const chartLineGroup = chartPlotGroup.append('g').attr('class', 'curves')
 
       const state = {
-        results: null,
+        worker: null,
+        loading: false,
+        loadStartedAt: 0,
+        loaded: false,
         npcs: [],
-        contacts: [],
-        infections: [],
-        seirEvents: [],
+        initialStateCodes: new Int8Array(),
+        currentStateCodes: new Int8Array(),
+        degrees: new Uint32Array(),
+        contactSource: new Int32Array(),
+        contactTarget: new Int32Array(),
+        contactWeight: new Uint32Array(),
+        infectionSource: new Int32Array(),
+        infectionTarget: new Int32Array(),
+        fullInfectionSource: new Int32Array(),
+        fullInfectionTarget: new Int32Array(),
+        fullInfectionTileX: new Float64Array(),
+        fullInfectionTileY: new Float64Array(),
+        layout: null,
+        layoutMode: 'force',
         seirSeries: null,
-        npcIndex: new Map(),
-        currentStates: [],
-        filteredContacts: [],
-        filteredInfections: [],
-        aggregatedContacts: [],
-        fullLayoutLinks: [],
+        nodeSelection: null,
         activeTab: 'contact',
         minTime: 0,
         maxTime: 0,
@@ -707,8 +714,36 @@
         },
         graphTransform: zoomIdentity,
         chartTransform: zoomIdentity,
-        simulation: null
+        simulation: null,
+        drawFrame: 0,
+        windowFrame: 0,
+        windowRequestId: 0,
+        workerBusy: false,
+        queuedWindow: false,
+        maxLayoutLinks: 6000,
+        maxVisibleContactEdges: 12000,
+        layoutAnimationFrame: 0,
+        stats: {
+          contactEventCount: 0,
+          infectionEventCount: 0,
+          activeNodeCount: 0,
+          totalContactPairCount: 0,
+          visibleContactPairCount: 0
+        }
       }
+
+      const graphZoom = zoom()
+        .scaleExtent([0.08, 8])
+        .on('zoom', (event) => {
+          if (state.activeTab === 'contact') {
+            state.graphTransform = event.transform
+            graphRoot.attr('transform', event.transform)
+            scheduleGraphDraw()
+          } else {
+            state.chartTransform = event.transform
+            chartRoot.attr('transform', event.transform)
+          }
+        })
 
       svg.call(graphZoom)
       window.addEventListener('resize', resize)
@@ -718,6 +753,7 @@
       endNumber.addEventListener('change', () => setWindow(state.start, Number(endNumber.value)))
       showContactsInput.addEventListener('change', setEdgeDisplay)
       showInfectionsInput.addEventListener('change', setEdgeDisplay)
+      layoutSelect.addEventListener('change', () => setGraphLayout(layoutSelect.value))
       showSusceptibleInput.addEventListener('change', setCurveDisplay)
       showExposedInput.addEventListener('change', setCurveDisplay)
       showInfectiousInput.addEventListener('change', setCurveDisplay)
@@ -734,436 +770,853 @@
           return
         }
 
+        state.loading = true
+        state.loadStartedAt = performance.now()
+        state.loaded = false
+        if (state.worker) {
+          state.worker.terminate()
+          state.worker = null
+        }
+        resetView()
+        sourceEl.textContent = file.name
         setStatus(`Loading ${file.name}`)
-        try {
-          loadResults(JSON.parse(await file.text()), file.name)
-        } catch (error) {
-          setStatus(`Invalid JSON: ${error.message}`)
-        } finally {
-          fileInput.value = ''
+        ensureWorker()
+        state.worker.postMessage({
+          type: 'load',
+          file,
+          sourceName: file.name,
+          maxLayoutLinks: state.maxLayoutLinks,
+          maxVisibleContactEdges: state.maxVisibleContactEdges
+        })
+        fileInput.value = ''
+      }
+
+      function ensureWorker() {
+        if (state.worker) {
+          return
+        }
+
+        state.worker = new Worker('/data-worker.js')
+        state.worker.onmessage = handleWorkerMessage
+        state.worker.onerror = (event) => {
+          state.loading = false
+          state.workerBusy = false
+          setStatus(`Worker error: ${event.message}`)
         }
       }
 
-      function loadResults(results, sourceName) {
-        const normalized = normalizeResults(results)
+      function handleWorkerMessage(message) {
+        const data = message.data || {}
 
-        state.results = results
-        state.npcs = normalized.npcs
-        state.contacts = normalized.contacts
-        state.infections = normalized.infections
-        state.seirEvents = normalized.seirEvents
-        state.seirSeries = normalized.seirSeries
-        state.npcIndex = normalized.npcIndex
-        state.fullLayoutLinks = aggregateContacts(normalized.contacts).map((link) => ({ ...link }))
-        state.minTime = normalized.minTime
-        state.maxTime = normalized.maxTime
-        state.start = normalized.minTime
-        state.end = normalized.maxTime
+        if (data.type === 'status') {
+          setStatus(data.message)
+          return
+        }
+
+        if (data.type === 'error') {
+          state.loading = false
+          state.workerBusy = false
+          setStatus(data.message)
+          return
+        }
+
+        if (data.type === 'loaded') {
+          applyLoadedDataset(data)
+          return
+        }
+
+        if (data.type === 'window') {
+          applyWindowData(data)
+        }
+      }
+
+      function applyLoadedDataset(data) {
+        state.npcs = data.npcs.map((npc, index) => ({
+          id: npc.id,
+          index,
+          initialSeirState: npc.initialSeirState,
+          initialSeirStateCode: npc.initialSeirStateCode,
+          x: Math.cos(index * 2.399963) * Math.sqrt(index + 1) * 9,
+          y: Math.sin(index * 2.399963) * Math.sqrt(index + 1) * 9
+        }))
+        state.initialStateCodes = data.initialStateCodes
+        state.currentStateCodes = data.initialStateCodes.slice()
+        state.degrees = new Uint32Array(state.npcs.length)
+        state.contactSource = new Int32Array()
+        state.contactTarget = new Int32Array()
+        state.contactWeight = new Uint32Array()
+        state.infectionSource = new Int32Array()
+        state.infectionTarget = new Int32Array()
+        state.fullInfectionSource = data.fullInfectionSource
+        state.fullInfectionTarget = data.fullInfectionTarget
+        state.fullInfectionTileX = data.fullInfectionTileX
+        state.fullInfectionTileY = data.fullInfectionTileY
+        state.layout = data.layout
+        state.seirSeries = data.seirSeries
+        state.minTime = data.minTime
+        state.maxTime = data.maxTime
+        state.start = data.minTime
+        state.end = data.maxTime
         state.graphTransform = centeredTransform()
         state.chartTransform = centeredTransform()
-        sourceEl.textContent = sourceName
+        state.loaded = true
+        state.loading = false
+        state.stats.totalContactPairCount = data.contactPairCount
+        state.stats.visibleContactPairCount = 0
+        state.stats.contactEventCount = data.contactCount
+        state.stats.activeNodeCount = 0
+        state.maxVisibleContactEdges = data.maxVisibleContactEdges || state.maxVisibleContactEdges
+        layoutSelect.value = state.layoutMode
 
         configureControls()
         buildGraph()
         renderChart()
-        updateFilteredGraph()
+        updateStats()
         applyActiveTransform()
-        hideStatus()
+        requestWindowData()
       }
 
-      function normalizeResults(results) {
-        if (!results || typeof results !== 'object' || Array.isArray(results)) {
-          throw new Error('Result payload must be a JSON object.')
-        }
-
-        if (!Array.isArray(results.npcs)) {
-          throw new Error('Result payload must include npcs array.')
-        }
-
-        if (!Array.isArray(results.events)) {
-          throw new Error('Result payload must include events array.')
-        }
-
-        const npcs = results.npcs.map((npc, index) => {
-          const initialSeirState = normalizeSeirState(npc?.initialSeirState)
-
-          return {
-            id: String(npc?.id || `npc_${index}`),
-            index,
-            initialSeirState
-          }
-        })
-        const npcIndex = new Map(npcs.map((npc, index) => [npc.id, index]))
-        const contacts = []
-        const infections = []
-        const seirEvents = []
-
-        for (const event of results.events) {
-          if (event?.event === 'contact' && Array.isArray(event.npcs) && event.npcs.length >= 2) {
-            const source = npcIndex.get(String(event.npcs[0]))
-            const target = npcIndex.get(String(event.npcs[1]))
-            const at = Number(event.at)
-            const until = Number(event.until ?? event.at)
-
-            if (!Number.isInteger(source) || !Number.isInteger(target) || source === target ||
-                !Number.isFinite(at) || !Number.isFinite(until)) {
-              continue
-            }
-
-            contacts.push({
-              id: String(event.id || `contact_${contacts.length + 1}`),
-              source,
-              target,
-              at: Math.min(at, until),
-              until: Math.max(at, until),
-              durationSeconds: Math.max(0, Number(event.durationSeconds) || Math.max(at, until) - Math.min(at, until)),
-              observationCount: Math.max(1, Number(event.observationCount) || 1)
-            })
-            continue
-          }
-
-          if (event?.event === 'infection') {
-            const source = npcIndex.get(String(event.from))
-            const target = npcIndex.get(String(event.to))
-            const at = Number(event.at)
-
-            if (!Number.isInteger(source) || !Number.isInteger(target) || source === target ||
-                !Number.isFinite(at)) {
-              continue
-            }
-
-            infections.push({
-              id: String(event.id || `infection_${infections.length + 1}`),
-              source,
-              target,
-              at
-            })
-            seirEvents.push({
-              event: 'infection',
-              npc: target,
-              at
-            })
-            continue
-          }
-
-          if (isNpcSeirEvent(event?.event)) {
-            const npc = npcIndex.get(String(event.npc))
-            const at = Number(event.at)
-
-            if (Number.isInteger(npc) && Number.isFinite(at)) {
-              seirEvents.push({
-                event: event.event,
-                npc,
-                at
-              })
-            }
-          }
-        }
-
-        let minEventTime = Infinity
-        let maxEventTime = 0
-
-        for (const contact of contacts) {
-          minEventTime = Math.min(minEventTime, contact.at, contact.until)
-          maxEventTime = Math.max(maxEventTime, contact.at, contact.until)
-        }
-
-        for (const infection of infections) {
-          minEventTime = Math.min(minEventTime, infection.at)
-          maxEventTime = Math.max(maxEventTime, infection.at)
-        }
-
-        for (const seirEvent of seirEvents) {
-          minEventTime = Math.min(minEventTime, seirEvent.at)
-          maxEventTime = Math.max(maxEventTime, seirEvent.at)
-        }
-
-        const configuredDuration = Number(results.summary?.durationSeconds ?? results.config?.run?.durationSeconds)
-
-        if (Number.isFinite(configuredDuration) && configuredDuration > 0) {
-          maxEventTime = Math.max(maxEventTime, configuredDuration)
-        }
-
-        if (!Number.isFinite(minEventTime)) {
-          minEventTime = 0
-        }
-
-        const minTime = Math.floor(Math.max(0, minEventTime))
-        const maxTime = Math.ceil(Math.max(minTime + 1, maxEventTime))
-
-        return {
-          npcs,
-          contacts,
-          infections,
-          seirEvents,
-          seirSeries: buildSeirSeries(npcs, seirEvents, maxTime),
-          npcIndex,
-          minTime,
-          maxTime
-        }
-      }
-
-      function buildSeirSeries(npcs, seirEvents, maxTime) {
-        const counts = {
-          susceptible: 0,
-          exposed: 0,
-          infectious: 0,
-          recovered: 0
-        }
-        const statesByNpc = npcs.map((npc) => normalizeSeirState(npc.initialSeirState))
-
-        for (const stateName of statesByNpc) {
-          counts[stateName] += 1
-        }
-
-        const points = [{ time: 0, ...counts }]
-        const sortedEvents = [...seirEvents].sort((left, right) => (
-          left.at - right.at ||
-          (eventOrder[left.event] ?? 99) - (eventOrder[right.event] ?? 99) ||
-          left.npc - right.npc
-        ))
-
-        for (let eventIndex = 0; eventIndex < sortedEvents.length;) {
-          const event = sortedEvents[eventIndex]
-          const time = Math.max(0, Number(event.at) || 0)
-          let changed = false
-
-          while (eventIndex < sortedEvents.length && Math.max(0, Number(sortedEvents[eventIndex].at) || 0) === time) {
-            const timedEvent = sortedEvents[eventIndex]
-            const toState = nextStateForEvent(timedEvent.event)
-
-            if (toState && statesByNpc[timedEvent.npc]) {
-              changed = moveNpcState(counts, statesByNpc, timedEvent.npc, toState) || changed
-            }
-
-            eventIndex += 1
-          }
-
-          if (changed) {
-            pushSeirPoint(points, time, counts)
-          }
-        }
-
-        pushSeirPoint(points, Math.max(maxTime, points[points.length - 1]?.time || 0), counts)
-
-        return {
-          points,
-          maxCount: Math.max(1, npcs.length),
-          maxTime: Math.max(1, maxTime)
-        }
-      }
-
-      function pushSeirPoint(points, time, counts) {
-        const previous = points[points.length - 1]
-
-        if (previous && previous.time === time &&
-            previous.susceptible === counts.susceptible &&
-            previous.exposed === counts.exposed &&
-            previous.infectious === counts.infectious &&
-            previous.recovered === counts.recovered) {
-          return
-        }
-
-        points.push({
-          time,
-          susceptible: counts.susceptible,
-          exposed: counts.exposed,
-          infectious: counts.infectious,
-          recovered: counts.recovered
-        })
-      }
-
-      function moveNpcState(counts, statesByNpc, npcIndex, toState) {
-        const fromState = statesByNpc[npcIndex]
-
-        if (fromState === toState) {
-          return false
-        }
-
-        if (counts[fromState] > 0) {
-          counts[fromState] -= 1
-        }
-
-        counts[toState] += 1
-        statesByNpc[npcIndex] = toState
-        return true
-      }
-
-      function nextStateForEvent(eventName) {
-        if (eventName === 'infection') {
-          return 'exposed'
-        }
-
-        if (eventName === 'incubation') {
-          return 'infectious'
-        }
-
-        if (eventName === 'recovery') {
-          return 'recovered'
-        }
-
-        if (eventName === 'immunity_waned') {
-          return 'susceptible'
-        }
-
-        return null
-      }
-
-      function normalizeSeirState(value) {
-        const stateName = String(value || 'susceptible')
-
-        return stateKeys.includes(stateName) ? stateName : 'susceptible'
-      }
-
-      function isNpcSeirEvent(eventName) {
-        return eventName === 'incubation' || eventName === 'recovery' || eventName === 'immunity_waned'
+      function resetView() {
+        stopSimulation()
+        nodeGroup.selectAll('*').remove()
+        chartGridGroup.selectAll('*').remove()
+        chartAxisGroup.selectAll('*').remove()
+        chartLineGroup.selectAll('*').remove()
+        state.nodeSelection = null
+        state.npcs = []
+        state.loaded = false
+        state.currentStateCodes = new Int8Array()
+        state.degrees = new Uint32Array()
+        state.contactSource = new Int32Array()
+        state.contactTarget = new Int32Array()
+        state.contactWeight = new Uint32Array()
+        state.infectionSource = new Int32Array()
+        state.infectionTarget = new Int32Array()
+        state.fullInfectionSource = new Int32Array()
+        state.fullInfectionTarget = new Int32Array()
+        state.fullInfectionTileX = new Float64Array()
+        state.fullInfectionTileY = new Float64Array()
+        clearCanvas()
+        updateStats()
       }
 
       function buildGraph() {
         stopSimulation()
-        contactLinkGroup.selectAll('*').remove()
-        infectionLinkGroup.selectAll('*').remove()
         nodeGroup.selectAll('*').remove()
 
-        const nodes = state.npcs.map((npc, index) => ({
-          ...npc,
-          x: Math.cos(index * 2.399963) * Math.sqrt(index + 1) * 8,
-          y: Math.sin(index * 2.399963) * Math.sqrt(index + 1) * 8
-        }))
-        const links = state.fullLayoutLinks.map((link) => ({
-          source: link.source,
-          target: link.target,
-          count: link.count
-        }))
+        const links = []
+        const source = state.layout?.source || new Int32Array()
+        const target = state.layout?.target || new Int32Array()
+        const count = state.layout?.count || new Uint32Array()
 
-        state.npcs = nodes
-        state.simulation = forceSimulation(nodes)
-          .force('link', forceLink(links).id((node) => node.index).distance((link) => 34 + Math.min(36, Math.log1p(link.count) * 8)).strength(0.16))
-          .force('charge', forceManyBody().strength(-68).distanceMax(280))
-          .force('collide', forceCollide(6.5))
-          .force('center', forceCenter(0, 0))
-          .alpha(1)
-          .alphaDecay(0.028)
-          .on('tick', tickGraph)
-
-        updateNodeSelection()
-      }
-
-      function updateFilteredGraph() {
-        state.filteredContacts = state.contacts.filter((contact) => contact.until >= state.start && contact.at <= state.end)
-        state.filteredInfections = state.infections.filter((infection) => infection.at >= state.start && infection.at <= state.end)
-        state.aggregatedContacts = aggregateContacts(state.filteredContacts)
-        state.currentStates = statesAtTime(state.end)
-
-        renderGraphLinks()
-        updateNodeSelection()
-        updateStats()
-      }
-
-      function renderGraphLinks() {
-        const contactLinks = contactLinkGroup.selectAll('line')
-          .data(state.showContacts ? state.aggregatedContacts : [], linkKey)
-
-        contactLinks.exit().remove()
-        contactLinks.enter()
-          .append('line')
-          .attr('class', 'contact-link')
-          .attr('stroke-opacity', 0.32)
-          .merge(contactLinks)
-          .attr('stroke-width', (link) => Math.min(3.8, 0.45 + Math.log1p(link.count) * 0.55))
-
-        const infectionLinks = infectionLinkGroup.selectAll('line')
-          .data(state.showInfections ? state.filteredInfections : [], (link) => link.id)
-
-        infectionLinks.exit().remove()
-        infectionLinks.enter()
-          .append('line')
-          .attr('class', 'infection-link')
-          .attr('marker-end', 'url(#infection-arrow)')
-          .attr('stroke-opacity', 0.72)
-          .merge(infectionLinks)
-          .attr('stroke-width', 1.7)
-
-        tickGraph()
-      }
-
-      function updateNodeSelection() {
-        const degrees = new Array(state.npcs.length).fill(0)
-
-        for (const contact of state.aggregatedContacts) {
-          degrees[contact.source] += contact.count
-          degrees[contact.target] += contact.count
+        for (let index = 0; index < source.length; index += 1) {
+          links.push({
+            source: source[index],
+            target: target[index],
+            count: count[index]
+          })
         }
 
-        for (const infection of state.filteredInfections) {
-          degrees[infection.source] += 1
-          degrees[infection.target] += 1
-        }
-
-        const nodes = nodeGroup.selectAll('circle')
+        state.nodeSelection = nodeGroup.selectAll('circle')
           .data(state.npcs, (node) => node.id)
-
-        nodes.exit().remove()
-        nodes.enter()
-          .append('circle')
+          .join('circle')
           .attr('class', 'node')
-          .attr('r', 4.4)
+          .attr('r', 3.8)
           .attr('stroke', '#ffffff')
-          .attr('stroke-width', 1.2)
+          .attr('stroke-width', 1.1)
           .call(drag()
             .on('start', dragStarted)
             .on('drag', dragged)
             .on('end', dragEnded))
-          .on('pointerenter', (event, node) => showNodeTooltip(event, node, degrees[node.index] || 0))
-          .on('pointermove', (event, node) => showNodeTooltip(event, node, degrees[node.index] || 0))
+          .on('pointerenter', (event, node) => showNodeTooltip(event, node))
+          .on('pointermove', (event, node) => showNodeTooltip(event, node))
           .on('pointerleave', hideTooltip)
-          .merge(nodes)
-          .attr('fill', (node) => colorByState[state.currentStates[node.index] || node.initialSeirState] || colorByState.susceptible)
-          .attr('r', (node) => 4.2 + Math.min(2.6, Math.sqrt(degrees[node.index] || 0) * 0.08))
 
-        tickGraph()
+        applyNodeStyles()
+
+        if (state.layoutMode === 'force') {
+          startForceLayout(links)
+        } else {
+          applyFixedLayout(state.layoutMode, { animate: false })
+        }
+
+        scheduleGraphDraw()
       }
 
-      function tickGraph() {
-        contactLinkGroup.selectAll('line')
-          .attr('x1', (link) => nodeForLinkEndpoint(link.source).x)
-          .attr('y1', (link) => nodeForLinkEndpoint(link.source).y)
-          .attr('x2', (link) => nodeForLinkEndpoint(link.target).x)
-          .attr('y2', (link) => nodeForLinkEndpoint(link.target).y)
+      function startForceLayout(links) {
+        stopLayoutAnimation()
+        stopSimulation()
 
-        infectionLinkGroup.selectAll('line')
-          .attr('x1', (link) => endpointWithOffset(link, true).x)
-          .attr('y1', (link) => endpointWithOffset(link, true).y)
-          .attr('x2', (link) => endpointWithOffset(link, false).x)
-          .attr('y2', (link) => endpointWithOffset(link, false).y)
+        for (const node of state.npcs) {
+          node.fx = null
+          node.fy = null
+        }
 
-        nodeGroup.selectAll('circle')
-          .attr('cx', (node) => node.x)
-          .attr('cy', (node) => node.y)
+        state.simulation = forceSimulation(state.npcs)
+          .force('link', forceLink(links).id((node) => node.index).distance((link) => 42 + Math.min(28, Math.log1p(link.count) * 5)).strength(0.08))
+          .force('charge', forceManyBody().strength(-46).distanceMax(260))
+          .force('collide', forceCollide(5.4))
+          .force('center', forceCenter(0, 0))
+          .velocityDecay(0.44)
+          .alpha(0.9)
+          .alphaDecay(0.055)
+          .on('tick', scheduleGraphDraw)
       }
 
-      function endpointWithOffset(link, sourceSide) {
-        const source = nodeForLinkEndpoint(link.source)
-        const target = nodeForLinkEndpoint(link.target)
-        const dx = target.x - source.x
-        const dy = target.y - source.y
-        const length = Math.max(1, Math.hypot(dx, dy))
-        const offset = sourceSide ? 5.6 : 8.5
-        const sign = sourceSide ? 1 : -1
+      function setGraphLayout(mode) {
+        const nextMode = mode === 'spherical' || mode === 'hierarchical' || mode === 'infectionMap' ? mode : 'force'
+
+        if (state.layoutMode === nextMode) {
+          return
+        }
+
+        state.layoutMode = nextMode
+        layoutSelect.value = nextMode
+
+        if (nextMode === 'hierarchical' && state.showContacts) {
+          state.showContacts = false
+          showContactsInput.checked = false
+          scheduleGraphDraw()
+        }
+
+        if (!state.loaded) {
+          return
+        }
+
+        if (nextMode === 'force') {
+          startForceLayout(layoutLinks())
+          return
+        }
+
+        applyFixedLayout(nextMode, { animate: true })
+      }
+
+      function layoutLinks() {
+        const links = []
+        const source = state.layout?.source || new Int32Array()
+        const target = state.layout?.target || new Int32Array()
+        const count = state.layout?.count || new Uint32Array()
+
+        for (let index = 0; index < source.length; index += 1) {
+          links.push({
+            source: source[index],
+            target: target[index],
+            count: count[index]
+          })
+        }
+
+        return links
+      }
+
+      function applyFixedLayout(mode, { animate }) {
+        stopSimulation()
+        const positions = mode === 'hierarchical'
+          ? hierarchicalPositions()
+          : mode === 'infectionMap'
+            ? infectionMapPositions()
+            : sphericalPositions()
+
+        if (animate) {
+          animateNodePositions(positions)
+          return
+        }
+
+        for (const node of state.npcs) {
+          const position = positions[node.index]
+          node.x = position.x
+          node.y = position.y
+          node.fx = position.x
+          node.fy = position.y
+        }
+
+        scheduleGraphDraw()
+      }
+
+      function sphericalPositions() {
+        const positions = new Array(state.npcs.length)
+        const count = Math.max(1, state.npcs.length)
+        const radius = Math.max(170, Math.sqrt(count) * 15)
+        const goldenAngle = Math.PI * (3 - Math.sqrt(5))
+
+        for (let index = 0; index < count; index += 1) {
+          const z = count === 1 ? 0 : 1 - (2 * index) / (count - 1)
+          const radial = Math.sqrt(Math.max(0, 1 - z * z))
+          const angle = index * goldenAngle
+
+          positions[index] = {
+            x: Math.cos(angle) * radial * radius,
+            y: (z * radius * 0.78) + Math.sin(angle) * radial * radius * 0.18
+          }
+        }
+
+        return positions
+      }
+
+      function infectionMapPositions() {
+        const count = state.npcs.length
+        const positions = new Array(count)
+        const infectionByNpc = new Map()
+        const tileGroups = new Map()
+        let minX = Infinity
+        let maxX = -Infinity
+        let minY = Infinity
+        let maxY = -Infinity
+
+        for (let index = 0; index < state.fullInfectionTarget.length; index += 1) {
+          const npc = state.fullInfectionTarget[index]
+          const tileX = state.fullInfectionTileX[index]
+          const tileY = state.fullInfectionTileY[index]
+
+          if (!Number.isFinite(tileX) || !Number.isFinite(tileY) || infectionByNpc.has(npc)) {
+            continue
+          }
+
+          infectionByNpc.set(npc, { x: tileX, y: tileY })
+          const key = `${tileX}:${tileY}`
+          const group = tileGroups.get(key) || []
+
+          group.push(npc)
+          tileGroups.set(key, group)
+          minX = Math.min(minX, tileX)
+          maxX = Math.max(maxX, tileX)
+          minY = Math.min(minY, tileY)
+          maxY = Math.max(maxY, tileY)
+        }
+
+        if (infectionByNpc.size === 0) {
+          return sphericalPositions()
+        }
+
+        const spanX = Math.max(1, maxX - minX)
+        const spanY = Math.max(1, maxY - minY)
+        const mapTargetWidth = 3600
+        const mapTargetHeight = 2400
+        const scale = Math.min(mapTargetWidth / spanX, mapTargetHeight / spanY)
+        const centerX = (minX + maxX) / 2
+        const centerY = (minY + maxY) / 2
+
+        for (const group of tileGroups.values()) {
+          group.sort((left, right) => left - right)
+
+          for (let index = 0; index < group.length; index += 1) {
+            const npc = group[index]
+            const tile = infectionByNpc.get(npc)
+            const jitter = tileJitter(npc, index, group.length)
+
+            positions[npc] = {
+              x: (tile.x - centerX) * scale + jitter.x,
+              y: (tile.y - centerY) * scale + jitter.y
+            }
+          }
+        }
+
+        const unplaced = []
+
+        for (let index = 0; index < count; index += 1) {
+          if (!positions[index]) {
+            unplaced.push(index)
+          }
+        }
+
+        layoutMapUnplacedNodes(unplaced, positions, -(spanY * scale) / 2 - 180, 36, 36)
+        return positions
+      }
+
+      function tileJitter(npc, index, groupSize) {
+        if (groupSize <= 1) {
+          const angle = seededUnit(npc, 13) * Math.PI * 2
+          const radius = 7 + seededUnit(npc, 29) * 7
+
+          return {
+            x: Math.cos(angle) * radius,
+            y: Math.sin(angle) * radius
+          }
+        }
+
+        const angle = index * 2.399963 + seededUnit(npc, 7) * 0.7
+        const radius = 16 + Math.sqrt(index) * 13 + seededUnit(npc, 31) * 6
 
         return {
-          x: sourceSide ? source.x + (dx / length) * offset : target.x + (dx / length) * sign * offset,
-          y: sourceSide ? source.y + (dy / length) * offset : target.y + (dy / length) * sign * offset
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius
         }
       }
 
-      function nodeForLinkEndpoint(endpoint) {
-        return typeof endpoint === 'object' ? endpoint : state.npcs[endpoint]
+      function layoutMapUnplacedNodes(nodes, positions, y, gap = 22, rowGap = 22) {
+        if (nodes.length === 0) {
+          return
+        }
+
+        const columns = Math.max(1, Math.min(nodes.length, Math.ceil(Math.sqrt(nodes.length * 4))))
+        const rows = Math.ceil(nodes.length / columns)
+
+        nodes.sort((left, right) => left - right)
+
+        for (let index = 0; index < nodes.length; index += 1) {
+          const column = index % columns
+          const row = Math.floor(index / columns)
+
+          positions[nodes[index]] = {
+            x: (column - (columns - 1) / 2) * gap,
+            y: y + (row - (rows - 1) / 2) * rowGap
+          }
+        }
+      }
+
+      function seededUnit(value, salt) {
+        let seed = (value + 1) * 2654435761 + salt * 1013904223
+
+        seed ^= seed >>> 16
+        seed = Math.imul(seed, 2246822507)
+        seed ^= seed >>> 13
+        seed = Math.imul(seed, 3266489909)
+        seed ^= seed >>> 16
+
+        return (seed >>> 0) / 4294967295
+      }
+
+      function hierarchicalPositions() {
+        const count = state.npcs.length
+        const children = Array.from({ length: count }, () => [])
+        const parent = new Int32Array(count).fill(-1)
+
+        for (let index = 0; index < state.fullInfectionSource.length; index += 1) {
+          const source = state.fullInfectionSource[index]
+          const target = state.fullInfectionTarget[index]
+
+          if (source < 0 || target < 0 || source === target || parent[target] !== -1) {
+            continue
+          }
+
+          parent[target] = source
+          children[source].push(target)
+        }
+
+        for (let index = 0; index < count; index += 1) {
+          children[index].sort((left, right) => children[right].length - children[left].length || left - right)
+        }
+
+        const roots = []
+        const isolates = []
+
+        for (let index = 0; index < count; index += 1) {
+          if (parent[index] !== -1) {
+            continue
+          }
+
+          if (children[index].length > 0) {
+            roots.push(index)
+          } else {
+            isolates.push(index)
+          }
+        }
+
+        const componentByRoot = roots.map((root) => infectionComponent(root, children))
+        const componentByNode = new Int32Array(count).fill(-1)
+
+        componentByRoot.forEach((component, componentIndex) => {
+          for (const node of component.nodes) {
+            componentByNode[node] = componentIndex
+          }
+        })
+
+        roots.sort((left, right) => {
+          const leftComponent = componentByRoot[componentByNode[left]]
+          const rightComponent = componentByRoot[componentByNode[right]]
+
+          return rightComponent.nodes.length - leftComponent.nodes.length || left - right
+        })
+        isolates.sort((left, right) => left - right)
+
+        const positions = new Array(count)
+        const treeMetrics = roots.map((root) => componentByRoot[componentByNode[root]])
+        const nodeGapX = 34
+        const nodeGapY = 36
+        const layerGap = 250
+        const componentGap = 150
+        const availableWidth = 1760
+        const minComponentWidth = treeMetrics.length > 8 ? 190 : 250
+        const isolatedLayerGap = 250
+
+        if (treeMetrics.length === 0) {
+          const isolateWidth = Math.max(720, Math.min(1760, Math.ceil(Math.sqrt(Math.max(1, isolates.length) * 3.6)) * nodeGapX))
+
+          layoutIsolates(isolates, positions, isolateWidth, 0, nodeGapX, nodeGapY, { centered: true })
+          return positions
+        }
+
+        const weightSum = Math.max(1, treeMetrics.reduce((sum, tree) => sum + Math.sqrt(tree.nodes.length), 0))
+        const widthPool = Math.max(
+          treeMetrics.length * minComponentWidth,
+          availableWidth - Math.max(0, treeMetrics.length - 1) * componentGap
+        )
+        const maxDepth = treeMetrics.reduce((largest, tree) => Math.max(largest, tree.levels.length - 1), 0)
+
+        for (const tree of treeMetrics) {
+          const weightedWidth = widthPool * (Math.sqrt(tree.nodes.length) / weightSum)
+
+          tree.layoutWidth = Math.max(minComponentWidth, weightedWidth)
+          tree.layoutColumns = Math.max(1, Math.floor(tree.layoutWidth / nodeGapX))
+          tree.layoutRows = tree.levels.map((nodes) => Math.max(1, Math.ceil(nodes.length / tree.layoutColumns)))
+        }
+
+        const layerRows = Array.from({ length: maxDepth + 1 }, (_, depth) => (
+          Math.max(1, ...treeMetrics.map((tree) => tree.layoutRows[depth] || 0))
+        ))
+        const layerHeights = layerRows.map((rows) => rows * nodeGapY)
+        const forestHeight = layerHeights.reduce((sum, height) => sum + height, 0) + Math.max(0, layerHeights.length - 1) * layerGap
+        const forestWidth = treeMetrics.reduce((sum, tree) => sum + tree.layoutWidth, 0) + Math.max(0, treeMetrics.length - 1) * componentGap
+        const isolateRows = isolates.length > 0
+          ? Math.ceil(isolates.length / Math.max(1, Math.floor(forestWidth / nodeGapX)))
+          : 0
+        const isolateHeight = isolateRows * nodeGapY
+        const layoutHeight = forestHeight + (isolates.length > 0 ? isolateHeight + isolatedLayerGap : 0)
+        const forestStart = -forestWidth / 2
+        const forestTop = -layoutHeight / 2 + (isolates.length > 0 ? isolateHeight + isolatedLayerGap : 0)
+        const layerTops = []
+        let layerCursor = forestTop
+
+        for (let depth = 0; depth < layerHeights.length; depth += 1) {
+          layerTops.push(layerCursor)
+          layerCursor += layerHeights[depth] + layerGap
+        }
+
+        let cursor = forestStart
+
+        for (const tree of treeMetrics) {
+          layoutComponent(tree, positions, cursor, tree.layoutWidth, layerTops, nodeGapX, nodeGapY)
+          cursor += tree.layoutWidth + componentGap
+        }
+
+        if (isolates.length > 0) {
+          layoutIsolates(isolates, positions, forestWidth, -layoutHeight / 2, nodeGapX, nodeGapY)
+        }
+
+        return positions
+      }
+
+      function infectionComponent(root, children) {
+        const levels = []
+        const nodes = []
+        const queue = [{ node: root, depth: 0 }]
+
+        for (let cursor = 0; cursor < queue.length; cursor += 1) {
+          const { node, depth } = queue[cursor]
+
+          nodes.push(node)
+          if (!levels[depth]) {
+            levels[depth] = []
+          }
+
+          levels[depth].push(node)
+
+          for (const child of children[node]) {
+            queue.push({ node: child, depth: depth + 1 })
+          }
+        }
+
+        return { root, nodes, levels }
+      }
+
+      function layoutComponent(tree, positions, left, width, layerTops, nodeGapX, nodeGapY) {
+        const center = left + width / 2
+
+        for (let depth = 0; depth < tree.levels.length; depth += 1) {
+          const nodes = tree.levels[depth]
+          const rowCount = Math.max(1, tree.layoutRows[depth] || 1)
+          const columns = Math.max(1, Math.ceil(nodes.length / rowCount))
+          const gridWidth = (columns - 1) * nodeGapX
+          const startX = center - gridWidth / 2
+          const y = layerTops[depth]
+
+          for (let index = 0; index < nodes.length; index += 1) {
+            const column = index % columns
+            const row = Math.floor(index / columns)
+
+            positions[nodes[index]] = {
+              x: startX + column * nodeGapX,
+              y: y + row * nodeGapY
+            }
+          }
+        }
+      }
+
+      function layoutIsolates(isolates, positions, forestWidth, y, nodeGapX = 34, nodeGapY = 36, options = {}) {
+        const columns = Math.max(1, Math.min(isolates.length, Math.floor(Math.max(nodeGapX, forestWidth) / nodeGapX)))
+        const rowCount = Math.ceil(isolates.length / columns)
+        const gridWidth = (columns - 1) * nodeGapX
+        const startX = -gridWidth / 2
+        const startY = options.centered ? y - ((rowCount - 1) * nodeGapY) / 2 : y
+
+        for (let index = 0; index < isolates.length; index += 1) {
+          const column = index % columns
+          const row = Math.floor(index / columns)
+
+          positions[isolates[index]] = {
+            x: startX + column * nodeGapX,
+            y: startY + row * nodeGapY
+          }
+        }
+      }
+
+      function animateNodePositions(positions) {
+        stopLayoutAnimation()
+        const duration = 520
+        const startedAt = performance.now()
+        const starts = state.npcs.map((node) => ({ x: node.x, y: node.y }))
+
+        for (const node of state.npcs) {
+          node.fx = null
+          node.fy = null
+        }
+
+        const tick = (time) => {
+          const progress = clamp((time - startedAt) / duration, 0, 1)
+          const eased = 1 - Math.pow(1 - progress, 3)
+
+          for (const node of state.npcs) {
+            const start = starts[node.index]
+            const target = positions[node.index]
+            node.x = start.x + (target.x - start.x) * eased
+            node.y = start.y + (target.y - start.y) * eased
+          }
+
+          scheduleGraphDraw()
+
+          if (progress < 1) {
+            state.layoutAnimationFrame = requestAnimationFrame(tick)
+            return
+          }
+
+          state.layoutAnimationFrame = 0
+
+          for (const node of state.npcs) {
+            const position = positions[node.index]
+            node.fx = position.x
+            node.fy = position.y
+          }
+        }
+
+        state.layoutAnimationFrame = requestAnimationFrame(tick)
+      }
+
+      function stopLayoutAnimation() {
+        if (state.layoutAnimationFrame) {
+          cancelAnimationFrame(state.layoutAnimationFrame)
+          state.layoutAnimationFrame = 0
+        }
+      }
+
+      function applyWindowData(data) {
+        state.workerBusy = false
+
+        if (data.requestId !== state.windowRequestId) {
+          if (state.queuedWindow) {
+            requestWindowData()
+          }
+          return
+        }
+
+        state.contactSource = data.contactSource
+        state.contactTarget = data.contactTarget
+        state.contactWeight = data.contactWeight
+        state.infectionSource = data.infectionSource
+        state.infectionTarget = data.infectionTarget
+        state.currentStateCodes = data.currentStates
+        state.degrees = data.degrees
+        state.stats.contactEventCount = data.contactEventCount
+        state.stats.infectionEventCount = data.infectionEventCount
+        state.stats.activeNodeCount = data.activeNodeCount
+        state.stats.totalContactPairCount = data.totalContactPairCount
+        state.stats.visibleContactPairCount = data.visibleContactPairCount
+
+        applyNodeStyles()
+        updateStats()
+        scheduleGraphDraw()
+        hideStatus()
+
+        if (state.queuedWindow) {
+          requestWindowData()
+        }
+      }
+
+      function scheduleWindowData() {
+        if (!state.loaded) {
+          return
+        }
+
+        if (state.windowFrame) {
+          return
+        }
+
+        state.windowFrame = requestAnimationFrame(() => {
+          state.windowFrame = 0
+          requestWindowData()
+        })
+      }
+
+      function requestWindowData() {
+        if (!state.loaded || !state.worker) {
+          return
+        }
+
+        if (state.workerBusy) {
+          state.queuedWindow = true
+          return
+        }
+
+        state.workerBusy = true
+        state.queuedWindow = false
+        state.windowRequestId += 1
+        state.worker.postMessage({
+          type: 'window',
+          requestId: state.windowRequestId,
+          start: state.start,
+          end: state.end,
+          maxVisibleContactEdges: state.maxVisibleContactEdges
+        })
+      }
+
+      function applyNodeStyles() {
+        if (!state.nodeSelection) {
+          return
+        }
+
+        state.nodeSelection
+          .attr('fill', (node) => colorByStateCode[state.currentStateCodes[node.index] ?? node.initialSeirStateCode] || colorByState.susceptible)
+          .attr('r', (node) => 3.6 + Math.min(2.4, Math.sqrt(state.degrees[node.index] || 0) * 0.045))
+      }
+
+      function scheduleGraphDraw() {
+        if (state.drawFrame) {
+          return
+        }
+
+        state.drawFrame = requestAnimationFrame(drawGraph)
+      }
+
+      function drawGraph() {
+        state.drawFrame = 0
+
+        if (state.nodeSelection) {
+          state.nodeSelection
+            .attr('cx', (node) => node.x)
+            .attr('cy', (node) => node.y)
+        }
+
+        drawEdges()
+      }
+
+      function drawEdges() {
+        clearCanvas()
+
+        if (!state.loaded || state.activeTab !== 'contact') {
+          return
+        }
+
+        const transform = state.graphTransform
+        const scale = Math.max(0.08, transform.k)
+        const ratio = window.devicePixelRatio || 1
+        const displayedContactCount = state.showContacts ? state.contactSource.length : 0
+        const displayedInfectionCount = state.showInfections ? state.infectionSource.length : 0
+        const contactOpacity = dynamicEdgeOpacity(displayedContactCount, 0.24, 0.026, 850)
+        const infectionOpacity = dynamicEdgeOpacity(displayedInfectionCount, 0.72, 0.16, 120)
+
+        edgeContext.save()
+        edgeContext.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * transform.x, ratio * transform.y)
+        edgeContext.lineCap = 'round'
+
+        if (displayedContactCount) {
+          edgeContext.strokeStyle = rgba(118, 122, 120, contactOpacity)
+          edgeContext.lineWidth = 0.55 / scale
+          edgeContext.beginPath()
+
+          for (let index = 0; index < state.contactSource.length; index += 1) {
+            const source = state.npcs[state.contactSource[index]]
+            const target = state.npcs[state.contactTarget[index]]
+
+            edgeContext.moveTo(source.x, source.y)
+            edgeContext.lineTo(target.x, target.y)
+          }
+
+          edgeContext.stroke()
+        }
+
+        if (displayedInfectionCount) {
+          edgeContext.strokeStyle = rgba(216, 76, 85, infectionOpacity)
+          edgeContext.fillStyle = rgba(216, 76, 85, Math.max(0.14, infectionOpacity * 0.88))
+          edgeContext.lineWidth = 1.45 / scale
+
+          for (let index = 0; index < state.infectionSource.length; index += 1) {
+            drawArrow(state.npcs[state.infectionSource[index]], state.npcs[state.infectionTarget[index]], scale)
+          }
+        }
+
+        edgeContext.restore()
+      }
+
+      function dynamicEdgeOpacity(edgeCount, maxOpacity, minOpacity, softLimit) {
+        if (edgeCount <= 0) {
+          return maxOpacity
+        }
+
+        return clamp(maxOpacity / Math.sqrt(1 + edgeCount / softLimit), minOpacity, maxOpacity)
+      }
+
+      function rgba(red, green, blue, alpha) {
+        return `rgba(${red}, ${green}, ${blue}, ${format('.3f')(alpha)})`
+      }
+
+      function drawArrow(source, target, scale) {
+        const dx = target.x - source.x
+        const dy = target.y - source.y
+        const length = Math.max(1, Math.hypot(dx, dy))
+        const ux = dx / length
+        const uy = dy / length
+        const startX = source.x + ux * 5.2
+        const startY = source.y + uy * 5.2
+        const endX = target.x - ux * 7.6
+        const endY = target.y - uy * 7.6
+        const arrowSize = 5.6 / Math.sqrt(scale)
+
+        edgeContext.beginPath()
+        edgeContext.moveTo(startX, startY)
+        edgeContext.lineTo(endX, endY)
+        edgeContext.stroke()
+        edgeContext.beginPath()
+        edgeContext.moveTo(endX, endY)
+        edgeContext.lineTo(endX - ux * arrowSize - uy * arrowSize * 0.55, endY - uy * arrowSize + ux * arrowSize * 0.55)
+        edgeContext.lineTo(endX - ux * arrowSize + uy * arrowSize * 0.55, endY - uy * arrowSize - ux * arrowSize * 0.55)
+        edgeContext.closePath()
+        edgeContext.fill()
+      }
+
+      function clearCanvas() {
+        const ratio = window.devicePixelRatio || 1
+
+        edgeContext.setTransform(ratio, 0, 0, ratio, 0, 0)
+        edgeContext.clearRect(0, 0, edgeCanvas.width / ratio, edgeCanvas.height / ratio)
+      }
+
+      function resizeCanvas() {
+        const width = window.innerWidth
+        const height = window.innerHeight
+        const ratio = window.devicePixelRatio || 1
+        const nextWidth = Math.max(1, Math.floor(width * ratio))
+        const nextHeight = Math.max(1, Math.floor(height * ratio))
+
+        edgeCanvas.style.width = `${width}px`
+        edgeCanvas.style.height = `${height}px`
+
+        if (edgeCanvas.width !== nextWidth || edgeCanvas.height !== nextHeight) {
+          edgeCanvas.width = nextWidth
+          edgeCanvas.height = nextHeight
+        }
       }
 
       function dragStarted(event, node) {
         if (!event.active && state.simulation) {
-          state.simulation.alphaTarget(0.22).restart()
+          state.simulation.alphaTarget(0.18).restart()
         }
 
         node.fx = node.x
@@ -1173,6 +1626,13 @@
       function dragged(event, node) {
         node.fx = event.x
         node.fy = event.y
+
+        if (!state.simulation) {
+          node.x = event.x
+          node.y = event.y
+        }
+
+        scheduleGraphDraw()
       }
 
       function dragEnded(event, node) {
@@ -1180,57 +1640,10 @@
           state.simulation.alphaTarget(0)
         }
 
-        node.fx = null
-        node.fy = null
-      }
-
-      function aggregateContacts(contacts) {
-        const links = new Map()
-
-        for (const contact of contacts) {
-          const low = Math.min(contact.source, contact.target)
-          const high = Math.max(contact.source, contact.target)
-          const key = `${low}:${high}`
-          const link = links.get(key) || {
-            source: low,
-            target: high,
-            count: 0,
-            durationSeconds: 0,
-            observationCount: 0
-          }
-
-          link.count += 1
-          link.durationSeconds += contact.durationSeconds
-          link.observationCount += contact.observationCount
-          links.set(key, link)
+        if (state.layoutMode === 'force') {
+          node.fx = null
+          node.fy = null
         }
-
-        return [...links.values()]
-      }
-
-      function linkKey(link) {
-        return `${link.source}:${link.target}`
-      }
-
-      function statesAtTime(time) {
-        const states = state.npcs.map((npc) => npc.initialSeirState)
-        const sortedEvents = state.seirEvents
-          .filter((event) => event.at <= time)
-          .sort((left, right) => (
-            left.at - right.at ||
-            (eventOrder[left.event] ?? 99) - (eventOrder[right.event] ?? 99) ||
-            left.npc - right.npc
-          ))
-
-        for (const event of sortedEvents) {
-          const nextState = nextStateForEvent(event.event)
-
-          if (nextState) {
-            states[event.npc] = nextState
-          }
-        }
-
-        return states
       }
 
       function renderChart() {
@@ -1243,6 +1656,7 @@
         }
 
         const layout = chartLayout()
+        chartPlotGroup.attr('transform', `translate(${layout.plotLeft},${layout.plotTop})`)
         const x = scaleLinear()
           .domain([0, state.seirSeries.maxTime])
           .range([layout.innerLeft, layout.innerRight])
@@ -1255,9 +1669,8 @@
           .range([layout.innerLeft, layout.innerRight])
 
         chartGridGroup.append('g')
-          .attr('transform', `translate(0,0)`)
           .call(axisLeft(y)
-            .tickSize(-(layout.innerRight - layout.innerLeft))
+            .tickSize(-layout.innerWidth)
             .tickFormat('')
             .ticks(6))
           .call((group) => group.select('.domain').remove())
@@ -1269,20 +1682,18 @@
 
         chartAxisGroup.append('g')
           .attr('class', 'axis')
-          .attr('transform', `translate(${layout.innerLeft},0)`)
           .call(axisLeft(y).ticks(6).tickFormat((value) => `${format('~g')(value)}%`))
           .call((group) => group.select('.domain').remove())
 
+        const times = state.seirSeries.time
         const curveLine = line()
-          .x((point) => x(point.time))
-          .y((point) => y(percentValue(point, point.stateKey)))
+          .x((_, index) => x(times[index]))
+          .y((value) => y((Number(value) / Math.max(1, state.seirSeries.maxCount)) * 100))
           .curve(curveLinear)
 
         for (const stateKey of stateKeys) {
-          const points = state.seirSeries.points.map((point) => ({ ...point, stateKey }))
-
           chartLineGroup.append('path')
-            .datum(points)
+            .datum(state.seirSeries[stateKey])
             .attr('class', `curve-line curve-${stateKey}`)
             .attr('stroke', colorByState[stateKey])
             .attr('d', curveLine)
@@ -1308,15 +1719,15 @@
           height,
           left,
           top,
-          innerLeft: left + margin.left,
-          innerRight: left + width - margin.right,
-          innerTop: top + margin.top,
-          innerBottom: top + height - margin.bottom
+          plotLeft: left + margin.left,
+          plotTop: top + margin.top,
+          innerLeft: 0,
+          innerRight: width - margin.left - margin.right,
+          innerTop: 0,
+          innerBottom: height - margin.top - margin.bottom,
+          innerWidth: width - margin.left - margin.right,
+          innerHeight: height - margin.top - margin.bottom
         }
-      }
-
-      function percentValue(point, stateKey) {
-        return (Number(point[stateKey]) / Math.max(1, state.seirSeries.maxCount)) * 100
       }
 
       function formatChartTime(date) {
@@ -1362,7 +1773,7 @@
         startNumber.value = String(Math.round(state.start))
         endNumber.value = String(Math.round(state.end))
         updateRangeSelection()
-        updateFilteredGraph()
+        scheduleWindowData()
       }
 
       function updateRangeSelection() {
@@ -1379,7 +1790,7 @@
       function setEdgeDisplay() {
         state.showContacts = showContactsInput.checked
         state.showInfections = showInfectionsInput.checked
-        renderGraphLinks()
+        scheduleGraphDraw()
       }
 
       function setCurveDisplay() {
@@ -1400,12 +1811,14 @@
 
         state.activeTab = tab === 'seir' ? 'seir' : 'contact'
         document.body.dataset.view = state.activeTab
+        edgeCanvas.hidden = state.activeTab !== 'contact'
         contactGraphTab.setAttribute('aria-selected', state.activeTab === 'contact' ? 'true' : 'false')
         seirCurveTab.setAttribute('aria-selected', state.activeTab === 'seir' ? 'true' : 'false')
         graphRoot.style('display', state.activeTab === 'contact' ? null : 'none')
         chartRoot.style('display', state.activeTab === 'seir' ? null : 'none')
         hideTooltip()
         applyActiveTransform()
+        scheduleGraphDraw()
       }
 
       function applyActiveTransform() {
@@ -1418,17 +1831,20 @@
         const width = window.innerWidth
         const height = window.innerHeight
 
+        resizeCanvas()
         svg.attr('width', width).attr('height', height).attr('viewBox', `0 0 ${width} ${height}`)
 
-        if (!state.results) {
+        if (!state.loaded) {
           state.graphTransform = centeredTransform()
           state.chartTransform = centeredTransform()
           applyActiveTransform()
+          scheduleGraphDraw()
           return
         }
 
         renderChart()
         applyActiveTransform()
+        scheduleGraphDraw()
       }
 
       function centeredTransform() {
@@ -1436,27 +1852,20 @@
       }
 
       function updateStats() {
-        const degrees = new Set()
-
-        for (const contact of state.aggregatedContacts) {
-          degrees.add(contact.source)
-          degrees.add(contact.target)
-        }
-
-        nodeCountEl.textContent = String(state.npcs.length)
-        edgeCountEl.textContent = String(state.filteredContacts.length)
-        activeNodeCountEl.textContent = String(degrees.size)
+        nodeCountEl.textContent = integerFormat(state.npcs.length)
+        edgeCountEl.textContent = integerFormat(state.stats.contactEventCount || 0)
+        activeNodeCountEl.textContent = integerFormat(state.stats.activeNodeCount || 0)
         durationLabelEl.textContent = formatTime(Math.max(0, state.end - state.start))
       }
 
-      function showNodeTooltip(event, node, degree) {
+      function showNodeTooltip(event, node) {
         tooltip.hidden = false
         tooltip.style.left = `${event.clientX}px`
         tooltip.style.top = `${event.clientY}px`
         tooltip.innerHTML = `
           <b>${escapeHtml(node.id)}</b>
-          <span>State: ${escapeHtml(state.currentStates[node.index] || node.initialSeirState)}</span>
-          <span>Contacts: ${degree}</span>
+          <span>State: ${escapeHtml(stateNames[state.currentStateCodes[node.index] ?? node.initialSeirStateCode] || node.initialSeirState)}</span>
+          <span>Contacts: ${integerFormat(state.degrees[node.index] || 0)}</span>
         `
       }
 
@@ -1474,6 +1883,8 @@
       }
 
       function stopSimulation() {
+        stopLayoutAnimation()
+
         if (state.simulation) {
           state.simulation.stop()
           state.simulation = null
