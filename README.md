@@ -46,6 +46,7 @@ See [docs/video-renderer.md](docs/video-renderer.md) for the scripting language,
 | `npm run preview` | Preview the production build. |
 | `npm run map-editor:deps` | Create or repair `map-editor/.venv` and install the Python training dependencies. |
 | `npm run map-editor` | Start the local map editor. |
+| `npm run simulation-explorer` | Start the local headless result graph explorer. |
 | `npm run run-simulation` | Generate `tmp/epi-city-recording.json`. |
 | `npm run render:video` | Generate `tmp/epi-city-video.mp4`. |
 
@@ -92,6 +93,7 @@ Generated outputs such as `dist/`, `tmp/*.mp4`, `tmp/*recording.json`, optional 
 - `public/maps/liberty-city/liberty-city-atlas.webp` is the generated atlas copy used by the runtime texture set, renderer, and map editor preview.
 - `process_gta_map/` contains the canonical source image, preprocessing script, and reproducibility notes.
 - `map-editor/` contains the interactive map editor, random-forest training loop, and Epi City JSON load/save tools.
+- `simulation-explorer/` contains the headless result explorer for dynamic contact graphs.
 - `docs/internal-architecture.md` explains the map format, runtime representation, rendering strategy, and pathfinding behavior.
 - `docs/video-renderer.md` explains simulation playback, the scripting language, and MP4 rendering.
 - `vite.config.ts` configures local development and preview server ports.

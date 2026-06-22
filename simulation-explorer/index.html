@@ -1,0 +1,1324 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Epi City Simulation Explorer</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three.module.js"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f3;
+        --panel: rgba(255, 255, 255, 0.88);
+        --panel-strong: rgba(255, 255, 255, 0.96);
+        --line: rgba(55, 69, 61, 0.2);
+        --text: #1c2520;
+        --muted: #657168;
+        --accent: #b98900;
+        --cyan: #287f91;
+        --green: #2b9b5f;
+        --orange: #c2711a;
+        --red: #d64545;
+        --pink: #b73975;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.4 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      #scene {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        cursor: grab;
+      }
+
+      #scene:active {
+        cursor: grabbing;
+      }
+
+      .topbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        min-height: 58px;
+        display: grid;
+        grid-template-columns: minmax(190px, 0.8fr) minmax(340px, 1.25fr) minmax(440px, 1.35fr);
+        gap: 12px;
+        align-items: center;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, var(--panel-strong), rgba(255, 255, 255, 0.76));
+        backdrop-filter: blur(14px);
+        z-index: 2;
+      }
+
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1;
+        font-weight: 680;
+        letter-spacing: 0;
+        white-space: nowrap;
+      }
+
+      .source {
+        color: var(--muted);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 84px minmax(0, 1fr) 84px;
+        gap: 8px;
+        align-items: center;
+      }
+
+      label {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        accent-color: var(--red);
+      }
+
+      input[type="number"],
+      select,
+      button,
+      .file-control {
+        height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text);
+        font: inherit;
+      }
+
+      input[type="number"] {
+        width: 84px;
+        padding: 0 8px;
+      }
+
+      select {
+        min-width: 116px;
+        padding: 0 30px 0 8px;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+
+      .layout-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .display-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .control-title {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .checkbox-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--text);
+        font-size: 12px;
+        text-transform: none;
+        white-space: nowrap;
+      }
+
+      button,
+      .file-control {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 0 10px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      button:hover,
+      select:hover,
+      .file-control:hover {
+        border-color: rgba(185, 137, 0, 0.62);
+      }
+
+      input[type="file"] {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .stats {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(86px, auto));
+        gap: 8px;
+        z-index: 2;
+      }
+
+      .stat {
+        min-height: 50px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+      }
+
+      .stat b {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 17px;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      .stat span {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .legend {
+        position: fixed;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px 12px;
+        max-width: 380px;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        z-index: 2;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      .swatch-line {
+        width: 16px;
+        height: 4px;
+        border-radius: 999px;
+      }
+
+      .tooltip {
+        position: fixed;
+        min-width: 180px;
+        max-width: 260px;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--text);
+        pointer-events: none;
+        transform: translate(12px, 12px);
+        z-index: 3;
+      }
+
+      .tooltip[hidden] {
+        display: none;
+      }
+
+      .tooltip b {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .tooltip span {
+        display: block;
+        color: var(--muted);
+      }
+
+      .status {
+        position: fixed;
+        top: 70px;
+        left: 50%;
+        max-width: min(520px, calc(100vw - 24px));
+        padding: 9px 12px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--muted);
+        transform: translateX(-50%);
+        z-index: 3;
+      }
+
+      .status[hidden] {
+        display: none;
+      }
+
+      @media (max-width: 820px) {
+        .topbar {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+
+        .controls {
+          grid-template-columns: 1fr 78px;
+        }
+
+        .actions {
+          justify-content: flex-start;
+          flex-wrap: wrap;
+        }
+
+        .stats {
+          right: 12px;
+          grid-template-columns: repeat(2, minmax(86px, 1fr));
+        }
+
+        .legend {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div class="topbar">
+      <div class="brand">
+        <h1>Simulation Explorer</h1>
+        <div id="source" class="source">No dataset</div>
+      </div>
+      <div class="controls">
+        <label for="startRange">Start</label>
+        <input id="startNumber" type="number" value="0" min="0" step="1">
+        <input id="startRange" type="range" value="0" min="0" max="0" step="1">
+        <div></div>
+        <label for="endRange">End</label>
+        <input id="endNumber" type="number" value="0" min="0" step="1">
+        <input id="endRange" type="range" value="0" min="0" max="0" step="1">
+        <div></div>
+      </div>
+      <div class="actions">
+        <label class="layout-control" for="layoutSelect">
+          Layout
+          <select id="layoutSelect">
+            <option value="spherical">Spherical</option>
+            <option value="force">Force</option>
+            <option value="hierarchical">Hierarchical</option>
+          </select>
+        </label>
+        <div class="display-control" aria-label="Display edges">
+          <span class="control-title">Display edges</span>
+          <label class="checkbox-control">
+            <input id="showContacts" type="checkbox" checked>
+            Contact
+          </label>
+          <label class="checkbox-control">
+            <input id="showInfections" type="checkbox" checked>
+            Infection
+          </label>
+        </div>
+        <label class="file-control">
+          Load JSON
+          <input id="fileInput" type="file" accept="application/json,.json">
+        </label>
+      </div>
+    </div>
+    <div id="status" class="status">Load a headless result JSON</div>
+    <div class="stats">
+      <div class="stat"><b id="nodeCount">0</b><span>NPCs</span></div>
+      <div class="stat"><b id="edgeCount">0</b><span>Contacts</span></div>
+      <div class="stat"><b id="activeNodeCount">0</b><span>Active NPCs</span></div>
+      <div class="stat"><b id="durationLabel">0s</b><span>Window</span></div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background: var(--accent)"></span>Susceptible</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--orange)"></span>Exposed</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--red)"></span>Infectious</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--green)"></span>Recovered</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--cyan)"></span>Contact</div>
+      <div class="legend-item"><span class="swatch-line" style="background: var(--red)"></span>Infection</div>
+    </div>
+    <div id="tooltip" class="tooltip" hidden></div>
+
+    <script type="module">
+      import * as THREE from 'three'
+      import { OrbitControls } from '/vendor/OrbitControls.js'
+
+      const canvas = document.getElementById('scene')
+      const sourceEl = document.getElementById('source')
+      const statusEl = document.getElementById('status')
+      const startRange = document.getElementById('startRange')
+      const endRange = document.getElementById('endRange')
+      const startNumber = document.getElementById('startNumber')
+      const endNumber = document.getElementById('endNumber')
+      const layoutSelect = document.getElementById('layoutSelect')
+      const showContactsInput = document.getElementById('showContacts')
+      const showInfectionsInput = document.getElementById('showInfections')
+      const fileInput = document.getElementById('fileInput')
+      const tooltip = document.getElementById('tooltip')
+      const nodeCountEl = document.getElementById('nodeCount')
+      const edgeCountEl = document.getElementById('edgeCount')
+      const activeNodeCountEl = document.getElementById('activeNodeCount')
+      const durationLabelEl = document.getElementById('durationLabel')
+
+      const nodeColors = {
+        susceptible: new THREE.Color(0xb98900),
+        exposed: new THREE.Color(0xc2711a),
+        infectious: new THREE.Color(0xd64545),
+        recovered: new THREE.Color(0x2b9b5f)
+      }
+      const edgeBaseColor = new THREE.Color(0x287f91)
+      const hoveredColor = new THREE.Color(0xb73975)
+      const infectionEdgeColor = new THREE.Color(0xd84c55)
+      const tmpObject = new THREE.Object3D()
+      const yAxis = new THREE.Vector3(0, 1, 0)
+      const pointer = new THREE.Vector2(-10, -10)
+      const raycaster = new THREE.Raycaster()
+
+      const state = {
+        results: null,
+        npcs: [],
+        contacts: [],
+        infections: [],
+        npcIndex: new Map(),
+        positions: [],
+        sphericalPositions: [],
+        hierarchicalPositions: [],
+        velocities: [],
+        filteredContacts: [],
+        filteredInfections: [],
+        aggregatedEdges: [],
+        forceEdges: [],
+        degree: [],
+        minTime: 0,
+        maxTime: 0,
+        start: 0,
+        end: 0,
+        layoutMode: 'spherical',
+        showContacts: true,
+        showInfections: true,
+        hoveredIndex: -1,
+        frame: 0
+      }
+
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color(0xf6f7f3)
+      scene.fog = new THREE.FogExp2(0xf6f7f3, 0.00045)
+
+      const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000)
+      camera.position.set(0, 0, 760)
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: false,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance'
+      })
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+
+      const controls = new OrbitControls(camera, renderer.domElement)
+      controls.enableDamping = true
+      controls.dampingFactor = 0.08
+      controls.rotateSpeed = 0.62
+      controls.zoomSpeed = 0.74
+      controls.panSpeed = 0.55
+      controls.minDistance = 90
+      controls.maxDistance = 1800
+
+      let nodeMesh = createNodeMesh(1)
+      scene.add(nodeMesh)
+
+      let edgeGeometry = new THREE.BufferGeometry()
+      let edgeMaterial = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.22,
+        fog: false
+      })
+      let edgeMesh = new THREE.LineSegments(edgeGeometry, edgeMaterial)
+      edgeMesh.frustumCulled = false
+      scene.add(edgeMesh)
+
+      let infectionShaftMesh = createInfectionShaftMesh(1)
+      let infectionHeadMesh = createInfectionHeadMesh(1)
+      scene.add(infectionShaftMesh)
+      scene.add(infectionHeadMesh)
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.9))
+
+      window.addEventListener('resize', resize)
+      window.addEventListener('pointermove', onPointerMove)
+      window.addEventListener('pointerleave', () => {
+        pointer.set(-10, -10)
+        hideTooltip()
+      })
+      startRange.addEventListener('input', () => setWindow(Number(startRange.value), state.end))
+      endRange.addEventListener('input', () => setWindow(state.start, Number(endRange.value)))
+      startNumber.addEventListener('change', () => setWindow(Number(startNumber.value), state.end))
+      endNumber.addEventListener('change', () => setWindow(state.start, Number(endNumber.value)))
+      layoutSelect.addEventListener('change', () => setLayoutMode(layoutSelect.value))
+      showContactsInput.addEventListener('change', () => setEdgeDisplay())
+      showInfectionsInput.addEventListener('change', () => setEdgeDisplay())
+      fileInput.addEventListener('change', loadSelectedFile)
+
+      resize()
+      animate()
+
+      function createNodeMesh(count) {
+        const instanceCount = Math.max(1, count)
+        const geometry = new THREE.SphereGeometry(1.35, 10, 6)
+        const vertexColors = new Float32Array(geometry.getAttribute('position').count * 3).fill(1)
+
+        geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3))
+
+        const mesh = new THREE.InstancedMesh(
+          geometry,
+          new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }),
+          instanceCount
+        )
+
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+        mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(instanceCount * 3), 3)
+        mesh.instanceColor.setUsage(THREE.DynamicDrawUsage)
+        mesh.frustumCulled = false
+        return mesh
+      }
+
+      function createInfectionShaftMesh(count) {
+        const mesh = new THREE.InstancedMesh(
+          new THREE.CylinderGeometry(1, 1, 1, 10, 1),
+          new THREE.MeshBasicMaterial({
+            color: infectionEdgeColor,
+            transparent: true,
+            opacity: 0.48,
+            fog: false
+          }),
+          Math.max(1, count)
+        )
+
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+        mesh.frustumCulled = false
+        mesh.visible = false
+        return mesh
+      }
+
+      function createInfectionHeadMesh(count) {
+        const mesh = new THREE.InstancedMesh(
+          new THREE.ConeGeometry(1, 1, 14),
+          new THREE.MeshBasicMaterial({
+            color: infectionEdgeColor,
+            transparent: true,
+            opacity: 0.64,
+            fog: false
+          }),
+          Math.max(1, count)
+        )
+
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+        mesh.frustumCulled = false
+        mesh.visible = false
+        return mesh
+      }
+
+      async function loadSelectedFile() {
+        const file = fileInput.files?.[0]
+
+        if (!file) {
+          return
+        }
+
+        setStatus(`Loading ${file.name}`)
+        try {
+          loadResults(JSON.parse(await file.text()), file.name)
+        } catch (error) {
+          setStatus(`Invalid JSON: ${error.message}`)
+        } finally {
+          fileInput.value = ''
+        }
+      }
+
+      function loadResults(results, sourceName) {
+        const normalized = normalizeResults(results)
+
+        state.results = results
+        state.npcs = normalized.npcs
+        state.contacts = normalized.contacts
+        state.infections = normalized.infections
+        state.npcIndex = normalized.npcIndex
+        state.forceEdges = aggregateContacts(normalized.contacts)
+        state.minTime = normalized.minTime
+        state.maxTime = normalized.maxTime
+        state.start = normalized.minTime
+        state.end = normalized.maxTime
+        sourceEl.textContent = sourceName
+
+        resetGraph()
+        configureControls()
+        updateFilteredGraph()
+        hideStatus()
+      }
+
+      function normalizeResults(results) {
+        if (!results || typeof results !== 'object' || Array.isArray(results)) {
+          throw new Error('Result payload must be a JSON object.')
+        }
+
+        if (!Array.isArray(results.npcs)) {
+          throw new Error('Result payload must include npcs array.')
+        }
+
+        if (!Array.isArray(results.events)) {
+          throw new Error('Result payload must include events array.')
+        }
+
+        const npcs = results.npcs.map((npc, index) => ({
+          id: String(npc?.id || `npc_${index}`),
+          index,
+          initialSeirState: String(npc?.initialSeirState || 'susceptible')
+        }))
+        const npcIndex = new Map(npcs.map((npc, index) => [npc.id, index]))
+        const contacts = []
+        const infections = []
+
+        for (const event of results.events) {
+          if (event?.event === 'contact' && Array.isArray(event.npcs) && event.npcs.length >= 2) {
+            const source = npcIndex.get(String(event.npcs[0]))
+            const target = npcIndex.get(String(event.npcs[1]))
+            const at = Number(event.at)
+            const until = Number(event.until ?? event.at)
+
+            if (!Number.isInteger(source) || !Number.isInteger(target) || source === target ||
+                !Number.isFinite(at) || !Number.isFinite(until)) {
+              continue
+            }
+
+            contacts.push({
+              id: String(event.id || `contact_${contacts.length + 1}`),
+              source,
+              target,
+              at: Math.min(at, until),
+              until: Math.max(at, until),
+              durationSeconds: Math.max(0, Number(event.durationSeconds) || Math.max(at, until) - Math.min(at, until)),
+              observationCount: Math.max(1, Number(event.observationCount) || 1)
+            })
+            continue
+          }
+
+          if (event?.event !== 'infection') {
+            continue
+          }
+
+          const source = npcIndex.get(String(event.from))
+          const target = npcIndex.get(String(event.to))
+          const at = Number(event.at)
+
+          if (!Number.isInteger(source) || !Number.isInteger(target) || source === target ||
+              !Number.isFinite(at)) {
+            continue
+          }
+
+          infections.push({
+            id: String(event.id || `infection_${infections.length + 1}`),
+            source,
+            target,
+            at
+          })
+        }
+
+        let minEventTime = Infinity
+        let maxEventTime = 0
+
+        for (const contact of contacts) {
+          minEventTime = Math.min(minEventTime, contact.at, contact.until)
+          maxEventTime = Math.max(maxEventTime, contact.at, contact.until)
+        }
+
+        for (const infection of infections) {
+          minEventTime = Math.min(minEventTime, infection.at)
+          maxEventTime = Math.max(maxEventTime, infection.at)
+        }
+
+        if (!Number.isFinite(minEventTime)) {
+          minEventTime = 0
+        }
+
+        return {
+          npcs,
+          contacts,
+          infections,
+          npcIndex,
+          minTime: Number.isFinite(minEventTime) ? Math.floor(minEventTime) : 0,
+          maxTime: Number.isFinite(maxEventTime) ? Math.ceil(maxEventTime) : 0
+        }
+      }
+
+      function resetGraph() {
+        const count = state.npcs.length
+
+        scene.remove(nodeMesh)
+        nodeMesh.geometry.dispose()
+        nodeMesh.material.dispose()
+        nodeMesh = createNodeMesh(count)
+        scene.add(nodeMesh)
+
+        state.sphericalPositions = buildSphericalPositions(count)
+        state.hierarchicalPositions = buildHierarchicalPositions(count, state.infections)
+        state.positions = getInitialPositionsForLayout()
+        state.velocities = []
+        state.degree = new Array(count).fill(0)
+
+        for (let index = 0; index < count; index += 1) {
+          state.velocities.push(new THREE.Vector3())
+        }
+
+        updateNodeInstances()
+      }
+
+      function getInitialPositionsForLayout() {
+        if (state.layoutMode === 'hierarchical') {
+          return state.hierarchicalPositions.map((position) => position.clone())
+        }
+
+        return state.sphericalPositions.map((position) => position.clone())
+      }
+
+      function buildSphericalPositions(count) {
+        const radius = Math.max(135, Math.sqrt(count) * 14)
+        const goldenAngle = Math.PI * (3 - Math.sqrt(5))
+        const positions = []
+
+        for (let index = 0; index < count; index += 1) {
+          const y = 1 - (index / Math.max(1, count - 1)) * 2
+          const r = Math.sqrt(Math.max(0, 1 - y * y))
+          const theta = goldenAngle * index
+
+          positions.push(new THREE.Vector3(
+            Math.cos(theta) * r * radius,
+            y * radius,
+            Math.sin(theta) * r * radius
+          ))
+        }
+
+        return positions
+      }
+
+      function buildHierarchicalPositions(count, infections) {
+        if (count === 0 || infections.length === 0) {
+          return buildSphericalPositions(count)
+        }
+
+        const sortedInfections = [...infections].sort((left, right) => {
+          if (left.at !== right.at) {
+            return left.at - right.at
+          }
+
+          return left.id.localeCompare(right.id)
+        })
+        const parent = new Array(count).fill(-1)
+        const children = Array.from({ length: count }, () => [])
+        const involved = new Set()
+
+        for (const infection of sortedInfections) {
+          involved.add(infection.source)
+          involved.add(infection.target)
+
+          if (parent[infection.target] !== -1) {
+            continue
+          }
+
+          parent[infection.target] = infection.source
+          children[infection.source].push(infection.target)
+        }
+
+        for (const childList of children) {
+          childList.sort((left, right) => left - right)
+        }
+
+        const roots = [...involved]
+          .filter((index) => parent[index] === -1)
+          .sort((left, right) => left - right)
+        const depth = new Array(count).fill(-1)
+        const queue = roots.map((index) => {
+          depth[index] = 0
+          return index
+        })
+
+        for (let cursor = 0; cursor < queue.length; cursor += 1) {
+          const source = queue[cursor]
+
+          for (const target of children[source]) {
+            if (depth[target] !== -1) {
+              continue
+            }
+
+            depth[target] = depth[source] + 1
+            queue.push(target)
+          }
+        }
+
+        for (const index of involved) {
+          if (depth[index] === -1) {
+            depth[index] = 0
+          }
+        }
+
+        const maxTreeDepth = Math.max(0, ...depth.filter((value) => value >= 0))
+        const inactiveDepth = maxTreeDepth + 1
+
+        for (let index = 0; index < count; index += 1) {
+          if (depth[index] === -1) {
+            depth[index] = inactiveDepth
+          }
+        }
+
+        const levels = Array.from({ length: inactiveDepth + 1 }, () => [])
+
+        for (let index = 0; index < count; index += 1) {
+          levels[depth[index]].push(index)
+        }
+
+        const positions = new Array(count)
+        const ySpacing = Math.min(165, Math.max(105, 660 / Math.max(1, levels.length - 1)))
+        const zSpacing = 18
+        const yOrigin = ((levels.length - 1) * ySpacing) / 2 - 30
+
+        for (let levelIndex = 0; levelIndex < levels.length; levelIndex += 1) {
+          const level = levels[levelIndex].sort((left, right) => {
+            const leftParent = parent[left] === -1 ? -1 : parent[left]
+            const rightParent = parent[right] === -1 ? -1 : parent[right]
+
+            if (leftParent !== rightParent) {
+              return leftParent - rightParent
+            }
+
+            return left - right
+          })
+          const maxLevelWidth = 260
+          const xSpacing = level.length > 1 ? Math.min(24, maxLevelWidth / (level.length - 1)) : 0
+          const y = yOrigin - levelIndex * ySpacing
+
+          for (let itemIndex = 0; itemIndex < level.length; itemIndex += 1) {
+            const nodeIndex = level[itemIndex]
+            const x = (itemIndex - (level.length - 1) / 2) * xSpacing
+            const z = ((itemIndex % 9) - 4) * zSpacing
+
+            positions[nodeIndex] = new THREE.Vector3(x, y, z)
+          }
+        }
+
+        return positions
+      }
+
+      function configureControls() {
+        const max = Math.max(state.maxTime, state.minTime + 1)
+
+        for (const input of [startRange, endRange, startNumber, endNumber]) {
+          input.min = String(state.minTime)
+          input.max = String(max)
+          input.step = '1'
+        }
+
+        startRange.value = String(state.start)
+        endRange.value = String(state.end)
+        startNumber.value = String(state.start)
+        endNumber.value = String(state.end)
+      }
+
+      function setWindow(start, end) {
+        const min = state.minTime
+        const max = Math.max(state.maxTime, min)
+        const nextStart = clamp(Number.isFinite(start) ? start : min, min, max)
+        const nextEnd = clamp(Number.isFinite(end) ? end : max, min, max)
+
+        state.start = Math.min(nextStart, nextEnd)
+        state.end = Math.max(nextStart, nextEnd)
+        startRange.value = String(Math.round(state.start))
+        endRange.value = String(Math.round(state.end))
+        startNumber.value = String(Math.round(state.start))
+        endNumber.value = String(Math.round(state.end))
+        updateFilteredGraph()
+      }
+
+      function setLayoutMode(mode) {
+        state.layoutMode = mode === 'force' || mode === 'hierarchical' ? mode : 'spherical'
+        layoutSelect.value = state.layoutMode
+
+        for (const velocity of state.velocities) {
+          velocity.set(0, 0, 0)
+        }
+
+        if (state.layoutMode === 'spherical') {
+          state.positions = state.sphericalPositions.map((position) => position.clone())
+        } else if (state.layoutMode === 'hierarchical') {
+          state.positions = state.hierarchicalPositions.map((position) => position.clone())
+        }
+
+        updateNodeInstances()
+        updateEdgePositions()
+        updateInfectionPositions()
+      }
+
+      function updateFilteredGraph() {
+        state.filteredContacts = state.contacts.filter((contact) => contact.until >= state.start && contact.at <= state.end)
+        state.filteredInfections = state.infections.filter((infection) => infection.at >= state.start && infection.at <= state.end)
+        state.aggregatedEdges = aggregateContacts(state.filteredContacts)
+        state.degree = new Array(state.npcs.length).fill(0)
+
+        for (const edge of state.aggregatedEdges) {
+          state.degree[edge.source] += edge.count
+          state.degree[edge.target] += edge.count
+        }
+
+        rebuildEdgeGeometry()
+        rebuildInfectionGeometry()
+        updateNodeInstances()
+        updateStats()
+      }
+
+      function setEdgeDisplay() {
+        state.showContacts = showContactsInput.checked
+        state.showInfections = showInfectionsInput.checked
+        updateEdgeVisibility()
+      }
+
+      function updateEdgeVisibility() {
+        edgeMesh.visible = state.showContacts && state.aggregatedEdges.length > 0
+        infectionShaftMesh.visible = state.showInfections && state.filteredInfections.length > 0
+        infectionHeadMesh.visible = state.showInfections && state.filteredInfections.length > 0
+      }
+
+      function aggregateContacts(contacts) {
+        const edges = new Map()
+
+        for (const contact of contacts) {
+          const low = Math.min(contact.source, contact.target)
+          const high = Math.max(contact.source, contact.target)
+          const key = `${low}:${high}`
+          const edge = edges.get(key) || {
+            source: low,
+            target: high,
+            count: 0,
+            durationSeconds: 0,
+            observationCount: 0
+          }
+
+          edge.count += 1
+          edge.durationSeconds += contact.durationSeconds
+          edge.observationCount += contact.observationCount
+          edges.set(key, edge)
+        }
+
+        return [...edges.values()]
+      }
+
+      function rebuildEdgeGeometry() {
+        edgeGeometry.dispose()
+        edgeGeometry = new THREE.BufferGeometry()
+
+        const positions = new Float32Array(Math.max(1, state.aggregatedEdges.length * 2 * 3))
+        const colors = new Float32Array(Math.max(1, state.aggregatedEdges.length * 2 * 3))
+
+        for (let index = 0; index < state.aggregatedEdges.length; index += 1) {
+          writeEdgePosition(positions, index, state.aggregatedEdges[index])
+          writeEdgeColor(colors, index, state.aggregatedEdges[index])
+        }
+
+        edgeGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+        edgeGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+        edgeMesh.geometry = edgeGeometry
+        updateEdgeVisibility()
+      }
+
+      function rebuildInfectionGeometry() {
+        const count = state.filteredInfections.length
+
+        scene.remove(infectionShaftMesh)
+        scene.remove(infectionHeadMesh)
+        infectionShaftMesh.geometry.dispose()
+        infectionShaftMesh.material.dispose()
+        infectionHeadMesh.geometry.dispose()
+        infectionHeadMesh.material.dispose()
+
+        infectionShaftMesh = createInfectionShaftMesh(count)
+        infectionHeadMesh = createInfectionHeadMesh(count)
+        scene.add(infectionShaftMesh)
+        scene.add(infectionHeadMesh)
+
+        updateInfectionPositions()
+        updateEdgeVisibility()
+      }
+
+      function writeEdgePosition(array, edgeIndex, edge) {
+        const source = state.positions[edge.source] || new THREE.Vector3()
+        const target = state.positions[edge.target] || new THREE.Vector3()
+        const offset = edgeIndex * 6
+
+        array[offset] = source.x
+        array[offset + 1] = source.y
+        array[offset + 2] = source.z
+        array[offset + 3] = target.x
+        array[offset + 4] = target.y
+        array[offset + 5] = target.z
+      }
+
+      function writeEdgeColor(array, edgeIndex, edge) {
+        const color = edgeBaseColor.clone().lerp(hoveredColor, Math.min(0.5, edge.count / 16))
+        const offset = edgeIndex * 6
+
+        for (let point = 0; point < 2; point += 1) {
+          array[offset + point * 3] = color.r
+          array[offset + point * 3 + 1] = color.g
+          array[offset + point * 3 + 2] = color.b
+        }
+      }
+
+      function updateEdgePositions() {
+        if (!state.showContacts) {
+          return
+        }
+
+        const attribute = edgeGeometry.getAttribute('position')
+
+        if (!attribute) {
+          return
+        }
+
+        for (let index = 0; index < state.aggregatedEdges.length; index += 1) {
+          writeEdgePosition(attribute.array, index, state.aggregatedEdges[index])
+        }
+
+        attribute.needsUpdate = true
+        edgeGeometry.computeBoundingSphere()
+      }
+
+      function updateInfectionPositions() {
+        const count = state.filteredInfections.length
+
+        infectionShaftMesh.count = count
+        infectionHeadMesh.count = count
+
+        if (count === 0) {
+          updateEdgeVisibility()
+          return
+        }
+
+        for (let index = 0; index < count; index += 1) {
+          const infection = state.filteredInfections[index]
+          const source = state.positions[infection.source]
+          const target = state.positions[infection.target]
+
+          if (!source || !target) {
+            continue
+          }
+
+          writeInfectionArrow(index, source, target)
+        }
+
+        infectionShaftMesh.instanceMatrix.needsUpdate = true
+        infectionHeadMesh.instanceMatrix.needsUpdate = true
+        updateEdgeVisibility()
+      }
+
+      function writeInfectionArrow(index, source, target) {
+        const direction = target.clone().sub(source)
+        const totalLength = direction.length()
+
+        if (totalLength < 4) {
+          tmpObject.position.copy(source)
+          tmpObject.scale.set(0, 0, 0)
+          tmpObject.updateMatrix()
+          infectionShaftMesh.setMatrixAt(index, tmpObject.matrix)
+          infectionHeadMesh.setMatrixAt(index, tmpObject.matrix)
+          return
+        }
+
+        direction.normalize()
+
+        const startOffset = 3
+        const endOffset = 5
+        const availableLength = Math.max(1, totalLength - startOffset - endOffset)
+        const headLength = Math.min(14, Math.max(7, availableLength * 0.16))
+        const shaftLength = Math.max(1, availableLength - headLength)
+        const start = source.clone().addScaledVector(direction, startOffset)
+        const shaftCenter = start.clone().addScaledVector(direction, shaftLength / 2)
+        const headCenter = start.clone().addScaledVector(direction, shaftLength + headLength / 2)
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(yAxis, direction)
+
+        tmpObject.position.copy(shaftCenter)
+        tmpObject.quaternion.copy(quaternion)
+        tmpObject.scale.set(0.62, shaftLength, 0.62)
+        tmpObject.updateMatrix()
+        infectionShaftMesh.setMatrixAt(index, tmpObject.matrix)
+
+        tmpObject.position.copy(headCenter)
+        tmpObject.quaternion.copy(quaternion)
+        tmpObject.scale.set(2.35, headLength, 2.35)
+        tmpObject.updateMatrix()
+        infectionHeadMesh.setMatrixAt(index, tmpObject.matrix)
+      }
+
+      function tickLayout() {
+        if (state.layoutMode !== 'force' || state.positions.length === 0) {
+          return
+        }
+
+        for (const edge of state.forceEdges) {
+          const source = state.positions[edge.source]
+          const target = state.positions[edge.target]
+
+          if (!source || !target) {
+            continue
+          }
+
+          const dx = target.x - source.x
+          const dy = target.y - source.y
+          const dz = target.z - source.z
+          const distance = Math.max(1, Math.hypot(dx, dy, dz))
+          const targetDistance = 130 + Math.min(150, Math.log1p(edge.count) * 34)
+          const force = (distance - targetDistance) * 0.00018
+          const scalar = force / distance
+          const sourceVelocity = state.velocities[edge.source]
+          const targetVelocity = state.velocities[edge.target]
+
+          sourceVelocity.x += dx * scalar
+          sourceVelocity.y += dy * scalar
+          sourceVelocity.z += dz * scalar
+          targetVelocity.x -= dx * scalar
+          targetVelocity.y -= dy * scalar
+          targetVelocity.z -= dz * scalar
+        }
+
+        for (let index = 0; index < state.positions.length; index += 1) {
+          const position = state.positions[index]
+          const velocity = state.velocities[index]
+
+          velocity.x -= position.x * 0.00022
+          velocity.y -= position.y * 0.00022
+          velocity.z -= position.z * 0.00022
+          velocity.multiplyScalar(0.9)
+          position.add(velocity)
+        }
+      }
+
+      function updateNodeInstances() {
+        const count = state.npcs.length
+
+        for (let index = 0; index < count; index += 1) {
+          const position = state.positions[index] || new THREE.Vector3()
+          const degree = state.degree[index] || 0
+          const scale = 0.9 + Math.min(1.1, Math.sqrt(degree) * 0.035)
+
+          tmpObject.position.copy(position)
+          tmpObject.quaternion.identity()
+          tmpObject.scale.setScalar(index === state.hoveredIndex ? scale * 2.2 : scale)
+          tmpObject.updateMatrix()
+          nodeMesh.setMatrixAt(index, tmpObject.matrix)
+
+          const baseColor = nodeColors[state.npcs[index]?.initialSeirState] || nodeColors.susceptible
+          const color = index === state.hoveredIndex ? hoveredColor : baseColor
+
+          nodeMesh.setColorAt(index, color)
+        }
+
+        nodeMesh.count = count
+        nodeMesh.instanceMatrix.needsUpdate = true
+
+        if (nodeMesh.instanceColor) {
+          nodeMesh.instanceColor.needsUpdate = true
+        }
+      }
+
+      function updateStats() {
+        const activeNodes = state.degree.reduce((count, degree) => count + (degree > 0 ? 1 : 0), 0)
+
+        nodeCountEl.textContent = String(state.npcs.length)
+        edgeCountEl.textContent = String(state.filteredContacts.length)
+        activeNodeCountEl.textContent = String(activeNodes)
+        durationLabelEl.textContent = formatTime(Math.max(0, state.end - state.start))
+      }
+
+      function onPointerMove(event) {
+        const rect = renderer.domElement.getBoundingClientRect()
+
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+        pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1)
+        tooltip.style.left = `${event.clientX}px`
+        tooltip.style.top = `${event.clientY}px`
+      }
+
+      function updateHover() {
+        if (!state.npcs.length) {
+          return
+        }
+
+        raycaster.setFromCamera(pointer, camera)
+        const hit = raycaster.intersectObject(nodeMesh, false)[0]
+        const nextHovered = Number.isInteger(hit?.instanceId) ? hit.instanceId : -1
+
+        if (nextHovered !== state.hoveredIndex) {
+          state.hoveredIndex = nextHovered
+          updateNodeInstances()
+        }
+
+        if (nextHovered >= 0) {
+          showTooltip(nextHovered)
+        } else {
+          hideTooltip()
+        }
+      }
+
+      function showTooltip(index) {
+        const npc = state.npcs[index]
+
+        tooltip.hidden = false
+        tooltip.innerHTML = `
+          <b>${escapeHtml(npc.id)}</b>
+          <span>Initial state: ${escapeHtml(npc.initialSeirState)}</span>
+          <span>Contacts: ${state.degree[index] || 0}</span>
+        `
+      }
+
+      function hideTooltip() {
+        tooltip.hidden = true
+      }
+
+      function resize() {
+        const width = window.innerWidth
+        const height = window.innerHeight
+
+        renderer.setSize(width, height, false)
+        camera.aspect = width / Math.max(1, height)
+        camera.updateProjectionMatrix()
+      }
+
+      function animate() {
+        requestAnimationFrame(animate)
+        state.frame += 1
+
+        controls.update()
+        updateHover()
+        renderer.render(scene, camera)
+
+        tickLayout()
+
+        if (state.frame % 2 === 0) {
+          updateNodeInstances()
+          updateEdgePositions()
+          updateInfectionPositions()
+        }
+      }
+
+      function setStatus(message) {
+        statusEl.textContent = message
+        statusEl.hidden = false
+      }
+
+      function hideStatus() {
+        statusEl.hidden = true
+      }
+
+      function formatTime(seconds) {
+        const value = Math.max(0, Math.round(seconds))
+
+        if (value < 60) {
+          return `${value}s`
+        }
+
+        if (value < 3600) {
+          return `${Math.floor(value / 60)}m`
+        }
+
+        if (value < 86400) {
+          return `${(value / 3600).toFixed(1)}h`
+        }
+
+        return `${(value / 86400).toFixed(1)}d`
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max)
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;')
+      }
+    </script>
+  </body>
+</html>

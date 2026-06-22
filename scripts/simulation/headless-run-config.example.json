@@ -12,12 +12,12 @@
     "inoculatedNpcIds": []
   },
   "run": {
-    "durationSeconds": 86400,
+    "durationSeconds": 864000,
     "stepSeconds": 2
   },
   "infection": {
     "distanceMeters": 2,
-    "transmissionProbabilityPerMinute": 0.03,
+    "transmissionProbabilityPerMinute": 0.01,
     "incubationDays": 1,
     "infectiousDays": 7,
     "immunityDays": 90
