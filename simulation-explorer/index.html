@@ -123,6 +123,10 @@
         accent-color: #bd8800;
       }
 
+      input[type="range"].compact-range {
+        width: 92px;
+      }
+
       input[type="checkbox"] {
         width: 14px;
         height: 14px;
@@ -564,6 +568,15 @@
             Infection
           </label>
         </div>
+        <div class="display-control graph-control" aria-label="Display nodes">
+          <span class="control-title">Display nodes</span>
+          <label class="checkbox-control">
+            <input id="floatNodes" type="checkbox">
+            Float nodes
+          </label>
+          <label class="checkbox-control" for="floatIntensity">Intensity</label>
+          <input id="floatIntensity" class="compact-range" type="range" min="0" max="5" step="0.1" value="1" aria-label="Float intensity">
+        </div>
         <div class="display-control curve-control" aria-label="Display curves">
           <span class="control-title">Display curves</span>
           <label class="checkbox-control">
@@ -643,6 +656,8 @@
       const endNumber = document.getElementById('endNumber')
       const showContactsInput = document.getElementById('showContacts')
       const showInfectionsInput = document.getElementById('showInfections')
+      const floatNodesInput = document.getElementById('floatNodes')
+      const floatIntensityInput = document.getElementById('floatIntensity')
       const layoutSelect = document.getElementById('layoutSelect')
       const showSusceptibleInput = document.getElementById('showSusceptible')
       const showExposedInput = document.getElementById('showExposed')
@@ -703,6 +718,8 @@
         selectedNeighborMask: new Uint8Array(),
         selectedContactEdgeCount: 0,
         selectedInfectionEdgeCount: 0,
+        renderedNodeX: new Float64Array(),
+        renderedNodeY: new Float64Array(),
         activeTab: 'contact',
         minTime: 0,
         maxTime: 0,
@@ -710,6 +727,8 @@
         end: 0,
         showContacts: true,
         showInfections: true,
+        floatNodes: false,
+        floatIntensity: 1,
         showCurves: {
           susceptible: true,
           exposed: true,
@@ -727,6 +746,7 @@
         maxLayoutLinks: 6000,
         maxVisibleContactEdges: 12000,
         layoutAnimationFrame: 0,
+        floatAnimationFrame: 0,
         stats: {
           contactEventCount: 0,
           infectionEventCount: 0,
@@ -758,6 +778,8 @@
       endNumber.addEventListener('change', () => setWindow(state.start, Number(endNumber.value)))
       showContactsInput.addEventListener('change', setEdgeDisplay)
       showInfectionsInput.addEventListener('change', setEdgeDisplay)
+      floatNodesInput.addEventListener('change', setNodeFloatDisplay)
+      floatIntensityInput.addEventListener('input', setFloatIntensity)
       layoutSelect.addEventListener('change', () => setGraphLayout(layoutSelect.value))
       showSusceptibleInput.addEventListener('change', setCurveDisplay)
       showExposedInput.addEventListener('change', setCurveDisplay)
@@ -856,6 +878,8 @@
         state.selectedNeighborMask = new Uint8Array(state.npcs.length)
         state.selectedContactEdgeCount = 0
         state.selectedInfectionEdgeCount = 0
+        state.renderedNodeX = new Float64Array(state.npcs.length)
+        state.renderedNodeY = new Float64Array(state.npcs.length)
         state.fullInfectionSource = data.fullInfectionSource
         state.fullInfectionTarget = data.fullInfectionTarget
         state.fullInfectionTileX = data.fullInfectionTileX
@@ -883,9 +907,11 @@
         updateStats()
         applyActiveTransform()
         requestWindowData()
+        startFloatingAnimation()
       }
 
       function resetView() {
+        stopFloatingAnimation()
         stopSimulation()
         nodeGroup.selectAll('*').remove()
         chartGridGroup.selectAll('*').remove()
@@ -909,6 +935,8 @@
         state.selectedNeighborMask = new Uint8Array()
         state.selectedContactEdgeCount = 0
         state.selectedInfectionEdgeCount = 0
+        state.renderedNodeX = new Float64Array()
+        state.renderedNodeY = new Float64Array()
         clearCanvas()
         updateStats()
       }
@@ -1418,6 +1446,32 @@
         }
       }
 
+      function startFloatingAnimation() {
+        if (!state.floatNodes || state.floatIntensity <= 0 || state.floatAnimationFrame || state.activeTab !== 'contact') {
+          return
+        }
+
+        const tick = () => {
+          state.floatAnimationFrame = 0
+
+          if (!state.floatNodes || state.floatIntensity <= 0 || state.activeTab !== 'contact') {
+            return
+          }
+
+          scheduleGraphDraw()
+          state.floatAnimationFrame = requestAnimationFrame(tick)
+        }
+
+        state.floatAnimationFrame = requestAnimationFrame(tick)
+      }
+
+      function stopFloatingAnimation() {
+        if (state.floatAnimationFrame) {
+          cancelAnimationFrame(state.floatAnimationFrame)
+          state.floatAnimationFrame = 0
+        }
+      }
+
       function applyWindowData(data) {
         state.workerBusy = false
 
@@ -1604,11 +1658,14 @@
 
       function drawGraph() {
         state.drawFrame = 0
+        const time = performance.now()
+
+        prepareRenderedNodePositions(time)
 
         if (state.nodeSelection) {
           state.nodeSelection
-            .attr('cx', (node) => node.x)
-            .attr('cy', (node) => node.y)
+            .attr('cx', (node) => renderedNodeX(node))
+            .attr('cy', (node) => renderedNodeY(node))
         }
 
         drawEdges()
@@ -1673,8 +1730,8 @@
           const source = state.npcs[sourceIndex]
           const target = state.npcs[targetIndex]
 
-          edgeContext.moveTo(source.x, source.y)
-          edgeContext.lineTo(target.x, target.y)
+          edgeContext.moveTo(renderedNodeX(source), renderedNodeY(source))
+          edgeContext.lineTo(renderedNodeX(target), renderedNodeY(target))
         }
 
         edgeContext.stroke()
@@ -1713,16 +1770,55 @@
         return `rgba(${red}, ${green}, ${blue}, ${format('.3f')(alpha)})`
       }
 
+      function prepareRenderedNodePositions(time) {
+        if (state.renderedNodeX.length !== state.npcs.length) {
+          state.renderedNodeX = new Float64Array(state.npcs.length)
+          state.renderedNodeY = new Float64Array(state.npcs.length)
+        }
+
+        const seconds = time * 0.001
+
+        for (const node of state.npcs) {
+          if (!state.floatNodes || state.floatIntensity <= 0) {
+            state.renderedNodeX[node.index] = node.x
+            state.renderedNodeY[node.index] = node.y
+            continue
+          }
+
+          const phase = node.index * 2.399963
+          const intensity = state.floatIntensity
+          const amplitudeX = (1.7 + seededUnit(node.index, 43) * 2.4) * intensity
+          const amplitudeY = (1.7 + seededUnit(node.index, 67) * 2.4) * intensity
+          const speedX = (0.22 + seededUnit(node.index, 59) * 0.16) * intensity
+          const speedY = (0.18 + seededUnit(node.index, 83) * 0.14) * intensity
+
+          state.renderedNodeX[node.index] = node.x + Math.cos(seconds * speedX + phase) * amplitudeX
+          state.renderedNodeY[node.index] = node.y + Math.sin(seconds * speedY + phase * 1.37) * amplitudeY
+        }
+      }
+
+      function renderedNodeX(node) {
+        return state.renderedNodeX.length === state.npcs.length ? state.renderedNodeX[node.index] : node.x
+      }
+
+      function renderedNodeY(node) {
+        return state.renderedNodeY.length === state.npcs.length ? state.renderedNodeY[node.index] : node.y
+      }
+
       function drawArrow(source, target, scale) {
-        const dx = target.x - source.x
-        const dy = target.y - source.y
+        const sourceX = renderedNodeX(source)
+        const sourceY = renderedNodeY(source)
+        const targetX = renderedNodeX(target)
+        const targetY = renderedNodeY(target)
+        const dx = targetX - sourceX
+        const dy = targetY - sourceY
         const length = Math.max(1, Math.hypot(dx, dy))
         const ux = dx / length
         const uy = dy / length
-        const startX = source.x + ux * 5.2
-        const startY = source.y + uy * 5.2
-        const endX = target.x - ux * 7.6
-        const endY = target.y - uy * 7.6
+        const startX = sourceX + ux * 5.2
+        const startY = sourceY + uy * 5.2
+        const endX = targetX - ux * 7.6
+        const endY = targetY - uy * 7.6
         const arrowSize = 5.6 / Math.sqrt(scale)
 
         edgeContext.beginPath()
@@ -1941,6 +2037,32 @@
         scheduleGraphDraw()
       }
 
+      function setNodeFloatDisplay() {
+        state.floatNodes = floatNodesInput.checked
+
+        if (state.floatNodes && state.floatIntensity > 0) {
+          startFloatingAnimation()
+        } else {
+          stopFloatingAnimation()
+        }
+
+        scheduleGraphDraw()
+      }
+
+      function setFloatIntensity() {
+        const nextIntensity = Number(floatIntensityInput.value)
+
+        state.floatIntensity = Number.isFinite(nextIntensity) ? clamp(nextIntensity, 0, 5) : 1
+
+        if (state.floatNodes && state.floatIntensity > 0) {
+          startFloatingAnimation()
+        } else if (state.floatIntensity <= 0) {
+          stopFloatingAnimation()
+        }
+
+        scheduleGraphDraw()
+      }
+
       function setCurveDisplay() {
         state.showCurves.susceptible = showSusceptibleInput.checked
         state.showCurves.exposed = showExposedInput.checked
@@ -1967,6 +2089,12 @@
         hideTooltip()
         applyActiveTransform()
         scheduleGraphDraw()
+
+        if (state.activeTab === 'contact') {
+          startFloatingAnimation()
+        } else {
+          stopFloatingAnimation()
+        }
       }
 
       function applyActiveTransform() {
