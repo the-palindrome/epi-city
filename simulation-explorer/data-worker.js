@@ -156,6 +156,7 @@ function normalizeResults(results) {
   const infectionSource = new Int32Array(infectionCount)
   const infectionTarget = new Int32Array(infectionCount)
   const infectionAt = new Float64Array(infectionCount)
+  const infectionPair = new Int32Array(infectionCount)
   const infectionTileX = new Float64Array(infectionCount)
   const infectionTileY = new Float64Array(infectionCount)
   const seirAt = new Float64Array(seirCount)
@@ -167,6 +168,8 @@ function normalizeResults(results) {
   const pairTargets = []
   const globalPairCounts = []
   const npcCount = Math.max(1, npcs.length)
+
+  infectionPair.fill(-1)
 
   for (const event of results.events) {
     if (event?.event === 'contact' && Array.isArray(event.npcs) && event.npcs.length >= 2) {
@@ -245,6 +248,17 @@ function normalizeResults(results) {
     maxEventTime = Math.max(maxEventTime, configuredDuration)
   }
 
+  for (let index = 0; index < validInfectionCount; index += 1) {
+    const source = infectionSource[index]
+    const target = infectionTarget[index]
+    const low = Math.min(source, target)
+    const high = Math.max(source, target)
+    const pairKey = low * npcCount + high
+    const pairId = pairIdByKey.get(pairKey)
+
+    infectionPair[index] = pairId === undefined ? -1 : pairId
+  }
+
   if (!Number.isFinite(minEventTime)) {
     minEventTime = 0
   }
@@ -266,6 +280,7 @@ function normalizeResults(results) {
     infectionSource: infectionSource.slice(0, validInfectionCount),
     infectionTarget: infectionTarget.slice(0, validInfectionCount),
     infectionAt: infectionAt.slice(0, validInfectionCount),
+    infectionPair: infectionPair.slice(0, validInfectionCount),
     infectionTileX: infectionTileX.slice(0, validInfectionCount),
     infectionTileY: infectionTileY.slice(0, validInfectionCount),
     seirAt: seirSorted.at,
@@ -412,6 +427,8 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
   const pairCounts = dataset.pairCountsScratch
   const degrees = dataset.degreeScratch
   const activePairIds = []
+  const pinnedPairIds = []
+  const pinnedPairIdSet = new Set()
   let contactEventCount = 0
 
   pairCounts.fill(0)
@@ -434,6 +451,25 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     degrees[dataset.pairTargets[pairId]] += 1
   }
 
+  const infectionMatches = []
+
+  for (let index = 0; index < dataset.infectionAt.length; index += 1) {
+    if (dataset.infectionAt[index] < windowStart || dataset.infectionAt[index] > windowEnd) {
+      continue
+    }
+
+    infectionMatches.push(index)
+    degrees[dataset.infectionSource[index]] += 1
+    degrees[dataset.infectionTarget[index]] += 1
+
+    const pairId = dataset.infectionPair[index]
+
+    if (pairId >= 0 && pairCounts[pairId] > 0 && !pinnedPairIdSet.has(pairId)) {
+      pinnedPairIdSet.add(pairId)
+      pinnedPairIds.push(pairId)
+    }
+  }
+
   if (activePairIds.length > maxVisibleContactEdges) {
     activePairIds.sort((left, right) => (
       pairCounts[right] - pairCounts[left] ||
@@ -441,26 +477,20 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     ))
   }
 
-  const visibleContactCount = Math.min(activePairIds.length, Math.max(0, maxVisibleContactEdges))
+  const contactPairLimit = Math.max(0, maxVisibleContactEdges)
+  const visiblePairIds = activePairIds.length <= contactPairLimit
+    ? activePairIds
+    : selectVisibleContactPairs(activePairIds, pinnedPairIds, pinnedPairIdSet, contactPairLimit)
+  const visibleContactCount = visiblePairIds.length
   const contactSource = new Int32Array(visibleContactCount)
   const contactTarget = new Int32Array(visibleContactCount)
   const contactWeight = new Uint32Array(visibleContactCount)
 
   for (let index = 0; index < visibleContactCount; index += 1) {
-    const pairId = activePairIds[index]
+    const pairId = visiblePairIds[index]
     contactSource[index] = dataset.pairSources[pairId]
     contactTarget[index] = dataset.pairTargets[pairId]
     contactWeight[index] = pairCounts[pairId]
-  }
-
-  const infectionMatches = []
-
-  for (let index = 0; index < dataset.infectionAt.length; index += 1) {
-    if (dataset.infectionAt[index] >= windowStart && dataset.infectionAt[index] <= windowEnd) {
-      infectionMatches.push(index)
-      degrees[dataset.infectionSource[index]] += 1
-      degrees[dataset.infectionTarget[index]] += 1
-    }
   }
 
   const infectionSource = new Int32Array(infectionMatches.length)
@@ -510,6 +540,29 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     visibleContactPairCount: visibleContactCount,
     infectionEventCount: infectionMatches.length
   }, transfer)
+}
+
+function selectVisibleContactPairs(activePairIds, pinnedPairIds, pinnedPairIdSet, contactPairLimit) {
+  const visiblePairIds = []
+  const targetCount = Math.max(contactPairLimit, pinnedPairIds.length)
+
+  for (const pairId of pinnedPairIds) {
+    visiblePairIds.push(pairId)
+  }
+
+  for (const pairId of activePairIds) {
+    if (visiblePairIds.length >= targetCount) {
+      break
+    }
+
+    if (pinnedPairIdSet.has(pairId)) {
+      continue
+    }
+
+    visiblePairIds.push(pairId)
+  }
+
+  return visiblePairIds
 }
 
 function statesAtTime(data, time) {

@@ -796,6 +796,7 @@
         contactWeight: new Uint32Array(),
         infectionSource: new Int32Array(),
         infectionTarget: new Int32Array(),
+        visibleInfectionPairKeys: new Set(),
         fullInfectionSource: new Int32Array(),
         fullInfectionTarget: new Int32Array(),
         fullInfectionTileX: new Float64Array(),
@@ -966,6 +967,7 @@
         state.contactWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
+        state.visibleInfectionPairKeys = new Set()
         state.selectedNodeIndex = -1
         state.selectedNeighborMask = new Uint8Array(state.npcs.length)
         state.selectedContactEdgeCount = 0
@@ -1019,6 +1021,7 @@
         state.contactWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
+        state.visibleInfectionPairKeys = new Set()
         state.fullInfectionSource = new Int32Array()
         state.fullInfectionTarget = new Int32Array()
         state.fullInfectionTileX = new Float64Array()
@@ -1579,6 +1582,7 @@
         state.contactWeight = data.contactWeight
         state.infectionSource = data.infectionSource
         state.infectionTarget = data.infectionTarget
+        rebuildVisibleInfectionPairKeys()
         state.currentStateCodes = data.currentStates
         state.degrees = data.degrees
         state.stats.contactEventCount = data.contactEventCount
@@ -1709,7 +1713,14 @@
 
         if (state.showContacts) {
           for (let index = 0; index < state.contactSource.length; index += 1) {
-            if (markSelectedEdgeNeighbor(state.contactSource[index], state.contactTarget[index], selectedIndex)) {
+            const sourceIndex = state.contactSource[index]
+            const targetIndex = state.contactTarget[index]
+
+            if (isContactSuppressedByInfection(sourceIndex, targetIndex)) {
+              continue
+            }
+
+            if (markSelectedEdgeNeighbor(sourceIndex, targetIndex, selectedIndex)) {
               state.selectedContactEdgeCount += 1
             }
           }
@@ -1777,7 +1788,7 @@
         const transform = state.graphTransform
         const scale = Math.max(0.08, transform.k)
         const ratio = window.devicePixelRatio || 1
-        const displayedContactCount = state.showContacts ? state.contactSource.length : 0
+        const displayedContactCount = state.showContacts ? countRenderableContactEdges() : 0
         const displayedInfectionCount = state.showInfections ? state.infectionSource.length : 0
         const contactOpacity = dynamicEdgeOpacity(displayedContactCount, 0.24, 0.026, 850)
         const infectionOpacity = dynamicEdgeOpacity(displayedInfectionCount, 0.72, 0.16, 120)
@@ -1819,6 +1830,10 @@
           const sourceIndex = state.contactSource[index]
           const targetIndex = state.contactTarget[index]
 
+          if (isContactSuppressedByInfection(sourceIndex, targetIndex)) {
+            continue
+          }
+
           if (matchSelected !== null && isSelectedEdge(sourceIndex, targetIndex) !== matchSelected) {
             continue
           }
@@ -1852,6 +1867,43 @@
 
       function isSelectedEdge(sourceIndex, targetIndex) {
         return sourceIndex === state.selectedNodeIndex || targetIndex === state.selectedNodeIndex
+      }
+
+      function rebuildVisibleInfectionPairKeys() {
+        const visibleInfectionPairKeys = new Set()
+
+        for (let index = 0; index < state.infectionSource.length; index += 1) {
+          visibleInfectionPairKeys.add(nodePairKey(state.infectionSource[index], state.infectionTarget[index]))
+        }
+
+        state.visibleInfectionPairKeys = visibleInfectionPairKeys
+      }
+
+      function countRenderableContactEdges() {
+        if (!state.showInfections || state.visibleInfectionPairKeys.size === 0) {
+          return state.contactSource.length
+        }
+
+        let count = 0
+
+        for (let index = 0; index < state.contactSource.length; index += 1) {
+          if (!isContactSuppressedByInfection(state.contactSource[index], state.contactTarget[index])) {
+            count += 1
+          }
+        }
+
+        return count
+      }
+
+      function isContactSuppressedByInfection(sourceIndex, targetIndex) {
+        return state.showInfections && state.visibleInfectionPairKeys.has(nodePairKey(sourceIndex, targetIndex))
+      }
+
+      function nodePairKey(sourceIndex, targetIndex) {
+        const low = Math.min(sourceIndex, targetIndex)
+        const high = Math.max(sourceIndex, targetIndex)
+
+        return low * Math.max(1, state.npcs.length) + high
       }
 
       function dynamicEdgeOpacity(edgeCount, maxOpacity, minOpacity, softLimit) {
