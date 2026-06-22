@@ -7,8 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(TOOL_DIR, '..')
-const THREE_MODULE_PATH = path.join(REPO_ROOT, 'node_modules', 'three', 'build', 'three.module.js')
-const ORBIT_CONTROLS_PATH = path.join(REPO_ROOT, 'node_modules', 'three', 'examples', 'jsm', 'controls', 'OrbitControls.js')
+const D3_BUNDLE_PATH = path.join(REPO_ROOT, 'node_modules', 'd3', 'dist', 'd3.min.js')
 const DEFAULT_PORT = 5175
 const START_PORT = Number(process.env.PORT || DEFAULT_PORT)
 const MAX_PORT = 65535
@@ -70,16 +69,8 @@ async function handleRequest(request, response) {
       return
     }
 
-    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/vendor/OrbitControls.js') {
-      await sendFile(request, response, ORBIT_CONTROLS_PATH, 'text/javascript; charset=utf-8')
-      return
-    }
-
-    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname.startsWith('/vendor/')) {
-      const vendorFile = path.basename(url.pathname)
-      const threeBuildFile = path.join(path.dirname(THREE_MODULE_PATH), vendorFile)
-
-      await sendFile(request, response, threeBuildFile, 'text/javascript; charset=utf-8')
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/vendor/d3.min.js') {
+      await sendFile(request, response, D3_BUNDLE_PATH, 'text/javascript; charset=utf-8')
       return
     }
 

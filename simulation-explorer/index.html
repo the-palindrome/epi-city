@@ -4,28 +4,24 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Epi City Simulation Explorer</title>
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "/vendor/three.module.js"
-        }
-      }
-    </script>
+    <script src="/vendor/d3.min.js"></script>
     <style>
       :root {
         color-scheme: light;
-        --bg: #f6f7f3;
-        --panel: rgba(255, 255, 255, 0.88);
-        --panel-strong: rgba(255, 255, 255, 0.96);
-        --line: rgba(55, 69, 61, 0.2);
-        --text: #1c2520;
-        --muted: #657168;
-        --accent: #b98900;
-        --cyan: #287f91;
-        --green: #2b9b5f;
-        --orange: #c2711a;
-        --red: #d64545;
-        --pink: #b73975;
+        --bg: #ffffff;
+        --panel: rgba(255, 255, 255, 0.9);
+        --panel-strong: rgba(255, 255, 255, 0.98);
+        --line: rgba(32, 38, 35, 0.18);
+        --grid: rgba(32, 38, 35, 0.18);
+        --text: #202621;
+        --muted: #6b746f;
+        --susceptible: #b6b83a;
+        --exposed: #f47c2a;
+        --infectious: #e1363f;
+        --recovered: #07974d;
+        --contact: #a9a9a9;
+        --infection: #d84c55;
+        --active: #f5ecd2;
       }
 
       * {
@@ -43,25 +39,18 @@
         font: 13px/1.4 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
-      #scene {
+      #viz {
         position: fixed;
         inset: 0;
         width: 100vw;
         height: 100vh;
         display: block;
+        background: var(--bg);
         cursor: grab;
       }
 
-      #scene:active {
+      #viz:active {
         cursor: grabbing;
-      }
-
-      body[data-view="seir"] #scene {
-        cursor: default;
-      }
-
-      body[data-view="seir"] #scene:active {
-        cursor: default;
       }
 
       .topbar {
@@ -71,14 +60,14 @@
         right: 0;
         min-height: 58px;
         display: grid;
-        grid-template-columns: minmax(190px, 0.8fr) minmax(340px, 1.25fr) minmax(440px, 1.35fr);
+        grid-template-columns: minmax(220px, 0.82fr) minmax(360px, 1.2fr) minmax(440px, 1.36fr);
         gap: 12px;
         align-items: center;
         padding: 10px 12px;
         border-bottom: 1px solid var(--line);
-        background: linear-gradient(180deg, var(--panel-strong), rgba(255, 255, 255, 0.76));
+        background: var(--panel-strong);
         backdrop-filter: blur(14px);
-        z-index: 2;
+        z-index: 4;
       }
 
       .brand {
@@ -92,20 +81,20 @@
         margin: 0;
         font-size: 15px;
         line-height: 1;
-        font-weight: 680;
+        font-weight: 700;
         letter-spacing: 0;
         white-space: nowrap;
       }
 
       .source {
-        color: var(--muted);
         min-width: 0;
         overflow: hidden;
+        color: var(--muted);
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
-      .controls {
+      .time-controls {
         display: grid;
         grid-template-columns: auto 190px minmax(220px, 1fr);
         gap: 8px 12px;
@@ -120,24 +109,23 @@
 
       input[type="range"] {
         width: 100%;
-        accent-color: var(--accent);
+        accent-color: #bd8800;
       }
 
       input[type="checkbox"] {
         width: 14px;
         height: 14px;
         margin: 0;
-        accent-color: var(--red);
+        accent-color: var(--infection);
       }
 
       input[type="number"],
-      select,
       button,
       .file-control {
         height: 34px;
         border: 1px solid var(--line);
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.95);
         color: var(--text);
         font: inherit;
       }
@@ -170,9 +158,9 @@
         top: 50%;
         left: 0;
         right: 0;
-        height: 6px;
+        height: 5px;
         border-radius: 999px;
-        background: rgba(55, 69, 61, 0.24);
+        background: rgba(32, 38, 35, 0.18);
         transform: translateY(-50%);
       }
 
@@ -181,7 +169,7 @@
         top: 0;
         bottom: 0;
         border-radius: inherit;
-        background: var(--accent);
+        background: #bd8800;
       }
 
       .dual-range input[type="range"] {
@@ -196,12 +184,12 @@
       }
 
       .dual-range input[type="range"]::-webkit-slider-runnable-track {
-        height: 6px;
+        height: 5px;
         background: transparent;
       }
 
       .dual-range input[type="range"]::-moz-range-track {
-        height: 6px;
+        height: 5px;
         background: transparent;
       }
 
@@ -211,8 +199,8 @@
         border: 0;
         border-radius: 50%;
         appearance: none;
-        background: var(--accent);
-        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
+        background: #bd8800;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
         cursor: pointer;
         pointer-events: auto;
       }
@@ -222,31 +210,19 @@
         height: 16px;
         border: 0;
         border-radius: 50%;
-        background: var(--accent);
-        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
+        background: #bd8800;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
         cursor: pointer;
         pointer-events: auto;
-      }
-
-      select {
-        min-width: 116px;
-        padding: 0 30px 0 8px;
       }
 
       .actions {
         display: flex;
         justify-content: flex-end;
         align-items: center;
-        gap: 8px;
+        gap: 8px 12px;
         min-width: 0;
         flex-wrap: wrap;
-      }
-
-      .layout-control {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 0;
       }
 
       .display-control {
@@ -262,17 +238,6 @@
         font-size: 11px;
         text-transform: uppercase;
         white-space: nowrap;
-      }
-
-      body[data-view="contact"] .curve-control,
-      body[data-view="seir"] .graph-control,
-      body[data-view="seir"] .stats,
-      body[data-view="contact"] .curve-stat {
-        display: none;
-      }
-
-      body[data-view="seir"] .actions {
-        grid-column: 2 / -1;
       }
 
       .checkbox-control {
@@ -297,9 +262,8 @@
       }
 
       button:hover,
-      select:hover,
       .file-control:hover {
-        border-color: rgba(185, 137, 0, 0.62);
+        border-color: rgba(189, 136, 0, 0.58);
       }
 
       input[type="file"] {
@@ -310,6 +274,17 @@
         pointer-events: none;
       }
 
+      body[data-view="contact"] .curve-control,
+      body[data-view="seir"] .graph-control,
+      body[data-view="seir"] .stats,
+      body[data-view="contact"] .curve-stat {
+        display: none;
+      }
+
+      body[data-view="seir"] .actions {
+        grid-column: 2 / -1;
+      }
+
       .stats {
         position: fixed;
         left: 12px;
@@ -317,7 +292,7 @@
         display: grid;
         grid-template-columns: repeat(4, minmax(86px, auto));
         gap: 8px;
-        z-index: 2;
+        z-index: 3;
       }
 
       .stat {
@@ -351,13 +326,13 @@
         flex-wrap: wrap;
         justify-content: flex-end;
         gap: 8px 12px;
-        max-width: 380px;
+        max-width: 420px;
         padding: 9px 10px;
         border: 1px solid var(--line);
         border-radius: 6px;
         background: var(--panel);
         backdrop-filter: blur(12px);
-        z-index: 2;
+        z-index: 3;
       }
 
       .legend-item {
@@ -368,6 +343,10 @@
         white-space: nowrap;
       }
 
+      body[data-view="seir"] .graph-legend-item {
+        display: none;
+      }
+
       .swatch {
         width: 10px;
         height: 10px;
@@ -375,13 +354,9 @@
       }
 
       .swatch-line {
-        width: 16px;
-        height: 4px;
+        width: 18px;
+        height: 3px;
         border-radius: 999px;
-      }
-
-      body[data-view="seir"] .graph-legend-item {
-        display: none;
       }
 
       .view-tabs {
@@ -396,11 +371,10 @@
         background: var(--panel);
         backdrop-filter: blur(12px);
         transform: translateX(-50%);
-        z-index: 3;
+        z-index: 4;
       }
 
       .tab-button {
-        height: 34px;
         min-width: 112px;
         border: 0;
         border-radius: 6px;
@@ -409,22 +383,40 @@
       }
 
       .tab-button[aria-selected="true"] {
-        background: rgba(185, 137, 0, 0.16);
+        background: var(--active);
         color: var(--text);
+      }
+
+      .status {
+        position: fixed;
+        top: 70px;
+        left: 50%;
+        max-width: min(520px, calc(100vw - 24px));
+        padding: 9px 12px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--muted);
+        transform: translateX(-50%);
+        z-index: 5;
+      }
+
+      .status[hidden] {
+        display: none;
       }
 
       .tooltip {
         position: fixed;
         min-width: 180px;
-        max-width: 260px;
+        max-width: 280px;
         padding: 9px 10px;
         border: 1px solid var(--line);
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.96);
+        background: rgba(255, 255, 255, 0.97);
         color: var(--text);
         pointer-events: none;
         transform: translate(12px, 12px);
-        z-index: 3;
+        z-index: 6;
       }
 
       .tooltip[hidden] {
@@ -441,37 +433,60 @@
         color: var(--muted);
       }
 
-      .status {
-        position: fixed;
-        top: 70px;
-        left: 50%;
-        max-width: min(520px, calc(100vw - 24px));
-        padding: 9px 12px;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: var(--panel);
-        color: var(--muted);
-        transform: translateX(-50%);
-        z-index: 3;
+      .contact-link {
+        stroke: var(--contact);
+        stroke-linecap: round;
+        vector-effect: non-scaling-stroke;
       }
 
-      .status[hidden] {
-        display: none;
+      .infection-link {
+        stroke: var(--infection);
+        stroke-linecap: round;
+        vector-effect: non-scaling-stroke;
       }
 
-      @media (max-width: 820px) {
+      .node {
+        cursor: pointer;
+      }
+
+      .axis path,
+      .axis line {
+        stroke: #202621;
+        stroke-width: 1;
+        shape-rendering: crispEdges;
+      }
+
+      .axis text {
+        fill: var(--text);
+        font-size: 12px;
+      }
+
+      .grid line {
+        stroke: var(--grid);
+        shape-rendering: crispEdges;
+      }
+
+      .curve-line {
+        fill: none;
+        stroke-width: 2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+        vector-effect: non-scaling-stroke;
+      }
+
+      @media (max-width: 880px) {
         .topbar {
           grid-template-columns: 1fr;
           gap: 8px;
+          align-items: start;
         }
 
-        .controls {
+        .time-controls {
           grid-template-columns: 1fr;
         }
 
         .actions {
           justify-content: flex-start;
-          flex-wrap: wrap;
         }
 
         body[data-view="seir"] .actions {
@@ -480,8 +495,8 @@
 
         .stats {
           right: 12px;
-          grid-template-columns: repeat(2, minmax(86px, 1fr));
           bottom: 66px;
+          grid-template-columns: repeat(2, minmax(86px, 1fr));
         }
 
         .legend {
@@ -491,13 +506,13 @@
     </style>
   </head>
   <body data-view="contact">
-    <canvas id="scene"></canvas>
+    <svg id="viz" aria-label="Simulation explorer visualization"></svg>
     <div class="topbar">
       <div class="brand">
         <h1>Simulation Explorer</h1>
         <div id="source" class="source">No dataset</div>
       </div>
-      <div class="controls graph-control">
+      <div class="time-controls graph-control">
         <label for="startRange">Time window</label>
         <div class="time-inputs">
           <input id="startNumber" type="number" value="0" min="0" step="1" aria-label="Start time">
@@ -511,14 +526,6 @@
         </div>
       </div>
       <div class="actions">
-        <label class="layout-control graph-control" for="layoutSelect">
-          Layout
-          <select id="layoutSelect">
-            <option value="spherical">Spherical</option>
-            <option value="force">Force</option>
-            <option value="hierarchical">Hierarchical</option>
-          </select>
-        </label>
         <div class="display-control graph-control" aria-label="Display edges">
           <span class="control-title">Display edges</span>
           <label class="checkbox-control">
@@ -563,12 +570,12 @@
       <div class="stat"><b id="durationLabel">0s</b><span>Window</span></div>
     </div>
     <div class="legend">
-      <div class="legend-item"><span class="swatch" style="background: var(--accent)"></span>Susceptible</div>
-      <div class="legend-item"><span class="swatch" style="background: var(--orange)"></span>Exposed</div>
-      <div class="legend-item"><span class="swatch" style="background: var(--red)"></span>Infectious</div>
-      <div class="legend-item"><span class="swatch" style="background: var(--green)"></span>Recovered</div>
-      <div class="legend-item graph-legend-item"><span class="swatch" style="background: var(--cyan)"></span>Contact</div>
-      <div class="legend-item graph-legend-item"><span class="swatch-line" style="background: var(--red)"></span>Infection</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--susceptible)"></span>Susceptible</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--exposed)"></span>Exposed</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--infectious)"></span>Infectious</div>
+      <div class="legend-item"><span class="swatch" style="background: var(--recovered)"></span>Recovered</div>
+      <div class="legend-item graph-legend-item"><span class="swatch-line" style="background: var(--contact)"></span>Contact</div>
+      <div class="legend-item graph-legend-item"><span class="swatch-line" style="background: var(--infection)"></span>Infection</div>
     </div>
     <div class="view-tabs" role="tablist" aria-label="Explorer views">
       <button id="contactGraphTab" class="tab-button" type="button" role="tab" aria-selected="true">Contact graph</button>
@@ -576,11 +583,30 @@
     </div>
     <div id="tooltip" class="tooltip" hidden></div>
 
-    <script type="module">
-      import * as THREE from 'three'
-      import { OrbitControls } from '/vendor/OrbitControls.js'
+    <script>
+      const {
+        axisBottom,
+        axisLeft,
+        curveLinear,
+        drag,
+        extent,
+        forceCenter,
+        forceCollide,
+        forceLink,
+        forceManyBody,
+        forceSimulation,
+        format,
+        line,
+        max,
+        scaleLinear,
+        scaleTime,
+        select,
+        timeFormat,
+        zoom,
+        zoomIdentity
+      } = d3
 
-      const canvas = document.getElementById('scene')
+      const svg = select('#viz')
       const sourceEl = document.getElementById('source')
       const statusEl = document.getElementById('status')
       const startRange = document.getElementById('startRange')
@@ -588,7 +614,6 @@
       const rangeSelection = document.getElementById('rangeSelection')
       const startNumber = document.getElementById('startNumber')
       const endNumber = document.getElementById('endNumber')
-      const layoutSelect = document.getElementById('layoutSelect')
       const showContactsInput = document.getElementById('showContacts')
       const showInfectionsInput = document.getElementById('showInfections')
       const showSusceptibleInput = document.getElementById('showSusceptible')
@@ -604,51 +629,74 @@
       const activeNodeCountEl = document.getElementById('activeNodeCount')
       const durationLabelEl = document.getElementById('durationLabel')
 
-      const nodeColors = {
-        susceptible: new THREE.Color(0xb98900),
-        exposed: new THREE.Color(0xc2711a),
-        infectious: new THREE.Color(0xd64545),
-        recovered: new THREE.Color(0x2b9b5f)
+      const colorByState = {
+        susceptible: '#b6b83a',
+        exposed: '#f47c2a',
+        infectious: '#e1363f',
+        recovered: '#07974d'
       }
-      const edgeBaseColor = new THREE.Color(0x287f91)
-      const hoveredColor = new THREE.Color(0xb73975)
-      const infectionEdgeColor = new THREE.Color(0xd84c55)
-      const curveColors = {
-        susceptible: new THREE.Color(0xb98900),
-        exposed: new THREE.Color(0xc2711a),
-        infectious: new THREE.Color(0xd64545),
-        recovered: new THREE.Color(0x2b9b5f)
+      const stateKeys = ['susceptible', 'exposed', 'infectious', 'recovered']
+      const eventOrder = {
+        infection: 0,
+        incubation: 1,
+        recovery: 2,
+        immunity_waned: 3
       }
-      const curveStateKeys = ['susceptible', 'exposed', 'infectious', 'recovered']
-      const tmpObject = new THREE.Object3D()
-      const yAxis = new THREE.Vector3(0, 1, 0)
-      const pointer = new THREE.Vector2(-10, -10)
-      const raycaster = new THREE.Raycaster()
+
+      const root = svg.append('g')
+      const graphRoot = root.append('g').attr('class', 'contact-graph')
+      const contactLinkGroup = graphRoot.append('g').attr('class', 'contact-links')
+      const infectionLinkGroup = graphRoot.append('g').attr('class', 'infection-links')
+      const nodeGroup = graphRoot.append('g').attr('class', 'nodes')
+      const chartRoot = root.append('g').attr('class', 'seir-chart').style('display', 'none')
+      const chartGridGroup = chartRoot.append('g').attr('class', 'grid')
+      const chartAxisGroup = chartRoot.append('g').attr('class', 'axes')
+      const chartLineGroup = chartRoot.append('g').attr('class', 'curves')
+
+      svg.append('defs')
+        .append('marker')
+        .attr('id', 'infection-arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 12)
+        .attr('refY', 0)
+        .attr('markerWidth', 7)
+        .attr('markerHeight', 7)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('d', 'M0,-4L9,0L0,4')
+        .attr('fill', 'var(--infection)')
+        .attr('opacity', 0.75)
+
+      const graphZoom = zoom()
+        .scaleExtent([0.08, 8])
+        .on('zoom', (event) => {
+          if (state.activeTab === 'contact') {
+            state.graphTransform = event.transform
+            graphRoot.attr('transform', event.transform)
+          } else {
+            state.chartTransform = event.transform
+            chartRoot.attr('transform', event.transform)
+          }
+        })
 
       const state = {
         results: null,
         npcs: [],
         contacts: [],
         infections: [],
+        seirEvents: [],
+        seirSeries: null,
         npcIndex: new Map(),
-        positions: [],
-        sphericalPositions: [],
-        hierarchicalPositions: [],
-        velocities: [],
+        currentStates: [],
         filteredContacts: [],
         filteredInfections: [],
-        aggregatedEdges: [],
-        forceEdges: [],
-        degree: [],
-        seirSeries: null,
-        seirCurves: new Map(),
+        aggregatedContacts: [],
+        fullLayoutLinks: [],
         activeTab: 'contact',
         minTime: 0,
         maxTime: 0,
         start: 0,
         end: 0,
-        layoutMode: 'spherical',
-        transition: null,
         showContacts: true,
         showInfections: true,
         showCurves: {
@@ -657,145 +705,27 @@
           infectious: true,
           recovered: true
         },
-        hoveredIndex: -1,
-        frame: 0
+        graphTransform: zoomIdentity,
+        chartTransform: zoomIdentity,
+        simulation: null
       }
 
-      const scene = new THREE.Scene()
-      scene.background = new THREE.Color(0xf6f7f3)
-      scene.fog = new THREE.FogExp2(0xf6f7f3, 0.00045)
-
-      const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000)
-      camera.position.set(0, 0, 760)
-
-      const renderer = new THREE.WebGLRenderer({
-        canvas,
-        antialias: true,
-        alpha: false,
-        preserveDrawingBuffer: true,
-        powerPreference: 'high-performance'
-      })
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-
-      const controls = new OrbitControls(camera, renderer.domElement)
-      controls.enableDamping = true
-      controls.dampingFactor = 0.08
-      controls.rotateSpeed = 0.62
-      controls.zoomSpeed = 0.74
-      controls.panSpeed = 0.55
-      controls.minDistance = 90
-      controls.maxDistance = 1800
-
-      const graphGroup = new THREE.Group()
-      const curveGroup = new THREE.Group()
-      const curveGridGroup = new THREE.Group()
-
-      curveGroup.visible = false
-      curveGroup.add(curveGridGroup)
-      scene.add(graphGroup)
-      scene.add(curveGroup)
-
-      let nodeMesh = createNodeMesh(1)
-      graphGroup.add(nodeMesh)
-
-      let edgeGeometry = new THREE.BufferGeometry()
-      let edgeMaterial = new THREE.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.22,
-        fog: false
-      })
-      let edgeMesh = new THREE.LineSegments(edgeGeometry, edgeMaterial)
-      edgeMesh.frustumCulled = false
-      graphGroup.add(edgeMesh)
-
-      let infectionShaftMesh = createInfectionShaftMesh(1)
-      let infectionHeadMesh = createInfectionHeadMesh(1)
-      graphGroup.add(infectionShaftMesh)
-      graphGroup.add(infectionHeadMesh)
-
-      scene.add(new THREE.AmbientLight(0xffffff, 0.9))
-
+      svg.call(graphZoom)
       window.addEventListener('resize', resize)
-      window.addEventListener('pointermove', onPointerMove)
-      window.addEventListener('pointerleave', () => {
-        pointer.set(-10, -10)
-        hideTooltip()
-      })
       startRange.addEventListener('input', () => setWindow(Number(startRange.value), state.end))
       endRange.addEventListener('input', () => setWindow(state.start, Number(endRange.value)))
       startNumber.addEventListener('change', () => setWindow(Number(startNumber.value), state.end))
       endNumber.addEventListener('change', () => setWindow(state.start, Number(endNumber.value)))
-      layoutSelect.addEventListener('change', () => setLayoutMode(layoutSelect.value))
-      showContactsInput.addEventListener('change', () => setEdgeDisplay())
-      showInfectionsInput.addEventListener('change', () => setEdgeDisplay())
-      showSusceptibleInput.addEventListener('change', () => setCurveDisplay())
-      showExposedInput.addEventListener('change', () => setCurveDisplay())
-      showInfectiousInput.addEventListener('change', () => setCurveDisplay())
-      showRecoveredInput.addEventListener('change', () => setCurveDisplay())
+      showContactsInput.addEventListener('change', setEdgeDisplay)
+      showInfectionsInput.addEventListener('change', setEdgeDisplay)
+      showSusceptibleInput.addEventListener('change', setCurveDisplay)
+      showExposedInput.addEventListener('change', setCurveDisplay)
+      showInfectiousInput.addEventListener('change', setCurveDisplay)
+      showRecoveredInput.addEventListener('change', setCurveDisplay)
       contactGraphTab.addEventListener('click', () => setActiveTab('contact'))
       seirCurveTab.addEventListener('click', () => setActiveTab('seir'))
       fileInput.addEventListener('change', loadSelectedFile)
-
-      updateSceneVisibility()
       resize()
-      animate()
-
-      function createNodeMesh(count) {
-        const instanceCount = Math.max(1, count)
-        const geometry = new THREE.SphereGeometry(1.35, 10, 6)
-        const vertexColors = new Float32Array(geometry.getAttribute('position').count * 3).fill(1)
-
-        geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3))
-
-        const mesh = new THREE.InstancedMesh(
-          geometry,
-          new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }),
-          instanceCount
-        )
-
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(instanceCount * 3), 3)
-        mesh.instanceColor.setUsage(THREE.DynamicDrawUsage)
-        mesh.frustumCulled = false
-        return mesh
-      }
-
-      function createInfectionShaftMesh(count) {
-        const mesh = new THREE.InstancedMesh(
-          new THREE.CylinderGeometry(1, 1, 1, 10, 1),
-          new THREE.MeshBasicMaterial({
-            color: infectionEdgeColor,
-            transparent: true,
-            opacity: 0.48,
-            fog: false
-          }),
-          Math.max(1, count)
-        )
-
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        mesh.frustumCulled = false
-        mesh.visible = false
-        return mesh
-      }
-
-      function createInfectionHeadMesh(count) {
-        const mesh = new THREE.InstancedMesh(
-          new THREE.ConeGeometry(1, 1, 14),
-          new THREE.MeshBasicMaterial({
-            color: infectionEdgeColor,
-            transparent: true,
-            opacity: 0.64,
-            fog: false
-          }),
-          Math.max(1, count)
-        )
-
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        mesh.frustumCulled = false
-        mesh.visible = false
-        return mesh
-      }
 
       async function loadSelectedFile() {
         const file = fileInput.files?.[0]
@@ -821,19 +751,23 @@
         state.npcs = normalized.npcs
         state.contacts = normalized.contacts
         state.infections = normalized.infections
-        state.npcIndex = normalized.npcIndex
-        state.forceEdges = aggregateContacts(normalized.contacts)
+        state.seirEvents = normalized.seirEvents
         state.seirSeries = normalized.seirSeries
+        state.npcIndex = normalized.npcIndex
+        state.fullLayoutLinks = aggregateContacts(normalized.contacts).map((link) => ({ ...link }))
         state.minTime = normalized.minTime
         state.maxTime = normalized.maxTime
         state.start = normalized.minTime
         state.end = normalized.maxTime
+        state.graphTransform = centeredTransform()
+        state.chartTransform = centeredTransform()
         sourceEl.textContent = sourceName
 
-        resetGraph()
-        resetCurve()
         configureControls()
+        buildGraph()
+        renderChart()
         updateFilteredGraph()
+        applyActiveTransform()
         hideStatus()
       }
 
@@ -850,11 +784,15 @@
           throw new Error('Result payload must include events array.')
         }
 
-        const npcs = results.npcs.map((npc, index) => ({
-          id: String(npc?.id || `npc_${index}`),
-          index,
-          initialSeirState: String(npc?.initialSeirState || 'susceptible')
-        }))
+        const npcs = results.npcs.map((npc, index) => {
+          const initialSeirState = normalizeSeirState(npc?.initialSeirState)
+
+          return {
+            id: String(npc?.id || `npc_${index}`),
+            index,
+            initialSeirState
+          }
+        })
         const npcIndex = new Map(npcs.map((npc, index) => [npc.id, index]))
         const contacts = []
         const infections = []
@@ -884,42 +822,42 @@
             continue
           }
 
-          if (event?.event !== 'infection') {
-            if (isNpcSeirEvent(event?.event)) {
-              const npc = npcIndex.get(String(event.npc))
-              const at = Number(event.at)
+          if (event?.event === 'infection') {
+            const source = npcIndex.get(String(event.from))
+            const target = npcIndex.get(String(event.to))
+            const at = Number(event.at)
 
-              if (Number.isInteger(npc) && Number.isFinite(at)) {
-                seirEvents.push({
-                  event: event.event,
-                  npc,
-                  at
-                })
-              }
+            if (!Number.isInteger(source) || !Number.isInteger(target) || source === target ||
+                !Number.isFinite(at)) {
+              continue
             }
+
+            infections.push({
+              id: String(event.id || `infection_${infections.length + 1}`),
+              source,
+              target,
+              at
+            })
+            seirEvents.push({
+              event: 'infection',
+              npc: target,
+              at
+            })
             continue
           }
 
-          const source = npcIndex.get(String(event.from))
-          const target = npcIndex.get(String(event.to))
-          const at = Number(event.at)
+          if (isNpcSeirEvent(event?.event)) {
+            const npc = npcIndex.get(String(event.npc))
+            const at = Number(event.at)
 
-          if (!Number.isInteger(source) || !Number.isInteger(target) || source === target ||
-              !Number.isFinite(at)) {
-            continue
+            if (Number.isInteger(npc) && Number.isFinite(at)) {
+              seirEvents.push({
+                event: event.event,
+                npc,
+                at
+              })
+            }
           }
-
-          infections.push({
-            id: String(event.id || `infection_${infections.length + 1}`),
-            source,
-            target,
-            at
-          })
-          seirEvents.push({
-            event: 'infection',
-            npc: target,
-            at
-          })
         }
 
         let minEventTime = Infinity
@@ -950,22 +888,19 @@
           minEventTime = 0
         }
 
-        const minTime = Number.isFinite(minEventTime) ? Math.floor(Math.max(0, minEventTime)) : 0
-        const maxTime = Number.isFinite(maxEventTime) ? Math.ceil(Math.max(minTime, maxEventTime)) : 0
+        const minTime = Math.floor(Math.max(0, minEventTime))
+        const maxTime = Math.ceil(Math.max(minTime + 1, maxEventTime))
 
         return {
           npcs,
           contacts,
           infections,
-          npcIndex,
+          seirEvents,
           seirSeries: buildSeirSeries(npcs, seirEvents, maxTime),
+          npcIndex,
           minTime,
           maxTime
         }
-      }
-
-      function isNpcSeirEvent(eventName) {
-        return eventName === 'incubation' || eventName === 'recovery' || eventName === 'immunity_waned'
       }
 
       function buildSeirSeries(npcs, seirEvents, maxTime) {
@@ -975,39 +910,46 @@
           infectious: 0,
           recovered: 0
         }
+        const statesByNpc = npcs.map((npc) => normalizeSeirState(npc.initialSeirState))
 
-        for (const npc of npcs) {
-          const stateName = curveStateKeys.includes(npc.initialSeirState)
-            ? npc.initialSeirState
-            : 'susceptible'
-
+        for (const stateName of statesByNpc) {
           counts[stateName] += 1
         }
 
-        const points = [{
-          time: 0,
-          ...counts
-        }]
+        const points = [{ time: 0, ...counts }]
         const sortedEvents = [...seirEvents].sort((left, right) => (
           left.at - right.at ||
-          stateEventOrder(left.event) - stateEventOrder(right.event) ||
+          (eventOrder[left.event] ?? 99) - (eventOrder[right.event] ?? 99) ||
           left.npc - right.npc
         ))
 
-        for (const event of sortedEvents) {
+        for (let eventIndex = 0; eventIndex < sortedEvents.length;) {
+          const event = sortedEvents[eventIndex]
           const time = Math.max(0, Number(event.at) || 0)
+          let changed = false
 
-          pushSeirPoint(points, time, counts)
-          applySeirEvent(counts, event.event)
-          pushSeirPoint(points, time, counts)
+          while (eventIndex < sortedEvents.length && Math.max(0, Number(sortedEvents[eventIndex].at) || 0) === time) {
+            const timedEvent = sortedEvents[eventIndex]
+            const toState = nextStateForEvent(timedEvent.event)
+
+            if (toState && statesByNpc[timedEvent.npc]) {
+              changed = moveNpcState(counts, statesByNpc, timedEvent.npc, toState) || changed
+            }
+
+            eventIndex += 1
+          }
+
+          if (changed) {
+            pushSeirPoint(points, time, counts)
+          }
         }
 
-        pushSeirPoint(points, Math.max(maxTime || 0, points[points.length - 1]?.time || 0), counts)
+        pushSeirPoint(points, Math.max(maxTime, points[points.length - 1]?.time || 0), counts)
 
         return {
           points,
           maxCount: Math.max(1, npcs.length),
-          maxTime: Math.max(1, maxTime || points[points.length - 1]?.time || 1)
+          maxTime: Math.max(1, maxTime)
         }
       }
 
@@ -1031,329 +973,372 @@
         })
       }
 
-      function applySeirEvent(counts, eventName) {
+      function moveNpcState(counts, statesByNpc, npcIndex, toState) {
+        const fromState = statesByNpc[npcIndex]
+
+        if (fromState === toState) {
+          return false
+        }
+
+        if (counts[fromState] > 0) {
+          counts[fromState] -= 1
+        }
+
+        counts[toState] += 1
+        statesByNpc[npcIndex] = toState
+        return true
+      }
+
+      function nextStateForEvent(eventName) {
         if (eventName === 'infection') {
-          moveCount(counts, 'susceptible', 'exposed')
-          return
+          return 'exposed'
         }
 
         if (eventName === 'incubation') {
-          moveCount(counts, 'exposed', 'infectious')
-          return
+          return 'infectious'
         }
 
         if (eventName === 'recovery') {
-          moveCount(counts, 'infectious', 'recovered')
-          return
+          return 'recovered'
         }
 
         if (eventName === 'immunity_waned') {
-          moveCount(counts, 'recovered', 'susceptible')
+          return 'susceptible'
+        }
+
+        return null
+      }
+
+      function normalizeSeirState(value) {
+        const stateName = String(value || 'susceptible')
+
+        return stateKeys.includes(stateName) ? stateName : 'susceptible'
+      }
+
+      function isNpcSeirEvent(eventName) {
+        return eventName === 'incubation' || eventName === 'recovery' || eventName === 'immunity_waned'
+      }
+
+      function buildGraph() {
+        stopSimulation()
+        contactLinkGroup.selectAll('*').remove()
+        infectionLinkGroup.selectAll('*').remove()
+        nodeGroup.selectAll('*').remove()
+
+        const nodes = state.npcs.map((npc, index) => ({
+          ...npc,
+          x: Math.cos(index * 2.399963) * Math.sqrt(index + 1) * 8,
+          y: Math.sin(index * 2.399963) * Math.sqrt(index + 1) * 8
+        }))
+        const links = state.fullLayoutLinks.map((link) => ({
+          source: link.source,
+          target: link.target,
+          count: link.count
+        }))
+
+        state.npcs = nodes
+        state.simulation = forceSimulation(nodes)
+          .force('link', forceLink(links).id((node) => node.index).distance((link) => 34 + Math.min(36, Math.log1p(link.count) * 8)).strength(0.16))
+          .force('charge', forceManyBody().strength(-68).distanceMax(280))
+          .force('collide', forceCollide(6.5))
+          .force('center', forceCenter(0, 0))
+          .alpha(1)
+          .alphaDecay(0.028)
+          .on('tick', tickGraph)
+
+        updateNodeSelection()
+      }
+
+      function updateFilteredGraph() {
+        state.filteredContacts = state.contacts.filter((contact) => contact.until >= state.start && contact.at <= state.end)
+        state.filteredInfections = state.infections.filter((infection) => infection.at >= state.start && infection.at <= state.end)
+        state.aggregatedContacts = aggregateContacts(state.filteredContacts)
+        state.currentStates = statesAtTime(state.end)
+
+        renderGraphLinks()
+        updateNodeSelection()
+        updateStats()
+      }
+
+      function renderGraphLinks() {
+        const contactLinks = contactLinkGroup.selectAll('line')
+          .data(state.showContacts ? state.aggregatedContacts : [], linkKey)
+
+        contactLinks.exit().remove()
+        contactLinks.enter()
+          .append('line')
+          .attr('class', 'contact-link')
+          .attr('stroke-opacity', 0.32)
+          .merge(contactLinks)
+          .attr('stroke-width', (link) => Math.min(3.8, 0.45 + Math.log1p(link.count) * 0.55))
+
+        const infectionLinks = infectionLinkGroup.selectAll('line')
+          .data(state.showInfections ? state.filteredInfections : [], (link) => link.id)
+
+        infectionLinks.exit().remove()
+        infectionLinks.enter()
+          .append('line')
+          .attr('class', 'infection-link')
+          .attr('marker-end', 'url(#infection-arrow)')
+          .attr('stroke-opacity', 0.72)
+          .merge(infectionLinks)
+          .attr('stroke-width', 1.7)
+
+        tickGraph()
+      }
+
+      function updateNodeSelection() {
+        const degrees = new Array(state.npcs.length).fill(0)
+
+        for (const contact of state.aggregatedContacts) {
+          degrees[contact.source] += contact.count
+          degrees[contact.target] += contact.count
+        }
+
+        for (const infection of state.filteredInfections) {
+          degrees[infection.source] += 1
+          degrees[infection.target] += 1
+        }
+
+        const nodes = nodeGroup.selectAll('circle')
+          .data(state.npcs, (node) => node.id)
+
+        nodes.exit().remove()
+        nodes.enter()
+          .append('circle')
+          .attr('class', 'node')
+          .attr('r', 4.4)
+          .attr('stroke', '#ffffff')
+          .attr('stroke-width', 1.2)
+          .call(drag()
+            .on('start', dragStarted)
+            .on('drag', dragged)
+            .on('end', dragEnded))
+          .on('pointerenter', (event, node) => showNodeTooltip(event, node, degrees[node.index] || 0))
+          .on('pointermove', (event, node) => showNodeTooltip(event, node, degrees[node.index] || 0))
+          .on('pointerleave', hideTooltip)
+          .merge(nodes)
+          .attr('fill', (node) => colorByState[state.currentStates[node.index] || node.initialSeirState] || colorByState.susceptible)
+          .attr('r', (node) => 4.2 + Math.min(2.6, Math.sqrt(degrees[node.index] || 0) * 0.08))
+
+        tickGraph()
+      }
+
+      function tickGraph() {
+        contactLinkGroup.selectAll('line')
+          .attr('x1', (link) => nodeForLinkEndpoint(link.source).x)
+          .attr('y1', (link) => nodeForLinkEndpoint(link.source).y)
+          .attr('x2', (link) => nodeForLinkEndpoint(link.target).x)
+          .attr('y2', (link) => nodeForLinkEndpoint(link.target).y)
+
+        infectionLinkGroup.selectAll('line')
+          .attr('x1', (link) => endpointWithOffset(link, true).x)
+          .attr('y1', (link) => endpointWithOffset(link, true).y)
+          .attr('x2', (link) => endpointWithOffset(link, false).x)
+          .attr('y2', (link) => endpointWithOffset(link, false).y)
+
+        nodeGroup.selectAll('circle')
+          .attr('cx', (node) => node.x)
+          .attr('cy', (node) => node.y)
+      }
+
+      function endpointWithOffset(link, sourceSide) {
+        const source = nodeForLinkEndpoint(link.source)
+        const target = nodeForLinkEndpoint(link.target)
+        const dx = target.x - source.x
+        const dy = target.y - source.y
+        const length = Math.max(1, Math.hypot(dx, dy))
+        const offset = sourceSide ? 5.6 : 8.5
+        const sign = sourceSide ? 1 : -1
+
+        return {
+          x: sourceSide ? source.x + (dx / length) * offset : target.x + (dx / length) * sign * offset,
+          y: sourceSide ? source.y + (dy / length) * offset : target.y + (dy / length) * sign * offset
         }
       }
 
-      function moveCount(counts, from, to) {
-        if (counts[from] <= 0) {
-          return
-        }
-
-        counts[from] -= 1
-        counts[to] += 1
+      function nodeForLinkEndpoint(endpoint) {
+        return typeof endpoint === 'object' ? endpoint : state.npcs[endpoint]
       }
 
-      function stateEventOrder(eventName) {
-        if (eventName === 'infection') {
-          return 0
+      function dragStarted(event, node) {
+        if (!event.active && state.simulation) {
+          state.simulation.alphaTarget(0.22).restart()
         }
 
-        if (eventName === 'incubation') {
-          return 1
-        }
-
-        if (eventName === 'recovery') {
-          return 2
-        }
-
-        if (eventName === 'immunity_waned') {
-          return 3
-        }
-
-        return 4
+        node.fx = node.x
+        node.fy = node.y
       }
 
-      function resetGraph() {
-        const count = state.npcs.length
-
-        graphGroup.remove(nodeMesh)
-        nodeMesh.geometry.dispose()
-        nodeMesh.material.dispose()
-        nodeMesh = createNodeMesh(count)
-        graphGroup.add(nodeMesh)
-
-        state.sphericalPositions = buildSphericalPositions(count)
-        state.hierarchicalPositions = buildHierarchicalPositions(count, state.infections)
-        state.transition = null
-        state.positions = getInitialPositionsForLayout()
-        state.velocities = []
-        state.degree = new Array(count).fill(0)
-
-        for (let index = 0; index < count; index += 1) {
-          state.velocities.push(new THREE.Vector3())
-        }
-
-        updateNodeInstances()
+      function dragged(event, node) {
+        node.fx = event.x
+        node.fy = event.y
       }
 
-      function resetCurve() {
-        disposeCurveObjects()
-        rebuildCurveGrid()
+      function dragEnded(event, node) {
+        if (!event.active && state.simulation) {
+          state.simulation.alphaTarget(0)
+        }
+
+        node.fx = null
+        node.fy = null
+      }
+
+      function aggregateContacts(contacts) {
+        const links = new Map()
+
+        for (const contact of contacts) {
+          const low = Math.min(contact.source, contact.target)
+          const high = Math.max(contact.source, contact.target)
+          const key = `${low}:${high}`
+          const link = links.get(key) || {
+            source: low,
+            target: high,
+            count: 0,
+            durationSeconds: 0,
+            observationCount: 0
+          }
+
+          link.count += 1
+          link.durationSeconds += contact.durationSeconds
+          link.observationCount += contact.observationCount
+          links.set(key, link)
+        }
+
+        return [...links.values()]
+      }
+
+      function linkKey(link) {
+        return `${link.source}:${link.target}`
+      }
+
+      function statesAtTime(time) {
+        const states = state.npcs.map((npc) => npc.initialSeirState)
+        const sortedEvents = state.seirEvents
+          .filter((event) => event.at <= time)
+          .sort((left, right) => (
+            left.at - right.at ||
+            (eventOrder[left.event] ?? 99) - (eventOrder[right.event] ?? 99) ||
+            left.npc - right.npc
+          ))
+
+        for (const event of sortedEvents) {
+          const nextState = nextStateForEvent(event.event)
+
+          if (nextState) {
+            states[event.npc] = nextState
+          }
+        }
+
+        return states
+      }
+
+      function renderChart() {
+        chartGridGroup.selectAll('*').remove()
+        chartAxisGroup.selectAll('*').remove()
+        chartLineGroup.selectAll('*').remove()
 
         if (!state.seirSeries) {
           return
         }
 
-        curveStateKeys.forEach((stateKey, index) => {
-          const geometry = new THREE.BufferGeometry()
-          const positions = new Float32Array(Math.max(1, state.seirSeries.points.length * 3))
+        const layout = chartLayout()
+        const x = scaleLinear()
+          .domain([0, state.seirSeries.maxTime])
+          .range([layout.innerLeft, layout.innerRight])
+        const y = scaleLinear()
+          .domain([0, 100])
+          .nice()
+          .range([layout.innerBottom, layout.innerTop])
+        const timeAxisScale = scaleTime()
+          .domain([new Date(0), new Date(state.seirSeries.maxTime * 1000)])
+          .range([layout.innerLeft, layout.innerRight])
 
-          for (let pointIndex = 0; pointIndex < state.seirSeries.points.length; pointIndex += 1) {
-            writeCurvePoint(positions, pointIndex, state.seirSeries.points[pointIndex], stateKey, index)
+        chartGridGroup.append('g')
+          .attr('transform', `translate(0,0)`)
+          .call(axisLeft(y)
+            .tickSize(-(layout.innerRight - layout.innerLeft))
+            .tickFormat('')
+            .ticks(6))
+          .call((group) => group.select('.domain').remove())
+
+        chartAxisGroup.append('g')
+          .attr('class', 'axis')
+          .attr('transform', `translate(0,${layout.innerBottom})`)
+          .call(axisBottom(timeAxisScale).ticks(8).tickFormat(formatChartTime))
+
+        chartAxisGroup.append('g')
+          .attr('class', 'axis')
+          .attr('transform', `translate(${layout.innerLeft},0)`)
+          .call(axisLeft(y).ticks(6).tickFormat((value) => `${format('~g')(value)}%`))
+          .call((group) => group.select('.domain').remove())
+
+        const curveLine = line()
+          .x((point) => x(point.time))
+          .y((point) => y(percentValue(point, point.stateKey)))
+          .curve(curveLinear)
+
+        for (const stateKey of stateKeys) {
+          const points = state.seirSeries.points.map((point) => ({ ...point, stateKey }))
+
+          chartLineGroup.append('path')
+            .datum(points)
+            .attr('class', `curve-line curve-${stateKey}`)
+            .attr('stroke', colorByState[stateKey])
+            .attr('d', curveLine)
+            .attr('display', state.showCurves[stateKey] ? null : 'none')
+        }
+      }
+
+      function chartLayout() {
+        const viewport = svg.node().getBoundingClientRect()
+        const width = Math.max(560, Math.min(1060, viewport.width - 160))
+        const height = Math.max(360, Math.min(620, viewport.height - 210))
+        const left = -width / 2
+        const top = -height / 2
+        const margin = {
+          top: 22,
+          right: 18,
+          bottom: 42,
+          left: 58
+        }
+
+        return {
+          width,
+          height,
+          left,
+          top,
+          innerLeft: left + margin.left,
+          innerRight: left + width - margin.right,
+          innerTop: top + margin.top,
+          innerBottom: top + height - margin.bottom
+        }
+      }
+
+      function percentValue(point, stateKey) {
+        return (Number(point[stateKey]) / Math.max(1, state.seirSeries.maxCount)) * 100
+      }
+
+      function formatChartTime(date) {
+        const seconds = date.getTime() / 1000
+
+        if (state.seirSeries?.maxTime <= 86400) {
+          if (seconds < 3600) {
+            return `${Math.round(seconds / 60)}m`
           }
 
-          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-
-          const line = new THREE.Line(
-            geometry,
-            new THREE.LineBasicMaterial({
-              color: curveColors[stateKey],
-              transparent: true,
-              opacity: stateKey === 'susceptible' ? 0.78 : 0.92,
-              fog: false
-            })
-          )
-
-          line.frustumCulled = false
-          state.seirCurves.set(stateKey, line)
-          curveGroup.add(line)
-        })
-
-        updateCurveVisibility()
-      }
-
-      function disposeCurveObjects() {
-        for (const line of state.seirCurves.values()) {
-          curveGroup.remove(line)
-          line.geometry.dispose()
-          line.material.dispose()
+          return `${format('~g')(seconds / 3600)}h`
         }
 
-        state.seirCurves.clear()
-        clearGroup(curveGridGroup)
-      }
-
-      function rebuildCurveGrid() {
-        const width = 900
-        const height = 460
-        const positions = []
-
-        appendLine(positions, -width / 2, -height / 2, 0, width / 2, -height / 2, 0)
-        appendLine(positions, -width / 2, -height / 2, 0, -width / 2, height / 2, 0)
-
-        for (let tick = 1; tick <= 4; tick += 1) {
-          const x = -width / 2 + (width * tick) / 4
-          const y = -height / 2 + (height * tick) / 4
-
-          appendLine(positions, x, -height / 2, -10, x, height / 2, -10)
-          appendLine(positions, -width / 2, y, -10, width / 2, y, -10)
-        }
-
-        const geometry = new THREE.BufferGeometry()
-
-        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3))
-
-        const grid = new THREE.LineSegments(
-          geometry,
-          new THREE.LineBasicMaterial({
-            color: 0x8c978f,
-            transparent: true,
-            opacity: 0.28,
-            fog: false
-          })
-        )
-
-        grid.frustumCulled = false
-        curveGridGroup.add(grid)
-      }
-
-      function writeCurvePoint(array, pointIndex, point, stateKey, stateIndex) {
-        const series = state.seirSeries || { maxTime: 1, maxCount: 1 }
-        const width = 900
-        const height = 460
-        const offset = pointIndex * 3
-        const x = ((point.time / Math.max(1, series.maxTime)) - 0.5) * width
-        const y = ((point[stateKey] / Math.max(1, series.maxCount)) - 0.5) * height
-        const z = (stateIndex - 1.5) * 5
-
-        array[offset] = x
-        array[offset + 1] = y
-        array[offset + 2] = z
-      }
-
-      function appendLine(positions, x1, y1, z1, x2, y2, z2) {
-        positions.push(x1, y1, z1, x2, y2, z2)
-      }
-
-      function clearGroup(group) {
-        while (group.children.length > 0) {
-          const child = group.children[0]
-
-          group.remove(child)
-          child.geometry?.dispose?.()
-          child.material?.dispose?.()
-        }
-      }
-
-      function getInitialPositionsForLayout() {
-        if (state.layoutMode === 'hierarchical') {
-          return state.hierarchicalPositions.map((position) => position.clone())
-        }
-
-        return state.sphericalPositions.map((position) => position.clone())
-      }
-
-      function buildSphericalPositions(count) {
-        const radius = Math.max(135, Math.sqrt(count) * 14)
-        const goldenAngle = Math.PI * (3 - Math.sqrt(5))
-        const positions = []
-
-        for (let index = 0; index < count; index += 1) {
-          const y = 1 - (index / Math.max(1, count - 1)) * 2
-          const r = Math.sqrt(Math.max(0, 1 - y * y))
-          const theta = goldenAngle * index
-
-          positions.push(new THREE.Vector3(
-            Math.cos(theta) * r * radius,
-            y * radius,
-            Math.sin(theta) * r * radius
-          ))
-        }
-
-        return positions
-      }
-
-      function buildHierarchicalPositions(count, infections) {
-        if (count === 0 || infections.length === 0) {
-          return buildSphericalPositions(count)
-        }
-
-        const sortedInfections = [...infections].sort((left, right) => {
-          if (left.at !== right.at) {
-            return left.at - right.at
-          }
-
-          return left.id.localeCompare(right.id)
-        })
-        const parent = new Array(count).fill(-1)
-        const children = Array.from({ length: count }, () => [])
-        const involved = new Set()
-
-        for (const infection of sortedInfections) {
-          involved.add(infection.source)
-          involved.add(infection.target)
-
-          if (parent[infection.target] !== -1) {
-            continue
-          }
-
-          parent[infection.target] = infection.source
-          children[infection.source].push(infection.target)
-        }
-
-        for (const childList of children) {
-          childList.sort((left, right) => left - right)
-        }
-
-        const roots = [...involved]
-          .filter((index) => parent[index] === -1)
-          .sort((left, right) => left - right)
-        const depth = new Array(count).fill(-1)
-        const queue = roots.map((index) => {
-          depth[index] = 0
-          return index
-        })
-
-        for (let cursor = 0; cursor < queue.length; cursor += 1) {
-          const source = queue[cursor]
-
-          for (const target of children[source]) {
-            if (depth[target] !== -1) {
-              continue
-            }
-
-            depth[target] = depth[source] + 1
-            queue.push(target)
-          }
-        }
-
-        for (const index of involved) {
-          if (depth[index] === -1) {
-            depth[index] = 0
-          }
-        }
-
-        const maxTreeDepth = Math.max(0, ...depth.filter((value) => value >= 0))
-        const inactiveDepth = maxTreeDepth + 1
-
-        for (let index = 0; index < count; index += 1) {
-          if (depth[index] === -1) {
-            depth[index] = inactiveDepth
-          }
-        }
-
-        const levels = Array.from({ length: inactiveDepth + 1 }, () => [])
-
-        for (let index = 0; index < count; index += 1) {
-          levels[depth[index]].push(index)
-        }
-
-        const positions = new Array(count)
-        const ySpacing = Math.min(165, Math.max(105, 660 / Math.max(1, levels.length - 1)))
-        const zSpacing = 18
-        const yOrigin = ((levels.length - 1) * ySpacing) / 2 - 30
-
-        for (let levelIndex = 0; levelIndex < levels.length; levelIndex += 1) {
-          const level = levels[levelIndex].sort((left, right) => {
-            const leftParent = parent[left] === -1 ? -1 : parent[left]
-            const rightParent = parent[right] === -1 ? -1 : parent[right]
-
-            if (leftParent !== rightParent) {
-              return leftParent - rightParent
-            }
-
-            return left - right
-          })
-          const maxLevelWidth = 260
-          const xSpacing = level.length > 1 ? Math.min(24, maxLevelWidth / (level.length - 1)) : 0
-          const y = yOrigin - levelIndex * ySpacing
-
-          for (let itemIndex = 0; itemIndex < level.length; itemIndex += 1) {
-            const nodeIndex = level[itemIndex]
-            const x = (itemIndex - (level.length - 1) / 2) * xSpacing
-            const z = ((itemIndex % 9) - 4) * zSpacing
-
-            positions[nodeIndex] = new THREE.Vector3(x, y, z)
-          }
-        }
-
-        return positions
+        return timeFormat('%b %d')(date)
       }
 
       function configureControls() {
-        const max = Math.max(state.maxTime, state.minTime + 1)
+        const maxValue = Math.max(state.maxTime, state.minTime + 1)
 
         for (const input of [startRange, endRange, startNumber, endNumber]) {
           input.min = String(state.minTime)
-          input.max = String(max)
+          input.max = String(maxValue)
           input.step = '1'
         }
 
@@ -1365,10 +1350,10 @@
       }
 
       function setWindow(start, end) {
-        const min = state.minTime
-        const max = Math.max(state.maxTime, min)
-        const nextStart = clamp(Number.isFinite(start) ? start : min, min, max)
-        const nextEnd = clamp(Number.isFinite(end) ? end : max, min, max)
+        const minValue = state.minTime
+        const maxValue = Math.max(state.maxTime, minValue)
+        const nextStart = clamp(Number.isFinite(start) ? start : minValue, minValue, maxValue)
+        const nextEnd = clamp(Number.isFinite(end) ? end : maxValue, minValue, maxValue)
 
         state.start = Math.min(nextStart, nextEnd)
         state.end = Math.max(nextStart, nextEnd)
@@ -1381,119 +1366,20 @@
       }
 
       function updateRangeSelection() {
-        const min = Number(startRange.min)
-        const max = Number(startRange.max)
-        const span = Math.max(1, max - min)
-        const startPercent = ((state.start - min) / span) * 100
-        const endPercent = ((state.end - min) / span) * 100
+        const minValue = Number(startRange.min)
+        const maxValue = Number(startRange.max)
+        const span = Math.max(1, maxValue - minValue)
+        const startPercent = ((state.start - minValue) / span) * 100
+        const endPercent = ((state.end - minValue) / span) * 100
 
         rangeSelection.style.left = `${clamp(startPercent, 0, 100)}%`
         rangeSelection.style.right = `${100 - clamp(endPercent, 0, 100)}%`
       }
 
-      function setLayoutMode(mode) {
-        commitLayoutTransition()
-
-        state.layoutMode = mode === 'force' || mode === 'hierarchical' ? mode : 'spherical'
-        layoutSelect.value = state.layoutMode
-
-        for (const velocity of state.velocities) {
-          velocity.set(0, 0, 0)
-        }
-
-        let transitionStarted = false
-
-        if (state.layoutMode === 'spherical') {
-          transitionStarted = beginLayoutTransition(state.sphericalPositions)
-        } else if (state.layoutMode === 'hierarchical') {
-          transitionStarted = beginLayoutTransition(state.hierarchicalPositions)
-        } else {
-          state.transition = null
-        }
-
-        if (!transitionStarted) {
-          updateNodeInstances()
-          updateEdgePositions()
-          updateInfectionPositions()
-        }
-      }
-
-      function beginLayoutTransition(targetPositions) {
-        if (state.positions.length !== targetPositions.length) {
-          state.positions = targetPositions.map((position) => position.clone())
-          state.transition = null
-          return false
-        }
-
-        state.transition = {
-          frame: 0,
-          frameCount: 34,
-          from: state.positions.map((position) => position.clone()),
-          to: targetPositions.map((position) => position.clone())
-        }
-        return true
-      }
-
-      function commitLayoutTransition() {
-        if (!state.transition) {
-          return
-        }
-
-        updateLayoutTransition()
-        state.transition = null
-      }
-
-      function updateLayoutTransition() {
-        const transition = state.transition
-
-        if (!transition) {
-          return false
-        }
-
-        transition.frame += 1
-        const rawProgress = clamp(transition.frame / transition.frameCount, 0, 1)
-        const progress = rawProgress * rawProgress * (3 - rawProgress * 2)
-
-        for (let index = 0; index < state.positions.length; index += 1) {
-          const from = transition.from[index]
-          const to = transition.to[index]
-
-          if (!from || !to) {
-            continue
-          }
-
-          state.positions[index].copy(from).lerp(to, progress)
-        }
-
-        if (rawProgress >= 1) {
-          state.positions = transition.to.map((position) => position.clone())
-          state.transition = null
-        }
-
-        return true
-      }
-
-      function updateFilteredGraph() {
-        state.filteredContacts = state.contacts.filter((contact) => contact.until >= state.start && contact.at <= state.end)
-        state.filteredInfections = state.infections.filter((infection) => infection.at >= state.start && infection.at <= state.end)
-        state.aggregatedEdges = aggregateContacts(state.filteredContacts)
-        state.degree = new Array(state.npcs.length).fill(0)
-
-        for (const edge of state.aggregatedEdges) {
-          state.degree[edge.source] += edge.count
-          state.degree[edge.target] += edge.count
-        }
-
-        rebuildEdgeGeometry()
-        rebuildInfectionGeometry()
-        updateNodeInstances()
-        updateStats()
-      }
-
       function setEdgeDisplay() {
         state.showContacts = showContactsInput.checked
         state.showInfections = showInfectionsInput.checked
-        updateEdgeVisibility()
+        renderGraphLinks()
       }
 
       function setCurveDisplay() {
@@ -1501,372 +1387,81 @@
         state.showCurves.exposed = showExposedInput.checked
         state.showCurves.infectious = showInfectiousInput.checked
         state.showCurves.recovered = showRecoveredInput.checked
-        updateCurveVisibility()
+
+        for (const stateKey of stateKeys) {
+          chartLineGroup.select(`.curve-${stateKey}`).attr('display', state.showCurves[stateKey] ? null : 'none')
+        }
       }
 
       function setActiveTab(tab) {
+        if (state.activeTab === tab) {
+          return
+        }
+
         state.activeTab = tab === 'seir' ? 'seir' : 'contact'
         document.body.dataset.view = state.activeTab
         contactGraphTab.setAttribute('aria-selected', state.activeTab === 'contact' ? 'true' : 'false')
         seirCurveTab.setAttribute('aria-selected', state.activeTab === 'seir' ? 'true' : 'false')
+        graphRoot.style('display', state.activeTab === 'contact' ? null : 'none')
+        chartRoot.style('display', state.activeTab === 'seir' ? null : 'none')
         hideTooltip()
-        updateSceneVisibility()
+        applyActiveTransform()
       }
 
-      function updateSceneVisibility() {
-        graphGroup.visible = state.activeTab === 'contact'
-        curveGroup.visible = state.activeTab === 'seir'
-        updateEdgeVisibility()
-        updateCurveVisibility()
-      }
+      function applyActiveTransform() {
+        const transform = state.activeTab === 'contact' ? state.graphTransform : state.chartTransform
 
-      function updateEdgeVisibility() {
-        const graphVisible = state.activeTab === 'contact'
-
-        edgeMesh.visible = graphVisible && !state.transition && state.showContacts && state.aggregatedEdges.length > 0
-        infectionShaftMesh.visible = graphVisible && state.showInfections && state.filteredInfections.length > 0
-        infectionHeadMesh.visible = graphVisible && state.showInfections && state.filteredInfections.length > 0
-      }
-
-      function updateCurveVisibility() {
-        for (const stateKey of curveStateKeys) {
-          const line = state.seirCurves.get(stateKey)
-
-          if (line) {
-            line.visible = state.activeTab === 'seir' && Boolean(state.showCurves[stateKey])
-          }
-        }
-      }
-
-      function aggregateContacts(contacts) {
-        const edges = new Map()
-
-        for (const contact of contacts) {
-          const low = Math.min(contact.source, contact.target)
-          const high = Math.max(contact.source, contact.target)
-          const key = `${low}:${high}`
-          const edge = edges.get(key) || {
-            source: low,
-            target: high,
-            count: 0,
-            durationSeconds: 0,
-            observationCount: 0
-          }
-
-          edge.count += 1
-          edge.durationSeconds += contact.durationSeconds
-          edge.observationCount += contact.observationCount
-          edges.set(key, edge)
-        }
-
-        return [...edges.values()]
-      }
-
-      function rebuildEdgeGeometry() {
-        edgeGeometry.dispose()
-        edgeGeometry = new THREE.BufferGeometry()
-
-        const positions = new Float32Array(Math.max(1, state.aggregatedEdges.length * 2 * 3))
-        const colors = new Float32Array(Math.max(1, state.aggregatedEdges.length * 2 * 3))
-
-        for (let index = 0; index < state.aggregatedEdges.length; index += 1) {
-          writeEdgePosition(positions, index, state.aggregatedEdges[index])
-          writeEdgeColor(colors, index, state.aggregatedEdges[index])
-        }
-
-        edgeGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-        edgeGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-        edgeMesh.geometry = edgeGeometry
-        updateEdgeVisibility()
-      }
-
-      function rebuildInfectionGeometry() {
-        const count = state.filteredInfections.length
-
-        graphGroup.remove(infectionShaftMesh)
-        graphGroup.remove(infectionHeadMesh)
-        infectionShaftMesh.geometry.dispose()
-        infectionShaftMesh.material.dispose()
-        infectionHeadMesh.geometry.dispose()
-        infectionHeadMesh.material.dispose()
-
-        infectionShaftMesh = createInfectionShaftMesh(count)
-        infectionHeadMesh = createInfectionHeadMesh(count)
-        graphGroup.add(infectionShaftMesh)
-        graphGroup.add(infectionHeadMesh)
-
-        updateInfectionPositions()
-        updateEdgeVisibility()
-      }
-
-      function writeEdgePosition(array, edgeIndex, edge) {
-        const source = state.positions[edge.source] || new THREE.Vector3()
-        const target = state.positions[edge.target] || new THREE.Vector3()
-        const offset = edgeIndex * 6
-
-        array[offset] = source.x
-        array[offset + 1] = source.y
-        array[offset + 2] = source.z
-        array[offset + 3] = target.x
-        array[offset + 4] = target.y
-        array[offset + 5] = target.z
-      }
-
-      function writeEdgeColor(array, edgeIndex, edge) {
-        const color = edgeBaseColor.clone().lerp(hoveredColor, Math.min(0.5, edge.count / 16))
-        const offset = edgeIndex * 6
-
-        for (let point = 0; point < 2; point += 1) {
-          array[offset + point * 3] = color.r
-          array[offset + point * 3 + 1] = color.g
-          array[offset + point * 3 + 2] = color.b
-        }
-      }
-
-      function updateEdgePositions() {
-        if (!state.showContacts) {
-          return
-        }
-
-        const attribute = edgeGeometry.getAttribute('position')
-
-        if (!attribute) {
-          return
-        }
-
-        for (let index = 0; index < state.aggregatedEdges.length; index += 1) {
-          writeEdgePosition(attribute.array, index, state.aggregatedEdges[index])
-        }
-
-        attribute.needsUpdate = true
-      }
-
-      function updateInfectionPositions() {
-        const count = state.filteredInfections.length
-
-        infectionShaftMesh.count = count
-        infectionHeadMesh.count = count
-
-        if (count === 0) {
-          updateEdgeVisibility()
-          return
-        }
-
-        for (let index = 0; index < count; index += 1) {
-          const infection = state.filteredInfections[index]
-          const source = state.positions[infection.source]
-          const target = state.positions[infection.target]
-
-          if (!source || !target) {
-            continue
-          }
-
-          writeInfectionArrow(index, source, target)
-        }
-
-        infectionShaftMesh.instanceMatrix.needsUpdate = true
-        infectionHeadMesh.instanceMatrix.needsUpdate = true
-        updateEdgeVisibility()
-      }
-
-      function writeInfectionArrow(index, source, target) {
-        const direction = target.clone().sub(source)
-        const totalLength = direction.length()
-
-        if (totalLength < 4) {
-          tmpObject.position.copy(source)
-          tmpObject.scale.set(0, 0, 0)
-          tmpObject.updateMatrix()
-          infectionShaftMesh.setMatrixAt(index, tmpObject.matrix)
-          infectionHeadMesh.setMatrixAt(index, tmpObject.matrix)
-          return
-        }
-
-        direction.normalize()
-
-        const startOffset = 3
-        const endOffset = 5
-        const availableLength = Math.max(1, totalLength - startOffset - endOffset)
-        const headLength = Math.min(14, Math.max(7, availableLength * 0.16))
-        const shaftLength = Math.max(1, availableLength - headLength)
-        const start = source.clone().addScaledVector(direction, startOffset)
-        const shaftCenter = start.clone().addScaledVector(direction, shaftLength / 2)
-        const headCenter = start.clone().addScaledVector(direction, shaftLength + headLength / 2)
-        const quaternion = new THREE.Quaternion().setFromUnitVectors(yAxis, direction)
-
-        tmpObject.position.copy(shaftCenter)
-        tmpObject.quaternion.copy(quaternion)
-        tmpObject.scale.set(0.62, shaftLength, 0.62)
-        tmpObject.updateMatrix()
-        infectionShaftMesh.setMatrixAt(index, tmpObject.matrix)
-
-        tmpObject.position.copy(headCenter)
-        tmpObject.quaternion.copy(quaternion)
-        tmpObject.scale.set(2.35, headLength, 2.35)
-        tmpObject.updateMatrix()
-        infectionHeadMesh.setMatrixAt(index, tmpObject.matrix)
-      }
-
-      function tickLayout() {
-        if (state.layoutMode !== 'force' || state.positions.length === 0) {
-          return
-        }
-
-        for (const edge of state.forceEdges) {
-          const source = state.positions[edge.source]
-          const target = state.positions[edge.target]
-
-          if (!source || !target) {
-            continue
-          }
-
-          const dx = target.x - source.x
-          const dy = target.y - source.y
-          const dz = target.z - source.z
-          const distance = Math.max(1, Math.hypot(dx, dy, dz))
-          const targetDistance = 130 + Math.min(150, Math.log1p(edge.count) * 34)
-          const force = (distance - targetDistance) * 0.00018
-          const scalar = force / distance
-          const sourceVelocity = state.velocities[edge.source]
-          const targetVelocity = state.velocities[edge.target]
-
-          sourceVelocity.x += dx * scalar
-          sourceVelocity.y += dy * scalar
-          sourceVelocity.z += dz * scalar
-          targetVelocity.x -= dx * scalar
-          targetVelocity.y -= dy * scalar
-          targetVelocity.z -= dz * scalar
-        }
-
-        for (let index = 0; index < state.positions.length; index += 1) {
-          const position = state.positions[index]
-          const velocity = state.velocities[index]
-
-          velocity.x -= position.x * 0.00022
-          velocity.y -= position.y * 0.00022
-          velocity.z -= position.z * 0.00022
-          velocity.multiplyScalar(0.9)
-          position.add(velocity)
-        }
-      }
-
-      function updateNodeInstances() {
-        const count = state.npcs.length
-
-        for (let index = 0; index < count; index += 1) {
-          const position = state.positions[index] || new THREE.Vector3()
-          const degree = state.degree[index] || 0
-          const scale = 0.9 + Math.min(1.1, Math.sqrt(degree) * 0.035)
-
-          tmpObject.position.copy(position)
-          tmpObject.quaternion.identity()
-          tmpObject.scale.setScalar(index === state.hoveredIndex ? scale * 2.2 : scale)
-          tmpObject.updateMatrix()
-          nodeMesh.setMatrixAt(index, tmpObject.matrix)
-
-          const baseColor = nodeColors[state.npcs[index]?.initialSeirState] || nodeColors.susceptible
-          const color = index === state.hoveredIndex ? hoveredColor : baseColor
-
-          nodeMesh.setColorAt(index, color)
-        }
-
-        nodeMesh.count = count
-        nodeMesh.instanceMatrix.needsUpdate = true
-
-        if (nodeMesh.instanceColor) {
-          nodeMesh.instanceColor.needsUpdate = true
-        }
-      }
-
-      function updateStats() {
-        const activeNodes = state.degree.reduce((count, degree) => count + (degree > 0 ? 1 : 0), 0)
-
-        nodeCountEl.textContent = String(state.npcs.length)
-        edgeCountEl.textContent = String(state.filteredContacts.length)
-        activeNodeCountEl.textContent = String(activeNodes)
-        durationLabelEl.textContent = formatTime(Math.max(0, state.end - state.start))
-      }
-
-      function onPointerMove(event) {
-        const rect = renderer.domElement.getBoundingClientRect()
-
-        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-        pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1)
-        tooltip.style.left = `${event.clientX}px`
-        tooltip.style.top = `${event.clientY}px`
-      }
-
-      function updateHover() {
-        if (!state.npcs.length) {
-          return
-        }
-
-        raycaster.setFromCamera(pointer, camera)
-        const hit = raycaster.intersectObject(nodeMesh, false)[0]
-        const nextHovered = Number.isInteger(hit?.instanceId) ? hit.instanceId : -1
-
-        if (nextHovered !== state.hoveredIndex) {
-          state.hoveredIndex = nextHovered
-          updateNodeInstances()
-        }
-
-        if (nextHovered >= 0) {
-          showTooltip(nextHovered)
-        } else {
-          hideTooltip()
-        }
-      }
-
-      function showTooltip(index) {
-        const npc = state.npcs[index]
-
-        tooltip.hidden = false
-        tooltip.innerHTML = `
-          <b>${escapeHtml(npc.id)}</b>
-          <span>Initial state: ${escapeHtml(npc.initialSeirState)}</span>
-          <span>Contacts: ${state.degree[index] || 0}</span>
-        `
-      }
-
-      function hideTooltip() {
-        tooltip.hidden = true
+        svg.call(graphZoom.transform, transform)
       }
 
       function resize() {
         const width = window.innerWidth
         const height = window.innerHeight
 
-        renderer.setSize(width, height, false)
-        camera.aspect = width / Math.max(1, height)
-        camera.updateProjectionMatrix()
+        svg.attr('width', width).attr('height', height).attr('viewBox', `0 0 ${width} ${height}`)
+
+        if (!state.results) {
+          state.graphTransform = centeredTransform()
+          state.chartTransform = centeredTransform()
+          applyActiveTransform()
+          return
+        }
+
+        renderChart()
+        applyActiveTransform()
       }
 
-      function animate() {
-        requestAnimationFrame(animate)
-        state.frame += 1
-        const graphActive = state.activeTab === 'contact'
-        const transitionActive = graphActive && updateLayoutTransition()
-        const transitionEnded = transitionActive && !state.transition
+      function centeredTransform() {
+        return zoomIdentity.translate(window.innerWidth / 2, window.innerHeight / 2 + 18)
+      }
 
-        if (graphActive && !transitionActive) {
-          tickLayout()
+      function updateStats() {
+        const degrees = new Set()
+
+        for (const contact of state.aggregatedContacts) {
+          degrees.add(contact.source)
+          degrees.add(contact.target)
         }
 
-        if (graphActive && (transitionActive || state.frame % 2 === 0)) {
-          updateNodeInstances()
+        nodeCountEl.textContent = String(state.npcs.length)
+        edgeCountEl.textContent = String(state.filteredContacts.length)
+        activeNodeCountEl.textContent = String(degrees.size)
+        durationLabelEl.textContent = formatTime(Math.max(0, state.end - state.start))
+      }
 
-          if (!transitionActive || transitionEnded) {
-            updateEdgePositions()
-          }
+      function showNodeTooltip(event, node, degree) {
+        tooltip.hidden = false
+        tooltip.style.left = `${event.clientX}px`
+        tooltip.style.top = `${event.clientY}px`
+        tooltip.innerHTML = `
+          <b>${escapeHtml(node.id)}</b>
+          <span>State: ${escapeHtml(state.currentStates[node.index] || node.initialSeirState)}</span>
+          <span>Contacts: ${degree}</span>
+        `
+      }
 
-          updateInfectionPositions()
-        }
-
-        controls.update()
-        if (graphActive) {
-          updateHover()
-        }
-        renderer.render(scene, camera)
+      function hideTooltip() {
+        tooltip.hidden = true
       }
 
       function setStatus(message) {
@@ -1876,6 +1471,13 @@
 
       function hideStatus() {
         statusEl.hidden = true
+      }
+
+      function stopSimulation() {
+        if (state.simulation) {
+          state.simulation.stop()
+          state.simulation = null
+        }
       }
 
       function formatTime(seconds) {
@@ -1890,14 +1492,14 @@
         }
 
         if (value < 86400) {
-          return `${(value / 3600).toFixed(1)}h`
+          return `${format('.1f')(value / 3600)}h`
         }
 
-        return `${(value / 86400).toFixed(1)}d`
+        return `${format('.1f')(value / 86400)}d`
       }
 
-      function clamp(value, min, max) {
-        return Math.min(Math.max(value, min), max)
+      function clamp(value, minValue, maxValue) {
+        return Math.min(Math.max(value, minValue), maxValue)
       }
 
       function escapeHtml(value) {

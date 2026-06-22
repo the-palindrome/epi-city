@@ -1,6 +1,6 @@
 # Epi City Simulation Explorer
 
-The simulation explorer is a local tool for inspecting JSON exports from headless simulation runs. It includes a Three.js dynamic contact graph and a Three.js SEIR curve view.
+The simulation explorer is a local tool for inspecting JSON exports from headless simulation runs. It includes a D3 contact graph and a D3 SEIR curve view.
 
 ## Run
 
@@ -20,18 +20,16 @@ Use the bottom tab selector to switch between `Contact graph` and `SEIR curve`.
 
 ## Contact Graph Controls
 
-- Drag to orbit the 3D graph.
-- Scroll to zoom.
-- Drag with the right mouse button to pan.
+- Drag the canvas to pan and scroll to zoom.
+- Drag an NPC node to pin it in the force layout.
 - Set `Start` and `End` to include only contact events whose time interval overlaps that simulation-time window.
-- Use `Layout` to switch between a stable spherical layout, a force layout driven by the full contact history, and a hierarchical layout ordered by the infection transmission tree.
 - Use `Display edges` to toggle contact and infection edge layers independently.
 - Hover an NPC node to see its id, initial SEIR state, and contact count inside the current window.
 
-The graph always keeps all NPCs visible. Time filtering only changes visible edges and contact counts. The contact counter reports matching contact events, while rendered contact edges are grouped by NPC pair for readability.
+The graph always keeps all NPCs visible. Time filtering only changes visible edges and contact counts. The contact counter reports matching contact events, while rendered contact edges are grouped by NPC pair for readability. The force layout is computed from the full contact history, so changing the time window does not collapse the graph.
 
 ## SEIR Curve Controls
 
-- Drag, scroll, and pan with the same Three.js camera controls.
+- Drag the plot to pan and scroll to zoom.
 - Use `Display curves` to toggle S(t), E(t), I(t), and R(t) independently.
 - Curves are derived from each NPC's initial SEIR state plus `infection`, `incubation`, `recovery`, and `immunity_waned` events.
