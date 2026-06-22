@@ -973,12 +973,6 @@
         state.layoutMode = nextMode
         layoutSelect.value = nextMode
 
-        if (nextMode === 'hierarchical' && state.showContacts) {
-          state.showContacts = false
-          showContactsInput.checked = false
-          scheduleGraphDraw()
-        }
-
         if (!state.loaded) {
           return
         }
