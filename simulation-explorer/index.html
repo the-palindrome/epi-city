@@ -99,8 +99,8 @@
 
       .controls {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 84px minmax(0, 1fr) 84px;
-        gap: 8px;
+        grid-template-columns: auto 190px minmax(220px, 1fr);
+        gap: 8px 12px;
         align-items: center;
       }
 
@@ -137,6 +137,87 @@
       input[type="number"] {
         width: 84px;
         padding: 0 8px;
+      }
+
+      .time-inputs {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .range-separator {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .dual-range {
+        position: relative;
+        height: 34px;
+        min-width: 220px;
+      }
+
+      .range-track {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(55, 69, 61, 0.24);
+        transform: translateY(-50%);
+      }
+
+      .range-selection {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border-radius: inherit;
+        background: var(--accent);
+      }
+
+      .dual-range input[type="range"] {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 34px;
+        margin: 0;
+        appearance: none;
+        background: transparent;
+        pointer-events: none;
+      }
+
+      .dual-range input[type="range"]::-webkit-slider-runnable-track {
+        height: 6px;
+        background: transparent;
+      }
+
+      .dual-range input[type="range"]::-moz-range-track {
+        height: 6px;
+        background: transparent;
+      }
+
+      .dual-range input[type="range"]::-webkit-slider-thumb {
+        width: 16px;
+        height: 16px;
+        border: 0;
+        border-radius: 50%;
+        appearance: none;
+        background: var(--accent);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
+        cursor: pointer;
+        pointer-events: auto;
+      }
+
+      .dual-range input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
+        cursor: pointer;
+        pointer-events: auto;
       }
 
       select {
@@ -332,7 +413,7 @@
         }
 
         .controls {
-          grid-template-columns: 1fr 78px;
+          grid-template-columns: 1fr;
         }
 
         .actions {
@@ -359,14 +440,17 @@
         <div id="source" class="source">No dataset</div>
       </div>
       <div class="controls">
-        <label for="startRange">Start</label>
-        <input id="startNumber" type="number" value="0" min="0" step="1">
-        <input id="startRange" type="range" value="0" min="0" max="0" step="1">
-        <div></div>
-        <label for="endRange">End</label>
-        <input id="endNumber" type="number" value="0" min="0" step="1">
-        <input id="endRange" type="range" value="0" min="0" max="0" step="1">
-        <div></div>
+        <label for="startRange">Time window</label>
+        <div class="time-inputs">
+          <input id="startNumber" type="number" value="0" min="0" step="1" aria-label="Start time">
+          <span class="range-separator">to</span>
+          <input id="endNumber" type="number" value="0" min="0" step="1" aria-label="End time">
+        </div>
+        <div class="dual-range">
+          <div class="range-track"><div id="rangeSelection" class="range-selection"></div></div>
+          <input id="startRange" type="range" value="0" min="0" max="0" step="1" aria-label="Start time">
+          <input id="endRange" type="range" value="0" min="0" max="0" step="1" aria-label="End time">
+        </div>
       </div>
       <div class="actions">
         <label class="layout-control" for="layoutSelect">
@@ -420,6 +504,7 @@
       const statusEl = document.getElementById('status')
       const startRange = document.getElementById('startRange')
       const endRange = document.getElementById('endRange')
+      const rangeSelection = document.getElementById('rangeSelection')
       const startNumber = document.getElementById('startNumber')
       const endNumber = document.getElementById('endNumber')
       const layoutSelect = document.getElementById('layoutSelect')
@@ -466,6 +551,7 @@
         start: 0,
         end: 0,
         layoutMode: 'spherical',
+        transition: null,
         showContacts: true,
         showInfections: true,
         hoveredIndex: -1,
@@ -735,6 +821,7 @@
 
         state.sphericalPositions = buildSphericalPositions(count)
         state.hierarchicalPositions = buildHierarchicalPositions(count, state.infections)
+        state.transition = null
         state.positions = getInitialPositionsForLayout()
         state.velocities = []
         state.degree = new Array(count).fill(0)
@@ -894,6 +981,7 @@
         endRange.value = String(state.end)
         startNumber.value = String(state.start)
         endNumber.value = String(state.end)
+        updateRangeSelection()
       }
 
       function setWindow(start, end) {
@@ -908,10 +996,24 @@
         endRange.value = String(Math.round(state.end))
         startNumber.value = String(Math.round(state.start))
         endNumber.value = String(Math.round(state.end))
+        updateRangeSelection()
         updateFilteredGraph()
       }
 
+      function updateRangeSelection() {
+        const min = Number(startRange.min)
+        const max = Number(startRange.max)
+        const span = Math.max(1, max - min)
+        const startPercent = ((state.start - min) / span) * 100
+        const endPercent = ((state.end - min) / span) * 100
+
+        rangeSelection.style.left = `${clamp(startPercent, 0, 100)}%`
+        rangeSelection.style.right = `${100 - clamp(endPercent, 0, 100)}%`
+      }
+
       function setLayoutMode(mode) {
+        commitLayoutTransition()
+
         state.layoutMode = mode === 'force' || mode === 'hierarchical' ? mode : 'spherical'
         layoutSelect.value = state.layoutMode
 
@@ -919,15 +1021,76 @@
           velocity.set(0, 0, 0)
         }
 
+        let transitionStarted = false
+
         if (state.layoutMode === 'spherical') {
-          state.positions = state.sphericalPositions.map((position) => position.clone())
+          transitionStarted = beginLayoutTransition(state.sphericalPositions)
         } else if (state.layoutMode === 'hierarchical') {
-          state.positions = state.hierarchicalPositions.map((position) => position.clone())
+          transitionStarted = beginLayoutTransition(state.hierarchicalPositions)
+        } else {
+          state.transition = null
         }
 
-        updateNodeInstances()
-        updateEdgePositions()
-        updateInfectionPositions()
+        if (!transitionStarted) {
+          updateNodeInstances()
+          updateEdgePositions()
+          updateInfectionPositions()
+        }
+      }
+
+      function beginLayoutTransition(targetPositions) {
+        if (state.positions.length !== targetPositions.length) {
+          state.positions = targetPositions.map((position) => position.clone())
+          state.transition = null
+          return false
+        }
+
+        state.transition = {
+          frame: 0,
+          frameCount: 34,
+          from: state.positions.map((position) => position.clone()),
+          to: targetPositions.map((position) => position.clone())
+        }
+        return true
+      }
+
+      function commitLayoutTransition() {
+        if (!state.transition) {
+          return
+        }
+
+        updateLayoutTransition()
+        state.transition = null
+      }
+
+      function updateLayoutTransition() {
+        const transition = state.transition
+
+        if (!transition) {
+          return false
+        }
+
+        transition.frame += 1
+        const rawProgress = clamp(transition.frame / transition.frameCount, 0, 1)
+        const progress = rawProgress * rawProgress * (3 - rawProgress * 2)
+
+        for (let index = 0; index < state.positions.length; index += 1) {
+          const from = transition.from[index]
+          const to = transition.to[index]
+
+          if (!from || !to) {
+            continue
+          }
+
+          state.positions[index].copy(from).lerp(to, progress)
+        }
+
+        if (rawProgress >= 1) {
+          state.positions = transition.to.map((position) => position.clone())
+          state.transition = null
+        }
+
+        return true
       }
 
       function updateFilteredGraph() {
@@ -954,7 +1117,7 @@
       }
 
       function updateEdgeVisibility() {
-        edgeMesh.visible = state.showContacts && state.aggregatedEdges.length > 0
+        edgeMesh.visible = !state.transition && state.showContacts && state.aggregatedEdges.length > 0
         infectionShaftMesh.visible = state.showInfections && state.filteredInfections.length > 0
         infectionHeadMesh.visible = state.showInfections && state.filteredInfections.length > 0
       }
@@ -1060,7 +1223,6 @@
         }
 
         attribute.needsUpdate = true
-        edgeGeometry.computeBoundingSphere()
       }
 
       function updateInfectionPositions() {
@@ -1266,18 +1428,26 @@
       function animate() {
         requestAnimationFrame(animate)
         state.frame += 1
+        const transitionActive = updateLayoutTransition()
+        const transitionEnded = transitionActive && !state.transition
+
+        if (!transitionActive) {
+          tickLayout()
+        }
+
+        if (transitionActive || state.frame % 2 === 0) {
+          updateNodeInstances()
+
+          if (!transitionActive || transitionEnded) {
+            updateEdgePositions()
+          }
+
+          updateInfectionPositions()
+        }
 
         controls.update()
         updateHover()
         renderer.render(scene, camera)
-
-        tickLayout()
-
-        if (state.frame % 2 === 0) {
-          updateNodeInstances()
-          updateEdgePositions()
-          updateInfectionPositions()
-        }
       }
 
       function setStatus(message) {
