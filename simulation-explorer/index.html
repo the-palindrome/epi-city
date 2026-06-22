@@ -699,6 +699,10 @@
         layoutMode: 'force',
         seirSeries: null,
         nodeSelection: null,
+        selectedNodeIndex: -1,
+        selectedNeighborMask: new Uint8Array(),
+        selectedContactEdgeCount: 0,
+        selectedInfectionEdgeCount: 0,
         activeTab: 'contact',
         minTime: 0,
         maxTime: 0,
@@ -746,6 +750,7 @@
         })
 
       svg.call(graphZoom)
+      svg.on('click', handleVisualizationClick)
       window.addEventListener('resize', resize)
       startRange.addEventListener('input', () => setWindow(Number(startRange.value), state.end))
       endRange.addEventListener('input', () => setWindow(state.start, Number(endRange.value)))
@@ -847,6 +852,10 @@
         state.contactWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
+        state.selectedNodeIndex = -1
+        state.selectedNeighborMask = new Uint8Array(state.npcs.length)
+        state.selectedContactEdgeCount = 0
+        state.selectedInfectionEdgeCount = 0
         state.fullInfectionSource = data.fullInfectionSource
         state.fullInfectionTarget = data.fullInfectionTarget
         state.fullInfectionTileX = data.fullInfectionTileX
@@ -896,6 +905,10 @@
         state.fullInfectionTarget = new Int32Array()
         state.fullInfectionTileX = new Float64Array()
         state.fullInfectionTileY = new Float64Array()
+        state.selectedNodeIndex = -1
+        state.selectedNeighborMask = new Uint8Array()
+        state.selectedContactEdgeCount = 0
+        state.selectedInfectionEdgeCount = 0
         clearCanvas()
         updateStats()
       }
@@ -928,6 +941,10 @@
             .on('start', dragStarted)
             .on('drag', dragged)
             .on('end', dragEnded))
+          .on('click', (event, node) => {
+            event.stopPropagation()
+            selectNode(node.index)
+          })
           .on('pointerenter', (event, node) => showNodeTooltip(event, node))
           .on('pointermove', (event, node) => showNodeTooltip(event, node))
           .on('pointerleave', hideTooltip)
@@ -1424,6 +1441,7 @@
         state.stats.totalContactPairCount = data.totalContactPairCount
         state.stats.visibleContactPairCount = data.visibleContactPairCount
 
+        rebuildSelectionNeighborhood()
         applyNodeStyles()
         updateStats()
         scheduleGraphDraw()
@@ -1478,7 +1496,102 @@
 
         state.nodeSelection
           .attr('fill', (node) => colorByStateCode[state.currentStateCodes[node.index] ?? node.initialSeirStateCode] || colorByState.susceptible)
+          .attr('opacity', nodeOpacity)
+          .attr('stroke', (node) => node.index === state.selectedNodeIndex ? '#202621' : '#ffffff')
+          .attr('stroke-width', (node) => node.index === state.selectedNodeIndex ? 1.7 : 1.1)
           .attr('r', (node) => 3.6 + Math.min(2.4, Math.sqrt(state.degrees[node.index] || 0) * 0.045))
+      }
+
+      function nodeOpacity(node) {
+        if (!hasNodeSelection()) {
+          return 1
+        }
+
+        return state.selectedNeighborMask[node.index] ? 1 : 0.13
+      }
+
+      function selectNode(index) {
+        if (!Number.isInteger(index) || index < 0 || index >= state.npcs.length) {
+          clearNodeSelection()
+          return
+        }
+
+        state.selectedNodeIndex = index
+        rebuildSelectionNeighborhood()
+        applyNodeStyles()
+        scheduleGraphDraw()
+      }
+
+      function clearNodeSelection() {
+        if (!hasNodeSelection()) {
+          return
+        }
+
+        state.selectedNodeIndex = -1
+        state.selectedNeighborMask = new Uint8Array(state.npcs.length)
+        state.selectedContactEdgeCount = 0
+        state.selectedInfectionEdgeCount = 0
+        applyNodeStyles()
+        scheduleGraphDraw()
+      }
+
+      function hasNodeSelection() {
+        return state.selectedNodeIndex >= 0 && state.selectedNodeIndex < state.npcs.length
+      }
+
+      function rebuildSelectionNeighborhood() {
+        if (state.selectedNeighborMask.length !== state.npcs.length) {
+          state.selectedNeighborMask = new Uint8Array(state.npcs.length)
+        } else {
+          state.selectedNeighborMask.fill(0)
+        }
+
+        state.selectedContactEdgeCount = 0
+        state.selectedInfectionEdgeCount = 0
+
+        if (!hasNodeSelection()) {
+          return
+        }
+
+        const selectedIndex = state.selectedNodeIndex
+
+        state.selectedNeighborMask[selectedIndex] = 1
+
+        if (state.showContacts) {
+          for (let index = 0; index < state.contactSource.length; index += 1) {
+            if (markSelectedEdgeNeighbor(state.contactSource[index], state.contactTarget[index], selectedIndex)) {
+              state.selectedContactEdgeCount += 1
+            }
+          }
+        }
+
+        if (state.showInfections) {
+          for (let index = 0; index < state.infectionSource.length; index += 1) {
+            if (markSelectedEdgeNeighbor(state.infectionSource[index], state.infectionTarget[index], selectedIndex)) {
+              state.selectedInfectionEdgeCount += 1
+            }
+          }
+        }
+      }
+
+      function markSelectedEdgeNeighbor(sourceIndex, targetIndex, selectedIndex) {
+        if (sourceIndex === selectedIndex) {
+          state.selectedNeighborMask[targetIndex] = 1
+          return true
+        } else if (targetIndex === selectedIndex) {
+          state.selectedNeighborMask[sourceIndex] = 1
+          return true
+        }
+
+        return false
+      }
+
+      function handleVisualizationClick(event) {
+        if (state.activeTab !== 'contact' || event.defaultPrevented || event.target !== svg.node()) {
+          return
+        }
+
+        clearNodeSelection()
       }
 
       function scheduleGraphDraw() {
@@ -1515,38 +1628,77 @@
         const displayedInfectionCount = state.showInfections ? state.infectionSource.length : 0
         const contactOpacity = dynamicEdgeOpacity(displayedContactCount, 0.24, 0.026, 850)
         const infectionOpacity = dynamicEdgeOpacity(displayedInfectionCount, 0.72, 0.16, 120)
+        const selectionActive = hasNodeSelection()
+        const selectedContactOpacity = dynamicEdgeOpacity(state.selectedContactEdgeCount, 0.7, 0.16, 24)
+        const selectedInfectionOpacity = dynamicEdgeOpacity(state.selectedInfectionEdgeCount, 0.88, 0.24, 10)
 
         edgeContext.save()
         edgeContext.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * transform.x, ratio * transform.y)
         edgeContext.lineCap = 'round'
 
         if (displayedContactCount) {
-          edgeContext.strokeStyle = rgba(118, 122, 120, contactOpacity)
-          edgeContext.lineWidth = 0.55 / scale
-          edgeContext.beginPath()
-
-          for (let index = 0; index < state.contactSource.length; index += 1) {
-            const source = state.npcs[state.contactSource[index]]
-            const target = state.npcs[state.contactTarget[index]]
-
-            edgeContext.moveTo(source.x, source.y)
-            edgeContext.lineTo(target.x, target.y)
+          if (selectionActive) {
+            drawContactEdgeBatch(false, Math.max(0.01, contactOpacity * 0.18), 0.5 / scale)
+            drawContactEdgeBatch(true, selectedContactOpacity, 0.78 / scale)
+          } else {
+            drawContactEdgeBatch(null, contactOpacity, 0.55 / scale)
           }
-
-          edgeContext.stroke()
         }
 
         if (displayedInfectionCount) {
-          edgeContext.strokeStyle = rgba(216, 76, 85, infectionOpacity)
-          edgeContext.fillStyle = rgba(216, 76, 85, Math.max(0.14, infectionOpacity * 0.88))
-          edgeContext.lineWidth = 1.45 / scale
-
-          for (let index = 0; index < state.infectionSource.length; index += 1) {
-            drawArrow(state.npcs[state.infectionSource[index]], state.npcs[state.infectionTarget[index]], scale)
+          if (selectionActive) {
+            drawInfectionEdgeBatch(false, Math.max(0.025, infectionOpacity * 0.18), scale, 1.25 / scale)
+            drawInfectionEdgeBatch(true, selectedInfectionOpacity, scale, 1.7 / scale)
+          } else {
+            drawInfectionEdgeBatch(null, infectionOpacity, scale, 1.45 / scale)
           }
         }
 
         edgeContext.restore()
+      }
+
+      function drawContactEdgeBatch(matchSelected, opacity, lineWidth) {
+        edgeContext.strokeStyle = rgba(118, 122, 120, opacity)
+        edgeContext.lineWidth = lineWidth
+        edgeContext.beginPath()
+
+        for (let index = 0; index < state.contactSource.length; index += 1) {
+          const sourceIndex = state.contactSource[index]
+          const targetIndex = state.contactTarget[index]
+
+          if (matchSelected !== null && isSelectedEdge(sourceIndex, targetIndex) !== matchSelected) {
+            continue
+          }
+
+          const source = state.npcs[sourceIndex]
+          const target = state.npcs[targetIndex]
+
+          edgeContext.moveTo(source.x, source.y)
+          edgeContext.lineTo(target.x, target.y)
+        }
+
+        edgeContext.stroke()
+      }
+
+      function drawInfectionEdgeBatch(matchSelected, opacity, scale, lineWidth) {
+        edgeContext.strokeStyle = rgba(216, 76, 85, opacity)
+        edgeContext.fillStyle = rgba(216, 76, 85, Math.max(0.02, opacity * 0.88))
+        edgeContext.lineWidth = lineWidth
+
+        for (let index = 0; index < state.infectionSource.length; index += 1) {
+          const sourceIndex = state.infectionSource[index]
+          const targetIndex = state.infectionTarget[index]
+
+          if (matchSelected !== null && isSelectedEdge(sourceIndex, targetIndex) !== matchSelected) {
+            continue
+          }
+
+          drawArrow(state.npcs[sourceIndex], state.npcs[targetIndex], scale)
+        }
+      }
+
+      function isSelectedEdge(sourceIndex, targetIndex) {
+        return sourceIndex === state.selectedNodeIndex || targetIndex === state.selectedNodeIndex
       }
 
       function dynamicEdgeOpacity(edgeCount, maxOpacity, minOpacity, softLimit) {
@@ -1784,6 +1936,8 @@
       function setEdgeDisplay() {
         state.showContacts = showContactsInput.checked
         state.showInfections = showInfectionsInput.checked
+        rebuildSelectionNeighborhood()
+        applyNodeStyles()
         scheduleGraphDraw()
       }
 
