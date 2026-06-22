@@ -6,7 +6,7 @@
     "value": "epi-city"
   },
   "initialSeir": {
-    "initialInfectiousCount": 4,
+    "initialInfectiousCount": 1,
     "inoculatedPercent": 0,
     "infectedNpcIds": [],
     "inoculatedNpcIds": []

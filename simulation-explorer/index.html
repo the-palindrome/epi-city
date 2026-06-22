@@ -56,6 +56,14 @@
         cursor: grabbing;
       }
 
+      body[data-view="seir"] #scene {
+        cursor: default;
+      }
+
+      body[data-view="seir"] #scene:active {
+        cursor: default;
+      }
+
       .topbar {
         position: fixed;
         top: 0;
@@ -246,6 +254,7 @@
         align-items: center;
         gap: 8px;
         min-width: 0;
+        flex-wrap: wrap;
       }
 
       .control-title {
@@ -253,6 +262,17 @@
         font-size: 11px;
         text-transform: uppercase;
         white-space: nowrap;
+      }
+
+      body[data-view="contact"] .curve-control,
+      body[data-view="seir"] .graph-control,
+      body[data-view="seir"] .stats,
+      body[data-view="contact"] .curve-stat {
+        display: none;
+      }
+
+      body[data-view="seir"] .actions {
+        grid-column: 2 / -1;
       }
 
       .checkbox-control {
@@ -293,7 +313,7 @@
       .stats {
         position: fixed;
         left: 12px;
-        bottom: 12px;
+        bottom: 70px;
         display: grid;
         grid-template-columns: repeat(4, minmax(86px, auto));
         gap: 8px;
@@ -326,7 +346,7 @@
       .legend {
         position: fixed;
         right: 12px;
-        bottom: 12px;
+        bottom: 70px;
         display: flex;
         flex-wrap: wrap;
         justify-content: flex-end;
@@ -358,6 +378,39 @@
         width: 16px;
         height: 4px;
         border-radius: 999px;
+      }
+
+      body[data-view="seir"] .graph-legend-item {
+        display: none;
+      }
+
+      .view-tabs {
+        position: fixed;
+        left: 50%;
+        bottom: 12px;
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        transform: translateX(-50%);
+        z-index: 3;
+      }
+
+      .tab-button {
+        height: 34px;
+        min-width: 112px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .tab-button[aria-selected="true"] {
+        background: rgba(185, 137, 0, 0.16);
+        color: var(--text);
       }
 
       .tooltip {
@@ -421,9 +474,14 @@
           flex-wrap: wrap;
         }
 
+        body[data-view="seir"] .actions {
+          grid-column: auto;
+        }
+
         .stats {
           right: 12px;
           grid-template-columns: repeat(2, minmax(86px, 1fr));
+          bottom: 66px;
         }
 
         .legend {
@@ -432,14 +490,14 @@
       }
     </style>
   </head>
-  <body>
+  <body data-view="contact">
     <canvas id="scene"></canvas>
     <div class="topbar">
       <div class="brand">
         <h1>Simulation Explorer</h1>
         <div id="source" class="source">No dataset</div>
       </div>
-      <div class="controls">
+      <div class="controls graph-control">
         <label for="startRange">Time window</label>
         <div class="time-inputs">
           <input id="startNumber" type="number" value="0" min="0" step="1" aria-label="Start time">
@@ -453,7 +511,7 @@
         </div>
       </div>
       <div class="actions">
-        <label class="layout-control" for="layoutSelect">
+        <label class="layout-control graph-control" for="layoutSelect">
           Layout
           <select id="layoutSelect">
             <option value="spherical">Spherical</option>
@@ -461,7 +519,7 @@
             <option value="hierarchical">Hierarchical</option>
           </select>
         </label>
-        <div class="display-control" aria-label="Display edges">
+        <div class="display-control graph-control" aria-label="Display edges">
           <span class="control-title">Display edges</span>
           <label class="checkbox-control">
             <input id="showContacts" type="checkbox" checked>
@@ -470,6 +528,25 @@
           <label class="checkbox-control">
             <input id="showInfections" type="checkbox" checked>
             Infection
+          </label>
+        </div>
+        <div class="display-control curve-control" aria-label="Display curves">
+          <span class="control-title">Display curves</span>
+          <label class="checkbox-control">
+            <input id="showSusceptible" type="checkbox" checked>
+            Susceptible
+          </label>
+          <label class="checkbox-control">
+            <input id="showExposed" type="checkbox" checked>
+            Exposed
+          </label>
+          <label class="checkbox-control">
+            <input id="showInfectious" type="checkbox" checked>
+            Infectious
+          </label>
+          <label class="checkbox-control">
+            <input id="showRecovered" type="checkbox" checked>
+            Recovered
           </label>
         </div>
         <label class="file-control">
@@ -490,8 +567,12 @@
       <div class="legend-item"><span class="swatch" style="background: var(--orange)"></span>Exposed</div>
       <div class="legend-item"><span class="swatch" style="background: var(--red)"></span>Infectious</div>
       <div class="legend-item"><span class="swatch" style="background: var(--green)"></span>Recovered</div>
-      <div class="legend-item"><span class="swatch" style="background: var(--cyan)"></span>Contact</div>
-      <div class="legend-item"><span class="swatch-line" style="background: var(--red)"></span>Infection</div>
+      <div class="legend-item graph-legend-item"><span class="swatch" style="background: var(--cyan)"></span>Contact</div>
+      <div class="legend-item graph-legend-item"><span class="swatch-line" style="background: var(--red)"></span>Infection</div>
+    </div>
+    <div class="view-tabs" role="tablist" aria-label="Explorer views">
+      <button id="contactGraphTab" class="tab-button" type="button" role="tab" aria-selected="true">Contact graph</button>
+      <button id="seirCurveTab" class="tab-button" type="button" role="tab" aria-selected="false">SEIR curve</button>
     </div>
     <div id="tooltip" class="tooltip" hidden></div>
 
@@ -510,7 +591,13 @@
       const layoutSelect = document.getElementById('layoutSelect')
       const showContactsInput = document.getElementById('showContacts')
       const showInfectionsInput = document.getElementById('showInfections')
+      const showSusceptibleInput = document.getElementById('showSusceptible')
+      const showExposedInput = document.getElementById('showExposed')
+      const showInfectiousInput = document.getElementById('showInfectious')
+      const showRecoveredInput = document.getElementById('showRecovered')
       const fileInput = document.getElementById('fileInput')
+      const contactGraphTab = document.getElementById('contactGraphTab')
+      const seirCurveTab = document.getElementById('seirCurveTab')
       const tooltip = document.getElementById('tooltip')
       const nodeCountEl = document.getElementById('nodeCount')
       const edgeCountEl = document.getElementById('edgeCount')
@@ -526,6 +613,13 @@
       const edgeBaseColor = new THREE.Color(0x287f91)
       const hoveredColor = new THREE.Color(0xb73975)
       const infectionEdgeColor = new THREE.Color(0xd84c55)
+      const curveColors = {
+        susceptible: new THREE.Color(0xb98900),
+        exposed: new THREE.Color(0xc2711a),
+        infectious: new THREE.Color(0xd64545),
+        recovered: new THREE.Color(0x2b9b5f)
+      }
+      const curveStateKeys = ['susceptible', 'exposed', 'infectious', 'recovered']
       const tmpObject = new THREE.Object3D()
       const yAxis = new THREE.Vector3(0, 1, 0)
       const pointer = new THREE.Vector2(-10, -10)
@@ -546,6 +640,9 @@
         aggregatedEdges: [],
         forceEdges: [],
         degree: [],
+        seirSeries: null,
+        seirCurves: new Map(),
+        activeTab: 'contact',
         minTime: 0,
         maxTime: 0,
         start: 0,
@@ -554,6 +651,12 @@
         transition: null,
         showContacts: true,
         showInfections: true,
+        showCurves: {
+          susceptible: true,
+          exposed: true,
+          infectious: true,
+          recovered: true
+        },
         hoveredIndex: -1,
         frame: 0
       }
@@ -583,8 +686,17 @@
       controls.minDistance = 90
       controls.maxDistance = 1800
 
+      const graphGroup = new THREE.Group()
+      const curveGroup = new THREE.Group()
+      const curveGridGroup = new THREE.Group()
+
+      curveGroup.visible = false
+      curveGroup.add(curveGridGroup)
+      scene.add(graphGroup)
+      scene.add(curveGroup)
+
       let nodeMesh = createNodeMesh(1)
-      scene.add(nodeMesh)
+      graphGroup.add(nodeMesh)
 
       let edgeGeometry = new THREE.BufferGeometry()
       let edgeMaterial = new THREE.LineBasicMaterial({
@@ -595,12 +707,12 @@
       })
       let edgeMesh = new THREE.LineSegments(edgeGeometry, edgeMaterial)
       edgeMesh.frustumCulled = false
-      scene.add(edgeMesh)
+      graphGroup.add(edgeMesh)
 
       let infectionShaftMesh = createInfectionShaftMesh(1)
       let infectionHeadMesh = createInfectionHeadMesh(1)
-      scene.add(infectionShaftMesh)
-      scene.add(infectionHeadMesh)
+      graphGroup.add(infectionShaftMesh)
+      graphGroup.add(infectionHeadMesh)
 
       scene.add(new THREE.AmbientLight(0xffffff, 0.9))
 
@@ -617,8 +729,15 @@
       layoutSelect.addEventListener('change', () => setLayoutMode(layoutSelect.value))
       showContactsInput.addEventListener('change', () => setEdgeDisplay())
       showInfectionsInput.addEventListener('change', () => setEdgeDisplay())
+      showSusceptibleInput.addEventListener('change', () => setCurveDisplay())
+      showExposedInput.addEventListener('change', () => setCurveDisplay())
+      showInfectiousInput.addEventListener('change', () => setCurveDisplay())
+      showRecoveredInput.addEventListener('change', () => setCurveDisplay())
+      contactGraphTab.addEventListener('click', () => setActiveTab('contact'))
+      seirCurveTab.addEventListener('click', () => setActiveTab('seir'))
       fileInput.addEventListener('change', loadSelectedFile)
 
+      updateSceneVisibility()
       resize()
       animate()
 
@@ -704,6 +823,7 @@
         state.infections = normalized.infections
         state.npcIndex = normalized.npcIndex
         state.forceEdges = aggregateContacts(normalized.contacts)
+        state.seirSeries = normalized.seirSeries
         state.minTime = normalized.minTime
         state.maxTime = normalized.maxTime
         state.start = normalized.minTime
@@ -711,6 +831,7 @@
         sourceEl.textContent = sourceName
 
         resetGraph()
+        resetCurve()
         configureControls()
         updateFilteredGraph()
         hideStatus()
@@ -737,6 +858,7 @@
         const npcIndex = new Map(npcs.map((npc, index) => [npc.id, index]))
         const contacts = []
         const infections = []
+        const seirEvents = []
 
         for (const event of results.events) {
           if (event?.event === 'contact' && Array.isArray(event.npcs) && event.npcs.length >= 2) {
@@ -763,6 +885,18 @@
           }
 
           if (event?.event !== 'infection') {
+            if (isNpcSeirEvent(event?.event)) {
+              const npc = npcIndex.get(String(event.npc))
+              const at = Number(event.at)
+
+              if (Number.isInteger(npc) && Number.isFinite(at)) {
+                seirEvents.push({
+                  event: event.event,
+                  npc,
+                  at
+                })
+              }
+            }
             continue
           }
 
@@ -781,6 +915,11 @@
             target,
             at
           })
+          seirEvents.push({
+            event: 'infection',
+            npc: target,
+            at
+          })
         }
 
         let minEventTime = Infinity
@@ -796,28 +935,160 @@
           maxEventTime = Math.max(maxEventTime, infection.at)
         }
 
+        for (const seirEvent of seirEvents) {
+          minEventTime = Math.min(minEventTime, seirEvent.at)
+          maxEventTime = Math.max(maxEventTime, seirEvent.at)
+        }
+
+        const configuredDuration = Number(results.summary?.durationSeconds ?? results.config?.run?.durationSeconds)
+
+        if (Number.isFinite(configuredDuration) && configuredDuration > 0) {
+          maxEventTime = Math.max(maxEventTime, configuredDuration)
+        }
+
         if (!Number.isFinite(minEventTime)) {
           minEventTime = 0
         }
+
+        const minTime = Number.isFinite(minEventTime) ? Math.floor(Math.max(0, minEventTime)) : 0
+        const maxTime = Number.isFinite(maxEventTime) ? Math.ceil(Math.max(minTime, maxEventTime)) : 0
 
         return {
           npcs,
           contacts,
           infections,
           npcIndex,
-          minTime: Number.isFinite(minEventTime) ? Math.floor(minEventTime) : 0,
-          maxTime: Number.isFinite(maxEventTime) ? Math.ceil(maxEventTime) : 0
+          seirSeries: buildSeirSeries(npcs, seirEvents, maxTime),
+          minTime,
+          maxTime
         }
+      }
+
+      function isNpcSeirEvent(eventName) {
+        return eventName === 'incubation' || eventName === 'recovery' || eventName === 'immunity_waned'
+      }
+
+      function buildSeirSeries(npcs, seirEvents, maxTime) {
+        const counts = {
+          susceptible: 0,
+          exposed: 0,
+          infectious: 0,
+          recovered: 0
+        }
+
+        for (const npc of npcs) {
+          const stateName = curveStateKeys.includes(npc.initialSeirState)
+            ? npc.initialSeirState
+            : 'susceptible'
+
+          counts[stateName] += 1
+        }
+
+        const points = [{
+          time: 0,
+          ...counts
+        }]
+        const sortedEvents = [...seirEvents].sort((left, right) => (
+          left.at - right.at ||
+          stateEventOrder(left.event) - stateEventOrder(right.event) ||
+          left.npc - right.npc
+        ))
+
+        for (const event of sortedEvents) {
+          const time = Math.max(0, Number(event.at) || 0)
+
+          pushSeirPoint(points, time, counts)
+          applySeirEvent(counts, event.event)
+          pushSeirPoint(points, time, counts)
+        }
+
+        pushSeirPoint(points, Math.max(maxTime || 0, points[points.length - 1]?.time || 0), counts)
+
+        return {
+          points,
+          maxCount: Math.max(1, npcs.length),
+          maxTime: Math.max(1, maxTime || points[points.length - 1]?.time || 1)
+        }
+      }
+
+      function pushSeirPoint(points, time, counts) {
+        const previous = points[points.length - 1]
+
+        if (previous && previous.time === time &&
+            previous.susceptible === counts.susceptible &&
+            previous.exposed === counts.exposed &&
+            previous.infectious === counts.infectious &&
+            previous.recovered === counts.recovered) {
+          return
+        }
+
+        points.push({
+          time,
+          susceptible: counts.susceptible,
+          exposed: counts.exposed,
+          infectious: counts.infectious,
+          recovered: counts.recovered
+        })
+      }
+
+      function applySeirEvent(counts, eventName) {
+        if (eventName === 'infection') {
+          moveCount(counts, 'susceptible', 'exposed')
+          return
+        }
+
+        if (eventName === 'incubation') {
+          moveCount(counts, 'exposed', 'infectious')
+          return
+        }
+
+        if (eventName === 'recovery') {
+          moveCount(counts, 'infectious', 'recovered')
+          return
+        }
+
+        if (eventName === 'immunity_waned') {
+          moveCount(counts, 'recovered', 'susceptible')
+        }
+      }
+
+      function moveCount(counts, from, to) {
+        if (counts[from] <= 0) {
+          return
+        }
+
+        counts[from] -= 1
+        counts[to] += 1
+      }
+
+      function stateEventOrder(eventName) {
+        if (eventName === 'infection') {
+          return 0
+        }
+
+        if (eventName === 'incubation') {
+          return 1
+        }
+
+        if (eventName === 'recovery') {
+          return 2
+        }
+
+        if (eventName === 'immunity_waned') {
+          return 3
+        }
+
+        return 4
       }
 
       function resetGraph() {
         const count = state.npcs.length
 
-        scene.remove(nodeMesh)
+        graphGroup.remove(nodeMesh)
         nodeMesh.geometry.dispose()
         nodeMesh.material.dispose()
         nodeMesh = createNodeMesh(count)
-        scene.add(nodeMesh)
+        graphGroup.add(nodeMesh)
 
         state.sphericalPositions = buildSphericalPositions(count)
         state.hierarchicalPositions = buildHierarchicalPositions(count, state.infections)
@@ -831,6 +1102,115 @@
         }
 
         updateNodeInstances()
+      }
+
+      function resetCurve() {
+        disposeCurveObjects()
+        rebuildCurveGrid()
+
+        if (!state.seirSeries) {
+          return
+        }
+
+        curveStateKeys.forEach((stateKey, index) => {
+          const geometry = new THREE.BufferGeometry()
+          const positions = new Float32Array(Math.max(1, state.seirSeries.points.length * 3))
+
+          for (let pointIndex = 0; pointIndex < state.seirSeries.points.length; pointIndex += 1) {
+            writeCurvePoint(positions, pointIndex, state.seirSeries.points[pointIndex], stateKey, index)
+          }
+
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+
+          const line = new THREE.Line(
+            geometry,
+            new THREE.LineBasicMaterial({
+              color: curveColors[stateKey],
+              transparent: true,
+              opacity: stateKey === 'susceptible' ? 0.78 : 0.92,
+              fog: false
+            })
+          )
+
+          line.frustumCulled = false
+          state.seirCurves.set(stateKey, line)
+          curveGroup.add(line)
+        })
+
+        updateCurveVisibility()
+      }
+
+      function disposeCurveObjects() {
+        for (const line of state.seirCurves.values()) {
+          curveGroup.remove(line)
+          line.geometry.dispose()
+          line.material.dispose()
+        }
+
+        state.seirCurves.clear()
+        clearGroup(curveGridGroup)
+      }
+
+      function rebuildCurveGrid() {
+        const width = 900
+        const height = 460
+        const positions = []
+
+        appendLine(positions, -width / 2, -height / 2, 0, width / 2, -height / 2, 0)
+        appendLine(positions, -width / 2, -height / 2, 0, -width / 2, height / 2, 0)
+
+        for (let tick = 1; tick <= 4; tick += 1) {
+          const x = -width / 2 + (width * tick) / 4
+          const y = -height / 2 + (height * tick) / 4
+
+          appendLine(positions, x, -height / 2, -10, x, height / 2, -10)
+          appendLine(positions, -width / 2, y, -10, width / 2, y, -10)
+        }
+
+        const geometry = new THREE.BufferGeometry()
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3))
+
+        const grid = new THREE.LineSegments(
+          geometry,
+          new THREE.LineBasicMaterial({
+            color: 0x8c978f,
+            transparent: true,
+            opacity: 0.28,
+            fog: false
+          })
+        )
+
+        grid.frustumCulled = false
+        curveGridGroup.add(grid)
+      }
+
+      function writeCurvePoint(array, pointIndex, point, stateKey, stateIndex) {
+        const series = state.seirSeries || { maxTime: 1, maxCount: 1 }
+        const width = 900
+        const height = 460
+        const offset = pointIndex * 3
+        const x = ((point.time / Math.max(1, series.maxTime)) - 0.5) * width
+        const y = ((point[stateKey] / Math.max(1, series.maxCount)) - 0.5) * height
+        const z = (stateIndex - 1.5) * 5
+
+        array[offset] = x
+        array[offset + 1] = y
+        array[offset + 2] = z
+      }
+
+      function appendLine(positions, x1, y1, z1, x2, y2, z2) {
+        positions.push(x1, y1, z1, x2, y2, z2)
+      }
+
+      function clearGroup(group) {
+        while (group.children.length > 0) {
+          const child = group.children[0]
+
+          group.remove(child)
+          child.geometry?.dispose?.()
+          child.material?.dispose?.()
+        }
       }
 
       function getInitialPositionsForLayout() {
@@ -1116,10 +1496,46 @@
         updateEdgeVisibility()
       }
 
+      function setCurveDisplay() {
+        state.showCurves.susceptible = showSusceptibleInput.checked
+        state.showCurves.exposed = showExposedInput.checked
+        state.showCurves.infectious = showInfectiousInput.checked
+        state.showCurves.recovered = showRecoveredInput.checked
+        updateCurveVisibility()
+      }
+
+      function setActiveTab(tab) {
+        state.activeTab = tab === 'seir' ? 'seir' : 'contact'
+        document.body.dataset.view = state.activeTab
+        contactGraphTab.setAttribute('aria-selected', state.activeTab === 'contact' ? 'true' : 'false')
+        seirCurveTab.setAttribute('aria-selected', state.activeTab === 'seir' ? 'true' : 'false')
+        hideTooltip()
+        updateSceneVisibility()
+      }
+
+      function updateSceneVisibility() {
+        graphGroup.visible = state.activeTab === 'contact'
+        curveGroup.visible = state.activeTab === 'seir'
+        updateEdgeVisibility()
+        updateCurveVisibility()
+      }
+
       function updateEdgeVisibility() {
-        edgeMesh.visible = !state.transition && state.showContacts && state.aggregatedEdges.length > 0
-        infectionShaftMesh.visible = state.showInfections && state.filteredInfections.length > 0
-        infectionHeadMesh.visible = state.showInfections && state.filteredInfections.length > 0
+        const graphVisible = state.activeTab === 'contact'
+
+        edgeMesh.visible = graphVisible && !state.transition && state.showContacts && state.aggregatedEdges.length > 0
+        infectionShaftMesh.visible = graphVisible && state.showInfections && state.filteredInfections.length > 0
+        infectionHeadMesh.visible = graphVisible && state.showInfections && state.filteredInfections.length > 0
+      }
+
+      function updateCurveVisibility() {
+        for (const stateKey of curveStateKeys) {
+          const line = state.seirCurves.get(stateKey)
+
+          if (line) {
+            line.visible = state.activeTab === 'seir' && Boolean(state.showCurves[stateKey])
+          }
+        }
       }
 
       function aggregateContacts(contacts) {
@@ -1167,8 +1583,8 @@
       function rebuildInfectionGeometry() {
         const count = state.filteredInfections.length
 
-        scene.remove(infectionShaftMesh)
-        scene.remove(infectionHeadMesh)
+        graphGroup.remove(infectionShaftMesh)
+        graphGroup.remove(infectionHeadMesh)
         infectionShaftMesh.geometry.dispose()
         infectionShaftMesh.material.dispose()
         infectionHeadMesh.geometry.dispose()
@@ -1176,8 +1592,8 @@
 
         infectionShaftMesh = createInfectionShaftMesh(count)
         infectionHeadMesh = createInfectionHeadMesh(count)
-        scene.add(infectionShaftMesh)
-        scene.add(infectionHeadMesh)
+        graphGroup.add(infectionShaftMesh)
+        graphGroup.add(infectionHeadMesh)
 
         updateInfectionPositions()
         updateEdgeVisibility()
@@ -1428,14 +1844,15 @@
       function animate() {
         requestAnimationFrame(animate)
         state.frame += 1
-        const transitionActive = updateLayoutTransition()
+        const graphActive = state.activeTab === 'contact'
+        const transitionActive = graphActive && updateLayoutTransition()
         const transitionEnded = transitionActive && !state.transition
 
-        if (!transitionActive) {
+        if (graphActive && !transitionActive) {
           tickLayout()
         }
 
-        if (transitionActive || state.frame % 2 === 0) {
+        if (graphActive && (transitionActive || state.frame % 2 === 0)) {
           updateNodeInstances()
 
           if (!transitionActive || transitionEnded) {
@@ -1446,7 +1863,9 @@
         }
 
         controls.update()
-        updateHover()
+        if (graphActive) {
+          updateHover()
+        }
         renderer.render(scene, camera)
       }
 
