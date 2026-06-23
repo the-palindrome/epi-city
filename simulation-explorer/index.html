@@ -448,6 +448,19 @@
         z-index: 3;
       }
 
+      .legend[hidden] {
+        display: none;
+      }
+
+      .legend.matrix-legend {
+        display: grid;
+        justify-content: stretch;
+        gap: 8px;
+        width: 320px;
+        max-width: calc(100vw - 24px);
+        padding: 12px;
+      }
+
       .legend-item {
         display: inline-flex;
         align-items: center;
@@ -470,6 +483,48 @@
         width: 18px;
         height: 3px;
         border-radius: 999px;
+      }
+
+      .colormap-legend-title {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .colormap-legend-title span {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 500;
+        text-transform: uppercase;
+      }
+
+      .colormap-legend-gradient {
+        height: 24px;
+        border: 1px solid rgba(32, 38, 35, 0.22);
+        border-radius: 4px;
+      }
+
+      .colormap-legend-ticks {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        color: var(--muted);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .colormap-legend-ticks span:nth-child(1) {
+        text-align: left;
+      }
+
+      .colormap-legend-ticks span:nth-child(n + 2):nth-child(-n + 4) {
+        text-align: center;
+      }
+
+      .colormap-legend-ticks span:nth-child(5) {
+        text-align: right;
       }
 
       .view-tabs {
@@ -673,6 +728,10 @@
         </div>
       </div>
       <div class="actions">
+        <label class="checkbox-control">
+          <input id="showLegend" type="checkbox" checked>
+          Legend
+        </label>
         <label class="file-control">
           Load results
           <input id="fileInput" type="file" accept="application/json,.json">
@@ -811,6 +870,19 @@
             <input id="showMatrixNumbers" type="checkbox">
             Contact numbers
           </label>
+          <div class="settings-field">
+            <label for="matrixColormapSelect">Colormap</label>
+            <select id="matrixColormapSelect" aria-label="Contact matrix colormap">
+              <option value="heat">Heat</option>
+              <option value="viridis">Viridis</option>
+              <option value="plasma">Plasma</option>
+              <option value="inferno">Inferno</option>
+              <option value="magma">Magma</option>
+              <option value="blues">Blues</option>
+              <option value="greens">Greens</option>
+              <option value="gray">Gray</option>
+            </select>
+          </div>
         </section>
       </div>
     </details>
@@ -884,6 +956,8 @@
       const matrixLayoutSelect = document.getElementById('matrixLayoutSelect')
       const showMatrixHeatmapInput = document.getElementById('showMatrixHeatmap')
       const showMatrixNumbersInput = document.getElementById('showMatrixNumbers')
+      const matrixColormapSelect = document.getElementById('matrixColormapSelect')
+      const showLegendInput = document.getElementById('showLegend')
       const showSusceptibleInput = document.getElementById('showSusceptible')
       const showExposedInput = document.getElementById('showExposed')
       const showInfectiousInput = document.getElementById('showInfectious')
@@ -915,6 +989,85 @@
         family: [47, 115, 201],
         friendship: [141, 91, 191],
         coworker: [21, 143, 135]
+      }
+      const matrixColormaps = {
+        heat: {
+          label: 'Heat',
+          stops: [
+            [248, 239, 221],
+            [239, 145, 82],
+            [207, 55, 69]
+          ]
+        },
+        viridis: {
+          label: 'Viridis',
+          stops: [
+            [68, 1, 84],
+            [59, 82, 139],
+            [33, 145, 140],
+            [94, 201, 98],
+            [253, 231, 37]
+          ]
+        },
+        plasma: {
+          label: 'Plasma',
+          stops: [
+            [13, 8, 135],
+            [126, 3, 168],
+            [204, 71, 120],
+            [248, 149, 64],
+            [240, 249, 33]
+          ]
+        },
+        inferno: {
+          label: 'Inferno',
+          stops: [
+            [0, 0, 4],
+            [87, 15, 109],
+            [187, 55, 84],
+            [249, 142, 8],
+            [252, 255, 164]
+          ]
+        },
+        magma: {
+          label: 'Magma',
+          stops: [
+            [0, 0, 4],
+            [74, 18, 100],
+            [159, 68, 118],
+            [232, 127, 94],
+            [252, 253, 191]
+          ]
+        },
+        blues: {
+          label: 'Blues',
+          stops: [
+            [247, 251, 255],
+            [198, 219, 239],
+            [107, 174, 214],
+            [33, 113, 181],
+            [8, 48, 107]
+          ]
+        },
+        greens: {
+          label: 'Greens',
+          stops: [
+            [247, 252, 245],
+            [199, 233, 192],
+            [116, 196, 118],
+            [35, 139, 69],
+            [0, 68, 27]
+          ]
+        },
+        gray: {
+          label: 'Gray',
+          stops: [
+            [250, 250, 250],
+            [189, 189, 189],
+            [99, 99, 99],
+            [33, 33, 33]
+          ]
+        }
       }
       const integerFormat = format(',')
 
@@ -967,9 +1120,17 @@
         matrixLayoutMode: 'hierarchical',
         showMatrixHeatmap: true,
         showMatrixNumbers: false,
+        matrixColormap: 'heat',
+        showLegend: true,
         matrixOrder: [],
         matrixOrderIndex: new Int32Array(),
         matrixOrderKey: '',
+        matrixDataVersion: 0,
+        matrixLayoutCache: null,
+        matrixLayoutCacheKey: '',
+        matrixHeatmapCache: null,
+        matrixHeatmapCacheKey: '',
+        matrixOverlayKey: '',
         seirSeries: null,
         nodeSelection: null,
         selectedNodeIndex: -1,
@@ -1065,6 +1226,8 @@
       matrixLayoutSelect.addEventListener('change', setMatrixLayout)
       showMatrixHeatmapInput.addEventListener('change', setMatrixDisplay)
       showMatrixNumbersInput.addEventListener('change', setMatrixDisplay)
+      matrixColormapSelect.addEventListener('change', setMatrixColormap)
+      showLegendInput.addEventListener('change', setLegendDisplay)
       showSusceptibleInput.addEventListener('change', setCurveDisplay)
       showExposedInput.addEventListener('change', setCurveDisplay)
       showInfectiousInput.addEventListener('change', setCurveDisplay)
@@ -2088,6 +2251,7 @@
         state.matrixSource = data.matrixSource || new Int32Array()
         state.matrixTarget = data.matrixTarget || new Int32Array()
         state.matrixWeight = data.matrixWeight || new Uint32Array()
+        state.matrixDataVersion += 1
         state.infectionSource = data.infectionSource
         state.infectionTarget = data.infectionTarget
         rebuildVisibleInfectionPairKeys()
@@ -2103,6 +2267,7 @@
         invalidateMatrixOrder()
         applyNodeStyles()
         updateStats()
+        updateLegend()
         if (state.activeTab === 'contact') {
           scheduleGraphDraw()
         } else if (state.activeTab === 'matrix') {
@@ -2954,8 +3119,6 @@
 
       function renderMatrix() {
         state.matrixFrame = 0
-        matrixOverlayGroup.selectAll('*').remove()
-        matrixNumberGroup.selectAll('*').remove()
 
         if (!state.loaded || state.activeTab !== 'matrix') {
           return
@@ -2975,11 +3138,26 @@
       function matrixLayout() {
         const count = Math.max(1, state.npcs.length)
         const viewport = svg.node().getBoundingClientRect()
-        const availableWidth = Math.max(360, viewport.width - 170)
-        const availableHeight = Math.max(360, viewport.height - 185)
+        const viewportWidth = Math.round(viewport.width)
+        const viewportHeight = Math.round(viewport.height)
+        const availableWidth = Math.max(360, viewportWidth - 170)
+        const availableHeight = Math.max(360, viewportHeight - 185)
         const cellSize = clamp(Math.min(availableWidth, availableHeight) / count, 2, 18)
         const size = count * cellSize
         const order = matrixNodeOrder()
+        const cacheKey = [
+          state.matrixDataVersion,
+          state.matrixLayoutMode,
+          state.matrixOrderKey,
+          viewportWidth,
+          viewportHeight,
+          count
+        ].join('|')
+
+        if (state.matrixLayoutCacheKey === cacheKey && state.matrixLayoutCache) {
+          return state.matrixLayoutCache
+        }
+
         let maxWeight = 0
 
         for (let index = 0; index < state.matrixWeight.length; index += 1) {
@@ -2988,39 +3166,57 @@
           }
         }
 
-        return {
+        const layout = {
           cellSize,
           size,
           left: -size / 2,
           top: -size / 2,
           maxWeight: Math.max(1, maxWeight),
           order: order.order,
-          position: order.position
+          position: order.position,
+          cacheKey
         }
+
+        state.matrixLayoutCache = layout
+        state.matrixLayoutCacheKey = cacheKey
+
+        return layout
       }
 
       function renderMatrixOverlay(layout) {
-        matrixOverlayGroup.append('rect')
+        const overlayKey = `${layout.cacheKey}|${state.matrixSource.length}`
+
+        if (state.matrixOverlayKey === overlayKey) {
+          return
+        }
+
+        state.matrixOverlayKey = overlayKey
+
+        matrixOverlayGroup.selectAll('rect.matrix-outline')
+          .data([layout])
+          .join('rect')
           .attr('class', 'matrix-outline')
           .attr('x', 0)
           .attr('y', 0)
           .attr('width', layout.size)
           .attr('height', layout.size)
 
-        matrixOverlayGroup.append('line')
+        matrixOverlayGroup.selectAll('line.matrix-diagonal')
+          .data([layout])
+          .join('line')
           .attr('class', 'matrix-diagonal')
           .attr('x1', 0)
           .attr('y1', 0)
           .attr('x2', layout.size)
           .attr('y2', layout.size)
 
-        if (state.matrixSource.length === 0) {
-          matrixOverlayGroup.append('text')
-            .attr('class', 'matrix-note')
-            .attr('x', layout.size / 2)
-            .attr('y', layout.size / 2)
-            .text('No contacts in this time window')
-        }
+        matrixOverlayGroup.selectAll('text.matrix-note')
+          .data(state.matrixSource.length === 0 ? [layout] : [])
+          .join('text')
+          .attr('class', 'matrix-note')
+          .attr('x', layout.size / 2)
+          .attr('y', layout.size / 2)
+          .text('No contacts in this time window')
       }
 
       function drawMatrixHeatmap(layout) {
@@ -3030,11 +3226,14 @@
 
         const ratio = window.devicePixelRatio || 1
         const transform = state.matrixTransform
-        const range = matrixVisibleRange(layout)
-        const drawSize = Math.max(layout.cellSize, 0.75 / Math.max(0.1, transform.k))
-        const colorCache = new Map()
+        const heatmap = matrixHeatmapRaster(layout)
+
+        if (!heatmap) {
+          return
+        }
 
         edgeContext.save()
+        edgeContext.imageSmoothingEnabled = false
         edgeContext.setTransform(
           ratio * transform.k,
           0,
@@ -3043,7 +3242,33 @@
           ratio * transform.x,
           ratio * transform.y
         )
-        edgeContext.translate(layout.left, layout.top)
+        edgeContext.drawImage(heatmap.canvas, layout.left, layout.top, layout.size, layout.size)
+
+        edgeContext.restore()
+      }
+
+      function matrixHeatmapRaster(layout) {
+        const cacheKey = `${layout.cacheKey}|${state.matrixColormap}`
+
+        if (state.matrixHeatmapCacheKey === cacheKey && state.matrixHeatmapCache) {
+          return state.matrixHeatmapCache
+        }
+
+        const maxRasterSize = 4096
+        const rasterScale = Math.min(1, maxRasterSize / Math.max(1, layout.size))
+        const width = Math.max(1, Math.ceil(layout.size * rasterScale))
+        const height = Math.max(1, Math.ceil(layout.size * rasterScale))
+        const canvas = document.createElement('canvas')
+
+        canvas.width = width
+        canvas.height = height
+
+        const context = canvas.getContext('2d')
+        const rasterCellSize = layout.cellSize * rasterScale
+        const drawSize = Math.max(rasterCellSize, 1)
+        const colorCache = new Map()
+
+        context.imageSmoothingEnabled = false
 
         for (let index = 0; index < state.matrixSource.length; index += 1) {
           const sourcePosition = layout.position[state.matrixSource[index]]
@@ -3061,38 +3286,42 @@
             colorCache.set(weight, color)
           }
 
-          edgeContext.fillStyle = color
-
-          if (isMatrixCellVisible(sourcePosition, targetPosition, range)) {
-            edgeContext.fillRect(
-              targetPosition * layout.cellSize,
-              sourcePosition * layout.cellSize,
-              drawSize,
-              drawSize
-            )
-          }
-
-          if (isMatrixCellVisible(targetPosition, sourcePosition, range)) {
-            edgeContext.fillRect(
-              sourcePosition * layout.cellSize,
-              targetPosition * layout.cellSize,
-              drawSize,
-              drawSize
-            )
-          }
+          context.fillStyle = color
+          context.fillRect(
+            targetPosition * rasterCellSize,
+            sourcePosition * rasterCellSize,
+            drawSize,
+            drawSize
+          )
+          context.fillRect(
+            sourcePosition * rasterCellSize,
+            targetPosition * rasterCellSize,
+            drawSize,
+            drawSize
+          )
         }
 
-        edgeContext.restore()
+        state.matrixHeatmapCache = {
+          canvas,
+          rasterScale,
+          width,
+          height
+        }
+        state.matrixHeatmapCacheKey = cacheKey
+
+        return state.matrixHeatmapCache
       }
 
       function renderMatrixNumbers(layout) {
         if (!state.showMatrixNumbers || state.matrixSource.length === 0) {
+          matrixNumberGroup.selectAll('*').remove()
           return
         }
 
         const transformedCellSize = layout.cellSize * state.matrixTransform.k
 
         if (transformedCellSize < 22) {
+          matrixNumberGroup.selectAll('*').remove()
           return
         }
 
@@ -3194,15 +3423,41 @@
 
       function matrixHeatColor(weight, maxWeight) {
         const amount = clamp(Math.log1p(weight) / Math.log1p(Math.max(1, maxWeight)), 0, 1)
-        const low = [248, 239, 221]
-        const middle = [239, 145, 82]
-        const high = [207, 55, 69]
-        const color = amount < 0.58
-          ? mixColor(low, middle, amount / 0.58)
-          : mixColor(middle, high, (amount - 0.58) / 0.42)
+        const color = matrixColormapColor(amount)
         const alpha = 0.36 + amount * 0.62
 
         return rgba(color[0], color[1], color[2], alpha)
+      }
+
+      function matrixColormapColor(amount) {
+        const stops = matrixColormapStops()
+
+        if (stops.length === 1) {
+          return stops[0]
+        }
+
+        const scaled = clamp(amount, 0, 1) * (stops.length - 1)
+        const leftIndex = Math.min(stops.length - 2, Math.floor(scaled))
+        const localAmount = scaled - leftIndex
+
+        return mixColor(stops[leftIndex], stops[leftIndex + 1], localAmount)
+      }
+
+      function matrixColormapStops() {
+        return (matrixColormaps[state.matrixColormap] || matrixColormaps.heat).stops
+      }
+
+      function matrixColormapLabel() {
+        return (matrixColormaps[state.matrixColormap] || matrixColormaps.heat).label
+      }
+
+      function matrixColormapGradient() {
+        const stops = matrixColormapStops()
+        const last = Math.max(1, stops.length - 1)
+
+        return stops
+          .map((color, index) => `rgb(${color[0]}, ${color[1]}, ${color[2]}) ${format('.2f')((index / last) * 100)}%`)
+          .join(', ')
       }
 
       function mixColor(left, right, amount) {
@@ -3268,6 +3523,15 @@
         state.matrixOrder = []
         state.matrixOrderIndex = new Int32Array()
         state.matrixOrderKey = ''
+        invalidateMatrixRenderCache()
+      }
+
+      function invalidateMatrixRenderCache() {
+        state.matrixLayoutCache = null
+        state.matrixLayoutCacheKey = ''
+        state.matrixHeatmapCache = null
+        state.matrixHeatmapCacheKey = ''
+        state.matrixOverlayKey = ''
       }
 
       function defaultMatrixOrder() {
@@ -3642,6 +3906,22 @@
         state.showMatrixNumbers = showMatrixNumbersInput.checked
         updateLegend()
         scheduleMatrixDraw()
+      }
+
+      function setMatrixColormap() {
+        const nextColormap = matrixColormapSelect.value
+
+        state.matrixColormap = matrixColormaps[nextColormap] ? nextColormap : 'heat'
+        matrixColormapSelect.value = state.matrixColormap
+        state.matrixHeatmapCache = null
+        state.matrixHeatmapCacheKey = ''
+        updateLegend()
+        scheduleMatrixDraw()
+      }
+
+      function setLegendDisplay() {
+        state.showLegend = showLegendInput.checked
+        updateLegend()
       }
 
       function setNodeSize() {
@@ -4376,18 +4656,21 @@
       }
 
       function updateLegend() {
+        legend.hidden = !state.showLegend
+        legend.classList.toggle('matrix-legend', state.showLegend && state.activeTab === 'matrix')
+
+        if (!state.showLegend) {
+          legend.innerHTML = ''
+          return
+        }
+
         const items = []
 
         if (state.activeTab === 'matrix') {
-          if (state.showMatrixHeatmap) {
-            items.push(legendItem('<span class="swatch-line" style="width: 38px; background: linear-gradient(90deg, #f8efdd, #ef9152, #cf3745)"></span>', 'Contact count'))
-          }
+          const html = matrixLegendHtml()
 
-          if (state.showMatrixNumbers) {
-            items.push(legendItem('<span class="swatch" style="background: #202621"></span>', 'Numbers'))
-          }
-
-          legend.innerHTML = items.join('')
+          legend.innerHTML = html
+          legend.hidden = html.trim() === ''
           return
         }
 
@@ -4427,10 +4710,61 @@
         }
 
         legend.innerHTML = items.join('')
+        legend.hidden = items.length === 0
       }
 
       function legendItem(marker, label) {
         return `<div class="legend-item">${marker}${escapeHtml(label)}</div>`
+      }
+
+      function matrixLegendHtml() {
+        const parts = []
+
+        if (state.showMatrixHeatmap) {
+          const maxWeight = matrixLegendMaxWeight()
+          const ticks = [0, 0.25, 0.5, 0.75, 1].map((amount) => {
+            const value = Math.expm1(Math.log1p(Math.max(1, maxWeight)) * amount)
+
+            return `<span>${escapeHtml(formatMatrixLegendTick(value))}</span>`
+          }).join('')
+
+          parts.push(`
+            <div class="colormap-legend-title">
+              Contact count
+              <span>${escapeHtml(matrixColormapLabel())}</span>
+            </div>
+            <div class="colormap-legend-gradient" style="background: linear-gradient(90deg, ${matrixColormapGradient()})"></div>
+            <div class="colormap-legend-ticks">${ticks}</div>
+          `)
+        }
+
+        if (state.showMatrixNumbers) {
+          parts.push(legendItem('<span class="swatch" style="background: #202621"></span>', 'Contact numbers'))
+        }
+
+        return parts.join('')
+      }
+
+      function matrixLegendMaxWeight() {
+        if (state.matrixLayoutCache && state.matrixLayoutCache.maxWeight) {
+          return state.matrixLayoutCache.maxWeight
+        }
+
+        let maxWeight = 0
+
+        for (let index = 0; index < state.matrixWeight.length; index += 1) {
+          maxWeight = Math.max(maxWeight, state.matrixWeight[index])
+        }
+
+        return Math.max(1, maxWeight)
+      }
+
+      function formatMatrixLegendTick(value) {
+        if (value < 10) {
+          return format('.1f')(value).replace(/\\.0$/, '')
+        }
+
+        return integerFormat(Math.round(value))
       }
 
       function worldLoadedMessage() {
