@@ -935,6 +935,8 @@
         world: createEmptyWorldMetadata(),
         layoutAnimationFrame: 0,
         floatAnimationFrame: 0,
+        dragAnimationFrame: 0,
+        dragMotion: null,
         stats: {
           contactEventCount: 0,
           infectionEventCount: 0,
@@ -1149,6 +1151,7 @@
 
       function resetView() {
         stopFloatingAnimation()
+        stopDragMotion()
         stopSimulation()
         nodeGroup.selectAll('*').remove()
         chartGridGroup.selectAll('*').remove()
@@ -2511,24 +2514,51 @@
       }
 
       function dragStarted(event, node) {
+        stopLayoutAnimation()
+        stopDragMotion()
+
         if (!event.active && state.simulation) {
           state.simulation.alphaTarget(0.18).restart()
         }
 
+        const now = performance.now()
+
+        state.dragMotion = {
+          node,
+          phase: 'drag',
+          startedAt: now,
+          lastTime: now,
+          targetX: event.x,
+          targetY: event.y,
+          releaseStartedAt: 0,
+          releaseFromX: node.x,
+          releaseFromY: node.y,
+          releaseToX: event.x,
+          releaseToY: event.y
+        }
         node.fx = node.x
         node.fy = node.y
+        startDragMotionLoop()
       }
 
       function dragged(event, node) {
-        node.fx = event.x
-        node.fy = event.y
+        if (!state.dragMotion || state.dragMotion.node !== node) {
+          node.fx = event.x
+          node.fy = event.y
 
-        if (!state.simulation) {
-          node.x = event.x
-          node.y = event.y
+          if (!state.simulation) {
+            node.x = event.x
+            node.y = event.y
+          }
+
+          scheduleGraphDraw()
+          return
         }
 
-        scheduleGraphDraw()
+        state.dragMotion.phase = 'drag'
+        state.dragMotion.targetX = event.x
+        state.dragMotion.targetY = event.y
+        startDragMotionLoop()
       }
 
       function dragEnded(event, node) {
@@ -2536,10 +2566,111 @@
           state.simulation.alphaTarget(0)
         }
 
-        if (state.layoutMode === 'force') {
-          node.fx = null
-          node.fy = null
+        if (!state.dragMotion || state.dragMotion.node !== node) {
+          if (state.layoutMode === 'force') {
+            node.fx = null
+            node.fy = null
+          }
+
+          return
         }
+
+        state.dragMotion.phase = 'release'
+        state.dragMotion.targetX = event.x
+        state.dragMotion.targetY = event.y
+        state.dragMotion.releaseStartedAt = performance.now()
+        state.dragMotion.releaseFromX = node.x
+        state.dragMotion.releaseFromY = node.y
+        state.dragMotion.releaseToX = event.x
+        state.dragMotion.releaseToY = event.y
+        startDragMotionLoop()
+      }
+
+      function startDragMotionLoop() {
+        if (state.dragAnimationFrame || !state.dragMotion) {
+          return
+        }
+
+        state.dragAnimationFrame = requestAnimationFrame(updateDragMotion)
+      }
+
+      function updateDragMotion(time) {
+        state.dragAnimationFrame = 0
+
+        const motion = state.dragMotion
+
+        if (!motion) {
+          return
+        }
+
+        const node = motion.node
+
+        if (motion.phase === 'release') {
+          const progress = clamp((time - motion.releaseStartedAt) / 240, 0, 1)
+          const eased = easeOutCubic(progress)
+
+          node.x = motion.releaseFromX + (motion.releaseToX - motion.releaseFromX) * eased
+          node.y = motion.releaseFromY + (motion.releaseToY - motion.releaseFromY) * eased
+          node.fx = node.x
+          node.fy = node.y
+          scheduleGraphDraw()
+
+          if (progress < 1) {
+            startDragMotionLoop()
+            return
+          }
+
+          state.dragMotion = null
+
+          if (state.layoutMode === 'force') {
+            node.fx = null
+            node.fy = null
+          } else {
+            node.fx = node.x
+            node.fy = node.y
+          }
+
+          scheduleGraphDraw()
+          return
+        }
+
+        const elapsed = time - motion.startedAt
+        const delta = Math.max(1, Math.min(64, time - motion.lastTime))
+        const windup = easeInOutCubic(clamp(elapsed / 180, 0, 1))
+        const frameScale = delta / 16.67
+        const follow = clamp((0.1 + windup * 0.28) * frameScale, 0.04, 0.62)
+
+        motion.lastTime = time
+        node.x += (motion.targetX - node.x) * follow
+        node.y += (motion.targetY - node.y) * follow
+        node.fx = node.x
+        node.fy = node.y
+        scheduleGraphDraw()
+        startDragMotionLoop()
+      }
+
+      function stopDragMotion() {
+        if (state.dragAnimationFrame) {
+          cancelAnimationFrame(state.dragAnimationFrame)
+          state.dragAnimationFrame = 0
+        }
+
+        if (state.dragMotion?.node && state.layoutMode === 'force') {
+          state.dragMotion.node.fx = null
+          state.dragMotion.node.fy = null
+        }
+
+        state.dragMotion = null
+      }
+
+      function easeInOutCubic(progress) {
+        return progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2
+      }
+
+      function easeOutCubic(progress) {
+        return 1 - Math.pow(1 - progress, 3)
       }
 
       function renderChart() {
@@ -3558,6 +3689,7 @@
 
       function stopSimulation() {
         stopLayoutAnimation()
+        stopDragMotion()
 
         if (state.simulation) {
           state.simulation.stop()
