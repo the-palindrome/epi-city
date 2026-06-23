@@ -485,12 +485,23 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
   const contactSource = new Int32Array(visibleContactCount)
   const contactTarget = new Int32Array(visibleContactCount)
   const contactWeight = new Uint32Array(visibleContactCount)
+  const matrixPairCount = activePairIds.length
+  const matrixSource = new Int32Array(matrixPairCount)
+  const matrixTarget = new Int32Array(matrixPairCount)
+  const matrixWeight = new Uint32Array(matrixPairCount)
 
   for (let index = 0; index < visibleContactCount; index += 1) {
     const pairId = visiblePairIds[index]
     contactSource[index] = dataset.pairSources[pairId]
     contactTarget[index] = dataset.pairTargets[pairId]
     contactWeight[index] = pairCounts[pairId]
+  }
+
+  for (let index = 0; index < matrixPairCount; index += 1) {
+    const pairId = activePairIds[index]
+    matrixSource[index] = dataset.pairSources[pairId]
+    matrixTarget[index] = dataset.pairTargets[pairId]
+    matrixWeight[index] = pairCounts[pairId]
   }
 
   const infectionSource = new Int32Array(infectionMatches.length)
@@ -516,6 +527,9 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     contactSource.buffer,
     contactTarget.buffer,
     contactWeight.buffer,
+    matrixSource.buffer,
+    matrixTarget.buffer,
+    matrixWeight.buffer,
     infectionSource.buffer,
     infectionTarget.buffer,
     currentStates.buffer,
@@ -530,6 +544,9 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     contactSource,
     contactTarget,
     contactWeight,
+    matrixSource,
+    matrixTarget,
+    matrixWeight,
     infectionSource,
     infectionTarget,
     currentStates,

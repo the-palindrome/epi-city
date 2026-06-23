@@ -265,7 +265,8 @@
       }
 
       .graph-settings,
-      .plot-settings {
+      .plot-settings,
+      .matrix-settings {
         position: fixed;
         top: 72px;
         right: 12px;
@@ -280,7 +281,8 @@
       }
 
       .graph-settings summary,
-      .plot-settings summary {
+      .plot-settings summary,
+      .matrix-settings summary {
         min-height: 38px;
         display: flex;
         align-items: center;
@@ -380,10 +382,15 @@
       }
 
       body[data-view="contact"] .plot-settings,
+      body[data-view="contact"] .matrix-settings,
+      body[data-view="matrix"] .graph-settings,
+      body[data-view="matrix"] .plot-settings,
+      body[data-view="seir"] .matrix-settings,
       body[data-view="seir"] .graph-control,
       body[data-view="seir"] .graph-settings,
       body[data-view="seir"] .stats,
-      body[data-view="contact"] .curve-stat {
+      body[data-view="contact"] .curve-stat,
+      body[data-view="matrix"] .curve-stat {
         display: none;
       }
 
@@ -572,6 +579,32 @@
         stroke: none;
       }
 
+      .matrix-outline {
+        fill: none;
+        stroke: rgba(32, 38, 35, 0.22);
+        vector-effect: non-scaling-stroke;
+      }
+
+      .matrix-diagonal {
+        stroke: rgba(32, 38, 35, 0.16);
+        vector-effect: non-scaling-stroke;
+      }
+
+      .matrix-number {
+        fill: var(--text);
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        pointer-events: none;
+        text-anchor: middle;
+        dominant-baseline: central;
+      }
+
+      .matrix-note {
+        fill: var(--muted);
+        font-size: 14px;
+        text-anchor: middle;
+      }
+
       @media (max-width: 880px) {
         .topbar {
           grid-template-columns: 1fr;
@@ -592,7 +625,8 @@
         }
 
         .graph-settings,
-        .plot-settings {
+        .plot-settings,
+        .matrix-settings {
           top: auto;
           right: 12px;
           bottom: 122px;
@@ -753,6 +787,33 @@
         </section>
       </div>
     </details>
+    <details id="matrixSettings" class="matrix-settings" open>
+      <summary>Matrix settings</summary>
+      <div class="settings-content">
+        <section class="settings-section" aria-labelledby="matrixLayoutSettingsTitle">
+          <h2 id="matrixLayoutSettingsTitle" class="settings-title">Layout</h2>
+          <div class="settings-field">
+            <label for="matrixLayoutSelect">Matrix layout</label>
+            <select id="matrixLayoutSelect" aria-label="Matrix layout">
+              <option value="family" disabled>Family</option>
+              <option value="work" disabled>Work</option>
+              <option value="hierarchical">Hierarchical clustering</option>
+            </select>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="matrixDisplaySettingsTitle">
+          <h2 id="matrixDisplaySettingsTitle" class="settings-title">Display</h2>
+          <label class="checkbox-control">
+            <input id="showMatrixHeatmap" type="checkbox" checked>
+            Heatmap
+          </label>
+          <label class="checkbox-control">
+            <input id="showMatrixNumbers" type="checkbox">
+            Contact numbers
+          </label>
+        </section>
+      </div>
+    </details>
     <div id="status" class="status">Load a headless result JSON</div>
     <div class="stats">
       <div class="stat"><b id="nodeCount">0</b><span>NPCs</span></div>
@@ -770,6 +831,7 @@
     </div>
     <div class="view-tabs" role="tablist" aria-label="Explorer views">
       <button id="contactGraphTab" class="tab-button" type="button" role="tab" aria-selected="true">Contact graph</button>
+      <button id="contactMatrixTab" class="tab-button" type="button" role="tab" aria-selected="false">Contact matrix</button>
       <button id="seirCurveTab" class="tab-button" type="button" role="tab" aria-selected="false">SEIR curve</button>
     </div>
     <div id="tooltip" class="tooltip" hidden></div>
@@ -819,6 +881,9 @@
       const worldSummary = document.getElementById('worldSummary')
       const layoutSelect = document.getElementById('layoutSelect')
       const plotLayoutSelect = document.getElementById('plotLayoutSelect')
+      const matrixLayoutSelect = document.getElementById('matrixLayoutSelect')
+      const showMatrixHeatmapInput = document.getElementById('showMatrixHeatmap')
+      const showMatrixNumbersInput = document.getElementById('showMatrixNumbers')
       const showSusceptibleInput = document.getElementById('showSusceptible')
       const showExposedInput = document.getElementById('showExposed')
       const showInfectiousInput = document.getElementById('showInfectious')
@@ -826,6 +891,7 @@
       const fileInput = document.getElementById('fileInput')
       const worldFileInput = document.getElementById('worldFileInput')
       const contactGraphTab = document.getElementById('contactGraphTab')
+      const contactMatrixTab = document.getElementById('contactMatrixTab')
       const seirCurveTab = document.getElementById('seirCurveTab')
       const tooltip = document.getElementById('tooltip')
       const legend = document.getElementById('legend')
@@ -861,6 +927,10 @@
       const chartAxisGroup = chartPlotGroup.append('g').attr('class', 'axes')
       const chartAreaGroup = chartPlotGroup.append('g').attr('class', 'fills')
       const chartLineGroup = chartPlotGroup.append('g').attr('class', 'curves')
+      const matrixRoot = root.append('g').attr('class', 'contact-matrix').style('display', 'none')
+      const matrixFrameGroup = matrixRoot.append('g').attr('class', 'matrix-frame')
+      const matrixOverlayGroup = matrixFrameGroup.append('g').attr('class', 'matrix-overlay')
+      const matrixNumberGroup = matrixFrameGroup.append('g').attr('class', 'matrix-numbers')
 
       const state = {
         worker: null,
@@ -875,6 +945,9 @@
         contactSource: new Int32Array(),
         contactTarget: new Int32Array(),
         contactWeight: new Uint32Array(),
+        matrixSource: new Int32Array(),
+        matrixTarget: new Int32Array(),
+        matrixWeight: new Uint32Array(),
         infectionSource: new Int32Array(),
         infectionTarget: new Int32Array(),
         familySource: new Int32Array(),
@@ -891,6 +964,12 @@
         layout: null,
         layoutMode: 'force',
         plotLayout: 'plot',
+        matrixLayoutMode: 'hierarchical',
+        showMatrixHeatmap: true,
+        showMatrixNumbers: false,
+        matrixOrder: [],
+        matrixOrderIndex: new Int32Array(),
+        matrixOrderKey: '',
         seirSeries: null,
         nodeSelection: null,
         selectedNodeIndex: -1,
@@ -924,8 +1003,10 @@
         },
         graphTransform: zoomIdentity,
         chartTransform: zoomIdentity,
+        matrixTransform: zoomIdentity,
         simulation: null,
         drawFrame: 0,
+        matrixFrame: 0,
         windowFrame: 0,
         windowRequestId: 0,
         workerBusy: false,
@@ -947,15 +1028,19 @@
       }
 
       const graphZoom = zoom()
-        .scaleExtent([0.08, 8])
+        .scaleExtent([0.04, 48])
         .on('zoom', (event) => {
           if (state.activeTab === 'contact') {
             state.graphTransform = event.transform
             graphRoot.attr('transform', event.transform)
             scheduleGraphDraw()
-          } else {
+          } else if (state.activeTab === 'seir') {
             state.chartTransform = event.transform
             chartRoot.attr('transform', event.transform)
+          } else {
+            state.matrixTransform = event.transform
+            matrixRoot.attr('transform', event.transform)
+            scheduleMatrixDraw()
           }
         })
 
@@ -977,11 +1062,15 @@
       floatIntensityInput.addEventListener('input', setFloatIntensity)
       layoutSelect.addEventListener('change', () => setGraphLayout(layoutSelect.value))
       plotLayoutSelect.addEventListener('change', setPlotLayout)
+      matrixLayoutSelect.addEventListener('change', setMatrixLayout)
+      showMatrixHeatmapInput.addEventListener('change', setMatrixDisplay)
+      showMatrixNumbersInput.addEventListener('change', setMatrixDisplay)
       showSusceptibleInput.addEventListener('change', setCurveDisplay)
       showExposedInput.addEventListener('change', setCurveDisplay)
       showInfectiousInput.addEventListener('change', setCurveDisplay)
       showRecoveredInput.addEventListener('change', setCurveDisplay)
       contactGraphTab.addEventListener('click', () => setActiveTab('contact'))
+      contactMatrixTab.addEventListener('click', () => setActiveTab('matrix'))
       seirCurveTab.addEventListener('click', () => setActiveTab('seir'))
       fileInput.addEventListener('change', loadSelectedFile)
       worldFileInput.addEventListener('change', loadSelectedWorldFile)
@@ -1035,6 +1124,8 @@
           applyNodeStyles()
           updateLegend()
           scheduleGraphDraw()
+          invalidateMatrixOrder()
+          scheduleMatrixDraw()
           showTemporaryStatus(worldLoadedMessage())
         } catch (error) {
           setStatus(error instanceof Error ? error.message : String(error))
@@ -1097,6 +1188,9 @@
         state.contactSource = new Int32Array()
         state.contactTarget = new Int32Array()
         state.contactWeight = new Uint32Array()
+        state.matrixSource = new Int32Array()
+        state.matrixTarget = new Int32Array()
+        state.matrixWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
         state.familySource = new Int32Array()
@@ -1127,6 +1221,8 @@
         state.end = data.maxTime
         state.graphTransform = centeredTransform()
         state.chartTransform = centeredTransform()
+        state.matrixTransform = centeredTransform()
+        invalidateMatrixOrder()
         state.loaded = true
         state.loading = false
         state.stats.totalContactPairCount = data.contactPairCount
@@ -1142,6 +1238,7 @@
         updateSourceLabel()
         buildGraph()
         renderChart()
+        renderMatrix()
         updateLegend()
         updateStats()
         applyActiveTransform()
@@ -1158,6 +1255,8 @@
         chartAxisGroup.selectAll('*').remove()
         chartAreaGroup.selectAll('*').remove()
         chartLineGroup.selectAll('*').remove()
+        matrixOverlayGroup.selectAll('*').remove()
+        matrixNumberGroup.selectAll('*').remove()
         state.nodeSelection = null
         state.npcs = []
         state.loaded = false
@@ -1167,6 +1266,9 @@
         state.contactSource = new Int32Array()
         state.contactTarget = new Int32Array()
         state.contactWeight = new Uint32Array()
+        state.matrixSource = new Int32Array()
+        state.matrixTarget = new Int32Array()
+        state.matrixWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
         state.familySource = new Int32Array()
@@ -1189,6 +1291,7 @@
         state.selectedCoworkerEdgeCount = 0
         state.renderedNodeX = new Float64Array()
         state.renderedNodeY = new Float64Array()
+        invalidateMatrixOrder()
         clearCanvas()
         updateWorldControls()
         updateSourceLabel()
@@ -1982,6 +2085,9 @@
         state.contactSource = data.contactSource
         state.contactTarget = data.contactTarget
         state.contactWeight = data.contactWeight
+        state.matrixSource = data.matrixSource || new Int32Array()
+        state.matrixTarget = data.matrixTarget || new Int32Array()
+        state.matrixWeight = data.matrixWeight || new Uint32Array()
         state.infectionSource = data.infectionSource
         state.infectionTarget = data.infectionTarget
         rebuildVisibleInfectionPairKeys()
@@ -1994,9 +2100,14 @@
         state.stats.visibleContactPairCount = data.visibleContactPairCount
 
         rebuildSelectionNeighborhood()
+        invalidateMatrixOrder()
         applyNodeStyles()
         updateStats()
-        scheduleGraphDraw()
+        if (state.activeTab === 'contact') {
+          scheduleGraphDraw()
+        } else if (state.activeTab === 'matrix') {
+          scheduleMatrixDraw()
+        }
         hideStatus()
 
         if (state.queuedWindow) {
@@ -2227,11 +2338,11 @@
       }
 
       function drawEdges() {
-        clearCanvas()
-
         if (!state.loaded || state.activeTab !== 'contact') {
           return
         }
+
+        clearCanvas()
 
         const transform = state.graphTransform
         const scale = Math.max(0.08, transform.k)
@@ -2833,6 +2944,617 @@
         return timeFormat('%b %d')(date)
       }
 
+      function scheduleMatrixDraw() {
+        if (state.matrixFrame) {
+          return
+        }
+
+        state.matrixFrame = requestAnimationFrame(renderMatrix)
+      }
+
+      function renderMatrix() {
+        state.matrixFrame = 0
+        matrixOverlayGroup.selectAll('*').remove()
+        matrixNumberGroup.selectAll('*').remove()
+
+        if (!state.loaded || state.activeTab !== 'matrix') {
+          return
+        }
+
+        clearCanvas()
+
+        const layout = matrixLayout()
+
+        matrixRoot.attr('transform', state.matrixTransform)
+        matrixFrameGroup.attr('transform', `translate(${layout.left},${layout.top})`)
+        renderMatrixOverlay(layout)
+        drawMatrixHeatmap(layout)
+        renderMatrixNumbers(layout)
+      }
+
+      function matrixLayout() {
+        const count = Math.max(1, state.npcs.length)
+        const viewport = svg.node().getBoundingClientRect()
+        const availableWidth = Math.max(360, viewport.width - 170)
+        const availableHeight = Math.max(360, viewport.height - 185)
+        const cellSize = clamp(Math.min(availableWidth, availableHeight) / count, 2, 18)
+        const size = count * cellSize
+        const order = matrixNodeOrder()
+        let maxWeight = 0
+
+        for (let index = 0; index < state.matrixWeight.length; index += 1) {
+          if (state.matrixWeight[index] > maxWeight) {
+            maxWeight = state.matrixWeight[index]
+          }
+        }
+
+        return {
+          cellSize,
+          size,
+          left: -size / 2,
+          top: -size / 2,
+          maxWeight: Math.max(1, maxWeight),
+          order: order.order,
+          position: order.position
+        }
+      }
+
+      function renderMatrixOverlay(layout) {
+        matrixOverlayGroup.append('rect')
+          .attr('class', 'matrix-outline')
+          .attr('x', 0)
+          .attr('y', 0)
+          .attr('width', layout.size)
+          .attr('height', layout.size)
+
+        matrixOverlayGroup.append('line')
+          .attr('class', 'matrix-diagonal')
+          .attr('x1', 0)
+          .attr('y1', 0)
+          .attr('x2', layout.size)
+          .attr('y2', layout.size)
+
+        if (state.matrixSource.length === 0) {
+          matrixOverlayGroup.append('text')
+            .attr('class', 'matrix-note')
+            .attr('x', layout.size / 2)
+            .attr('y', layout.size / 2)
+            .text('No contacts in this time window')
+        }
+      }
+
+      function drawMatrixHeatmap(layout) {
+        if (!state.showMatrixHeatmap || state.matrixSource.length === 0) {
+          return
+        }
+
+        const ratio = window.devicePixelRatio || 1
+        const transform = state.matrixTransform
+        const range = matrixVisibleRange(layout)
+        const drawSize = Math.max(layout.cellSize, 0.75 / Math.max(0.1, transform.k))
+        const colorCache = new Map()
+
+        edgeContext.save()
+        edgeContext.setTransform(
+          ratio * transform.k,
+          0,
+          0,
+          ratio * transform.k,
+          ratio * transform.x,
+          ratio * transform.y
+        )
+        edgeContext.translate(layout.left, layout.top)
+
+        for (let index = 0; index < state.matrixSource.length; index += 1) {
+          const sourcePosition = layout.position[state.matrixSource[index]]
+          const targetPosition = layout.position[state.matrixTarget[index]]
+
+          if (sourcePosition < 0 || targetPosition < 0) {
+            continue
+          }
+
+          const weight = state.matrixWeight[index]
+          let color = colorCache.get(weight)
+
+          if (!color) {
+            color = matrixHeatColor(weight, layout.maxWeight)
+            colorCache.set(weight, color)
+          }
+
+          edgeContext.fillStyle = color
+
+          if (isMatrixCellVisible(sourcePosition, targetPosition, range)) {
+            edgeContext.fillRect(
+              targetPosition * layout.cellSize,
+              sourcePosition * layout.cellSize,
+              drawSize,
+              drawSize
+            )
+          }
+
+          if (isMatrixCellVisible(targetPosition, sourcePosition, range)) {
+            edgeContext.fillRect(
+              sourcePosition * layout.cellSize,
+              targetPosition * layout.cellSize,
+              drawSize,
+              drawSize
+            )
+          }
+        }
+
+        edgeContext.restore()
+      }
+
+      function renderMatrixNumbers(layout) {
+        if (!state.showMatrixNumbers || state.matrixSource.length === 0) {
+          return
+        }
+
+        const transformedCellSize = layout.cellSize * state.matrixTransform.k
+
+        if (transformedCellSize < 22) {
+          return
+        }
+
+        const screenFontSize = clamp(transformedCellSize * 0.42, 9, 13)
+        const fontSize = screenFontSize / state.matrixTransform.k
+        const labels = matrixNumberLabels(layout, 12000, {
+          screenCellSize: transformedCellSize,
+          screenFontSize,
+          paddingX: Math.max(3, transformedCellSize * 0.13),
+          paddingY: Math.max(3, transformedCellSize * 0.16)
+        })
+
+        matrixNumberGroup.selectAll('text')
+          .data(labels, (label) => label.key)
+          .join('text')
+          .attr('class', 'matrix-number')
+          .attr('x', (label) => (label.column + 0.5) * layout.cellSize)
+          .attr('y', (label) => (label.row + 0.5) * layout.cellSize)
+          .attr('font-size', fontSize)
+          .text((label) => label.value)
+      }
+
+      function matrixNumberLabels(layout, limit, metrics) {
+        const labels = []
+        const range = matrixVisibleRange(layout)
+
+        for (let index = 0; index < state.matrixSource.length; index += 1) {
+          const sourcePosition = layout.position[state.matrixSource[index]]
+          const targetPosition = layout.position[state.matrixTarget[index]]
+
+          if (sourcePosition < 0 || targetPosition < 0) {
+            continue
+          }
+
+          const value = state.matrixWeight[index]
+
+          if (!matrixNumberFitsCell(value, metrics)) {
+            continue
+          }
+
+          if (isMatrixCellVisible(sourcePosition, targetPosition, range)) {
+            labels.push({
+              key: `${sourcePosition}:${targetPosition}`,
+              row: sourcePosition,
+              column: targetPosition,
+              weight: value,
+              value
+            })
+          }
+
+          if (isMatrixCellVisible(targetPosition, sourcePosition, range)) {
+            labels.push({
+              key: `${targetPosition}:${sourcePosition}`,
+              row: targetPosition,
+              column: sourcePosition,
+              weight: value,
+              value
+            })
+          }
+        }
+
+        if (labels.length <= limit) {
+          return labels
+        }
+
+        labels.sort((left, right) => right.weight - left.weight || left.row - right.row || left.column - right.column)
+        labels.length = limit
+        return labels
+      }
+
+      function matrixNumberFitsCell(value, metrics) {
+        const text = String(value)
+        const estimatedWidth = text.length * metrics.screenFontSize * 0.62
+        const estimatedHeight = metrics.screenFontSize * 1.05
+
+        return estimatedWidth <= metrics.screenCellSize - metrics.paddingX * 2 &&
+          estimatedHeight <= metrics.screenCellSize - metrics.paddingY * 2
+      }
+
+      function matrixVisibleRange(layout) {
+        const transform = state.matrixTransform
+        const minWorldX = Math.min(transform.invertX(0), transform.invertX(window.innerWidth))
+        const maxWorldX = Math.max(transform.invertX(0), transform.invertX(window.innerWidth))
+        const minWorldY = Math.min(transform.invertY(0), transform.invertY(window.innerHeight))
+        const maxWorldY = Math.max(transform.invertY(0), transform.invertY(window.innerHeight))
+
+        return {
+          columnStart: clamp(Math.floor((minWorldX - layout.left) / layout.cellSize) - 1, 0, state.npcs.length - 1),
+          columnEnd: clamp(Math.ceil((maxWorldX - layout.left) / layout.cellSize) + 1, 0, state.npcs.length - 1),
+          rowStart: clamp(Math.floor((minWorldY - layout.top) / layout.cellSize) - 1, 0, state.npcs.length - 1),
+          rowEnd: clamp(Math.ceil((maxWorldY - layout.top) / layout.cellSize) + 1, 0, state.npcs.length - 1)
+        }
+      }
+
+      function isMatrixCellVisible(row, column, range) {
+        return row >= range.rowStart && row <= range.rowEnd &&
+          column >= range.columnStart && column <= range.columnEnd
+      }
+
+      function matrixHeatColor(weight, maxWeight) {
+        const amount = clamp(Math.log1p(weight) / Math.log1p(Math.max(1, maxWeight)), 0, 1)
+        const low = [248, 239, 221]
+        const middle = [239, 145, 82]
+        const high = [207, 55, 69]
+        const color = amount < 0.58
+          ? mixColor(low, middle, amount / 0.58)
+          : mixColor(middle, high, (amount - 0.58) / 0.42)
+        const alpha = 0.36 + amount * 0.62
+
+        return rgba(color[0], color[1], color[2], alpha)
+      }
+
+      function mixColor(left, right, amount) {
+        const t = clamp(amount, 0, 1)
+
+        return [
+          Math.round(left[0] + (right[0] - left[0]) * t),
+          Math.round(left[1] + (right[1] - left[1]) * t),
+          Math.round(left[2] + (right[2] - left[2]) * t)
+        ]
+      }
+
+      function matrixNodeOrder() {
+        const count = state.npcs.length
+        const key = [
+          state.matrixLayoutMode,
+          count,
+          state.start,
+          state.end,
+          state.matrixSource.length,
+          state.world.loaded ? state.world.sourceName : 'no-world',
+          state.world.matchedNpcCount
+        ].join('|')
+
+        if (state.matrixOrderKey === key && state.matrixOrder.length === count && state.matrixOrderIndex.length === count) {
+          return {
+            order: state.matrixOrder,
+            position: state.matrixOrderIndex
+          }
+        }
+
+        let order = null
+
+        if (state.matrixLayoutMode === 'family' && isMatrixLayoutModeAvailable('family')) {
+          order = groupedMatrixOrder('family')
+        } else if (state.matrixLayoutMode === 'work' && isMatrixLayoutModeAvailable('work')) {
+          order = groupedMatrixOrder('work')
+        }
+
+        if (!order) {
+          order = hierarchicalMatrixOrder()
+        }
+
+        if (!Array.isArray(order) || order.length !== count) {
+          order = defaultMatrixOrder()
+        }
+
+        const position = new Int32Array(count)
+        position.fill(-1)
+
+        for (let index = 0; index < order.length; index += 1) {
+          position[order[index]] = index
+        }
+
+        state.matrixOrder = order
+        state.matrixOrderIndex = position
+        state.matrixOrderKey = key
+
+        return { order, position }
+      }
+
+      function invalidateMatrixOrder() {
+        state.matrixOrder = []
+        state.matrixOrderIndex = new Int32Array()
+        state.matrixOrderKey = ''
+      }
+
+      function defaultMatrixOrder() {
+        return state.npcs.map((node) => node.index).sort(compareNodeIndexesById)
+      }
+
+      function groupedMatrixOrder(mode) {
+        const indexes = defaultMatrixOrder()
+
+        indexes.sort((leftIndex, rightIndex) => {
+          const left = matrixGroupSortKeys(state.npcs[leftIndex], mode)
+          const right = matrixGroupSortKeys(state.npcs[rightIndex], mode)
+
+          return compareBooleanAssigned(right.assigned, left.assigned) ||
+            compareTextKeys(left.building, right.building) ||
+            compareTextKeys(left.group, right.group) ||
+            compareTextKeys(left.role, right.role) ||
+            compareNodeIndexesById(leftIndex, rightIndex)
+        })
+
+        return indexes
+      }
+
+      function matrixGroupSortKeys(node, mode) {
+        if (mode === 'family') {
+          return {
+            assigned: Boolean(node.familyId),
+            building: node.homeBuildingId || '',
+            group: node.familyId || '',
+            role: node.familyRole === 'adult' ? '0' : node.familyRole === 'child' ? '1' : '2'
+          }
+        }
+
+        return {
+          assigned: Boolean(node.officeId || node.workBuildingId),
+          building: node.workBuildingId || '',
+          group: node.officeId || node.workBuildingId || '',
+          role: ''
+        }
+      }
+
+      function hierarchicalMatrixOrder() {
+        const count = state.npcs.length
+
+        if (count === 0) {
+          return []
+        }
+
+        const { adjacency, degree } = matrixAdjacency()
+        const visited = new Uint8Array(count)
+        const components = []
+
+        for (let index = 0; index < count; index += 1) {
+          if (visited[index]) {
+            continue
+          }
+
+          const nodes = []
+          const stack = [index]
+          let weight = 0
+
+          visited[index] = 1
+
+          while (stack.length > 0) {
+            const node = stack.pop()
+
+            nodes.push(node)
+            weight += degree[node]
+
+            for (const edge of adjacency[node]) {
+              if (!visited[edge.to]) {
+                visited[edge.to] = 1
+                stack.push(edge.to)
+              }
+            }
+          }
+
+          nodes.sort(compareNodeIndexesById)
+          components.push({
+            nodes,
+            weight,
+            first: nodes[0]
+          })
+        }
+
+        components.sort((left, right) => (
+          Number(right.weight > 0) - Number(left.weight > 0) ||
+          right.weight - left.weight ||
+          right.nodes.length - left.nodes.length ||
+          compareNodeIndexesById(left.first, right.first)
+        ))
+
+        const order = []
+
+        for (const component of components) {
+          order.push(...hierarchicalMatrixComponentOrder(component.nodes, adjacency, degree, 0))
+        }
+
+        return order
+      }
+
+      function matrixAdjacency() {
+        const count = state.npcs.length
+        const adjacency = Array.from({ length: count }, () => [])
+        const degree = new Float64Array(count)
+
+        for (let index = 0; index < state.matrixSource.length; index += 1) {
+          const source = state.matrixSource[index]
+          const target = state.matrixTarget[index]
+          const weight = state.matrixWeight[index]
+
+          if (source < 0 || target < 0 || source >= count || target >= count || source === target || weight <= 0) {
+            continue
+          }
+
+          adjacency[source].push({ to: target, weight })
+          adjacency[target].push({ to: source, weight })
+          degree[source] += weight
+          degree[target] += weight
+        }
+
+        for (let index = 0; index < adjacency.length; index += 1) {
+          adjacency[index].sort((left, right) => right.weight - left.weight || left.to - right.to)
+        }
+
+        return { adjacency, degree }
+      }
+
+      function hierarchicalMatrixComponentOrder(nodes, adjacency, degree, depth) {
+        if (nodes.length <= 44 || depth > 14) {
+          return greedyMatrixOrder(nodes, adjacency, degree)
+        }
+
+        const seedA = nodes.reduce((best, node) => (
+          degree[node] > degree[best] || (degree[node] === degree[best] && compareNodeIndexesById(node, best) < 0)
+            ? node
+            : best
+        ), nodes[0])
+        let seedB = nodes[0] === seedA ? nodes[1] : nodes[0]
+        let bestScore = -Infinity
+
+        for (const node of nodes) {
+          if (node === seedA) {
+            continue
+          }
+
+          const directWeight = matrixDirectWeight(node, seedA, adjacency)
+          const score = (directWeight === 0 ? 2 : 1 / (1 + directWeight)) * Math.sqrt(degree[node] + 1)
+
+          if (score > bestScore || (score === bestScore && compareNodeIndexesById(node, seedB) < 0)) {
+            bestScore = score
+            seedB = node
+          }
+        }
+
+        const left = []
+        const right = []
+
+        for (const node of nodes) {
+          if (node === seedA) {
+            left.push(node)
+            continue
+          }
+
+          if (node === seedB) {
+            right.push(node)
+            continue
+          }
+
+          const affinityA = matrixDirectWeight(node, seedA, adjacency)
+          const affinityB = matrixDirectWeight(node, seedB, adjacency)
+
+          if (affinityA > affinityB) {
+            left.push(node)
+          } else if (affinityB > affinityA) {
+            right.push(node)
+          } else if (left.length <= right.length) {
+            left.push(node)
+          } else {
+            right.push(node)
+          }
+        }
+
+        if (left.length === 0 || right.length === 0) {
+          return greedyMatrixOrder(nodes, adjacency, degree)
+        }
+
+        left.sort(compareNodeIndexesById)
+        right.sort(compareNodeIndexesById)
+
+        return [
+          ...hierarchicalMatrixComponentOrder(left, adjacency, degree, depth + 1),
+          ...hierarchicalMatrixComponentOrder(right, adjacency, degree, depth + 1)
+        ]
+      }
+
+      function greedyMatrixOrder(nodes, adjacency, degree) {
+        if (nodes.length <= 1) {
+          return [...nodes]
+        }
+
+        const remaining = new Set(nodes)
+        const score = new Float64Array(state.npcs.length)
+        const order = []
+        let current = nodes.reduce((best, node) => (
+          degree[node] > degree[best] || (degree[node] === degree[best] && compareNodeIndexesById(node, best) < 0)
+            ? node
+            : best
+        ), nodes[0])
+
+        while (remaining.size > 0) {
+          if (!remaining.has(current)) {
+            current = pickBestRemainingMatrixNode(remaining, score, degree)
+          }
+
+          remaining.delete(current)
+          order.push(current)
+
+          for (const edge of adjacency[current]) {
+            if (remaining.has(edge.to)) {
+              score[edge.to] += edge.weight
+            }
+          }
+
+          current = pickBestRemainingMatrixNode(remaining, score, degree)
+        }
+
+        return order
+      }
+
+      function pickBestRemainingMatrixNode(remaining, score, degree) {
+        let best = -1
+
+        for (const node of remaining) {
+          if (best < 0 ||
+              score[node] > score[best] ||
+              (score[node] === score[best] && degree[node] > degree[best]) ||
+              (score[node] === score[best] && degree[node] === degree[best] && compareNodeIndexesById(node, best) < 0)) {
+            best = node
+          }
+        }
+
+        return best
+      }
+
+      function matrixDirectWeight(source, target, adjacency) {
+        for (const edge of adjacency[source]) {
+          if (edge.to === target) {
+            return edge.weight
+          }
+        }
+
+        return 0
+      }
+
+      function compareBooleanAssigned(leftAssigned, rightAssigned) {
+        return Number(leftAssigned) - Number(rightAssigned)
+      }
+
+      function compareTextKeys(left, right) {
+        const leftValue = String(left || '')
+        const rightValue = String(right || '')
+
+        if (leftValue && !rightValue) {
+          return -1
+        }
+
+        if (!leftValue && rightValue) {
+          return 1
+        }
+
+        return leftValue.localeCompare(rightValue, undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        })
+      }
+
+      function compareNodeIndexesById(leftIndex, rightIndex) {
+        const leftId = state.npcs[leftIndex]?.id || `npc_${leftIndex}`
+        const rightId = state.npcs[rightIndex]?.id || `npc_${rightIndex}`
+
+        return String(leftId).localeCompare(String(rightId), undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        })
+      }
+
       function configureControls() {
         const maxValue = Math.max(state.maxTime, state.minTime + 1)
 
@@ -2906,6 +3628,22 @@
         renderChart()
       }
 
+      function setMatrixLayout() {
+        const nextMode = matrixLayoutSelect.value
+
+        state.matrixLayoutMode = isMatrixLayoutModeAvailable(nextMode) ? nextMode : 'hierarchical'
+        matrixLayoutSelect.value = state.matrixLayoutMode
+        invalidateMatrixOrder()
+        scheduleMatrixDraw()
+      }
+
+      function setMatrixDisplay() {
+        state.showMatrixHeatmap = showMatrixHeatmapInput.checked
+        state.showMatrixNumbers = showMatrixNumbersInput.checked
+        updateLegend()
+        scheduleMatrixDraw()
+      }
+
       function setNodeSize() {
         const nextSize = Number(nodeSizeInput.value)
 
@@ -2955,17 +3693,24 @@
           return
         }
 
-        state.activeTab = tab === 'seir' ? 'seir' : 'contact'
+        state.activeTab = tab === 'seir' ? 'seir' : tab === 'matrix' ? 'matrix' : 'contact'
         document.body.dataset.view = state.activeTab
-        edgeCanvas.hidden = state.activeTab !== 'contact'
+        edgeCanvas.hidden = state.activeTab === 'seir'
+        clearCanvas()
         contactGraphTab.setAttribute('aria-selected', state.activeTab === 'contact' ? 'true' : 'false')
+        contactMatrixTab.setAttribute('aria-selected', state.activeTab === 'matrix' ? 'true' : 'false')
         seirCurveTab.setAttribute('aria-selected', state.activeTab === 'seir' ? 'true' : 'false')
         graphRoot.style('display', state.activeTab === 'contact' ? null : 'none')
         chartRoot.style('display', state.activeTab === 'seir' ? null : 'none')
+        matrixRoot.style('display', state.activeTab === 'matrix' ? null : 'none')
         hideTooltip()
         applyActiveTransform()
         updateLegend()
-        scheduleGraphDraw()
+        if (state.activeTab === 'matrix') {
+          scheduleMatrixDraw()
+        } else {
+          scheduleGraphDraw()
+        }
 
         if (state.activeTab === 'contact') {
           startFloatingAnimation()
@@ -2975,7 +3720,11 @@
       }
 
       function applyActiveTransform() {
-        const transform = state.activeTab === 'contact' ? state.graphTransform : state.chartTransform
+        const transform = state.activeTab === 'contact'
+          ? state.graphTransform
+          : state.activeTab === 'seir'
+            ? state.chartTransform
+            : state.matrixTransform
 
         svg.call(graphZoom.transform, transform)
       }
@@ -2990,14 +3739,20 @@
         if (!state.loaded) {
           state.graphTransform = centeredTransform()
           state.chartTransform = centeredTransform()
+          state.matrixTransform = centeredTransform()
           applyActiveTransform()
           scheduleGraphDraw()
+          scheduleMatrixDraw()
           return
         }
 
         renderChart()
         applyActiveTransform()
-        scheduleGraphDraw()
+        if (state.activeTab === 'matrix') {
+          scheduleMatrixDraw()
+        } else {
+          scheduleGraphDraw()
+        }
       }
 
       function centeredTransform() {
@@ -3322,6 +4077,7 @@
 
         state.world.matchedNpcCount = matchedNpcCount
         rebuildWorldRelationshipEdges()
+        invalidateMatrixOrder()
       }
 
       function clearNodeWorldMetadata(node) {
@@ -3501,6 +4257,8 @@
         nodeColorModeSelect.querySelector('option[value="office"]').disabled = !isNodeColorModeAvailable('office')
         layoutSelect.querySelector('option[value="familyBuildings"]').disabled = !isLayoutModeAvailable('familyBuildings')
         layoutSelect.querySelector('option[value="officeBuildings"]').disabled = !isLayoutModeAvailable('officeBuildings')
+        matrixLayoutSelect.querySelector('option[value="family"]').disabled = !isMatrixLayoutModeAvailable('family')
+        matrixLayoutSelect.querySelector('option[value="work"]').disabled = !isMatrixLayoutModeAvailable('work')
         showFamilyEdgesInput.disabled = !isWorldEdgeAvailable('family')
         showFriendshipEdgesInput.disabled = !isWorldEdgeAvailable('friendship')
         showCoworkerEdgesInput.disabled = !isWorldEdgeAvailable('coworker')
@@ -3528,8 +4286,14 @@
           state.layoutMode = 'force'
         }
 
+        if (!isMatrixLayoutModeAvailable(state.matrixLayoutMode)) {
+          state.matrixLayoutMode = 'hierarchical'
+          invalidateMatrixOrder()
+        }
+
         nodeColorModeSelect.value = state.nodeColorMode
         layoutSelect.value = state.layoutMode
+        matrixLayoutSelect.value = state.matrixLayoutMode
 
         if (!state.world.loaded) {
           worldSummary.textContent = 'No world loaded.'
@@ -3581,6 +4345,22 @@
         return false
       }
 
+      function isMatrixLayoutModeAvailable(mode) {
+        if (mode === 'hierarchical') {
+          return true
+        }
+
+        if (mode === 'family') {
+          return Boolean(state.world.loaded && state.world.available.family)
+        }
+
+        if (mode === 'work') {
+          return Boolean(state.world.loaded && state.world.available.office)
+        }
+
+        return false
+      }
+
       function updateSourceLabel() {
         const parts = []
 
@@ -3597,6 +4377,19 @@
 
       function updateLegend() {
         const items = []
+
+        if (state.activeTab === 'matrix') {
+          if (state.showMatrixHeatmap) {
+            items.push(legendItem('<span class="swatch-line" style="width: 38px; background: linear-gradient(90deg, #f8efdd, #ef9152, #cf3745)"></span>', 'Contact count'))
+          }
+
+          if (state.showMatrixNumbers) {
+            items.push(legendItem('<span class="swatch" style="background: #202621"></span>', 'Numbers'))
+          }
+
+          legend.innerHTML = items.join('')
+          return
+        }
 
         if (state.activeTab === 'seir' || state.nodeColorMode === 'seir') {
           const legendStateKeys = state.activeTab === 'seir'
