@@ -1091,7 +1091,6 @@
           x: Math.cos(index * 2.399963) * Math.sqrt(index + 1) * 9,
           y: Math.sin(index * 2.399963) * Math.sqrt(index + 1) * 9
         }))
-        applyWorldMetadata()
         state.initialStateCodes = data.initialStateCodes
         state.currentStateCodes = data.initialStateCodes.slice()
         state.degrees = new Uint32Array(state.npcs.length)
@@ -1137,6 +1136,7 @@
         state.maxVisibleContactEdges = data.maxVisibleContactEdges || state.maxVisibleContactEdges
         layoutSelect.value = state.layoutMode
 
+        applyWorldMetadata()
         configureControls()
         updateWorldControls()
         updateSourceLabel()
@@ -3344,8 +3344,8 @@
         }
 
         const idToNodeIndex = new Map(state.npcs.map((node) => [node.id, node.index]))
-        const family = createGroupRelationshipEdges(state.world.families, 'memberIds', idToNodeIndex)
-        const coworker = createGroupRelationshipEdges(state.world.offices, 'workerIds', idToNodeIndex)
+        const family = createGroupRelationshipEdges(state.world.families, 'memberIds', idToNodeIndex, 'familyId')
+        const coworker = createGroupRelationshipEdges(state.world.offices, 'workerIds', idToNodeIndex, 'officeId')
         const friendship = createFriendshipRelationshipEdges(idToNodeIndex)
 
         setRelationshipEdgeArrays(
@@ -3368,7 +3368,7 @@
         rebuildSelectionNeighborhood()
       }
 
-      function createGroupRelationshipEdges(groups, memberField, idToNodeIndex) {
+      function createGroupRelationshipEdges(groups, memberField, idToNodeIndex, metadataField = null) {
         const source = []
         const target = []
         const seen = new Set()
@@ -3383,7 +3383,48 @@
           }
         }
 
+        if (metadataField) {
+          appendMetadataGroupRelationshipEdges(source, target, seen, metadataField)
+        }
+
         return { source, target }
+      }
+
+      function appendMetadataGroupRelationshipEdges(source, target, seen, metadataField) {
+        const groupsById = new Map()
+
+        for (const node of state.npcs) {
+          if (!node.worldMatched) {
+            continue
+          }
+
+          const groupId = normalizeStringOrNull(node[metadataField])
+
+          if (!groupId) {
+            continue
+          }
+
+          let members = groupsById.get(groupId)
+
+          if (!members) {
+            members = []
+            groupsById.set(groupId, members)
+          }
+
+          members.push(node.index)
+        }
+
+        const groupIds = [...groupsById.keys()].sort((left, right) => String(left).localeCompare(String(right)))
+
+        for (const groupId of groupIds) {
+          const members = groupsById.get(groupId).sort((left, right) => left - right)
+
+          for (let leftIndex = 0; leftIndex < members.length; leftIndex += 1) {
+            for (let rightIndex = leftIndex + 1; rightIndex < members.length; rightIndex += 1) {
+              pushUniqueUndirectedEdge(source, target, seen, members[leftIndex], members[rightIndex])
+            }
+          }
+        }
       }
 
       function createFriendshipRelationshipEdges(idToNodeIndex) {
@@ -3510,15 +3551,15 @@
 
       function isWorldEdgeAvailable(kind) {
         if (kind === 'family') {
-          return Boolean(state.world.loaded && state.world.available.familyEdges)
+          return Boolean(state.world.loaded && state.familySource.length > 0)
         }
 
         if (kind === 'friendship') {
-          return Boolean(state.world.loaded && state.world.available.friendshipEdges)
+          return Boolean(state.world.loaded && state.friendshipSource.length > 0)
         }
 
         if (kind === 'coworker') {
-          return Boolean(state.world.loaded && state.world.available.coworkerEdges)
+          return Boolean(state.world.loaded && state.coworkerSource.length > 0)
         }
 
         return false
