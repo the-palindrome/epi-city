@@ -8,6 +8,8 @@ export class HeadlessEventRecorder {
     this.clock = clock
     this.events = []
     this.activeContacts = new Map()
+    this.observationAt = NaN
+    this.observedContactCount = 0
     this.sequence = 0
     this.counts = {
       contact: 0,
@@ -72,6 +74,7 @@ export class HeadlessEventRecorder {
       this.activeContacts.set(pairKey, contact)
     }
 
+    this.markContactObserved(contact, at)
     contact.until = at
     contact.durationSeconds = contact.until - contact.at
     if (distanceSquared < contact.minDistanceWorldUnitsSquared) {
@@ -84,7 +87,54 @@ export class HeadlessEventRecorder {
     }
   }
 
+  recordOrderedSameTileContactObservation(
+    firstNpcId,
+    secondNpcId,
+    pairKey,
+    tile,
+    at = this.getAt()
+  ) {
+    let contact = this.activeContacts.get(pairKey)
+
+    if (!contact) {
+      contact = {
+        event: 'contact',
+        id: this.nextId('contact'),
+        npcs: [formatNpcId(firstNpcId), formatNpcId(secondNpcId)],
+        at,
+        until: at,
+        durationSeconds: 0,
+        minDistanceWorldUnitsSquared: 0,
+        observationCount: 0,
+        order: this.nextOrder()
+      }
+      setContactTile(contact, tile)
+      this.activeContacts.set(pairKey, contact)
+    } else if (contact.tileIndex !== tile?.index) {
+      setContactTile(contact, tile)
+    }
+
+    this.markContactObserved(contact, at)
+    contact.until = at
+    contact.durationSeconds = contact.until - contact.at
+    if (contact.minDistanceWorldUnitsSquared > 0) {
+      contact.minDistanceWorldUnitsSquared = 0
+    }
+    contact.observationCount += 1
+    contact.lastObservedAt = at
+  }
+
   closeInactiveContacts(at = this.getAt()) {
+    if (
+      this.activeContacts.size === 0 ||
+      (
+        this.observationAt === at &&
+        this.observedContactCount >= this.activeContacts.size
+      )
+    ) {
+      return
+    }
+
     for (const [key, contact] of this.activeContacts.entries()) {
       if (contact.lastObservedAt >= at) {
         continue
@@ -180,6 +230,17 @@ export class HeadlessEventRecorder {
 
   pushEvent(event) {
     this.events.push(event)
+  }
+
+  markContactObserved(contact, at) {
+    if (this.observationAt !== at) {
+      this.observationAt = at
+      this.observedContactCount = 0
+    }
+
+    if (contact.lastObservedAt !== at) {
+      this.observedContactCount += 1
+    }
   }
 
   nextId(kind) {

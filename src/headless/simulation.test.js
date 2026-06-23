@@ -72,6 +72,27 @@ describe('headless simulation runner', () => {
       infectedNpcIds: ['npc_100']
     }), { worldPath })).rejects.toThrow(/unknown NPC id/)
   })
+
+  it('produces identical seeded results for identical configs and worlds', async () => {
+    const worldPath = await writeTestWorld('headless-deterministic-world.test.json', {
+      population: { npcCount: 100, carCount: 0 }
+    })
+    const config = createRunConfig({
+      initialInfectiousCount: 1
+    }, {
+      run: { durationSeconds: 20, stepSeconds: 2 },
+      infection: {
+        distanceMeters: 2,
+        transmissionProbabilityPerMinute: 0.001
+      }
+    })
+
+    const first = stripVolatileResultFields(await runHeadlessSimulation(config, { worldPath }))
+    const second = stripVolatileResultFields(await runHeadlessSimulation(config, { worldPath }))
+
+    expect(first.events.length).toBeGreaterThan(0)
+    expect(second).toEqual(first)
+  })
 })
 
 async function writeTestWorld(fileName, config) {
@@ -87,9 +108,9 @@ async function writeTestWorld(fileName, config) {
   return worldPath
 }
 
-function createRunConfig(initialSeir = {}) {
+function createRunConfig(initialSeir = {}, overrides = {}) {
   return {
-    seed: { enabled: true, value: 'run-seed' },
+    seed: overrides.seed || { enabled: true, value: 'run-seed' },
     initialSeir: {
       initialInfectiousCount: 0,
       inoculatedPercent: 0,
@@ -97,14 +118,22 @@ function createRunConfig(initialSeir = {}) {
       inoculatedNpcIds: [],
       ...initialSeir
     },
-    run: { durationSeconds: 1, stepSeconds: 1 },
+    run: { durationSeconds: 1, stepSeconds: 1, ...(overrides.run || {}) },
     infection: {
       distanceMeters: 0,
       transmissionProbabilityPerMinute: 0,
       incubationDays: 1,
       infectiousDays: 7,
-      immunityDays: 90
+      immunityDays: 90,
+      ...(overrides.infection || {})
     },
-    policies: []
+    policies: overrides.policies || []
   }
+}
+
+function stripVolatileResultFields(result) {
+  const clone = structuredClone(result)
+
+  delete clone.createdAt
+  return clone
 }

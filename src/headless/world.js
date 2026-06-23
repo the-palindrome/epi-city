@@ -92,6 +92,8 @@ export function serializeHeadlessWorld(runtime, options = {}) {
   const npcs = runtime.npcs.map(serializeNpc)
   const groups = createGeneratedGroups(npcs, options.random || createSystemRandom())
 
+  syncSerializedNpcLocationStates(npcs)
+
   return {
     format: HEADLESS_WORLD_FORMAT,
     version: HEADLESS_WORLD_VERSION,
@@ -102,6 +104,31 @@ export function serializeHeadlessWorld(runtime, options = {}) {
     families: groups.families,
     classes: groups.classes,
     offices: groups.offices
+  }
+}
+
+function syncSerializedNpcLocationStates(npcs) {
+  for (const npc of npcs) {
+    if (!npc.locationState) {
+      continue
+    }
+
+    syncSerializedNpcIndoorState(npc.locationState.indoorState, npc)
+    syncSerializedNpcIndoorState(npc.locationState.indoorTargetState, npc)
+  }
+}
+
+function syncSerializedNpcIndoorState(indoorState, npc) {
+  if (!indoorState || typeof indoorState !== 'object') {
+    return
+  }
+
+  if (indoorState.type === 'family' && npc.familyId) {
+    indoorState.id = npc.familyId
+  } else if (indoorState.type === 'class' && npc.classId) {
+    indoorState.id = npc.classId
+  } else if (indoorState.type === 'office' && npc.officeId) {
+    indoorState.id = npc.officeId
   }
 }
 
@@ -736,6 +763,9 @@ function normalizeInteger(value, label) {
 function cloneLocationState(locationState) {
   return {
     ...locationState,
+    highLevelLocation: locationState.highLevelLocation ? { ...locationState.highLevelLocation } : locationState.highLevelLocation,
+    indoorState: locationState.indoorState ? { ...locationState.indoorState } : locationState.indoorState,
+    indoorTargetState: locationState.indoorTargetState ? { ...locationState.indoorTargetState } : locationState.indoorTargetState,
     location: locationState.location ? { ...locationState.location } : null
   }
 }

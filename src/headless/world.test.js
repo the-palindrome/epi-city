@@ -32,6 +32,14 @@ describe('headless world files', () => {
     expect([...officeWorkerIds].sort()).toEqual(workNpcIds)
     expect(world.classes.every((schoolClass) => schoolClass.size === schoolClass.studentIds.length)).toBe(true)
     expect(world.offices.every((office) => office.size === office.workerIds.length)).toBe(true)
+    expect(world.npcs.every((npc) => (
+      !npc.locationState?.indoorTargetState ||
+      npc.locationState.indoorTargetState.type === 'lobby' ||
+      npc.locationState.indoorTargetState.type === 'main' ||
+      (npc.locationState.indoorTargetState.type === 'family' && npc.locationState.indoorTargetState.id === npc.familyId) ||
+      (npc.locationState.indoorTargetState.type === 'class' && npc.locationState.indoorTargetState.id === npc.classId) ||
+      (npc.locationState.indoorTargetState.type === 'office' && npc.locationState.indoorTargetState.id === npc.officeId)
+    ))).toBe(true)
     expect(world.config).toBeUndefined()
     expect(world.initialSeir).toBeUndefined()
   })

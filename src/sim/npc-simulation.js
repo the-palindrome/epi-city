@@ -95,6 +95,10 @@ const DEFAULT_SOCIAL_GRAPH_CONFIG = Object.freeze({
 const DEFAULT_SOCIAL_GROUP_MIN_FRIENDS = 1
 const DEFAULT_SOCIAL_GROUP_MAX_FRIENDS = 3
 const CONTACT_PAIR_KEY_BASE = 0x4000000
+const COMMERCIAL_BUILDING_TYPES = Object.freeze(['commercial'])
+const CLASS_SIZE_DISTRIBUTION = Object.freeze({ min: 18, mode: 24, max: 30 })
+const OFFICE_SIZE_DISTRIBUTION = Object.freeze({ min: 4, mode: 8, max: 14 })
+const INDOOR_LOBBY_BREAK_DURATION_MINUTES = 8
 const desireCityDataCache = new WeakMap()
 
 export function createNpcSimulation(city, entityLayer, config) {
@@ -103,6 +107,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   const policyRandom = config.policyRandom || (random.seed ? createSeededRandom(`${random.seed}:policy`) : createSystemRandom())
   const desireRandom = config.desireRandom || (random.seed ? createSeededRandom(`${random.seed}:desires`) : createSystemRandom())
   const socialRandom = config.socialRandom || (random.seed ? createSeededRandom(`${random.seed}:social`) : createSystemRandom())
+  const indoorGroupRandom = config.indoorGroupRandom || (random.seed ? createSeededRandom(`${random.seed}:indoor-groups`) : createSystemRandom())
   const renderEnabled = config.render !== false
   const pixi = config.pixi || globalThis.PIXI || createGraphicsPixiShim()
   const zorder = Number.isFinite(config.zorder) ? config.zorder : NPC_CONFIG.zorder
@@ -122,6 +127,7 @@ export function createNpcSimulation(city, entityLayer, config) {
   const context = {
     city,
     clock,
+    buildingsById: desireCityData.buildingsById,
     slotOffsets,
     unlimitedCapacityTiles,
     crowding,
@@ -171,11 +177,17 @@ export function createNpcSimulation(city, entityLayer, config) {
     }))
   }
 
+  assignNpcIndoorGroups(npcs, city, indoorGroupRandom)
+
+  for (const npc of npcs) {
+    normalizeNpcLocationState(npc, desireCityData.buildingsById)
+  }
+
   const desires = new NpcDesireDynamics(npcs, city, desireCityData, config, desireRandom, clock)
   const socialGraph = createNpcSocialGraph(npcs, socialRandom, config.socialGraph)
   desires.setSocialGraph(socialGraph, routePlanner)
   context.desires = desires
-  const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock)
+  const infection = new NpcInfectionDynamics(npcs, city, config, infectionRandom, clock, desireCityData.buildingsById)
   setPolicyEffects(config.policyEffects)
   infection.setContactTracingEnabled(
     Boolean(entityDebugOptions.contactEdgesVisible),
@@ -228,6 +240,11 @@ export function createNpcSimulation(city, entityLayer, config) {
     for (let index = 0; index < npcs.length; index += 1) {
       const npc = npcs[index]
       updateNpcMovement(npc, movementDelta, context)
+    }
+
+    for (let index = 0; index < npcs.length; index += 1) {
+      const npc = npcs[index]
+      updateNpcIndoorLocation(npc, timeOfDayHours, context)
     }
 
     desires.update(safeDelta)
@@ -337,6 +354,7 @@ class NpcEntity {
     this.vehicleTrip = null
     this.waitingForCar = false
     this.carId = null
+    this.highLevelLocation = createHighLevelLocation('outdoors')
     this.commuteByCar = false
     this.infection = 'susceptible'
     this.desires = null
@@ -388,11 +406,13 @@ class NpcEntity {
     this.vehicleTrip = {
       carId,
       destinationKind,
-      destinationBuildingId
+      destinationBuildingId,
+      highLevelLocation: createHighLevelLocation('car', carId)
     }
     this.waitingForCar = false
     this.present = false
     this.locationState = null
+    this.highLevelLocation = createHighLevelLocation('car', carId)
     this.movement.target = null
     clearNpcMovementHeading(this)
     if (this.renderEnabled) {
@@ -416,11 +436,15 @@ class NpcEntity {
     this.vehicleTrip = null
     this.waitingForCar = false
     this.present = false
-    this.locationState = {
-      timetableElementId: destinationKind,
-      buildingId: building.id,
-      location
-    }
+    this.locationState = createBuildingLocationState(
+      this,
+      getDesireCityData(city).buildingsById,
+      building,
+      destinationKind,
+      location,
+      { entering: true }
+    )
+    this.highLevelLocation = createHighLevelLocation('building', building.id)
     this.goal = {
       id: destinationKind,
       buildingId: building.id,
@@ -632,10 +656,57 @@ class NpcDesireDynamics {
 
     this.elapsedSimulationSeconds += simulationDeltaSeconds
     const deltaHours = simulationDeltaSeconds / SECONDS_PER_HOUR
+    const hungerScores = this.needScores[DESIRE_INDEX.hunger]
+    const energyScores = this.needScores[DESIRE_INDEX.energy]
+    const funScores = this.needScores[DESIRE_INDEX.fun]
+    const socialScores = this.needScores[DESIRE_INDEX.social]
+    const hungerDecay = this.decayPerHour[DESIRE_INDEX.hunger] * deltaHours
+    const energyDecay = this.decayPerHour[DESIRE_INDEX.energy] * deltaHours
+    const funDecay = this.decayPerHour[DESIRE_INDEX.fun] * deltaHours
+    const socialDecay = this.decayPerHour[DESIRE_INDEX.social] * deltaHours
 
     for (let index = 0; index < this.npcs.length; index += 1) {
-      this.decayNeeds(index, deltaHours)
-      this.satisfyNeeds(this.npcs[index], index, deltaHours)
+      hungerScores[index] = clampNeedScoreFast(hungerScores[index] - hungerDecay)
+      energyScores[index] = clampNeedScoreFast(energyScores[index] - energyDecay)
+      funScores[index] = clampNeedScoreFast(funScores[index] - funDecay)
+      socialScores[index] = clampNeedScoreFast(socialScores[index] - socialDecay)
+
+      const npc = this.npcs[index]
+      const locationState = npc.locationState
+
+      if (!locationState?.buildingId) {
+        continue
+      }
+
+      const rates = this.satisfactionRatesForLocation(npc, locationState)
+
+      if (rates === DESIRE_ZERO_RATES) {
+        continue
+      }
+
+      const hungerRate = rates[DESIRE_INDEX.hunger]
+
+      if (hungerRate > 0) {
+        hungerScores[index] = clampNeedScoreFast(hungerScores[index] + hungerRate * deltaHours)
+      }
+
+      const energyRate = rates[DESIRE_INDEX.energy]
+
+      if (energyRate > 0) {
+        energyScores[index] = clampNeedScoreFast(energyScores[index] + energyRate * deltaHours)
+      }
+
+      const funRate = rates[DESIRE_INDEX.fun]
+
+      if (funRate > 0) {
+        funScores[index] = clampNeedScoreFast(funScores[index] + funRate * deltaHours)
+      }
+
+      const socialRate = rates[DESIRE_INDEX.social]
+
+      if (socialRate > 0) {
+        socialScores[index] = clampNeedScoreFast(socialScores[index] + socialRate * deltaHours)
+      }
     }
   }
 
@@ -1014,9 +1085,10 @@ class NpcDesireDynamics {
 }
 
 class NpcInfectionDynamics {
-  constructor(npcs, city, config, random, clock) {
+  constructor(npcs, city, config, random, clock, buildingsById = null) {
     this.npcs = npcs
     this.city = city
+    this.buildingsById = buildingsById || getDesireCityData(city).buildingsById
     this.random = random
     this.clock = clock
     this.eventRecorder = config.eventRecorder || null
@@ -1041,6 +1113,10 @@ class NpcInfectionDynamics {
     this.participantGridStamp = -1
     this.participantIndexes = new Int32Array(npcs.length)
     this.participantCount = 0
+    this.sharedLocationGroups = []
+    this.sharedLocationGroupsByLocation = new Map()
+    this.sharedLocationGroupPool = []
+    this.sharedLocationGroupsAt = NaN
     this.numericContactPairKeys = npcs.length < CONTACT_PAIR_KEY_BASE
     this.elapsedSimulationSeconds = 0
     this.transmissionEvents = []
@@ -1262,7 +1338,7 @@ class NpcInfectionDynamics {
 
     const distance = Math.sqrt(distanceSquared)
 
-    const pairKey = contactPairKey(sourceNpc.id, targetNpc.id)
+    const pairKey = this.contactPairKey(sourceNpc.id, targetNpc.id)
     const existing = this.contactEventsByPair.get(pairKey)
     const event = existing || {
       id: this.nextContactEventId,
@@ -1317,7 +1393,7 @@ class NpcInfectionDynamics {
       const event = this.contactEvents[index]
 
       if (event.simulationSeconds < minSimulationSeconds) {
-        this.contactEventsByPair.delete(contactPairKey(event.sourceNpcId, event.targetNpcId))
+        this.contactEventsByPair.delete(this.contactPairKey(event.sourceNpcId, event.targetNpcId))
         continue
       }
 
@@ -1326,6 +1402,15 @@ class NpcInfectionDynamics {
     }
 
     this.contactEvents.length = writeIndex
+  }
+
+  contactPairKey(firstNpcId, secondNpcId) {
+    const first = firstNpcId <= secondNpcId ? firstNpcId : secondNpcId
+    const second = firstNpcId <= secondNpcId ? secondNpcId : firstNpcId
+
+    return this.numericContactPairKeys
+      ? first * CONTACT_PAIR_KEY_BASE + second
+      : `${first}:${second}`
   }
 
   seedInitialInfections(initialInfectiousCount) {
@@ -1436,6 +1521,15 @@ class NpcInfectionDynamics {
       return
     }
 
+    this.transmitSharedLocations(transmissionProbability)
+
+    if (
+      this.counts[INFECTION_STATE_IDS.infectious] === 0 ||
+      this.counts[INFECTION_STATE_IDS.susceptible] === 0
+    ) {
+      return
+    }
+
     const useParticipantGrid = this.participantGridStamp === this.gridStamp
 
     if (!useParticipantGrid) {
@@ -1499,6 +1593,54 @@ class NpcInfectionDynamics {
     }
   }
 
+  transmitSharedLocations(transmissionProbability) {
+    const groups = this.getSharedLocationGroups()
+
+    if (groups.length === 0) {
+      return
+    }
+
+    for (const group of groups) {
+      const infectiousIndexes = []
+
+      for (const index of group) {
+        if (this.states[index] === INFECTION_STATE_IDS.infectious) {
+          infectiousIndexes.push(index)
+        }
+      }
+
+      if (infectiousIndexes.length === 0) {
+        continue
+      }
+
+      const groupTransmissionProbability = probabilityForRepeatedTrials(transmissionProbability, infectiousIndexes.length)
+
+      if (groupTransmissionProbability <= 0) {
+        continue
+      }
+
+      for (const targetIndex of group) {
+        if (this.states[targetIndex] !== INFECTION_STATE_IDS.susceptible) {
+          continue
+        }
+
+        const sourceOffset = geometricTrialSuccessOffset(
+          this.random.next(),
+          transmissionProbability,
+          infectiousIndexes.length,
+          groupTransmissionProbability
+        )
+
+        if (sourceOffset === -1) {
+          continue
+        }
+
+        this.recordTransmissionEvent(this.npcs[infectiousIndexes[sourceOffset]], this.npcs[targetIndex], 0, 0)
+        this.setStateByIndex(targetIndex, INFECTION_STATE_IDS.exposed, this.incubationSeconds, { emit: false })
+      }
+    }
+  }
+
   recordRecentContacts() {
     if ((!this.contactTracingEnabled && !this.eventRecorder) || this.infectionDistance <= 0) {
       return
@@ -1519,6 +1661,7 @@ class NpcInfectionDynamics {
     const numericContactPairKeys = this.numericContactPairKeys
 
     this.participantCount = 0
+    this.recordSharedLocationContacts(simulationSeconds)
 
     for (let index = 0; index < this.npcs.length; index += 1) {
       const npc = this.npcs[index]
@@ -1586,6 +1729,117 @@ class NpcInfectionDynamics {
     }
 
     this.participantGridStamp = this.gridStamp
+  }
+
+  recordSharedLocationContacts(simulationSeconds) {
+    const groups = this.getSharedLocationGroups()
+
+    if (
+      !this.contactTracingEnabled &&
+      typeof this.eventRecorder?.recordOrderedContactObservationSquared === 'function'
+    ) {
+      const eventRecorder = this.eventRecorder
+      const numericContactPairKeys = this.numericContactPairKeys
+      const canRecordSameTile = typeof eventRecorder.recordOrderedSameTileContactObservation === 'function'
+
+      for (const group of groups) {
+        for (let left = 0; left < group.length - 1; left += 1) {
+          const firstIndex = group[left]
+          const firstNpc = this.npcs[firstIndex]
+
+          for (let right = left + 1; right < group.length; right += 1) {
+            const secondIndex = group[right]
+            const secondNpc = this.npcs[secondIndex]
+            const firstNpcId = firstIndex <= secondIndex ? firstIndex : secondIndex
+            const secondNpcId = firstIndex <= secondIndex ? secondIndex : firstIndex
+            const pairKey = numericContactPairKeys
+              ? firstNpcId * CONTACT_PAIR_KEY_BASE + secondNpcId
+              : `${firstNpcId}:${secondNpcId}`
+            const firstTile = firstNpc.tile
+            const secondTile = secondNpc.tile
+
+            if (canRecordSameTile && firstTile && firstTile.index === secondTile?.index) {
+              eventRecorder.recordOrderedSameTileContactObservation(
+                firstNpcId,
+                secondNpcId,
+                pairKey,
+                firstTile,
+                simulationSeconds
+              )
+              continue
+            }
+
+            eventRecorder.recordOrderedContactObservationSquared(
+              firstNpcId === firstIndex ? firstNpc : secondNpc,
+              firstNpcId === firstIndex ? secondNpc : firstNpc,
+              firstNpcId,
+              secondNpcId,
+              pairKey,
+              0,
+              simulationSeconds
+            )
+          }
+        }
+      }
+
+      return
+    }
+
+    for (const group of groups) {
+      for (let left = 0; left < group.length - 1; left += 1) {
+        const firstNpc = this.npcs[group[left]]
+
+        for (let right = left + 1; right < group.length; right += 1) {
+          this.recordContactEvent(firstNpc, this.npcs[group[right]], 0, 0, simulationSeconds)
+        }
+      }
+    }
+  }
+
+  getSharedLocationGroups() {
+    const at = this.getElapsedSimulationSeconds()
+
+    if (this.sharedLocationGroupsAt === at) {
+      return this.sharedLocationGroups
+    }
+
+    const groupsByLocation = this.sharedLocationGroupsByLocation
+    const groupPool = this.sharedLocationGroupPool
+
+    for (const group of groupsByLocation.values()) {
+      group.length = 0
+      groupPool.push(group)
+    }
+
+    groupsByLocation.clear()
+
+    for (let index = 0; index < this.npcs.length; index += 1) {
+      const key = sharedContactLocationKey(this.npcs[index], this.buildingsById)
+
+      if (!key) {
+        continue
+      }
+
+      let group = groupsByLocation.get(key)
+
+      if (!group) {
+        group = groupPool.pop() || []
+        groupsByLocation.set(key, group)
+      }
+
+      group.push(index)
+    }
+
+    this.sharedLocationGroups.length = 0
+
+    for (const group of groupsByLocation.values()) {
+      if (group.length > 1) {
+        this.sharedLocationGroups.push(group)
+      }
+    }
+
+    this.sharedLocationGroupsAt = at
+    return this.sharedLocationGroups
   }
 
   indexInfectiousNpcs() {
@@ -1794,6 +2048,129 @@ function getDesireCityData(city) {
 
   desireCityDataCache.set(city, data)
   return data
+}
+
+function assignNpcIndoorGroups(npcs, city, random) {
+  const cityData = getDesireCityData(city)
+
+  assignPartitionedIndoorGroupIds({
+    npcs,
+    buildingsById: cityData.buildingsById,
+    random,
+    buildingIdForNpc: (npc) => npc.school,
+    includeBuilding: (building) => buildingHasAnyType(building, SCHOOL_BUILDING_TYPES),
+    groupField: 'classId',
+    idPrefix: 'class',
+    sizeDistribution: CLASS_SIZE_DISTRIBUTION
+  })
+  assignPartitionedIndoorGroupIds({
+    npcs,
+    buildingsById: cityData.buildingsById,
+    random,
+    buildingIdForNpc: (npc) => npc.work,
+    includeBuilding: (building) => buildingHasAnyType(building, COMMERCIAL_BUILDING_TYPES),
+    groupField: 'officeId',
+    idPrefix: 'office',
+    sizeDistribution: OFFICE_SIZE_DISTRIBUTION
+  })
+}
+
+function assignPartitionedIndoorGroupIds({
+  npcs,
+  buildingsById,
+  random,
+  buildingIdForNpc,
+  includeBuilding,
+  groupField,
+  idPrefix,
+  sizeDistribution
+}) {
+  const byBuildingId = new Map()
+  let groupCount = 0
+
+  for (const npc of npcs) {
+    const buildingId = buildingIdForNpc(npc)
+    const building = buildingsById.get(buildingId)
+
+    if (!buildingId || !includeBuilding(building)) {
+      continue
+    }
+
+    let members = byBuildingId.get(buildingId)
+
+    if (!members) {
+      members = []
+      byBuildingId.set(buildingId, members)
+    }
+
+    members.push(npc)
+  }
+
+  const buildingIds = [...byBuildingId.keys()].sort((left, right) => String(left).localeCompare(String(right)))
+
+  for (const buildingId of buildingIds) {
+    const members = shuffledNpcCopy(byBuildingId.get(buildingId).sort((left, right) => left.id - right.id), random)
+    let cursor = 0
+
+    while (cursor < members.length) {
+      const remaining = members.length - cursor
+      const targetSize = chooseIndoorGroupSize(remaining, sizeDistribution, random)
+      const groupId = `${idPrefix}_${groupCount}`
+
+      for (let index = cursor; index < cursor + targetSize; index += 1) {
+        members[index][groupField] = groupId
+      }
+
+      groupCount += 1
+      cursor += targetSize
+    }
+  }
+}
+
+function shuffledNpcCopy(npcs, random) {
+  const copy = npcs.slice()
+
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const selectedIndex = random.int(index + 1)
+    const selected = copy[selectedIndex]
+
+    copy[selectedIndex] = copy[index]
+    copy[index] = selected
+  }
+
+  return copy
+}
+
+function chooseIndoorGroupSize(remaining, distribution, random) {
+  if (remaining <= distribution.min) {
+    return remaining
+  }
+
+  let size = Math.min(remaining, triangularIndoorGroupSize(distribution, random))
+  const leftover = remaining - size
+
+  if (leftover > 0 && leftover < distribution.min) {
+    size = Math.ceil(remaining / 2)
+  }
+
+  return Math.max(1, Math.min(size, remaining))
+}
+
+function triangularIndoorGroupSize(distribution, random) {
+  const range = distribution.max - distribution.min
+
+  if (range <= 0) {
+    return distribution.min
+  }
+
+  const modeOffset = distribution.mode - distribution.min
+  const split = modeOffset / range
+  const u = random.next()
+  const value = u < split
+    ? distribution.min + Math.sqrt(u * range * modeOffset)
+    : distribution.max - Math.sqrt((1 - u) * range * (distribution.max - distribution.mode))
+
+  return Math.round(Math.min(Math.max(value, distribution.min), distribution.max))
 }
 
 function cityBuildingSignature(city) {
@@ -2751,6 +3128,243 @@ function createNpcSpawnState(city, spawnTiles, timetable, clock, random, config,
   }
 }
 
+function createBuildingLocationState(npc, buildingsById, buildingOrId, timetableElementId, location, options = {}) {
+  const building = typeof buildingOrId === 'string'
+    ? getBuildingById(buildingsById, buildingOrId)
+    : buildingOrId
+  const buildingId = building?.id ?? buildingOrId
+  const targetIndoorState = resolveNpcIndoorTargetState(npc, building)
+  const initialIndoorState = options.entering && buildingHasNamedIndoorSubparts(building)
+    ? createIndoorState('lobby')
+    : targetIndoorState
+
+  return refreshBuildingLocationContactKey({
+    timetableElementId,
+    buildingId,
+    highLevelLocation: createHighLevelLocation('building', buildingId),
+    indoorState: initialIndoorState,
+    indoorTargetState: targetIndoorState,
+    location: { ...location }
+  })
+}
+
+function normalizeNpcLocationState(npc, buildingsById) {
+  if (!npc) {
+    return null
+  }
+
+  if (npc.vehicleTrip) {
+    npc.highLevelLocation = createHighLevelLocation('car', npc.vehicleTrip.carId)
+    return npc.highLevelLocation
+  }
+
+  const locationState = npc.locationState
+
+  if (!locationState?.buildingId) {
+    npc.highLevelLocation = createHighLevelLocation('outdoors')
+    return npc.highLevelLocation
+  }
+
+  const building = getBuildingById(buildingsById, locationState.buildingId)
+  const targetIndoorState = locationState.indoorTargetState
+    ? cloneIndoorState(locationState.indoorTargetState)
+    : resolveNpcIndoorTargetState(npc, building)
+
+  locationState.highLevelLocation = createHighLevelLocation('building', locationState.buildingId)
+  locationState.indoorTargetState = targetIndoorState
+  locationState.indoorState = locationState.indoorState
+    ? cloneIndoorState(locationState.indoorState)
+    : cloneIndoorState(targetIndoorState)
+  refreshBuildingLocationContactKey(locationState)
+  npc.highLevelLocation = locationState.highLevelLocation
+  return npc.highLevelLocation
+}
+
+function updateNpcIndoorLocation(npc, timeOfDayHours, context) {
+  if (!npc || npc.present || !npc.locationState?.buildingId || npc.vehicleTrip) {
+    return
+  }
+
+  const locationState = npc.locationState
+
+  if (!locationState.highLevelLocation || !locationState.indoorState || !locationState.indoorTargetState) {
+    normalizeNpcLocationState(npc, context.buildingsById)
+  }
+
+  const currentState = locationState.indoorState
+  const stableTargetState = locationState.indoorTargetState
+
+  if (
+    (!npc.goal || npc.goal.buildingId === locationState.buildingId) &&
+    currentState &&
+    stableTargetState &&
+    !isLobbyBreakIndoorState(stableTargetState) &&
+    currentState.type === stableTargetState.type &&
+    (currentState.id ?? null) === (stableTargetState.id ?? null)
+  ) {
+    return
+  }
+
+  const building = getBuildingById(context.buildingsById, locationState.buildingId)
+  const leavingBuilding = npc.goal && npc.goal.buildingId !== locationState.buildingId
+  const targetState = locationState.indoorTargetState || resolveNpcIndoorTargetState(npc, building)
+  const useLobby = leavingBuilding
+    ? buildingHasNamedIndoorSubparts(building)
+    : isLobbyBreakIndoorState(targetState) && isIndoorLobbyBreakTime(npc, timeOfDayHours)
+  const desiredType = leavingBuilding
+    ? (useLobby ? 'lobby' : 'main')
+    : (useLobby ? 'lobby' : targetState.type)
+  const desiredId = useLobby || leavingBuilding ? null : targetState.id
+
+  if (locationState.indoorState?.type !== desiredType || (locationState.indoorState?.id ?? null) !== (desiredId ?? null)) {
+    locationState.indoorState = createIndoorState(desiredType, desiredId)
+    refreshBuildingLocationContactKey(locationState)
+  }
+}
+
+function resolveNpcIndoorTargetState(npc, building) {
+  if (!building) {
+    return createIndoorState('main')
+  }
+
+  if (
+    buildingHasAnyType(building, HOME_BUILDING_TYPES) &&
+    npc?.home === building.id &&
+    npc.familyId != null
+  ) {
+    return createIndoorState('family', normalizeGroupLocationId('family', npc.familyId))
+  }
+
+  if (
+    buildingHasAnyType(building, SCHOOL_BUILDING_TYPES) &&
+    npc?.school === building.id &&
+    npc.classId != null
+  ) {
+    return createIndoorState('class', normalizeGroupLocationId('class', npc.classId))
+  }
+
+  if (
+    buildingHasAnyType(building, COMMERCIAL_BUILDING_TYPES) &&
+    npc?.work === building.id &&
+    npc.officeId != null
+  ) {
+    return createIndoorState('office', normalizeGroupLocationId('office', npc.officeId))
+  }
+
+  if (buildingHasNamedIndoorSubparts(building)) {
+    return createIndoorState('lobby')
+  }
+
+  return createIndoorState('main')
+}
+
+function isLobbyBreakIndoorState(state) {
+  return state?.type === 'office' || state?.type === 'class'
+}
+
+function isIndoorLobbyBreakTime(npc, timeOfDayHours) {
+  const hour = normalizeHour(timeOfDayHours)
+  const totalMinutes = Math.floor(hour * 60)
+  const staggeredMinute = (totalMinutes + ((npc?.id || 0) * 7) % 10) % 60
+
+  return staggeredMinute >= 60 - INDOOR_LOBBY_BREAK_DURATION_MINUTES
+}
+
+function buildingHasNamedIndoorSubparts(building) {
+  return Boolean(
+    building &&
+    (
+      buildingHasAnyType(building, HOME_BUILDING_TYPES) ||
+      buildingHasAnyType(building, SCHOOL_BUILDING_TYPES) ||
+      buildingHasAnyType(building, COMMERCIAL_BUILDING_TYPES)
+    )
+  )
+}
+
+function createHighLevelLocation(type, id = null) {
+  return {
+    type,
+    id: id == null ? null : id
+  }
+}
+
+function createIndoorState(type, id = null) {
+  return {
+    type,
+    id: id == null ? null : id
+  }
+}
+
+function cloneIndoorState(state) {
+  if (!state || typeof state !== 'object') {
+    return createIndoorState('main')
+  }
+
+  return createIndoorState(state.type || 'main', state.id ?? null)
+}
+
+function indoorStateKey(state) {
+  const type = state?.type || 'main'
+  const id = state?.id ?? null
+
+  return id == null ? type : `${type}:${id}`
+}
+
+function normalizeGroupLocationId(kind, id) {
+  if (id == null) {
+    return null
+  }
+
+  const text = String(id)
+
+  if (text.startsWith(`${kind}_`)) {
+    return text
+  }
+
+  if (/^\d+$/.test(text)) {
+    return `${kind}_${text}`
+  }
+
+  return text
+}
+
+function sharedContactLocationKey(npc, buildingsById) {
+  if (!npc) {
+    return null
+  }
+
+  if (npc.vehicleTrip?.carId != null) {
+    return `car:${npc.vehicleTrip.carId}`
+  }
+
+  if (npc.present || !npc.locationState?.buildingId) {
+    return null
+  }
+
+  if (!npc.locationState.sharedContactKey) {
+    normalizeNpcLocationState(npc, buildingsById)
+  }
+
+  return npc.locationState.sharedContactKey
+}
+
+function refreshBuildingLocationContactKey(locationState) {
+  if (!locationState?.buildingId) {
+    return locationState
+  }
+
+  locationState.sharedContactKey = `building:${locationState.buildingId}:${indoorStateKey(locationState.indoorState)}`
+  return locationState
+}
+
+function getBuildingById(buildingsById, buildingId) {
+  if (!buildingsById || buildingId == null) {
+    return null
+  }
+
+  return buildingsById.get(buildingId) || null
+}
+
 function collectNpcSpawnTiles(city) {
   const tiles = []
 
@@ -3227,6 +3841,17 @@ function normalizeVector(x, y) {
 }
 
 function tryExitCurrentLocation(npc, context) {
+  normalizeNpcLocationState(npc, context.buildingsById)
+
+  if (
+    npc.locationState?.buildingId &&
+    buildingHasNamedIndoorSubparts(getBuildingById(context.buildingsById, npc.locationState.buildingId)) &&
+    npc.locationState.indoorState?.type !== 'lobby'
+  ) {
+    npc.locationState.indoorState = createIndoorState('lobby')
+    refreshBuildingLocationContactKey(npc.locationState)
+  }
+
   const location = npc.locationState.location
 
   const targetSlot = findAvailableNpcSlot(
@@ -3244,6 +3869,7 @@ function tryExitCurrentLocation(npc, context) {
 
   npc.present = true
   npc.locationState = null
+  npc.highLevelLocation = createHighLevelLocation('outdoors')
   npc.position.x = position.x
   npc.position.y = position.y
   npc.tile.x = location.x
@@ -3263,12 +3889,10 @@ function enterGoalLocation(npc, context) {
     return
   }
 
+  const building = getBuildingById(context.buildingsById, npc.goal.buildingId)
   npc.present = false
-  npc.locationState = {
-    timetableElementId: npc.goal.id,
-    buildingId: npc.goal.buildingId,
-    location: { ...npc.goal.location }
-  }
+  npc.locationState = createBuildingLocationState(npc, context.buildingsById, building || npc.goal.buildingId, npc.goal.id, npc.goal.location, { entering: true })
+  npc.highLevelLocation = createHighLevelLocation('building', npc.goal.buildingId)
   npc.position = tileCenterPosition(context.city, npc.goal.location.x, npc.goal.location.y)
   npc.tile = { ...npc.goal.location }
   npc.slot = { id: -1 }
@@ -3661,6 +4285,10 @@ function clampNeedScore(value) {
   return Math.min(Math.max(number, 0), 100)
 }
 
+function clampNeedScoreFast(value) {
+  return value <= 0 ? 0 : (value >= 100 ? 100 : value)
+}
+
 function daysToSeconds(days) {
   return days * SECONDS_PER_DAY
 }
@@ -3669,9 +4297,37 @@ function probabilityForDeltaSeconds(probabilityPerMinute, deltaSeconds) {
   return 1 - ((1 - probabilityPerMinute) ** (deltaSeconds / SECONDS_PER_MINUTE))
 }
 
+function probabilityForRepeatedTrials(probability, trialCount) {
+  if (probability <= 0 || trialCount <= 0) {
+    return 0
+  }
+
+  if (probability >= 1) {
+    return 1
+  }
+
+  return 1 - ((1 - probability) ** trialCount)
+}
+
+function geometricTrialSuccessOffset(randomValue, probability, trialCount, successProbability = probabilityForRepeatedTrials(probability, trialCount)) {
+  if (randomValue >= successProbability) {
+    return -1
+  }
+
+  if (probability >= 1) {
+    return 0
+  }
+
+  const offset = Math.floor(Math.log1p(-randomValue) / Math.log1p(-probability))
+
+  return Math.min(Math.max(offset, 0), trialCount - 1)
+}
+
 function canParticipateInInfection(npc) {
   return Boolean(
     npc &&
+    npc.present &&
+    !npc.locationState &&
     !npc.vehicleTrip &&
     npc.position &&
     Number.isFinite(npc.position.x) &&
@@ -3714,12 +4370,6 @@ function cloneContactEvent(event) {
     sourceTile: event.sourceTile ? { ...event.sourceTile } : null,
     targetTile: event.targetTile ? { ...event.targetTile } : null
   }
-}
-
-function contactPairKey(firstNpcId, secondNpcId) {
-  return firstNpcId < secondNpcId
-    ? `${firstNpcId}:${secondNpcId}`
-    : `${secondNpcId}:${firstNpcId}`
 }
 
 function normalizeInfectionColors(colors = {}) {

@@ -949,6 +949,125 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
+  it('does not spread infection between NPCs in different indoor sublocations of the same building', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const office = city.buildings.find((building) => building.id === 'office')
+    const location = {
+      x: office.entrance.x,
+      y: office.entrance.y,
+      index: city.index(office.entrance.x, office.entrance.y)
+    }
+    const simulation = createSimulation('infection-indoor-different-offices', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 1,
+      initialUpdate: false,
+      entityDebugOptions: {
+        contactEdgesVisible: true,
+        contactEdgeDurationSeconds: 60
+      }
+    })
+
+    for (let index = 0; index < 2; index += 1) {
+      const npc = simulation.npcs[index]
+      const indoorState = { type: 'office', id: `office_${index}` }
+
+      npc.manualControl = true
+      npc.present = false
+      npc.work = office.id
+      npc.officeId = indoorState.id
+      npc.position = {
+        x: (location.x + 0.5) * city.tileSize,
+        y: (location.y + 0.5) * city.tileSize
+      }
+      npc.tile = { ...location }
+      npc.locationState = {
+        timetableElementId: 'work',
+        buildingId: office.id,
+        highLevelLocation: { type: 'building', id: office.id },
+        indoorState,
+        indoorTargetState: indoorState,
+        location: { ...location }
+      }
+    }
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.setNpcState(1, 'susceptible')
+
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[1].infection).toBe('susceptible')
+    expect(simulation.infection.getRecentContactEvents()).toEqual([])
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([])
+
+    simulation.destroy()
+  })
+
+  it('records contacts and spreads infection between NPCs in the same indoor sublocation', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const office = city.buildings.find((building) => building.id === 'office')
+    const location = {
+      x: office.entrance.x,
+      y: office.entrance.y,
+      index: city.index(office.entrance.x, office.entrance.y)
+    }
+    const indoorState = { type: 'office', id: 'office_1' }
+    const simulation = createSimulation('infection-indoor-same-office', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 1,
+      initialUpdate: false,
+      entityDebugOptions: {
+        contactEdgesVisible: true,
+        contactEdgeDurationSeconds: 60
+      }
+    })
+
+    for (const npc of simulation.npcs) {
+      npc.manualControl = true
+      npc.present = false
+      npc.work = office.id
+      npc.officeId = indoorState.id
+      npc.position = {
+        x: (location.x + 0.5) * city.tileSize,
+        y: (location.y + 0.5) * city.tileSize
+      }
+      npc.tile = { ...location }
+      npc.locationState = {
+        timetableElementId: 'work',
+        buildingId: office.id,
+        highLevelLocation: { type: 'building', id: office.id },
+        indoorState,
+        indoorTargetState: indoorState,
+        location: { ...location }
+      }
+    }
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.setNpcState(1, 'susceptible')
+
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[1].infection).toBe('exposed')
+    expect(simulation.infection.getRecentContactEvents()).toEqual([
+      expect.objectContaining({
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        distance: 0
+      })
+    ])
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([
+      expect.objectContaining({
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        distance: 0,
+        targetState: 'exposed'
+      })
+    ])
+
+    simulation.destroy()
+  })
+
   it('applies policy transmission multipliers without changing the base infection probability', () => {
     const city = createCity({
       width: 2,
@@ -1773,6 +1892,32 @@ describe('NPC simulation randomness', () => {
 
     simulation.destroy()
     repeated.destroy()
+  })
+
+  it('assigns indoor office and class groups during app simulation generation', () => {
+    const officeSimulation = createSimulation('indoor-office-groups', createCityWithSharedBuildings(), {
+      count: 10,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      initialUpdate: false
+    })
+    const schoolCase = createSimulationWithNpc('indoor-class-groups', createCityWithBuildingTypes(), {
+      count: 8,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 4, weight: 1 }
+      ],
+      initialUpdate: false
+    }, (candidate) => candidate.school)
+    const schoolSimulation = schoolCase.simulation
+    const students = schoolSimulation.npcs.filter((npc) => npc.school)
+
+    expect(officeSimulation.npcs.every((npc) => npc.work === 'work-1')).toBe(true)
+    expect(officeSimulation.npcs.every((npc) => typeof npc.officeId === 'string' && npc.officeId.startsWith('office_'))).toBe(true)
+    expect(students.length).toBeGreaterThan(0)
+    expect(students.every((npc) => typeof npc.classId === 'string' && npc.classId.startsWith('class_'))).toBe(true)
+
+    officeSimulation.destroy()
+    schoolSimulation.destroy()
   })
 
   it('generates whole families under one home and preserves family metadata', () => {

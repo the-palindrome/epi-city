@@ -328,6 +328,9 @@ function cloneTile(tile, fallback) {
 function cloneLocationState(locationState) {
   return {
     ...locationState,
+    highLevelLocation: locationState.highLevelLocation ? { ...locationState.highLevelLocation } : locationState.highLevelLocation,
+    indoorState: locationState.indoorState ? { ...locationState.indoorState } : locationState.indoorState,
+    indoorTargetState: locationState.indoorTargetState ? { ...locationState.indoorTargetState } : locationState.indoorTargetState,
     location: locationState.location ? { ...locationState.location } : null
   }
 }
