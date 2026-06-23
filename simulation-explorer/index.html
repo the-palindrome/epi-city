@@ -617,6 +617,13 @@
         font-size: 12px;
       }
 
+      .axis-label {
+        fill: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        text-anchor: middle;
+      }
+
       .grid line {
         stroke: var(--grid);
         shape-rendering: crispEdges;
@@ -822,6 +829,7 @@
             <select id="plotLayoutSelect" aria-label="Plot layout">
               <option value="plot">Plot</option>
               <option value="fill">Fill</option>
+              <option value="profile">Profile</option>
             </select>
           </div>
         </section>
@@ -983,6 +991,12 @@
       const stateKeys = ['susceptible', 'exposed', 'infectious', 'recovered']
       const stateNames = ['susceptible', 'exposed', 'infectious', 'recovered']
       const colorByStateCode = stateNames.map((stateName) => colorByState[stateName])
+      const curveInputsByState = {
+        susceptible: showSusceptibleInput,
+        exposed: showExposedInput,
+        infectious: showInfectiousInput,
+        recovered: showRecoveredInput
+      }
       const edgeColors = {
         contact: [118, 122, 120],
         infection: [216, 76, 85],
@@ -2961,6 +2975,12 @@
 
         const layout = chartLayout()
         chartPlotGroup.attr('transform', `translate(${layout.plotLeft},${layout.plotTop})`)
+
+        if (state.plotLayout === 'profile') {
+          renderProfileChart(layout)
+          return
+        }
+
         const x = scaleLinear()
           .domain([0, state.seirSeries.maxTime])
           .range([layout.innerLeft, layout.innerRight])
@@ -2972,6 +2992,16 @@
           .domain([new Date(0), new Date(state.seirSeries.maxTime * 1000)])
           .range([layout.innerLeft, layout.innerRight])
 
+        renderTimeChartAxes(layout, timeAxisScale, y)
+
+        if (state.plotLayout === 'fill') {
+          renderFillChart(x, y)
+        } else {
+          renderLineChart(x, y)
+        }
+      }
+
+      function renderTimeChartAxes(layout, x, y) {
         chartGridGroup.append('g')
           .call(axisLeft(y)
             .tickSize(-layout.innerWidth)
@@ -2982,18 +3012,12 @@
         chartAxisGroup.append('g')
           .attr('class', 'axis')
           .attr('transform', `translate(0,${layout.innerBottom})`)
-          .call(axisBottom(timeAxisScale).ticks(8).tickFormat(formatChartTime))
+          .call(axisBottom(x).ticks(8).tickFormat(formatChartTime))
 
         chartAxisGroup.append('g')
           .attr('class', 'axis')
-          .call(axisLeft(y).ticks(6).tickFormat((value) => `${format('~g')(value)}%`))
+          .call(axisLeft(y).ticks(6).tickFormat(formatPercentTick))
           .call((group) => group.select('.domain').remove())
-
-        if (state.plotLayout === 'fill') {
-          renderFillChart(x, y)
-        } else {
-          renderLineChart(x, y)
-        }
       }
 
       function renderLineChart(x, y) {
@@ -3062,22 +3086,112 @@
         }
       }
 
+      function renderProfileChart(layout) {
+        const selectedStateKeys = selectedCurveKeys()
+        const x = scaleLinear()
+          .domain([0, 100])
+          .range([layout.innerLeft, layout.innerRight])
+        const y = scaleLinear()
+          .domain([0, 100])
+          .range([layout.innerBottom, layout.innerTop])
+
+        chartGridGroup.append('g')
+          .call(axisLeft(y)
+            .tickSize(-layout.innerWidth)
+            .tickFormat('')
+            .ticks(6))
+          .call((group) => group.select('.domain').remove())
+
+        chartGridGroup.append('g')
+          .attr('transform', `translate(0,${layout.innerBottom})`)
+          .call(axisBottom(x)
+            .tickSize(-layout.innerHeight)
+            .tickFormat('')
+            .ticks(6))
+          .call((group) => group.select('.domain').remove())
+
+        chartAxisGroup.append('g')
+          .attr('class', 'axis')
+          .attr('transform', `translate(0,${layout.innerBottom})`)
+          .call(axisBottom(x).ticks(6).tickFormat(formatPercentTick))
+
+        chartAxisGroup.append('g')
+          .attr('class', 'axis')
+          .call(axisLeft(y).ticks(6).tickFormat(formatPercentTick))
+          .call((group) => group.select('.domain').remove())
+
+        const xStateKey = selectedStateKeys[0]
+        const yStateKey = selectedStateKeys[1]
+
+        chartAxisGroup.append('text')
+          .attr('class', 'axis-label')
+          .attr('x', layout.innerWidth / 2)
+          .attr('y', layout.innerBottom + 46)
+          .attr('fill', xStateKey ? colorByState[xStateKey] : null)
+          .text(xStateKey ? `${capitalize(xStateKey)} (%)` : 'Curve X (%)')
+
+        chartAxisGroup.append('text')
+          .attr('class', 'axis-label')
+          .attr('transform', 'rotate(-90)')
+          .attr('x', -layout.innerHeight / 2)
+          .attr('y', -54)
+          .attr('fill', yStateKey ? colorByState[yStateKey] : null)
+          .text(yStateKey ? `${capitalize(yStateKey)} (%)` : 'Curve Y (%)')
+
+        if (!xStateKey || !yStateKey) {
+          return
+        }
+
+        const xValues = state.seirSeries[xStateKey]
+        const yValues = state.seirSeries[yStateKey]
+        const profileLine = line()
+          .x((_, index) => x(seriesPercent(xValues[index])))
+          .y((_, index) => y(seriesPercent(yValues[index])))
+          .curve(curveLinear)
+
+        chartLineGroup.append('path')
+          .datum(state.seirSeries.time)
+          .attr('class', `curve-line curve-profile curve-${yStateKey}`)
+          .attr('stroke', colorByState[yStateKey])
+          .attr('stroke-width', 2.4)
+          .attr('d', profileLine)
+      }
+
       function seriesPercent(value) {
         return (Number(value) / Math.max(1, state.seirSeries.maxCount)) * 100
       }
 
+      function formatPercentTick(value) {
+        return `${format('~g')(value)}%`
+      }
+
       function chartLayout() {
         const viewport = svg.node().getBoundingClientRect()
-        const width = Math.max(560, Math.min(1060, viewport.width - 160))
-        const height = Math.max(360, Math.min(620, viewport.height - 210))
-        const left = -width / 2
-        const top = -height / 2
         const margin = {
           top: 22,
           right: 18,
-          bottom: 42,
-          left: 58
+          bottom: state.plotLayout === 'profile' ? 62 : 42,
+          left: state.plotLayout === 'profile' ? 76 : 58
         }
+        let width = Math.max(560, Math.min(1060, viewport.width - 160))
+        let height = Math.max(360, Math.min(620, viewport.height - 210))
+
+        if (state.plotLayout === 'profile') {
+          const squareSize = Math.max(
+            280,
+            Math.min(
+              620,
+              viewport.width - 160 - margin.left - margin.right,
+              viewport.height - 210 - margin.top - margin.bottom
+            )
+          )
+
+          width = squareSize + margin.left + margin.right
+          height = squareSize + margin.top + margin.bottom
+        }
+
+        const left = -width / 2
+        const top = -height / 2
 
         return {
           width,
@@ -3887,9 +4001,15 @@
       }
 
       function setPlotLayout() {
-        state.plotLayout = plotLayoutSelect.value === 'fill' ? 'fill' : 'plot'
+        const nextLayout = plotLayoutSelect.value
+
+        state.plotLayout = nextLayout === 'fill' || nextLayout === 'profile' ? nextLayout : 'plot'
         plotLayoutSelect.value = state.plotLayout
+        enforceProfileCurveLimit()
+        syncCurveInputsFromState()
+        updateCurveControls()
         renderChart()
+        updateLegend()
       }
 
       function setMatrixLayout() {
@@ -3958,14 +4078,76 @@
         scheduleGraphDraw()
       }
 
-      function setCurveDisplay() {
-        state.showCurves.susceptible = showSusceptibleInput.checked
-        state.showCurves.exposed = showExposedInput.checked
-        state.showCurves.infectious = showInfectiousInput.checked
-        state.showCurves.recovered = showRecoveredInput.checked
+      function setCurveDisplay(event) {
+        syncCurveStateFromInputs()
+        enforceProfileCurveLimit(curveKeyForInput(event?.target))
+        syncCurveInputsFromState()
+        updateCurveControls()
 
         renderChart()
         updateLegend()
+      }
+
+      function syncCurveStateFromInputs() {
+        for (const stateKey of stateKeys) {
+          state.showCurves[stateKey] = curveInputsByState[stateKey].checked
+        }
+      }
+
+      function syncCurveInputsFromState() {
+        for (const stateKey of stateKeys) {
+          curveInputsByState[stateKey].checked = Boolean(state.showCurves[stateKey])
+        }
+      }
+
+      function selectedCurveKeys() {
+        return stateKeys.filter((stateKey) => state.showCurves[stateKey])
+      }
+
+      function enforceProfileCurveLimit(preferredStateKey = null) {
+        if (state.plotLayout !== 'profile') {
+          return
+        }
+
+        const selectedStateKeys = selectedCurveKeys()
+
+        if (selectedStateKeys.length <= 2) {
+          return
+        }
+
+        const keptStateKeys = []
+
+        if (preferredStateKey && state.showCurves[preferredStateKey]) {
+          keptStateKeys.push(preferredStateKey)
+        }
+
+        for (const stateKey of stateKeys) {
+          if (state.showCurves[stateKey] && !keptStateKeys.includes(stateKey) && keptStateKeys.length < 2) {
+            keptStateKeys.push(stateKey)
+          }
+        }
+
+        for (const stateKey of stateKeys) {
+          state.showCurves[stateKey] = keptStateKeys.includes(stateKey)
+        }
+      }
+
+      function updateCurveControls() {
+        const limitReached = state.plotLayout === 'profile' && selectedCurveKeys().length >= 2
+
+        for (const stateKey of stateKeys) {
+          curveInputsByState[stateKey].disabled = limitReached && !state.showCurves[stateKey]
+        }
+      }
+
+      function curveKeyForInput(input) {
+        for (const stateKey of stateKeys) {
+          if (curveInputsByState[stateKey] === input) {
+            return stateKey
+          }
+        }
+
+        return null
       }
 
       function setActiveTab(tab) {
