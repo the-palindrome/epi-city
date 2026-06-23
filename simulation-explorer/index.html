@@ -264,7 +264,8 @@
         min-width: 0;
       }
 
-      .graph-settings {
+      .graph-settings,
+      .plot-settings {
         position: fixed;
         top: 72px;
         right: 12px;
@@ -278,7 +279,8 @@
         z-index: 3;
       }
 
-      .graph-settings summary {
+      .graph-settings summary,
+      .plot-settings summary {
         min-height: 38px;
         display: flex;
         align-items: center;
@@ -377,7 +379,7 @@
         pointer-events: none;
       }
 
-      body[data-view="contact"] .curve-control,
+      body[data-view="contact"] .plot-settings,
       body[data-view="seir"] .graph-control,
       body[data-view="seir"] .graph-settings,
       body[data-view="seir"] .stats,
@@ -566,6 +568,10 @@
         vector-effect: non-scaling-stroke;
       }
 
+      .curve-fill {
+        stroke: none;
+      }
+
       @media (max-width: 880px) {
         .topbar {
           grid-template-columns: 1fr;
@@ -585,7 +591,8 @@
           flex-wrap: wrap;
         }
 
-        .graph-settings {
+        .graph-settings,
+        .plot-settings {
           top: auto;
           right: 12px;
           bottom: 122px;
@@ -632,25 +639,6 @@
         </div>
       </div>
       <div class="actions">
-        <div class="display-control curve-control" aria-label="Display curves">
-          <span class="control-title">Display curves</span>
-          <label class="checkbox-control">
-            <input id="showSusceptible" type="checkbox" checked>
-            Susceptible
-          </label>
-          <label class="checkbox-control">
-            <input id="showExposed" type="checkbox" checked>
-            Exposed
-          </label>
-          <label class="checkbox-control">
-            <input id="showInfectious" type="checkbox" checked>
-            Infectious
-          </label>
-          <label class="checkbox-control">
-            <input id="showRecovered" type="checkbox" checked>
-            Recovered
-          </label>
-        </div>
         <label class="file-control">
           Load results
           <input id="fileInput" type="file" accept="application/json,.json">
@@ -731,6 +719,40 @@
         </section>
       </div>
     </details>
+    <details id="plotSettings" class="plot-settings" open>
+      <summary>Plot settings</summary>
+      <div class="settings-content">
+        <section class="settings-section" aria-labelledby="plotLayoutSettingsTitle">
+          <h2 id="plotLayoutSettingsTitle" class="settings-title">Plot layout</h2>
+          <div class="settings-field">
+            <label for="plotLayoutSelect">Curve style</label>
+            <select id="plotLayoutSelect" aria-label="Plot layout">
+              <option value="plot">Plot</option>
+              <option value="fill">Fill</option>
+            </select>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="curveSettingsTitle">
+          <h2 id="curveSettingsTitle" class="settings-title">Display curves</h2>
+          <label class="checkbox-control">
+            <input id="showSusceptible" type="checkbox" checked>
+            Susceptible
+          </label>
+          <label class="checkbox-control">
+            <input id="showExposed" type="checkbox" checked>
+            Exposed
+          </label>
+          <label class="checkbox-control">
+            <input id="showInfectious" type="checkbox" checked>
+            Infectious
+          </label>
+          <label class="checkbox-control">
+            <input id="showRecovered" type="checkbox" checked>
+            Recovered
+          </label>
+        </section>
+      </div>
+    </details>
     <div id="status" class="status">Load a headless result JSON</div>
     <div class="stats">
       <div class="stat"><b id="nodeCount">0</b><span>NPCs</span></div>
@@ -754,6 +776,7 @@
 
     <script>
       const {
+        area,
         axisBottom,
         axisLeft,
         curveLinear,
@@ -795,6 +818,7 @@
       const worldSettings = document.getElementById('worldSettings')
       const worldSummary = document.getElementById('worldSummary')
       const layoutSelect = document.getElementById('layoutSelect')
+      const plotLayoutSelect = document.getElementById('plotLayoutSelect')
       const showSusceptibleInput = document.getElementById('showSusceptible')
       const showExposedInput = document.getElementById('showExposed')
       const showInfectiousInput = document.getElementById('showInfectious')
@@ -835,6 +859,7 @@
       const chartPlotGroup = chartRoot.append('g').attr('class', 'plot')
       const chartGridGroup = chartPlotGroup.append('g').attr('class', 'grid')
       const chartAxisGroup = chartPlotGroup.append('g').attr('class', 'axes')
+      const chartAreaGroup = chartPlotGroup.append('g').attr('class', 'fills')
       const chartLineGroup = chartPlotGroup.append('g').attr('class', 'curves')
 
       const state = {
@@ -865,6 +890,7 @@
         fullInfectionTileY: new Float64Array(),
         layout: null,
         layoutMode: 'force',
+        plotLayout: 'plot',
         seirSeries: null,
         nodeSelection: null,
         selectedNodeIndex: -1,
@@ -948,6 +974,7 @@
       floatNodesInput.addEventListener('change', setNodeFloatDisplay)
       floatIntensityInput.addEventListener('input', setFloatIntensity)
       layoutSelect.addEventListener('change', () => setGraphLayout(layoutSelect.value))
+      plotLayoutSelect.addEventListener('change', setPlotLayout)
       showSusceptibleInput.addEventListener('change', setCurveDisplay)
       showExposedInput.addEventListener('change', setCurveDisplay)
       showInfectiousInput.addEventListener('change', setCurveDisplay)
@@ -1126,6 +1153,7 @@
         nodeGroup.selectAll('*').remove()
         chartGridGroup.selectAll('*').remove()
         chartAxisGroup.selectAll('*').remove()
+        chartAreaGroup.selectAll('*').remove()
         chartLineGroup.selectAll('*').remove()
         state.nodeSelection = null
         state.npcs = []
@@ -2517,6 +2545,7 @@
       function renderChart() {
         chartGridGroup.selectAll('*').remove()
         chartAxisGroup.selectAll('*').remove()
+        chartAreaGroup.selectAll('*').remove()
         chartLineGroup.selectAll('*').remove()
 
         if (!state.seirSeries) {
@@ -2553,20 +2582,81 @@
           .call(axisLeft(y).ticks(6).tickFormat((value) => `${format('~g')(value)}%`))
           .call((group) => group.select('.domain').remove())
 
+        if (state.plotLayout === 'fill') {
+          renderFillChart(x, y)
+        } else {
+          renderLineChart(x, y)
+        }
+      }
+
+      function renderLineChart(x, y) {
         const times = state.seirSeries.time
         const curveLine = line()
           .x((_, index) => x(times[index]))
-          .y((value) => y((Number(value) / Math.max(1, state.seirSeries.maxCount)) * 100))
+          .y((value) => y(seriesPercent(value)))
           .curve(curveLinear)
 
         for (const stateKey of stateKeys) {
+          if (!state.showCurves[stateKey]) {
+            continue
+          }
+
           chartLineGroup.append('path')
             .datum(state.seirSeries[stateKey])
             .attr('class', `curve-line curve-${stateKey}`)
             .attr('stroke', colorByState[stateKey])
             .attr('d', curveLine)
-            .attr('display', state.showCurves[stateKey] ? null : 'none')
         }
+      }
+
+      function renderFillChart(x, y) {
+        const times = state.seirSeries.time
+        const enabledStateKeys = stateKeys.filter((stateKey) => state.showCurves[stateKey])
+        const cumulative = new Float64Array(times.length)
+        const fillArea = area()
+          .x((point) => x(point.time))
+          .y0((point) => y(point.y0))
+          .y1((point) => y(point.y1))
+          .curve(curveLinear)
+        const boundaryLine = line()
+          .x((point) => x(point.time))
+          .y((point) => y(point.y1))
+          .curve(curveLinear)
+
+        for (const stateKey of enabledStateKeys) {
+          const values = state.seirSeries[stateKey]
+          const band = new Array(times.length)
+
+          for (let index = 0; index < times.length; index += 1) {
+            const y0 = cumulative[index]
+            const y1 = Math.min(100, y0 + seriesPercent(values[index]))
+
+            cumulative[index] = y1
+            band[index] = {
+              time: times[index],
+              y0,
+              y1
+            }
+          }
+
+          chartAreaGroup.append('path')
+            .datum(band)
+            .attr('class', `curve-fill fill-${stateKey}`)
+            .attr('fill', colorByState[stateKey])
+            .attr('fill-opacity', 0.28)
+            .attr('d', fillArea)
+
+          chartLineGroup.append('path')
+            .datum(band)
+            .attr('class', `curve-line curve-${stateKey}`)
+            .attr('stroke', colorByState[stateKey])
+            .attr('stroke-opacity', 0.78)
+            .attr('d', boundaryLine)
+        }
+      }
+
+      function seriesPercent(value) {
+        return (Number(value) / Math.max(1, state.seirSeries.maxCount)) * 100
       }
 
       function chartLayout() {
@@ -2679,6 +2769,12 @@
         updateLegend()
       }
 
+      function setPlotLayout() {
+        state.plotLayout = plotLayoutSelect.value === 'fill' ? 'fill' : 'plot'
+        plotLayoutSelect.value = state.plotLayout
+        renderChart()
+      }
+
       function setNodeSize() {
         const nextSize = Number(nodeSizeInput.value)
 
@@ -2719,9 +2815,8 @@
         state.showCurves.infectious = showInfectiousInput.checked
         state.showCurves.recovered = showRecoveredInput.checked
 
-        for (const stateKey of stateKeys) {
-          chartLineGroup.select(`.curve-${stateKey}`).attr('display', state.showCurves[stateKey] ? null : 'none')
-        }
+        renderChart()
+        updateLegend()
       }
 
       function setActiveTab(tab) {
@@ -3332,7 +3427,11 @@
         const items = []
 
         if (state.activeTab === 'seir' || state.nodeColorMode === 'seir') {
-          for (const stateKey of stateKeys) {
+          const legendStateKeys = state.activeTab === 'seir'
+            ? stateKeys.filter((stateKey) => state.showCurves[stateKey])
+            : stateKeys
+
+          for (const stateKey of legendStateKeys) {
             items.push(legendItem(`<span class="swatch" style="background: ${colorByState[stateKey]}"></span>`, capitalize(stateKey)))
           }
         } else {
