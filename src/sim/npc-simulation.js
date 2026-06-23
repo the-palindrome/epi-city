@@ -1470,38 +1470,42 @@ class NpcInfectionDynamics {
 
   advanceTimers(deltaSeconds) {
     for (let index = 0; index < this.states.length; index += 1) {
-      const initialState = this.states[index]
+      let state = this.states[index]
 
-      if (initialState === INFECTION_STATE_IDS.susceptible) {
+      if (state === INFECTION_STATE_IDS.susceptible) {
         continue
       }
 
-      let state = initialState
       let remainingSeconds = this.timers[index] - deltaSeconds
+
+      if (remainingSeconds > 0) {
+        this.timers[index] = remainingSeconds
+        continue
+      }
+
       let transitions = 0
 
       while (remainingSeconds <= 0 && state !== INFECTION_STATE_IDS.susceptible && transitions < 4) {
-        if (state === INFECTION_STATE_IDS.exposed) {
-          state = INFECTION_STATE_IDS.infectious
-          remainingSeconds += this.infectionSeconds
-        } else if (state === INFECTION_STATE_IDS.infectious) {
-          state = this.immunitySeconds > 0
-            ? INFECTION_STATE_IDS.recovered
-            : INFECTION_STATE_IDS.susceptible
-          remainingSeconds += this.immunitySeconds
-        } else if (state === INFECTION_STATE_IDS.recovered) {
-          state = INFECTION_STATE_IDS.susceptible
-          remainingSeconds = 0
+        const nextState = this.getNextStateId(state)
+
+        if (!Number.isInteger(nextState) || nextState === state) {
+          break
         }
+
+        state = nextState
+        remainingSeconds += this.getDefaultTimerSeconds(state)
+        this.setStateByIndex(
+          index,
+          state,
+          state === INFECTION_STATE_IDS.susceptible ? 0 : Math.max(0, remainingSeconds)
+        )
 
         transitions += 1
       }
 
-      this.setStateByIndex(
-        index,
-        state,
-        state === INFECTION_STATE_IDS.susceptible ? 0 : Math.max(0, remainingSeconds)
-      )
+      if (state !== INFECTION_STATE_IDS.susceptible) {
+        this.timers[index] = Math.max(0, remainingSeconds)
+      }
     }
   }
 
@@ -1917,20 +1921,26 @@ class NpcInfectionDynamics {
     return 0
   }
 
-  getNextStateName(state) {
+  getNextStateId(state) {
     if (state === INFECTION_STATE_IDS.exposed) {
-      return 'infectious'
+      return INFECTION_STATE_IDS.infectious
     }
 
     if (state === INFECTION_STATE_IDS.infectious) {
-      return this.immunitySeconds > 0 ? 'recovered' : 'susceptible'
+      return INFECTION_STATE_IDS.recovered
     }
 
     if (state === INFECTION_STATE_IDS.recovered) {
-      return 'susceptible'
+      return INFECTION_STATE_IDS.susceptible
     }
 
     return null
+  }
+
+  getNextStateName(state) {
+    const nextState = this.getNextStateId(state)
+
+    return Number.isInteger(nextState) ? INFECTION_STATE_NAMES[nextState] : null
   }
 
   setStateByIndex(index, state, timerSeconds, options = {}) {

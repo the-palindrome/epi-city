@@ -6,12 +6,6 @@ const STATE_CODE = {
 }
 
 const STATE_NAME = ['susceptible', 'exposed', 'infectious', 'recovered']
-const EVENT_ORDER = {
-  infection: 0,
-  incubation: 1,
-  recovery: 2,
-  immunity_waned: 3
-}
 
 let dataset = null
 
@@ -162,7 +156,7 @@ function normalizeResults(results) {
   const seirAt = new Float64Array(seirCount)
   const seirNpc = new Int32Array(seirCount)
   const seirToState = new Int8Array(seirCount)
-  const seirOrder = new Int8Array(seirCount)
+  const seirOrder = new Int32Array(seirCount)
   const pairIdByKey = new Map()
   const pairSources = []
   const pairTargets = []
@@ -313,7 +307,7 @@ function addSeirEvent(seirAt, seirNpc, seirToState, seirOrder, index, at, npc, e
   seirAt[index] = at
   seirNpc[index] = npc
   seirToState[index] = toState
-  seirOrder[index] = EVENT_ORDER[eventName] ?? 99
+  seirOrder[index] = index
   return index + 1
 }
 
@@ -604,6 +598,10 @@ function moveState(counts, states, npc, toState) {
     return false
   }
 
+  if (!isValidStateCode(fromState) || !isValidStateCode(toState) || !isValidSeirTransition(fromState, toState)) {
+    return false
+  }
+
   if (counts[fromState] > 0) {
     counts[fromState] -= 1
   }
@@ -611,6 +609,19 @@ function moveState(counts, states, npc, toState) {
   counts[toState] += 1
   states[npc] = toState
   return true
+}
+
+function isValidStateCode(state) {
+  return state >= STATE_CODE.susceptible && state <= STATE_CODE.recovered
+}
+
+function isValidSeirTransition(fromState, toState) {
+  return (
+    (fromState === STATE_CODE.susceptible && toState === STATE_CODE.exposed) ||
+    (fromState === STATE_CODE.exposed && toState === STATE_CODE.infectious) ||
+    (fromState === STATE_CODE.infectious && toState === STATE_CODE.recovered) ||
+    (fromState === STATE_CODE.recovered && toState === STATE_CODE.susceptible)
+  )
 }
 
 function nextStateForEvent(eventName) {

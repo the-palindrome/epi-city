@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { runHeadlessSimulation } from './simulation.js'
 import { createHeadlessWorldFile } from './world.js'
 
+const SECONDS_PER_DAY = 24 * 60 * 60
+
 describe('headless simulation runner', () => {
   it('requires a supplied world file', async () => {
     await expect(runHeadlessSimulation(createRunConfig())).rejects.toThrow(/requires a generated world file/)
@@ -60,6 +62,33 @@ describe('headless simulation runner', () => {
       susceptible: 91,
       infectious: 4,
       recovered: 5
+    })
+  })
+
+  it('exports every adjacent SEIR event when a headless step spans multiple phases', async () => {
+    const worldPath = await writeTestWorld('headless-phase-events-world.test.json', {
+      population: { npcCount: 100, carCount: 0 }
+    })
+
+    const results = await runHeadlessSimulation(createRunConfig({
+      infectedNpcIds: ['npc_0']
+    }, {
+      run: { durationSeconds: 3, stepSeconds: 3 },
+      infection: {
+        infectiousDays: 1 / SECONDS_PER_DAY,
+        immunityDays: 1 / SECONDS_PER_DAY
+      }
+    }), { worldPath })
+
+    expect(results.events.filter((event) => event.npc === 'npc_0').map((event) => event.event)).toEqual([
+      'recovery',
+      'immunity_waned'
+    ])
+    expect(results.npcs.find((npc) => npc.id === 'npc_0').initialSeirState).toBe('infectious')
+    expect(results.summary.finalSeir).toMatchObject({
+      susceptible: 100,
+      infectious: 0,
+      recovered: 0
     })
   })
 

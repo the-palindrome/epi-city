@@ -288,6 +288,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     immunityDays: options.immunityDays ?? 90,
     infectionColors: options.infectionColors,
     entityDebugOptions: options.entityDebugOptions,
+    eventRecorder: options.eventRecorder,
     clock: options.clock,
     random: createSeededRandom(seed)
   })
@@ -1428,6 +1429,75 @@ describe('NPC simulation randomness', () => {
       infectious: 0,
       recovered: 0
     })
+
+    simulation.destroy()
+  })
+
+  it('emits every SEIR event when one update crosses multiple phases', () => {
+    const oneTickDays = 0.1 / SECONDS_PER_DAY
+    const events = []
+    const eventRecorder = {
+      recordIncubation: (npc, at) => events.push({ event: 'incubation', npc: npc.id, at }),
+      recordRecovery: (npc, at) => events.push({ event: 'recovery', npc: npc.id, at }),
+      recordImmunityWaned: (npc, at) => events.push({ event: 'immunity_waned', npc: npc.id, at })
+    }
+    const simulation = createSimulation('infection-multi-phase-events', createCity(), {
+      count: 1,
+      initialInfectiousCount: 0,
+      infectionProbability: 0,
+      incubationDays: oneTickDays,
+      infectionDays: oneTickDays,
+      immunityDays: oneTickDays,
+      eventRecorder,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    simulation.infection.setNpcState(0, 'exposed')
+    simulation.infection.update(0.35)
+
+    expect(npc.infection).toBe('susceptible')
+    expect(simulation.infection.getStats()).toMatchObject({
+      susceptible: 1,
+      exposed: 0,
+      infectious: 0,
+      recovered: 0
+    })
+    expect(events).toEqual([
+      { event: 'incubation', npc: npc.id, at: 0.35 },
+      { event: 'recovery', npc: npc.id, at: 0.35 },
+      { event: 'immunity_waned', npc: npc.id, at: 0.35 }
+    ])
+
+    simulation.destroy()
+  })
+
+  it('emits recovered before susceptible when immunity duration is zero', () => {
+    const oneTickDays = 0.1 / SECONDS_PER_DAY
+    const events = []
+    const eventRecorder = {
+      recordRecovery: (npc, at) => events.push({ event: 'recovery', npc: npc.id, at }),
+      recordImmunityWaned: (npc, at) => events.push({ event: 'immunity_waned', npc: npc.id, at })
+    }
+    const simulation = createSimulation('infection-zero-immunity-events', createCity(), {
+      count: 1,
+      initialInfectiousCount: 0,
+      infectionProbability: 0,
+      infectionDays: oneTickDays,
+      immunityDays: 0,
+      eventRecorder,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.update(0.1)
+
+    expect(npc.infection).toBe('susceptible')
+    expect(events).toEqual([
+      { event: 'recovery', npc: npc.id, at: 0.1 },
+      { event: 'immunity_waned', npc: npc.id, at: 0.1 }
+    ])
 
     simulation.destroy()
   })
