@@ -21,6 +21,9 @@
         --recovered: #07974d;
         --contact: #a9a9a9;
         --infection: #d84c55;
+        --family-edge: #2f73c9;
+        --friendship-edge: #8d5bbf;
+        --coworker-edge: #158f87;
         --active: #f5ecd2;
       }
 
@@ -670,6 +673,8 @@
               <option value="spherical">Spherical</option>
               <option value="hierarchical">Hierarchical</option>
               <option value="infectionMap">Infection map</option>
+              <option value="familyBuildings" disabled>Family clusters</option>
+              <option value="officeBuildings" disabled>Office clusters</option>
             </select>
           </div>
         </section>
@@ -682,6 +687,18 @@
           <label class="checkbox-control">
             <input id="showInfections" type="checkbox" checked>
             Infection
+          </label>
+          <label class="checkbox-control">
+            <input id="showFamilyEdges" type="checkbox" disabled>
+            Family
+          </label>
+          <label class="checkbox-control">
+            <input id="showFriendshipEdges" type="checkbox" disabled>
+            Friendship
+          </label>
+          <label class="checkbox-control">
+            <input id="showCoworkerEdges" type="checkbox" disabled>
+            Coworker
           </label>
         </section>
         <section class="settings-section" aria-labelledby="nodeSettingsTitle">
@@ -768,6 +785,9 @@
       const endNumber = document.getElementById('endNumber')
       const showContactsInput = document.getElementById('showContacts')
       const showInfectionsInput = document.getElementById('showInfections')
+      const showFamilyEdgesInput = document.getElementById('showFamilyEdges')
+      const showFriendshipEdgesInput = document.getElementById('showFriendshipEdges')
+      const showCoworkerEdgesInput = document.getElementById('showCoworkerEdges')
       const nodeColorModeSelect = document.getElementById('nodeColorMode')
       const nodeSizeInput = document.getElementById('nodeSize')
       const floatNodesInput = document.getElementById('floatNodes')
@@ -799,6 +819,13 @@
       const stateKeys = ['susceptible', 'exposed', 'infectious', 'recovered']
       const stateNames = ['susceptible', 'exposed', 'infectious', 'recovered']
       const colorByStateCode = stateNames.map((stateName) => colorByState[stateName])
+      const edgeColors = {
+        contact: [118, 122, 120],
+        infection: [216, 76, 85],
+        family: [47, 115, 201],
+        friendship: [141, 91, 191],
+        coworker: [21, 143, 135]
+      }
       const integerFormat = format(',')
 
       const root = svg.append('g')
@@ -825,6 +852,12 @@
         contactWeight: new Uint32Array(),
         infectionSource: new Int32Array(),
         infectionTarget: new Int32Array(),
+        familySource: new Int32Array(),
+        familyTarget: new Int32Array(),
+        friendshipSource: new Int32Array(),
+        friendshipTarget: new Int32Array(),
+        coworkerSource: new Int32Array(),
+        coworkerTarget: new Int32Array(),
         visibleInfectionPairKeys: new Set(),
         fullInfectionSource: new Int32Array(),
         fullInfectionTarget: new Int32Array(),
@@ -838,6 +871,9 @@
         selectedNeighborMask: new Uint8Array(),
         selectedContactEdgeCount: 0,
         selectedInfectionEdgeCount: 0,
+        selectedFamilyEdgeCount: 0,
+        selectedFriendshipEdgeCount: 0,
+        selectedCoworkerEdgeCount: 0,
         renderedNodeX: new Float64Array(),
         renderedNodeY: new Float64Array(),
         activeTab: 'contact',
@@ -847,6 +883,9 @@
         end: 0,
         showContacts: true,
         showInfections: true,
+        showFamilyEdges: false,
+        showFriendshipEdges: false,
+        showCoworkerEdges: false,
         nodeColorMode: 'seir',
         nodeSizeScale: 1,
         floatNodes: false,
@@ -901,6 +940,9 @@
       endNumber.addEventListener('change', () => setWindow(state.start, Number(endNumber.value)))
       showContactsInput.addEventListener('change', setEdgeDisplay)
       showInfectionsInput.addEventListener('change', setEdgeDisplay)
+      showFamilyEdgesInput.addEventListener('change', setEdgeDisplay)
+      showFriendshipEdgesInput.addEventListener('change', setEdgeDisplay)
+      showCoworkerEdgesInput.addEventListener('change', setEdgeDisplay)
       nodeColorModeSelect.addEventListener('change', setNodeColorMode)
       nodeSizeInput.addEventListener('input', setNodeSize)
       floatNodesInput.addEventListener('change', setNodeFloatDisplay)
@@ -1029,11 +1071,20 @@
         state.contactWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
+        state.familySource = new Int32Array()
+        state.familyTarget = new Int32Array()
+        state.friendshipSource = new Int32Array()
+        state.friendshipTarget = new Int32Array()
+        state.coworkerSource = new Int32Array()
+        state.coworkerTarget = new Int32Array()
         state.visibleInfectionPairKeys = new Set()
         state.selectedNodeIndex = -1
         state.selectedNeighborMask = new Uint8Array(state.npcs.length)
         state.selectedContactEdgeCount = 0
         state.selectedInfectionEdgeCount = 0
+        state.selectedFamilyEdgeCount = 0
+        state.selectedFriendshipEdgeCount = 0
+        state.selectedCoworkerEdgeCount = 0
         state.renderedNodeX = new Float64Array(state.npcs.length)
         state.renderedNodeY = new Float64Array(state.npcs.length)
         state.fullInfectionSource = data.fullInfectionSource
@@ -1087,6 +1138,12 @@
         state.contactWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
+        state.familySource = new Int32Array()
+        state.familyTarget = new Int32Array()
+        state.friendshipSource = new Int32Array()
+        state.friendshipTarget = new Int32Array()
+        state.coworkerSource = new Int32Array()
+        state.coworkerTarget = new Int32Array()
         state.visibleInfectionPairKeys = new Set()
         state.fullInfectionSource = new Int32Array()
         state.fullInfectionTarget = new Int32Array()
@@ -1096,6 +1153,9 @@
         state.selectedNeighborMask = new Uint8Array()
         state.selectedContactEdgeCount = 0
         state.selectedInfectionEdgeCount = 0
+        state.selectedFamilyEdgeCount = 0
+        state.selectedFriendshipEdgeCount = 0
+        state.selectedCoworkerEdgeCount = 0
         state.renderedNodeX = new Float64Array()
         state.renderedNodeY = new Float64Array()
         clearCanvas()
@@ -1173,9 +1233,10 @@
       }
 
       function setGraphLayout(mode) {
-        const nextMode = mode === 'spherical' || mode === 'hierarchical' || mode === 'infectionMap' ? mode : 'force'
+        const nextMode = isLayoutModeAvailable(mode) ? mode : 'force'
 
         if (state.layoutMode === nextMode) {
+          layoutSelect.value = state.layoutMode
           return
         }
 
@@ -1213,11 +1274,7 @@
 
       function applyFixedLayout(mode, { animate }) {
         stopSimulation()
-        const positions = mode === 'hierarchical'
-          ? hierarchicalPositions()
-          : mode === 'infectionMap'
-            ? infectionMapPositions()
-            : sphericalPositions()
+        const positions = fixedLayoutPositions(mode)
 
         if (animate) {
           animateNodePositions(positions)
@@ -1233,6 +1290,36 @@
         }
 
         scheduleGraphDraw()
+      }
+
+      function fixedLayoutPositions(mode) {
+        if (mode === 'hierarchical') {
+          return hierarchicalPositions()
+        }
+
+        if (mode === 'infectionMap') {
+          return infectionMapPositions()
+        }
+
+        if (mode === 'familyBuildings') {
+          return buildingClusterPositions({
+            groups: state.world.families,
+            memberField: 'memberIds',
+            buildingField: 'homeBuildingId',
+            unplacedLabel: 'family'
+          })
+        }
+
+        if (mode === 'officeBuildings') {
+          return buildingClusterPositions({
+            groups: state.world.offices,
+            memberField: 'workerIds',
+            buildingField: 'workBuildingId',
+            unplacedLabel: 'office'
+          })
+        }
+
+        return sphericalPositions()
       }
 
       function sphericalPositions() {
@@ -1323,6 +1410,221 @@
 
         layoutMapUnplacedNodes(unplaced, positions, -(spanY * scale) / 2 - 180, 36, 36)
         return positions
+      }
+
+      function buildingClusterPositions({ groups, memberField, buildingField, unplacedLabel }) {
+        const count = state.npcs.length
+        const positions = new Array(count)
+        const mapLayout = worldBuildingMapLayout()
+
+        if (!mapLayout) {
+          return sphericalPositions()
+        }
+
+        const idToNodeIndex = new Map(state.npcs.map((node) => [node.id, node.index]))
+        const groupsByBuilding = new Map()
+        const unplacedGroups = []
+        const assignedNodes = new Set()
+
+        for (const group of groups || []) {
+          const members = normalizeVisibleMemberIndexes(group?.[memberField], idToNodeIndex)
+
+          if (members.length === 0) {
+            continue
+          }
+
+          for (const member of members) {
+            assignedNodes.add(member)
+          }
+
+          const buildingId = group?.[buildingField]
+          const cluster = {
+            id: group.id,
+            members,
+            buildingId
+          }
+
+          if (!buildingId || !mapLayout.positions.has(buildingId)) {
+            unplacedGroups.push(cluster)
+            continue
+          }
+
+          let buildingGroups = groupsByBuilding.get(buildingId)
+
+          if (!buildingGroups) {
+            buildingGroups = []
+            groupsByBuilding.set(buildingId, buildingGroups)
+          }
+
+          buildingGroups.push(cluster)
+        }
+
+        const groupGap = memberField === 'workerIds' ? 78 : 52
+        const memberGap = memberField === 'workerIds' ? 13 : 12
+        const buildingIds = [...groupsByBuilding.keys()].sort((left, right) => String(left).localeCompare(String(right)))
+
+        for (const buildingId of buildingIds) {
+          const buildingCenter = mapLayout.positions.get(buildingId)
+          const buildingGroups = groupsByBuilding.get(buildingId).sort(compareClusterGroups)
+          const centers = localClusterCenters(buildingGroups.length, buildingCenter, groupGap)
+
+          for (let index = 0; index < buildingGroups.length; index += 1) {
+            placeMembersInCluster(positions, buildingGroups[index].members, centers[index], memberGap)
+          }
+        }
+
+        if (unplacedGroups.length > 0) {
+          const centers = localClusterCenters(
+            unplacedGroups.length,
+            { x: 0, y: mapLayout.maxY + 250 },
+            groupGap
+          )
+
+          unplacedGroups.sort(compareClusterGroups)
+
+          for (let index = 0; index < unplacedGroups.length; index += 1) {
+            placeMembersInCluster(positions, unplacedGroups[index].members, centers[index], memberGap)
+          }
+        }
+
+        const unassigned = []
+
+        for (let index = 0; index < count; index += 1) {
+          if (!positions[index] && !assignedNodes.has(index)) {
+            unassigned.push(index)
+          }
+        }
+
+        layoutMapUnplacedNodes(
+          unassigned,
+          positions,
+          mapLayout.maxY + (unplacedGroups.length > 0 ? 520 : 260),
+          28,
+          28
+        )
+
+        for (let index = 0; index < count; index += 1) {
+          if (!positions[index]) {
+            positions[index] = {
+              x: seededUnit(index, 101) * 60 - 30,
+              y: mapLayout.maxY + 720 + seededUnit(index, 103) * 60
+            }
+          }
+        }
+
+        return positions
+      }
+
+      function worldBuildingMapLayout() {
+        const buildings = [...state.world.buildingsById.values()].filter((building) => building.center)
+
+        if (buildings.length === 0) {
+          return null
+        }
+
+        let minX = Infinity
+        let maxX = -Infinity
+        let minY = Infinity
+        let maxY = -Infinity
+
+        for (const building of buildings) {
+          minX = Math.min(minX, building.center.x)
+          maxX = Math.max(maxX, building.center.x)
+          minY = Math.min(minY, building.center.y)
+          maxY = Math.max(maxY, building.center.y)
+        }
+
+        const spanX = Math.max(1, maxX - minX)
+        const spanY = Math.max(1, maxY - minY)
+        const scale = Math.min(3900 / spanX, 2800 / spanY)
+        const centerX = (minX + maxX) / 2
+        const centerY = (minY + maxY) / 2
+        const positions = new Map()
+        let layoutMaxY = -Infinity
+
+        for (const building of buildings) {
+          const position = {
+            x: (building.center.x - centerX) * scale,
+            y: (building.center.y - centerY) * scale
+          }
+
+          positions.set(building.id, position)
+          layoutMaxY = Math.max(layoutMaxY, position.y)
+        }
+
+        return {
+          positions,
+          scale,
+          maxY: layoutMaxY
+        }
+      }
+
+      function localClusterCenters(count, center, gap) {
+        if (count <= 0) {
+          return []
+        }
+
+        if (count === 1) {
+          return [{ ...center }]
+        }
+
+        const columns = Math.max(1, Math.ceil(Math.sqrt(count * 1.45)))
+        const rows = Math.ceil(count / columns)
+        const centers = []
+
+        for (let index = 0; index < count; index += 1) {
+          const column = index % columns
+          const row = Math.floor(index / columns)
+
+          centers.push({
+            x: center.x + (column - (columns - 1) / 2) * gap,
+            y: center.y + (row - (rows - 1) / 2) * gap
+          })
+        }
+
+        return centers
+      }
+
+      function placeMembersInCluster(positions, members, center, gap) {
+        if (members.length === 1) {
+          positions[members[0]] = { ...center }
+          return
+        }
+
+        if (members.length <= 8) {
+          const radius = Math.max(11, members.length * 2.1)
+
+          for (let index = 0; index < members.length; index += 1) {
+            const angle = (index / members.length) * Math.PI * 2
+
+            positions[members[index]] = {
+              x: center.x + Math.cos(angle) * radius,
+              y: center.y + Math.sin(angle) * radius
+            }
+          }
+
+          return
+        }
+
+        const columns = Math.ceil(Math.sqrt(members.length))
+        const rows = Math.ceil(members.length / columns)
+
+        for (let index = 0; index < members.length; index += 1) {
+          const column = index % columns
+          const row = Math.floor(index / columns)
+
+          positions[members[index]] = {
+            x: center.x + (column - (columns - 1) / 2) * gap,
+            y: center.y + (row - (rows - 1) / 2) * gap
+          }
+        }
+      }
+
+      function compareClusterGroups(left, right) {
+        return String(left.id || '').localeCompare(String(right.id || ''), undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        })
       }
 
       function tileJitter(npc, index, groupSize) {
@@ -1770,6 +2072,9 @@
         state.selectedNeighborMask = new Uint8Array(state.npcs.length)
         state.selectedContactEdgeCount = 0
         state.selectedInfectionEdgeCount = 0
+        state.selectedFamilyEdgeCount = 0
+        state.selectedFriendshipEdgeCount = 0
+        state.selectedCoworkerEdgeCount = 0
         applyNodeStyles()
         scheduleGraphDraw()
       }
@@ -1787,6 +2092,9 @@
 
         state.selectedContactEdgeCount = 0
         state.selectedInfectionEdgeCount = 0
+        state.selectedFamilyEdgeCount = 0
+        state.selectedFriendshipEdgeCount = 0
+        state.selectedCoworkerEdgeCount = 0
 
         if (!hasNodeSelection()) {
           return
@@ -1811,6 +2119,18 @@
           }
         }
 
+        if (state.showFamilyEdges) {
+          state.selectedFamilyEdgeCount = markSelectedEdgeBatch(state.familySource, state.familyTarget, selectedIndex)
+        }
+
+        if (state.showFriendshipEdges) {
+          state.selectedFriendshipEdgeCount = markSelectedEdgeBatch(state.friendshipSource, state.friendshipTarget, selectedIndex)
+        }
+
+        if (state.showCoworkerEdges) {
+          state.selectedCoworkerEdgeCount = markSelectedEdgeBatch(state.coworkerSource, state.coworkerTarget, selectedIndex)
+        }
+
         if (state.showInfections) {
           for (let index = 0; index < state.infectionSource.length; index += 1) {
             if (markSelectedEdgeNeighbor(state.infectionSource[index], state.infectionTarget[index], selectedIndex)) {
@@ -1818,6 +2138,18 @@
             }
           }
         }
+      }
+
+      function markSelectedEdgeBatch(source, target, selectedIndex) {
+        let count = 0
+
+        for (let index = 0; index < source.length; index += 1) {
+          if (markSelectedEdgeNeighbor(source[index], target[index], selectedIndex)) {
+            count += 1
+          }
+        }
+
+        return count
       }
 
       function markSelectedEdgeNeighbor(sourceIndex, targetIndex, selectedIndex) {
@@ -1875,11 +2207,20 @@
         const ratio = window.devicePixelRatio || 1
         const displayedContactCount = state.showContacts ? countRenderableContactEdges() : 0
         const displayedInfectionCount = state.showInfections ? state.infectionSource.length : 0
-        const contactOpacity = dynamicEdgeOpacity(displayedContactCount, 0.24, 0.026, 850)
+        const displayedFamilyCount = state.showFamilyEdges ? state.familySource.length : 0
+        const displayedFriendshipCount = state.showFriendshipEdges ? state.friendshipSource.length : 0
+        const displayedCoworkerCount = state.showCoworkerEdges ? state.coworkerSource.length : 0
+        const contactOpacity = dynamicEdgeOpacity(displayedContactCount, 0.36, 0.052, 1050)
         const infectionOpacity = dynamicEdgeOpacity(displayedInfectionCount, 0.72, 0.16, 120)
+        const familyOpacity = dynamicEdgeOpacity(displayedFamilyCount, 0.36, 0.04, 180)
+        const friendshipOpacity = dynamicEdgeOpacity(displayedFriendshipCount, 0.28, 0.028, 520)
+        const coworkerOpacity = dynamicEdgeOpacity(displayedCoworkerCount, 0.3, 0.032, 420)
         const selectionActive = hasNodeSelection()
-        const selectedContactOpacity = dynamicEdgeOpacity(state.selectedContactEdgeCount, 0.7, 0.16, 24)
+        const selectedContactOpacity = dynamicEdgeOpacity(state.selectedContactEdgeCount, 0.84, 0.24, 24)
         const selectedInfectionOpacity = dynamicEdgeOpacity(state.selectedInfectionEdgeCount, 0.88, 0.24, 10)
+        const selectedFamilyOpacity = dynamicEdgeOpacity(state.selectedFamilyEdgeCount, 0.78, 0.22, 12)
+        const selectedFriendshipOpacity = dynamicEdgeOpacity(state.selectedFriendshipEdgeCount, 0.68, 0.18, 24)
+        const selectedCoworkerOpacity = dynamicEdgeOpacity(state.selectedCoworkerEdgeCount, 0.7, 0.2, 20)
 
         edgeContext.save()
         edgeContext.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * transform.x, ratio * transform.y)
@@ -1891,6 +2232,33 @@
             drawContactEdgeBatch(true, selectedContactOpacity, 0.78 / scale)
           } else {
             drawContactEdgeBatch(null, contactOpacity, 0.55 / scale)
+          }
+        }
+
+        if (displayedFriendshipCount) {
+          if (selectionActive) {
+            drawUndirectedEdgeBatch(state.friendshipSource, state.friendshipTarget, false, edgeColors.friendship, Math.max(0.01, friendshipOpacity * 0.18), 0.58 / scale)
+            drawUndirectedEdgeBatch(state.friendshipSource, state.friendshipTarget, true, edgeColors.friendship, selectedFriendshipOpacity, 0.9 / scale)
+          } else {
+            drawUndirectedEdgeBatch(state.friendshipSource, state.friendshipTarget, null, edgeColors.friendship, friendshipOpacity, 0.64 / scale)
+          }
+        }
+
+        if (displayedCoworkerCount) {
+          if (selectionActive) {
+            drawUndirectedEdgeBatch(state.coworkerSource, state.coworkerTarget, false, edgeColors.coworker, Math.max(0.012, coworkerOpacity * 0.18), 0.62 / scale)
+            drawUndirectedEdgeBatch(state.coworkerSource, state.coworkerTarget, true, edgeColors.coworker, selectedCoworkerOpacity, 0.95 / scale)
+          } else {
+            drawUndirectedEdgeBatch(state.coworkerSource, state.coworkerTarget, null, edgeColors.coworker, coworkerOpacity, 0.7 / scale)
+          }
+        }
+
+        if (displayedFamilyCount) {
+          if (selectionActive) {
+            drawUndirectedEdgeBatch(state.familySource, state.familyTarget, false, edgeColors.family, Math.max(0.014, familyOpacity * 0.18), 0.7 / scale)
+            drawUndirectedEdgeBatch(state.familySource, state.familyTarget, true, edgeColors.family, selectedFamilyOpacity, 1.05 / scale)
+          } else {
+            drawUndirectedEdgeBatch(state.familySource, state.familyTarget, null, edgeColors.family, familyOpacity, 0.82 / scale)
           }
         }
 
@@ -1906,8 +2274,31 @@
         edgeContext.restore()
       }
 
+      function drawUndirectedEdgeBatch(sourceIndexes, targetIndexes, matchSelected, color, opacity, lineWidth) {
+        edgeContext.strokeStyle = rgba(color[0], color[1], color[2], opacity)
+        edgeContext.lineWidth = lineWidth
+        edgeContext.beginPath()
+
+        for (let index = 0; index < sourceIndexes.length; index += 1) {
+          const sourceIndex = sourceIndexes[index]
+          const targetIndex = targetIndexes[index]
+
+          if (matchSelected !== null && isSelectedEdge(sourceIndex, targetIndex) !== matchSelected) {
+            continue
+          }
+
+          const source = state.npcs[sourceIndex]
+          const target = state.npcs[targetIndex]
+
+          edgeContext.moveTo(renderedNodeX(source), renderedNodeY(source))
+          edgeContext.lineTo(renderedNodeX(target), renderedNodeY(target))
+        }
+
+        edgeContext.stroke()
+      }
+
       function drawContactEdgeBatch(matchSelected, opacity, lineWidth) {
-        edgeContext.strokeStyle = rgba(118, 122, 120, opacity)
+        edgeContext.strokeStyle = rgba(edgeColors.contact[0], edgeColors.contact[1], edgeColors.contact[2], opacity)
         edgeContext.lineWidth = lineWidth
         edgeContext.beginPath()
 
@@ -2267,8 +2658,15 @@
       function setEdgeDisplay() {
         state.showContacts = showContactsInput.checked
         state.showInfections = showInfectionsInput.checked
+        state.showFamilyEdges = showFamilyEdgesInput.checked && isWorldEdgeAvailable('family')
+        state.showFriendshipEdges = showFriendshipEdgesInput.checked && isWorldEdgeAvailable('friendship')
+        state.showCoworkerEdges = showCoworkerEdgesInput.checked && isWorldEdgeAvailable('coworker')
+        showFamilyEdgesInput.checked = state.showFamilyEdges
+        showFriendshipEdgesInput.checked = state.showFriendshipEdges
+        showCoworkerEdgesInput.checked = state.showCoworkerEdges
         rebuildSelectionNeighborhood()
         applyNodeStyles()
+        updateLegend()
         scheduleGraphDraw()
       }
 
@@ -2437,9 +2835,14 @@
           loaded: false,
           sourceName: '',
           npcById: new Map(),
+          buildingsById: new Map(),
+          families: [],
+          classes: [],
+          offices: [],
           matchedNpcCount: 0,
           counts: {
             npcs: 0,
+            buildings: 0,
             families: 0,
             classes: 0,
             offices: 0
@@ -2447,7 +2850,12 @@
           available: {
             family: false,
             class: false,
-            office: false
+            office: false,
+            familyEdges: false,
+            friendshipEdges: false,
+            coworkerEdges: false,
+            familyBuildingLayout: false,
+            officeBuildingLayout: false
           }
         }
       }
@@ -2482,50 +2890,156 @@
             officeId: normalizeGroupId(npc?.officeId, 'office'),
             homeBuildingId: normalizeStringOrNull(npc?.homeBuildingId),
             schoolBuildingId: normalizeStringOrNull(npc?.schoolBuildingId),
-            workBuildingId: normalizeStringOrNull(npc?.workBuildingId)
+            workBuildingId: normalizeStringOrNull(npc?.workBuildingId),
+            friendIds: normalizeNpcIdArray(npc?.friendIds)
           })
         }
 
         const groupSource = payload.groups && typeof payload.groups === 'object' && !Array.isArray(payload.groups)
           ? payload.groups
           : payload
-        const families = Array.isArray(groupSource.families) ? groupSource.families : []
-        const classes = Array.isArray(groupSource.classes) ? groupSource.classes : []
-        const offices = Array.isArray(groupSource.offices) ? groupSource.offices : []
+        const families = parseWorldGroups(groupSource.families, 'family', 'memberIds', 'homeBuildingId')
+        const classes = parseWorldGroups(groupSource.classes, 'class', 'studentIds', 'schoolBuildingId')
+        const offices = parseWorldGroups(groupSource.offices, 'office', 'workerIds', 'workBuildingId')
+        const buildingsById = parseWorldBuildings(payload.buildings)
 
         applyWorldGroupBacklinks(npcById, families, 'family', 'memberIds')
         applyWorldGroupBacklinks(npcById, classes, 'class', 'studentIds')
         applyWorldGroupBacklinks(npcById, offices, 'office', 'workerIds')
 
+        const metadata = [...npcById.values()]
+        const hasFamily = metadata.some((npc) => Boolean(npc.familyId))
+        const hasClass = metadata.some((npc) => Boolean(npc.classId))
+        const hasOffice = metadata.some((npc) => Boolean(npc.officeId))
+        const hasFriendships = metadata.some((npc) => npc.friendIds.length > 0)
+
         return {
           loaded: true,
           sourceName,
           npcById,
+          buildingsById,
+          families,
+          classes,
+          offices,
           matchedNpcCount: 0,
           counts: {
             npcs: npcById.size,
+            buildings: buildingsById.size,
             families: families.length,
             classes: classes.length,
             offices: offices.length
           },
           available: {
-            family: [...npcById.values()].some((npc) => Boolean(npc.familyId)),
-            class: [...npcById.values()].some((npc) => Boolean(npc.classId)),
-            office: [...npcById.values()].some((npc) => Boolean(npc.officeId))
+            family: hasFamily,
+            class: hasClass,
+            office: hasOffice,
+            familyEdges: hasFamily,
+            friendshipEdges: hasFriendships,
+            coworkerEdges: hasOffice,
+            familyBuildingLayout: hasFamily && buildingsById.size > 0,
+            officeBuildingLayout: hasOffice && buildingsById.size > 0
           }
         }
+      }
+
+      function parseWorldGroups(groups, kind, memberField, buildingField) {
+        if (!Array.isArray(groups)) {
+          return []
+        }
+
+        const parsed = []
+
+        for (const group of groups) {
+          const id = normalizeGroupId(group?.id, kind)
+
+          if (!id) {
+            continue
+          }
+
+          parsed.push({
+            id,
+            [memberField]: normalizeNpcIdArray(group?.[memberField]),
+            [buildingField]: normalizeStringOrNull(group?.[buildingField]),
+            adultIds: normalizeNpcIdArray(group?.adultIds),
+            childIds: normalizeNpcIdArray(group?.childIds)
+          })
+        }
+
+        return parsed
+      }
+
+      function parseWorldBuildings(buildings) {
+        const buildingsById = new Map()
+
+        if (!Array.isArray(buildings)) {
+          return buildingsById
+        }
+
+        for (const building of buildings) {
+          const id = normalizeStringOrNull(building?.id)
+
+          if (!id) {
+            continue
+          }
+
+          const center = buildingCenterFromSpans(building?.spans)
+
+          buildingsById.set(id, {
+            id,
+            types: Array.isArray(building?.types) ? building.types.map(String) : [],
+            entrance: building?.entrance && typeof building.entrance === 'object'
+              ? {
+                  x: Number(building.entrance.x),
+                  y: Number(building.entrance.y)
+                }
+              : null,
+            spans: Array.isArray(building?.spans) ? building.spans.map((span) => [...span]) : [],
+            center
+          })
+        }
+
+        return buildingsById
+      }
+
+      function buildingCenterFromSpans(spans) {
+        if (!Array.isArray(spans) || spans.length === 0) {
+          return null
+        }
+
+        let weightedX = 0
+        let weightedY = 0
+        let tileCount = 0
+
+        for (const span of spans) {
+          if (!Array.isArray(span) || span.length !== 3) {
+            continue
+          }
+
+          const y = Number(span[0])
+          const x = Number(span[1])
+          const length = Number(span[2])
+
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(length) || length <= 0) {
+            continue
+          }
+
+          weightedX += (x + length / 2) * length
+          weightedY += (y + 0.5) * length
+          tileCount += length
+        }
+
+        return tileCount > 0
+          ? {
+              x: weightedX / tileCount,
+              y: weightedY / tileCount
+            }
+          : null
       }
 
       function applyWorldGroupBacklinks(npcById, groups, kind, memberField) {
         for (const group of groups) {
           const groupId = normalizeGroupId(group?.id, kind)
           const memberIds = Array.isArray(group?.[memberField]) ? group[memberField] : []
-          const adultIds = kind === 'family' && Array.isArray(group?.adultIds)
-            ? new Set(group.adultIds.map(normalizeNpcId))
-            : null
-          const childIds = kind === 'family' && Array.isArray(group?.childIds)
-            ? new Set(group.childIds.map(normalizeNpcId))
-            : null
 
           if (!groupId) {
             continue
@@ -2541,10 +3055,18 @@
 
             metadata[`${kind}Id`] = metadata[`${kind}Id`] || groupId
 
+            if (kind === 'family') {
+              metadata.homeBuildingId = metadata.homeBuildingId || group.homeBuildingId || null
+            } else if (kind === 'class') {
+              metadata.schoolBuildingId = metadata.schoolBuildingId || group.schoolBuildingId || null
+            } else if (kind === 'office') {
+              metadata.workBuildingId = metadata.workBuildingId || group.workBuildingId || null
+            }
+
             if (kind === 'family' && !metadata.familyRole) {
-              metadata.familyRole = childIds?.has(memberId)
+              metadata.familyRole = group.childIds.includes(memberId)
                 ? 'child'
-                : adultIds?.has(memberId)
+                : group.adultIds.includes(memberId)
                   ? 'adult'
                   : null
             }
@@ -2573,6 +3095,7 @@
         }
 
         state.world.matchedNpcCount = matchedNpcCount
+        rebuildWorldRelationshipEdges()
       }
 
       function clearNodeWorldMetadata(node) {
@@ -2585,6 +3108,123 @@
         node.homeBuildingId = null
         node.schoolBuildingId = null
         node.workBuildingId = null
+        node.friendIds = []
+      }
+
+      function rebuildWorldRelationshipEdges() {
+        if (!state.world.loaded || state.npcs.length === 0) {
+          setRelationshipEdgeArrays([], [], [], [], [], [])
+          return
+        }
+
+        const idToNodeIndex = new Map(state.npcs.map((node) => [node.id, node.index]))
+        const family = createGroupRelationshipEdges(state.world.families, 'memberIds', idToNodeIndex)
+        const coworker = createGroupRelationshipEdges(state.world.offices, 'workerIds', idToNodeIndex)
+        const friendship = createFriendshipRelationshipEdges(idToNodeIndex)
+
+        setRelationshipEdgeArrays(
+          family.source,
+          family.target,
+          friendship.source,
+          friendship.target,
+          coworker.source,
+          coworker.target
+        )
+      }
+
+      function setRelationshipEdgeArrays(familySource, familyTarget, friendshipSource, friendshipTarget, coworkerSource, coworkerTarget) {
+        state.familySource = Int32Array.from(familySource)
+        state.familyTarget = Int32Array.from(familyTarget)
+        state.friendshipSource = Int32Array.from(friendshipSource)
+        state.friendshipTarget = Int32Array.from(friendshipTarget)
+        state.coworkerSource = Int32Array.from(coworkerSource)
+        state.coworkerTarget = Int32Array.from(coworkerTarget)
+        rebuildSelectionNeighborhood()
+      }
+
+      function createGroupRelationshipEdges(groups, memberField, idToNodeIndex) {
+        const source = []
+        const target = []
+        const seen = new Set()
+
+        for (const group of groups) {
+          const members = normalizeVisibleMemberIndexes(group?.[memberField], idToNodeIndex)
+
+          for (let leftIndex = 0; leftIndex < members.length; leftIndex += 1) {
+            for (let rightIndex = leftIndex + 1; rightIndex < members.length; rightIndex += 1) {
+              pushUniqueUndirectedEdge(source, target, seen, members[leftIndex], members[rightIndex])
+            }
+          }
+        }
+
+        return { source, target }
+      }
+
+      function createFriendshipRelationshipEdges(idToNodeIndex) {
+        const source = []
+        const target = []
+        const seen = new Set()
+
+        for (const [npcId, metadata] of state.world.npcById.entries()) {
+          const sourceIndex = idToNodeIndex.get(npcId)
+
+          if (!Number.isInteger(sourceIndex)) {
+            continue
+          }
+
+          for (const friendId of metadata.friendIds || []) {
+            const targetIndex = idToNodeIndex.get(friendId)
+
+            if (!Number.isInteger(targetIndex)) {
+              continue
+            }
+
+            pushUniqueUndirectedEdge(source, target, seen, sourceIndex, targetIndex)
+          }
+        }
+
+        return { source, target }
+      }
+
+      function normalizeVisibleMemberIndexes(memberIds, idToNodeIndex) {
+        if (!Array.isArray(memberIds)) {
+          return []
+        }
+
+        const members = []
+        const seen = new Set()
+
+        for (const memberId of memberIds) {
+          const nodeIndex = idToNodeIndex.get(memberId)
+
+          if (!Number.isInteger(nodeIndex) || seen.has(nodeIndex)) {
+            continue
+          }
+
+          seen.add(nodeIndex)
+          members.push(nodeIndex)
+        }
+
+        members.sort((left, right) => left - right)
+        return members
+      }
+
+      function pushUniqueUndirectedEdge(source, target, seen, left, right) {
+        if (left === right) {
+          return
+        }
+
+        const low = Math.min(left, right)
+        const high = Math.max(left, right)
+        const key = nodePairKey(low, high)
+
+        if (seen.has(key)) {
+          return
+        }
+
+        seen.add(key)
+        source.push(low)
+        target.push(high)
       }
 
       function updateWorldControls() {
@@ -2592,12 +3232,37 @@
         nodeColorModeSelect.querySelector('option[value="family"]').disabled = !isNodeColorModeAvailable('family')
         nodeColorModeSelect.querySelector('option[value="class"]').disabled = !isNodeColorModeAvailable('class')
         nodeColorModeSelect.querySelector('option[value="office"]').disabled = !isNodeColorModeAvailable('office')
+        layoutSelect.querySelector('option[value="familyBuildings"]').disabled = !isLayoutModeAvailable('familyBuildings')
+        layoutSelect.querySelector('option[value="officeBuildings"]').disabled = !isLayoutModeAvailable('officeBuildings')
+        showFamilyEdgesInput.disabled = !isWorldEdgeAvailable('family')
+        showFriendshipEdgesInput.disabled = !isWorldEdgeAvailable('friendship')
+        showCoworkerEdgesInput.disabled = !isWorldEdgeAvailable('coworker')
+
+        if (!isWorldEdgeAvailable('family')) {
+          state.showFamilyEdges = false
+          showFamilyEdgesInput.checked = false
+        }
+
+        if (!isWorldEdgeAvailable('friendship')) {
+          state.showFriendshipEdges = false
+          showFriendshipEdgesInput.checked = false
+        }
+
+        if (!isWorldEdgeAvailable('coworker')) {
+          state.showCoworkerEdges = false
+          showCoworkerEdgesInput.checked = false
+        }
 
         if (!isNodeColorModeAvailable(state.nodeColorMode)) {
           state.nodeColorMode = 'seir'
         }
 
+        if (!isLayoutModeAvailable(state.layoutMode)) {
+          state.layoutMode = 'force'
+        }
+
         nodeColorModeSelect.value = state.nodeColorMode
+        layoutSelect.value = state.layoutMode
 
         if (!state.world.loaded) {
           worldSummary.textContent = 'No world loaded.'
@@ -2606,7 +3271,7 @@
 
         const counts = state.world.counts
         worldSummary.textContent = `${integerFormat(state.world.matchedNpcCount)} of ${integerFormat(state.npcs.length)} visible NPCs matched. ` +
-          `${integerFormat(counts.families)} families, ${integerFormat(counts.classes)} classes, ${integerFormat(counts.offices)} offices.`
+          `${integerFormat(counts.buildings)} buildings, ${integerFormat(counts.families)} families, ${integerFormat(counts.classes)} classes, ${integerFormat(counts.offices)} offices.`
       }
 
       function isNodeColorModeAvailable(mode) {
@@ -2615,6 +3280,38 @@
         }
 
         return Boolean(state.world.loaded && state.world.available[mode])
+      }
+
+      function isWorldEdgeAvailable(kind) {
+        if (kind === 'family') {
+          return Boolean(state.world.loaded && state.world.available.familyEdges)
+        }
+
+        if (kind === 'friendship') {
+          return Boolean(state.world.loaded && state.world.available.friendshipEdges)
+        }
+
+        if (kind === 'coworker') {
+          return Boolean(state.world.loaded && state.world.available.coworkerEdges)
+        }
+
+        return false
+      }
+
+      function isLayoutModeAvailable(mode) {
+        if (mode === 'force' || mode === 'spherical' || mode === 'hierarchical' || mode === 'infectionMap') {
+          return true
+        }
+
+        if (mode === 'familyBuildings') {
+          return Boolean(state.world.loaded && state.world.available.familyBuildingLayout)
+        }
+
+        if (mode === 'officeBuildings') {
+          return Boolean(state.world.loaded && state.world.available.officeBuildingLayout)
+        }
+
+        return false
       }
 
       function updateSourceLabel() {
@@ -2644,8 +3341,25 @@
         }
 
         if (state.activeTab === 'contact') {
-          items.push(legendItem('<span class="swatch-line" style="background: var(--contact)"></span>', 'Contact'))
-          items.push(legendItem('<span class="swatch-line" style="background: var(--infection)"></span>', 'Infection'))
+          if (state.showContacts) {
+            items.push(legendItem('<span class="swatch-line" style="background: var(--contact)"></span>', 'Contact'))
+          }
+
+          if (state.showFamilyEdges) {
+            items.push(legendItem('<span class="swatch-line" style="background: var(--family-edge)"></span>', 'Family'))
+          }
+
+          if (state.showFriendshipEdges) {
+            items.push(legendItem('<span class="swatch-line" style="background: var(--friendship-edge)"></span>', 'Friendship'))
+          }
+
+          if (state.showCoworkerEdges) {
+            items.push(legendItem('<span class="swatch-line" style="background: var(--coworker-edge)"></span>', 'Coworker'))
+          }
+
+          if (state.showInfections) {
+            items.push(legendItem('<span class="swatch-line" style="background: var(--infection)"></span>', 'Infection'))
+          }
         }
 
         legend.innerHTML = items.join('')
@@ -2669,6 +3383,28 @@
         const match = String(value ?? '').match(/^npc_(\d+)$/)
 
         return match ? `npc_${Number(match[1])}` : null
+      }
+
+      function normalizeNpcIdArray(values) {
+        if (!Array.isArray(values)) {
+          return []
+        }
+
+        const normalized = []
+        const seen = new Set()
+
+        for (const value of values) {
+          const id = normalizeNpcId(value)
+
+          if (!id || seen.has(id)) {
+            continue
+          }
+
+          seen.add(id)
+          normalized.push(id)
+        }
+
+        return normalized
       }
 
       function normalizeGroupId(value, kind) {
