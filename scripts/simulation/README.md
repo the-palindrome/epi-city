@@ -110,14 +110,22 @@ The world generator writes:
 ```json
 {
   "format": "epi-city-headless-world",
-  "version": 1,
+  "version": 3,
   "generatedAt": "2026-06-21T00:00:00.000Z",
   "npcs": [],
-  "cars": []
+  "cars": [],
+  "buildings": [],
+  "families": [],
+  "classes": [],
+  "offices": []
 }
 ```
 
-`npcs` contains stable IDs and generated NPC details such as age, home, school, work, friend IDs, timetable, position, tile, slot, and location state. `cars` contains stable car IDs, owner NPC IDs, parking state, and position.
+`npcs` contains stable IDs and generated NPC details such as age, family/class/office IDs, home, school, work, friend IDs, timetable, position, tile, slot, and location state. `cars` contains stable car IDs, owner NPC IDs, parking state, and position.
+
+`buildings` contains the existing Liberty City building records used by the app: stable building IDs, type arrays, optional entrance tile coordinates, and row-span footprints encoded as `[y, x, length]`. This mirrors the normalized map building data without embedding the full map rows.
+
+`families` stores the generated household boundaries from the app's NPC generator. Each family has an ID, type, home building, member IDs, adult IDs, and child IDs. `classes` partitions school-assigned students into deterministic class groups per school building, with random class target sizes centered around 24 students. `offices` partitions workers into deterministic office groups per work building, with random office target sizes centered around 8 workers. These group arrays are metadata for downstream tools; the simulation still derives movement from each NPC's serialized timetable and building assignments.
 
 The generated world does not contain `config` or `initialSeir`. The runner derives population from `npcs.length` and `cars.length`.
 

@@ -191,6 +191,10 @@ export function applySerializedNpcState(npcs, worldNpcs = []) {
     }
 
     npc.age = Number.isInteger(worldNpc.age) ? worldNpc.age : npc.age
+    npc.familyId = parseGroupIndex(worldNpc.familyId, 'family') ?? npc.familyId
+    npc.familyRole = worldNpc.familyRole ?? npc.familyRole
+    npc.classId = worldNpc.classId ?? npc.classId
+    npc.officeId = worldNpc.officeId ?? npc.officeId
     npc.home = worldNpc.homeBuildingId ?? npc.home
     npc.school = worldNpc.schoolBuildingId ?? npc.school
     npc.work = worldNpc.workBuildingId ?? npc.work
@@ -201,6 +205,20 @@ export function applySerializedNpcState(npcs, worldNpcs = []) {
     npc.slot = worldNpc.slot && typeof worldNpc.slot === 'object' ? { ...worldNpc.slot } : npc.slot
     npc.locationState = worldNpc.locationState ? cloneLocationState(worldNpc.locationState) : null
   }
+}
+
+function parseGroupIndex(id, kind) {
+  if (id == null) {
+    return null
+  }
+
+  if (Number.isInteger(id) && id >= 0) {
+    return id
+  }
+
+  const match = String(id || '').match(new RegExp(`^${kind}_(\\d+)$`))
+
+  return match ? Number(match[1]) : null
 }
 
 function validateNpcIndex(index, npcs, field) {

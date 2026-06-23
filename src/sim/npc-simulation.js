@@ -159,6 +159,9 @@ export function createNpcSimulation(city, entityLayer, config) {
       present: spawnState.present,
       locationState: spawnState.locationState,
       buildingAssignment: profile.buildingAssignment,
+      familyId: profile.familyId,
+      familyType: profile.familyType,
+      familyRole: profile.familyRole,
       age: profile.age,
       timetable,
       random,
@@ -303,11 +306,16 @@ function createNoopNpcRenderer() {
 }
 
 class NpcEntity {
-  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, age, timetable, random, renderEnabled, zorder, config }) {
+  constructor({ id, position, tile, slot, present, locationState, buildingAssignment, age, timetable, familyId, familyType, familyRole, random, renderEnabled, zorder, config }) {
     this.id = id
     this.zorder = zorder
     this.renderEnabled = renderEnabled !== false
     this.age = age
+    this.familyId = Number.isInteger(familyId) ? familyId : null
+    this.familyType = familyType || null
+    this.familyRole = familyRole || null
+    this.classId = null
+    this.officeId = null
     this.home = buildingAssignment.home ? buildingAssignment.home.id : null
     this.school = buildingAssignment.school ? buildingAssignment.school.id : null
     this.work = buildingAssignment.work ? buildingAssignment.work.id : null
@@ -2288,23 +2296,52 @@ function takeRandomItem(items, random) {
 function createNpcFamilyProfiles(city, buildingsByPurpose, random, count, config) {
   const profiles = []
   const targetCount = nonNegativeIntegerOrDefault(count, NPC_CONFIG.count)
+  let familyId = 0
 
   while (profiles.length < targetCount) {
     const remaining = targetCount - profiles.length
     const home = takeRandomItem(buildingsByPurpose.home, random)
     const familySize = chooseFamilySize(remaining, random, config)
     const ages = createFamilyAges(familySize, random)
+    const familyType = familyTypeForSize(familySize)
     const familyHasChildren = familySize > 2
 
-    for (const age of ages) {
+    for (let memberIndex = 0; memberIndex < ages.length; memberIndex += 1) {
+      const age = ages[memberIndex]
+
       profiles.push({
         age,
+        familyId,
+        familyType,
+        familyRole: familyRoleForMember(familyType, memberIndex),
         buildingAssignment: createNpcBuildingAssignmentForAge(city, buildingsByPurpose, home, age, !familyHasChildren, random, config)
       })
     }
+
+    familyId += 1
   }
 
   return profiles
+}
+
+function familyTypeForSize(familySize) {
+  if (familySize <= 1) {
+    return 'single'
+  }
+
+  return familySize === 2 ? 'marriedWithoutChildren' : 'marriedWithChildren'
+}
+
+function familyRoleForMember(familyType, memberIndex) {
+  if (familyType === 'single') {
+    return 'single'
+  }
+
+  if (familyType === 'marriedWithoutChildren') {
+    return 'partner'
+  }
+
+  return memberIndex < 2 ? 'parent' : 'child'
 }
 
 function createNpcBuildingAssignmentForAge(city, buildingsByPurpose, home, age, adultWithoutChildren, random, config) {

@@ -1775,7 +1775,7 @@ describe('NPC simulation randomness', () => {
     repeated.destroy()
   })
 
-  it('generates whole families under one home and stores only per-NPC attributes', () => {
+  it('generates whole families under one home and preserves family metadata', () => {
     const city = createCityWithBuildingTypes()
     const simulation = createSimulation('family-household', city, {
       count: 4,
@@ -1786,14 +1786,17 @@ describe('NPC simulation randomness', () => {
     const homes = new Set(simulation.npcs.map((npc) => npc.home))
     const adults = simulation.npcs.filter((npc) => npc.age >= 18)
     const children = simulation.npcs.filter((npc) => npc.age < 18)
+    const familyIds = new Set(simulation.npcs.map((npc) => npc.familyId))
 
     expect(simulation.npcs).toHaveLength(4)
     expect(homes.size).toBe(1)
+    expect(familyIds.size).toBe(1)
     expect(adults).toHaveLength(2)
     expect(children).toHaveLength(2)
     expect(simulation.npcs.every((npc) => Number.isInteger(npc.age))).toBe(true)
-    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'familyType'))).toBe(true)
-    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'familyId'))).toBe(true)
+    expect(simulation.npcs.every((npc) => npc.familyType === 'marriedWithChildren')).toBe(true)
+    expect(adults.every((npc) => npc.familyRole === 'parent')).toBe(true)
+    expect(children.every((npc) => npc.familyRole === 'child')).toBe(true)
     expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'children'))).toBe(true)
 
     simulation.destroy()

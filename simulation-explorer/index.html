@@ -326,6 +326,12 @@
         width: 100%;
       }
 
+      .settings-note {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
       .control-title {
         color: var(--muted);
         font-size: 11px;
@@ -643,8 +649,12 @@
           </label>
         </div>
         <label class="file-control">
-          Load JSON
+          Load results
           <input id="fileInput" type="file" accept="application/json,.json">
+        </label>
+        <label class="file-control">
+          Load world
+          <input id="worldFileInput" type="file" accept="application/json,.json">
         </label>
       </div>
     </div>
@@ -677,6 +687,15 @@
         <section class="settings-section" aria-labelledby="nodeSettingsTitle">
           <h2 id="nodeSettingsTitle" class="settings-title">Display nodes</h2>
           <div class="settings-field">
+            <label for="nodeColorMode">Color nodes by</label>
+            <select id="nodeColorMode" aria-label="Color nodes by">
+              <option value="seir">SEIR state</option>
+              <option value="family" disabled>Family</option>
+              <option value="class" disabled>Class</option>
+              <option value="office" disabled>Office</option>
+            </select>
+          </div>
+          <div class="settings-field">
             <label for="nodeSize">Node size</label>
             <input id="nodeSize" type="range" min="1" max="3" step="0.05" value="1" aria-label="Node size">
           </div>
@@ -689,6 +708,10 @@
             <input id="floatIntensity" type="range" min="0" max="5" step="0.1" value="1" aria-label="Float intensity">
           </div>
         </section>
+        <section id="worldSettings" class="settings-section" aria-labelledby="worldSettingsTitle" hidden>
+          <h2 id="worldSettingsTitle" class="settings-title">World metadata</h2>
+          <div id="worldSummary" class="settings-note">No world loaded.</div>
+        </section>
       </div>
     </details>
     <div id="status" class="status">Load a headless result JSON</div>
@@ -698,7 +721,7 @@
       <div class="stat"><b id="activeNodeCount">0</b><span>Active NPCs</span></div>
       <div class="stat"><b id="durationLabel">0s</b><span>Window</span></div>
     </div>
-    <div class="legend">
+    <div id="legend" class="legend">
       <div class="legend-item"><span class="swatch" style="background: var(--susceptible)"></span>Susceptible</div>
       <div class="legend-item"><span class="swatch" style="background: var(--exposed)"></span>Exposed</div>
       <div class="legend-item"><span class="swatch" style="background: var(--infectious)"></span>Infectious</div>
@@ -745,18 +768,23 @@
       const endNumber = document.getElementById('endNumber')
       const showContactsInput = document.getElementById('showContacts')
       const showInfectionsInput = document.getElementById('showInfections')
+      const nodeColorModeSelect = document.getElementById('nodeColorMode')
       const nodeSizeInput = document.getElementById('nodeSize')
       const floatNodesInput = document.getElementById('floatNodes')
       const floatIntensityInput = document.getElementById('floatIntensity')
+      const worldSettings = document.getElementById('worldSettings')
+      const worldSummary = document.getElementById('worldSummary')
       const layoutSelect = document.getElementById('layoutSelect')
       const showSusceptibleInput = document.getElementById('showSusceptible')
       const showExposedInput = document.getElementById('showExposed')
       const showInfectiousInput = document.getElementById('showInfectious')
       const showRecoveredInput = document.getElementById('showRecovered')
       const fileInput = document.getElementById('fileInput')
+      const worldFileInput = document.getElementById('worldFileInput')
       const contactGraphTab = document.getElementById('contactGraphTab')
       const seirCurveTab = document.getElementById('seirCurveTab')
       const tooltip = document.getElementById('tooltip')
+      const legend = document.getElementById('legend')
       const nodeCountEl = document.getElementById('nodeCount')
       const edgeCountEl = document.getElementById('edgeCount')
       const activeNodeCountEl = document.getElementById('activeNodeCount')
@@ -786,6 +814,7 @@
         worker: null,
         loading: false,
         loadStartedAt: 0,
+        resultSourceName: '',
         loaded: false,
         npcs: [],
         initialStateCodes: new Int8Array(),
@@ -818,6 +847,7 @@
         end: 0,
         showContacts: true,
         showInfections: true,
+        nodeColorMode: 'seir',
         nodeSizeScale: 1,
         floatNodes: false,
         floatIntensity: 1,
@@ -837,6 +867,7 @@
         queuedWindow: false,
         maxLayoutLinks: 6000,
         maxVisibleContactEdges: 12000,
+        world: createEmptyWorldMetadata(),
         layoutAnimationFrame: 0,
         floatAnimationFrame: 0,
         stats: {
@@ -870,6 +901,7 @@
       endNumber.addEventListener('change', () => setWindow(state.start, Number(endNumber.value)))
       showContactsInput.addEventListener('change', setEdgeDisplay)
       showInfectionsInput.addEventListener('change', setEdgeDisplay)
+      nodeColorModeSelect.addEventListener('change', setNodeColorMode)
       nodeSizeInput.addEventListener('input', setNodeSize)
       floatNodesInput.addEventListener('change', setNodeFloatDisplay)
       floatIntensityInput.addEventListener('input', setFloatIntensity)
@@ -881,6 +913,7 @@
       contactGraphTab.addEventListener('click', () => setActiveTab('contact'))
       seirCurveTab.addEventListener('click', () => setActiveTab('seir'))
       fileInput.addEventListener('change', loadSelectedFile)
+      worldFileInput.addEventListener('change', loadSelectedWorldFile)
       resize()
 
       async function loadSelectedFile() {
@@ -898,7 +931,8 @@
           state.worker = null
         }
         resetView()
-        sourceEl.textContent = file.name
+        state.resultSourceName = file.name
+        updateSourceLabel()
         setStatus(`Loading ${file.name}`)
         ensureWorker()
         state.worker.postMessage({
@@ -909,6 +943,33 @@
           maxVisibleContactEdges: state.maxVisibleContactEdges
         })
         fileInput.value = ''
+      }
+
+      async function loadSelectedWorldFile() {
+        const file = worldFileInput.files?.[0]
+
+        if (!file) {
+          return
+        }
+
+        try {
+          setStatus(`Loading world ${file.name}`)
+          const text = await file.text()
+          const payload = JSON.parse(text)
+
+          state.world = parseWorldMetadata(payload, file.name)
+          applyWorldMetadata()
+          updateWorldControls()
+          updateSourceLabel()
+          applyNodeStyles()
+          updateLegend()
+          scheduleGraphDraw()
+          showTemporaryStatus(worldLoadedMessage())
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : String(error))
+        } finally {
+          worldFileInput.value = ''
+        }
       }
 
       function ensureWorker() {
@@ -959,6 +1020,7 @@
           x: Math.cos(index * 2.399963) * Math.sqrt(index + 1) * 9,
           y: Math.sin(index * 2.399963) * Math.sqrt(index + 1) * 9
         }))
+        applyWorldMetadata()
         state.initialStateCodes = data.initialStateCodes
         state.currentStateCodes = data.initialStateCodes.slice()
         state.degrees = new Uint32Array(state.npcs.length)
@@ -996,8 +1058,11 @@
         layoutSelect.value = state.layoutMode
 
         configureControls()
+        updateWorldControls()
+        updateSourceLabel()
         buildGraph()
         renderChart()
+        updateLegend()
         updateStats()
         applyActiveTransform()
         requestWindowData()
@@ -1014,6 +1079,7 @@
         state.nodeSelection = null
         state.npcs = []
         state.loaded = false
+        state.resultSourceName = ''
         state.currentStateCodes = new Int8Array()
         state.degrees = new Uint32Array()
         state.contactSource = new Int32Array()
@@ -1033,6 +1099,9 @@
         state.renderedNodeX = new Float64Array()
         state.renderedNodeY = new Float64Array()
         clearCanvas()
+        updateWorldControls()
+        updateSourceLabel()
+        updateLegend()
         updateStats()
       }
 
@@ -1645,11 +1714,27 @@
         }
 
         state.nodeSelection
-          .attr('fill', (node) => colorByStateCode[state.currentStateCodes[node.index] ?? node.initialSeirStateCode] || colorByState.susceptible)
+          .attr('fill', nodeFill)
           .attr('opacity', nodeOpacity)
           .attr('stroke', (node) => node.index === state.selectedNodeIndex ? '#202621' : '#ffffff')
           .attr('stroke-width', (node) => node.index === state.selectedNodeIndex ? 1.7 : 1.1)
           .attr('r', nodeRadius)
+      }
+
+      function nodeFill(node) {
+        if (state.nodeColorMode === 'family') {
+          return node.familyId ? groupColor(node.familyId, 17) : '#d9dedb'
+        }
+
+        if (state.nodeColorMode === 'class') {
+          return node.classId ? groupColor(node.classId, 43) : '#d9dedb'
+        }
+
+        if (state.nodeColorMode === 'office') {
+          return node.officeId ? groupColor(node.officeId, 71) : '#d9dedb'
+        }
+
+        return colorByStateCode[state.currentStateCodes[node.index] ?? node.initialSeirStateCode] || colorByState.susceptible
       }
 
       function nodeRadius(node) {
@@ -2187,6 +2272,15 @@
         scheduleGraphDraw()
       }
 
+      function setNodeColorMode() {
+        const nextMode = nodeColorModeSelect.value
+
+        state.nodeColorMode = isNodeColorModeAvailable(nextMode) ? nextMode : 'seir'
+        nodeColorModeSelect.value = state.nodeColorMode
+        applyNodeStyles()
+        updateLegend()
+      }
+
       function setNodeSize() {
         const nextSize = Number(nodeSizeInput.value)
 
@@ -2246,6 +2340,7 @@
         chartRoot.style('display', state.activeTab === 'seir' ? null : 'none')
         hideTooltip()
         applyActiveTransform()
+        updateLegend()
         scheduleGraphDraw()
 
         if (state.activeTab === 'contact') {
@@ -2293,6 +2388,17 @@
       }
 
       function showNodeTooltip(event, node) {
+        const worldRows = node.worldMatched
+          ? [
+              ['Age', Number.isFinite(Number(node.age)) ? String(node.age) : 'unknown'],
+              ['Family', describeGroup(node.familyId, node.familyRole)],
+              ['Class', node.classId || 'none'],
+              ['Office', node.officeId || 'none'],
+              ['Home', node.homeBuildingId || 'unknown'],
+              ['School', node.schoolBuildingId || 'none'],
+              ['Work', node.workBuildingId || 'none']
+            ]
+          : []
         tooltip.hidden = false
         tooltip.style.left = `${event.clientX}px`
         tooltip.style.top = `${event.clientY}px`
@@ -2300,6 +2406,7 @@
           <b>${escapeHtml(node.id)}</b>
           <span>State: ${escapeHtml(stateNames[state.currentStateCodes[node.index] ?? node.initialSeirStateCode] || node.initialSeirState)}</span>
           <span>Contacts: ${integerFormat(state.degrees[node.index] || 0)}</span>
+          ${worldRows.map(([label, value]) => `<span>${escapeHtml(label)}: ${escapeHtml(value)}</span>`).join('')}
         `
       }
 
@@ -2314,6 +2421,304 @@
 
       function hideStatus() {
         statusEl.hidden = true
+      }
+
+      function showTemporaryStatus(message) {
+        setStatus(message)
+        window.setTimeout(() => {
+          if (statusEl.textContent === message) {
+            hideStatus()
+          }
+        }, 2600)
+      }
+
+      function createEmptyWorldMetadata() {
+        return {
+          loaded: false,
+          sourceName: '',
+          npcById: new Map(),
+          matchedNpcCount: 0,
+          counts: {
+            npcs: 0,
+            families: 0,
+            classes: 0,
+            offices: 0
+          },
+          available: {
+            family: false,
+            class: false,
+            office: false
+          }
+        }
+      }
+
+      function parseWorldMetadata(payload, sourceName) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          throw new Error('World JSON must be an object.')
+        }
+
+        if (payload.format && payload.format !== 'epi-city-headless-world') {
+          throw new Error(`Unsupported world format "${payload.format}".`)
+        }
+
+        if (!Array.isArray(payload.npcs)) {
+          throw new Error('World JSON must include an npcs array.')
+        }
+
+        const npcById = new Map()
+
+        for (const npc of payload.npcs) {
+          const id = normalizeNpcId(npc?.id ?? npc?.index)
+
+          if (!id) {
+            continue
+          }
+
+          npcById.set(id, {
+            age: Number.isFinite(Number(npc?.age)) ? Number(npc.age) : null,
+            familyId: normalizeGroupId(npc?.familyId, 'family'),
+            familyRole: normalizeStringOrNull(npc?.familyRole),
+            classId: normalizeGroupId(npc?.classId, 'class'),
+            officeId: normalizeGroupId(npc?.officeId, 'office'),
+            homeBuildingId: normalizeStringOrNull(npc?.homeBuildingId),
+            schoolBuildingId: normalizeStringOrNull(npc?.schoolBuildingId),
+            workBuildingId: normalizeStringOrNull(npc?.workBuildingId)
+          })
+        }
+
+        const groupSource = payload.groups && typeof payload.groups === 'object' && !Array.isArray(payload.groups)
+          ? payload.groups
+          : payload
+        const families = Array.isArray(groupSource.families) ? groupSource.families : []
+        const classes = Array.isArray(groupSource.classes) ? groupSource.classes : []
+        const offices = Array.isArray(groupSource.offices) ? groupSource.offices : []
+
+        applyWorldGroupBacklinks(npcById, families, 'family', 'memberIds')
+        applyWorldGroupBacklinks(npcById, classes, 'class', 'studentIds')
+        applyWorldGroupBacklinks(npcById, offices, 'office', 'workerIds')
+
+        return {
+          loaded: true,
+          sourceName,
+          npcById,
+          matchedNpcCount: 0,
+          counts: {
+            npcs: npcById.size,
+            families: families.length,
+            classes: classes.length,
+            offices: offices.length
+          },
+          available: {
+            family: [...npcById.values()].some((npc) => Boolean(npc.familyId)),
+            class: [...npcById.values()].some((npc) => Boolean(npc.classId)),
+            office: [...npcById.values()].some((npc) => Boolean(npc.officeId))
+          }
+        }
+      }
+
+      function applyWorldGroupBacklinks(npcById, groups, kind, memberField) {
+        for (const group of groups) {
+          const groupId = normalizeGroupId(group?.id, kind)
+          const memberIds = Array.isArray(group?.[memberField]) ? group[memberField] : []
+          const adultIds = kind === 'family' && Array.isArray(group?.adultIds)
+            ? new Set(group.adultIds.map(normalizeNpcId))
+            : null
+          const childIds = kind === 'family' && Array.isArray(group?.childIds)
+            ? new Set(group.childIds.map(normalizeNpcId))
+            : null
+
+          if (!groupId) {
+            continue
+          }
+
+          for (const rawMemberId of memberIds) {
+            const memberId = normalizeNpcId(rawMemberId)
+            const metadata = npcById.get(memberId)
+
+            if (!metadata) {
+              continue
+            }
+
+            metadata[`${kind}Id`] = metadata[`${kind}Id`] || groupId
+
+            if (kind === 'family' && !metadata.familyRole) {
+              metadata.familyRole = childIds?.has(memberId)
+                ? 'child'
+                : adultIds?.has(memberId)
+                  ? 'adult'
+                  : null
+            }
+          }
+        }
+      }
+
+      function applyWorldMetadata() {
+        let matchedNpcCount = 0
+
+        for (const node of state.npcs) {
+          clearNodeWorldMetadata(node)
+
+          if (!state.world.loaded) {
+            continue
+          }
+
+          const metadata = state.world.npcById.get(node.id)
+
+          if (!metadata) {
+            continue
+          }
+
+          Object.assign(node, metadata, { worldMatched: true })
+          matchedNpcCount += 1
+        }
+
+        state.world.matchedNpcCount = matchedNpcCount
+      }
+
+      function clearNodeWorldMetadata(node) {
+        node.worldMatched = false
+        node.age = null
+        node.familyId = null
+        node.familyRole = null
+        node.classId = null
+        node.officeId = null
+        node.homeBuildingId = null
+        node.schoolBuildingId = null
+        node.workBuildingId = null
+      }
+
+      function updateWorldControls() {
+        worldSettings.hidden = !state.world.loaded
+        nodeColorModeSelect.querySelector('option[value="family"]').disabled = !isNodeColorModeAvailable('family')
+        nodeColorModeSelect.querySelector('option[value="class"]').disabled = !isNodeColorModeAvailable('class')
+        nodeColorModeSelect.querySelector('option[value="office"]').disabled = !isNodeColorModeAvailable('office')
+
+        if (!isNodeColorModeAvailable(state.nodeColorMode)) {
+          state.nodeColorMode = 'seir'
+        }
+
+        nodeColorModeSelect.value = state.nodeColorMode
+
+        if (!state.world.loaded) {
+          worldSummary.textContent = 'No world loaded.'
+          return
+        }
+
+        const counts = state.world.counts
+        worldSummary.textContent = `${integerFormat(state.world.matchedNpcCount)} of ${integerFormat(state.npcs.length)} visible NPCs matched. ` +
+          `${integerFormat(counts.families)} families, ${integerFormat(counts.classes)} classes, ${integerFormat(counts.offices)} offices.`
+      }
+
+      function isNodeColorModeAvailable(mode) {
+        if (mode === 'seir') {
+          return true
+        }
+
+        return Boolean(state.world.loaded && state.world.available[mode])
+      }
+
+      function updateSourceLabel() {
+        const parts = []
+
+        if (state.resultSourceName) {
+          parts.push(state.resultSourceName)
+        }
+
+        if (state.world.loaded) {
+          parts.push(`world: ${state.world.sourceName}`)
+        }
+
+        sourceEl.textContent = parts.length > 0 ? parts.join(' + ') : 'No dataset'
+      }
+
+      function updateLegend() {
+        const items = []
+
+        if (state.activeTab === 'seir' || state.nodeColorMode === 'seir') {
+          for (const stateKey of stateKeys) {
+            items.push(legendItem(`<span class="swatch" style="background: ${colorByState[stateKey]}"></span>`, capitalize(stateKey)))
+          }
+        } else {
+          items.push(legendItem(`<span class="swatch" style="background: ${groupColor(`${state.nodeColorMode}_0`, 11)}"></span>`, `${capitalize(state.nodeColorMode)} groups`))
+          items.push(legendItem('<span class="swatch" style="background: #d9dedb"></span>', 'Unassigned'))
+        }
+
+        if (state.activeTab === 'contact') {
+          items.push(legendItem('<span class="swatch-line" style="background: var(--contact)"></span>', 'Contact'))
+          items.push(legendItem('<span class="swatch-line" style="background: var(--infection)"></span>', 'Infection'))
+        }
+
+        legend.innerHTML = items.join('')
+      }
+
+      function legendItem(marker, label) {
+        return `<div class="legend-item">${marker}${escapeHtml(label)}</div>`
+      }
+
+      function worldLoadedMessage() {
+        return state.loaded
+          ? `World loaded: ${integerFormat(state.world.matchedNpcCount)} matching NPCs`
+          : 'World loaded; load a headless result JSON to visualize it'
+      }
+
+      function normalizeNpcId(value) {
+        if (Number.isInteger(value) && value >= 0) {
+          return `npc_${value}`
+        }
+
+        const match = String(value ?? '').match(/^npc_(\d+)$/)
+
+        return match ? `npc_${Number(match[1])}` : null
+      }
+
+      function normalizeGroupId(value, kind) {
+        if (value == null) {
+          return null
+        }
+
+        if (Number.isInteger(value) && value >= 0) {
+          return `${kind}_${value}`
+        }
+
+        const match = String(value).match(new RegExp(`^${kind}_(\\d+)$`))
+
+        return match ? `${kind}_${Number(match[1])}` : null
+      }
+
+      function normalizeStringOrNull(value) {
+        return value == null ? null : String(value)
+      }
+
+      function describeGroup(groupId, role = null) {
+        if (!groupId) {
+          return 'none'
+        }
+
+        return role ? `${groupId} (${role})` : groupId
+      }
+
+      function groupColor(groupId, salt) {
+        const hash = hashString(`${groupId}:${salt}`)
+        const hue = hash % 360
+        const saturation = 58 + (hash % 19)
+        const lightness = 43 + ((hash >>> 8) % 13)
+
+        return `hsl(${hue} ${saturation}% ${lightness}%)`
+      }
+
+      function hashString(value) {
+        let hash = 2166136261
+
+        for (let index = 0; index < String(value).length; index += 1) {
+          hash ^= String(value).charCodeAt(index)
+          hash = Math.imul(hash, 16777619)
+        }
+
+        return hash >>> 0
+      }
+
+      function capitalize(value) {
+        return `${String(value).slice(0, 1).toUpperCase()}${String(value).slice(1)}`
       }
 
       function stopSimulation() {
