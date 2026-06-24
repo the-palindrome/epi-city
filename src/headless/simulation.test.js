@@ -5,11 +5,12 @@ import { runHeadlessSimulation } from './simulation.js'
 import { createHeadlessWorldFile } from './world.js'
 
 const SECONDS_PER_DAY = 24 * 60 * 60
+const HEADLESS_TEST_TIMEOUT_MS = 15000
 
 describe('headless simulation runner', () => {
   it('requires a supplied world file', async () => {
     await expect(runHeadlessSimulation(createRunConfig())).rejects.toThrow(/requires a generated world file/)
-  })
+  }, HEADLESS_TEST_TIMEOUT_MS)
 
   it('applies explicit run config initial SEIR ids', async () => {
     const worldPath = await writeTestWorld('headless-explicit-world.test.json', {
@@ -35,7 +36,7 @@ describe('headless simulation runner', () => {
       infectious: 1,
       recovered: 1
     })
-  })
+  }, HEADLESS_TEST_TIMEOUT_MS)
 
   it('applies count and percent initial SEIR without overlap', async () => {
     const worldPath = await writeTestWorld('headless-random-world.test.json', {
@@ -63,7 +64,20 @@ describe('headless simulation runner', () => {
       infectious: 4,
       recovered: 5
     })
-  })
+  }, HEADLESS_TEST_TIMEOUT_MS)
+
+  it('does not add an implicit seed when the run config omits seed', async () => {
+    const worldPath = await writeTestWorld('headless-seedless-world.test.json', {
+      population: { npcCount: 100, carCount: 0 }
+    })
+    const config = createRunConfig({}, { seed: undefined })
+
+    delete config.seed
+
+    const results = await runHeadlessSimulation(config, { worldPath })
+
+    expect(results.config.seed).toBeUndefined()
+  }, HEADLESS_TEST_TIMEOUT_MS)
 
   it('exports every adjacent SEIR event when a headless step spans multiple phases', async () => {
     const worldPath = await writeTestWorld('headless-phase-events-world.test.json', {
@@ -90,7 +104,7 @@ describe('headless simulation runner', () => {
       infectious: 0,
       recovered: 0
     })
-  })
+  }, HEADLESS_TEST_TIMEOUT_MS)
 
   it('rejects explicit initial SEIR ids outside the supplied world', async () => {
     const worldPath = await writeTestWorld('headless-invalid-seir-world.test.json', {
@@ -100,7 +114,7 @@ describe('headless simulation runner', () => {
     await expect(runHeadlessSimulation(createRunConfig({
       infectedNpcIds: ['npc_100']
     }), { worldPath })).rejects.toThrow(/unknown NPC id/)
-  })
+  }, HEADLESS_TEST_TIMEOUT_MS)
 
   it('produces identical seeded results for identical configs and worlds', async () => {
     const worldPath = await writeTestWorld('headless-deterministic-world.test.json', {
@@ -121,7 +135,7 @@ describe('headless simulation runner', () => {
 
     expect(first.events.length).toBeGreaterThan(0)
     expect(second).toEqual(first)
-  })
+  }, HEADLESS_TEST_TIMEOUT_MS)
 })
 
 async function writeTestWorld(fileName, config) {

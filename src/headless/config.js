@@ -38,7 +38,11 @@ export function normalizeRunConfig(input = {}, overrides = {}) {
   }
 }
 
-export function normalizeSeed(seed = {}) {
+export function normalizeSeed(seed = undefined) {
+  if (seed == null) {
+    return undefined
+  }
+
   const source = seed && typeof seed === 'object' && !Array.isArray(seed) ? seed : {}
 
   return {

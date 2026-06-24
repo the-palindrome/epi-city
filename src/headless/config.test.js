@@ -43,6 +43,17 @@ describe('headless config normalization', () => {
     expect(config.infection.transmissionProbabilityPerMinute).toBe(0.4)
   })
 
+  it('does not add an implicit seed to run configs', () => {
+    const config = normalizeRunConfig({
+      initialSeir: { initialInfectiousCount: 1 },
+      run: { durationSeconds: 10, stepSeconds: 2 },
+      infection: { transmissionProbabilityPerMinute: 0.001 },
+      policies: []
+    })
+
+    expect(config.seed).toBeUndefined()
+  })
+
   it('rejects overlapping explicit initial SEIR ids', () => {
     expect(() => normalizeRunConfig({
       initialSeir: {

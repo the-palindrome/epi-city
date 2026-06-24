@@ -484,7 +484,7 @@ function shuffleCopy(items, random) {
 }
 
 function createWorldGroupRandom(seed) {
-  return seed?.enabled === false
+  return !seed || seed.enabled === false
     ? createSystemRandom()
     : createSeededRandom(`${seed?.value ?? 'epi-city'}:world-groups`)
 }

@@ -26,13 +26,12 @@ export function createHeadlessRuntime({
   world = null,
   eventRecorder = null
 }) {
-  const effectiveSeed = seed || { enabled: true, value: 'epi-city' }
   const effectivePopulation = normalizeRuntimePopulation(population, world)
   const simulationClock = new SimulationClock(SIMULATION_CONFIG.clock)
   const signalSystem = createSignalUpdateSystem(city, simulationClock)
-  const npcRandom = createRandom(effectiveSeed, '')
-  const carRandom = createRandom(effectiveSeed, ':cars')
-  const initialSeirRandom = createRandom(effectiveSeed, ':initial-seir')
+  const npcRandom = createRandom(seed, '')
+  const carRandom = createRandom(seed, ':cars')
+  const initialSeirRandom = createRandom(seed, ':initial-seir')
   const policyEvaluator = createPolicyEvaluator(policies, effectivePopulation.npcCount)
   const emptyPolicyEffects = createPolicyEffects([])
   let policyEffectsKey = ''
@@ -303,7 +302,7 @@ function clampInteger(value, min, max) {
 }
 
 function createRandom(seed, suffix) {
-  if (seed?.enabled === false) {
+  if (!seed || seed.enabled === false) {
     return createSystemRandom()
   }
 

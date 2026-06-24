@@ -137,10 +137,6 @@ The generated world does not contain `config` or `initialSeir`. The runner deriv
 {
   "format": "epi-city-headless-run-config",
   "version": 1,
-  "seed": {
-    "enabled": true,
-    "value": "epi-city"
-  },
   "initialSeir": {
     "initialInfectiousCount": 4,
     "inoculatedPercent": 0,
@@ -164,12 +160,18 @@ The generated world does not contain `config` or `initialSeir`. The runner deriv
 
 The world file is mandatory. The run config no longer has a `world` block.
 
+Seed fields:
+
+- Omit `seed` to use system randomness for simulation-time stochastic choices and count/percent initial SEIR assignment.
+- `seed.enabled`: when `true`, use deterministic seeded runtime randomness. When `false`, use system randomness.
+- `seed.value`: seed string. Used only when `seed.enabled` is true.
+
 Initial SEIR fields:
 
 - `initialSeir.infectedNpcIds`: exact NPC IDs that start infectious.
 - `initialSeir.inoculatedNpcIds`: exact NPC IDs that start recovered/inoculated.
-- `initialSeir.initialInfectiousCount`: seeded random infectious count, used only when `infectedNpcIds` is empty.
-- `initialSeir.inoculatedPercent`: seeded random recovered/inoculated percent, used only when `inoculatedNpcIds` is empty.
+- `initialSeir.initialInfectiousCount`: random infectious count, used only when `infectedNpcIds` is empty.
+- `initialSeir.inoculatedPercent`: random recovered/inoculated percent, used only when `inoculatedNpcIds` is empty.
 
 Explicit IDs must exist in the supplied world. An NPC cannot be both infected and inoculated. Random selections exclude already selected NPCs.
 
@@ -308,6 +310,6 @@ The exporter does not write vehicle trips, policy destination cancellation event
 
 ## Reproducibility Notes
 
-For repeatable runs, generate a world once and keep passing it with `--world`. The world fixes NPC IDs, car IDs, generated schedules, relationships, and initial positions. The run config controls duration, infection parameters, policies, random seed for simulation-time stochastic choices, and initial SEIR assignment.
+For repeatable runs, generate a world once and keep passing it with `--world`, then add an explicit `seed` block to the run config. The world fixes NPC IDs, car IDs, generated schedules, relationships, and initial positions. The run config controls duration, infection parameters, policies, optional random seed for simulation-time stochastic choices, and initial SEIR assignment.
 
 After this schema change, regenerate any existing `scripts/simulation/epi-city-world.json` file.

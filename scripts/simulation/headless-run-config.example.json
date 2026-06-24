@@ -1,10 +1,6 @@
 {
   "format": "epi-city-headless-run-config",
   "version": 1,
-  "seed": {
-    "enabled": true,
-    "value": "epi-city"
-  },
   "initialSeir": {
     "initialInfectiousCount": 1,
     "inoculatedPercent": 0,
@@ -19,8 +15,8 @@
     "distanceMeters": 2,
     "transmissionProbabilityPerMinute": 0.001,
     "incubationDays": 1,
-    "infectiousDays": 7,
-    "immunityDays": 90
+    "infectiousDays": 3,
+    "immunityDays": 5
   },
   "policies": []
 }
