@@ -12,7 +12,7 @@ npm run simulation-explorer
 
 Open the local URL printed by the command. It starts at `http://localhost:5175` and tries the next port if that one is already in use.
 
-Use `Load results` in the browser to select a headless simulation result export. The explorer does not load a default result file.
+Use `Load results` in the browser to select one or more headless simulation result exports. When multiple result files are selected, the header shows a dataset dropdown for switching between them. The explorer does not load a default result file.
 
 ## Views
 

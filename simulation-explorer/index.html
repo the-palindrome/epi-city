@@ -108,6 +108,17 @@
         white-space: nowrap;
       }
 
+      .source-select {
+        min-width: 0;
+        max-width: min(42vw, 420px);
+        height: 30px;
+        color: var(--muted);
+      }
+
+      .source-select[hidden] {
+        display: none;
+      }
+
       .time-controls {
         display: grid;
         grid-template-columns: auto 190px minmax(220px, 1fr);
@@ -714,6 +725,7 @@
     <div class="topbar">
       <div class="brand">
         <h1>Simulation Explorer</h1>
+        <select id="resultSelect" class="source-select" aria-label="Loaded result dataset" hidden></select>
         <div id="source" class="source">No dataset</div>
       </div>
       <div class="time-controls graph-control">
@@ -736,7 +748,7 @@
         </label>
         <label class="file-control">
           Load results
-          <input id="fileInput" type="file" accept="application/json,.json">
+          <input id="fileInput" type="file" accept="application/json,.json" multiple>
         </label>
         <label class="file-control">
           Load world
@@ -937,6 +949,7 @@
       const edgeContext = edgeCanvas.getContext('2d')
       const svg = select('#viz')
       const sourceEl = document.getElementById('source')
+      const resultSelect = document.getElementById('resultSelect')
       const statusEl = document.getElementById('status')
       const startRange = document.getElementById('startRange')
       const endRange = document.getElementById('endRange')
@@ -1099,6 +1112,8 @@
         loading: false,
         loadStartedAt: 0,
         resultSourceName: '',
+        resultFiles: [],
+        selectedResultIndex: -1,
         loaded: false,
         npcs: [],
         initialStateCodes: new Int8Array(),
@@ -1245,11 +1260,44 @@
       contactMatrixTab.addEventListener('click', () => setActiveTab('matrix'))
       seirCurveTab.addEventListener('click', () => setActiveTab('seir'))
       fileInput.addEventListener('change', loadSelectedFile)
+      resultSelect.addEventListener('change', selectResultDataset)
       worldFileInput.addEventListener('change', loadSelectedWorldFile)
       resize()
 
       async function loadSelectedFile() {
-        const file = fileInput.files?.[0]
+        const files = Array.from(fileInput.files || [])
+
+        if (files.length === 0) {
+          return
+        }
+
+        state.resultFiles = files.map((file, index) => ({
+          file,
+          name: file.name || `result-${index + 1}.json`
+        }))
+        state.selectedResultIndex = 0
+        syncResultSelect()
+        loadResultFile(state.resultFiles[0])
+        fileInput.value = ''
+      }
+
+      function selectResultDataset() {
+        const nextIndex = Number(resultSelect.value)
+
+        if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= state.resultFiles.length ||
+            nextIndex === state.selectedResultIndex) {
+          resultSelect.value = String(Math.max(0, state.selectedResultIndex))
+          return
+        }
+
+        state.selectedResultIndex = nextIndex
+        syncResultSelect()
+        loadResultFile(state.resultFiles[nextIndex])
+      }
+
+      function loadResultFile(resultFile) {
+        const file = resultFile?.file
+        const sourceName = resultFile?.name || file?.name || 'result JSON'
 
         if (!file) {
           return
@@ -1265,18 +1313,17 @@
           state.worker = null
         }
         resetView()
-        state.resultSourceName = file.name
+        state.resultSourceName = sourceName
         updateSourceLabel()
-        setStatus(`Loading ${file.name}`)
+        setStatus(`Loading ${sourceName}`)
         ensureWorker()
         state.worker.postMessage({
           type: 'load',
           file,
-          sourceName: file.name,
+          sourceName,
           maxLayoutLinks: state.maxLayoutLinks,
           maxVisibleContactEdges: state.maxVisibleContactEdges
         })
-        fileInput.value = ''
       }
 
       async function loadSelectedWorldFile() {
@@ -5036,9 +5083,12 @@
       }
 
       function updateSourceLabel() {
-        const parts = []
+        syncResultSelect()
 
-        if (state.resultSourceName) {
+        const parts = []
+        const showResultDropdown = state.resultFiles.length > 1
+
+        if (!showResultDropdown && state.resultSourceName) {
           parts.push(state.resultSourceName)
         }
 
@@ -5047,6 +5097,37 @@
         }
 
         sourceEl.textContent = parts.length > 0 ? parts.join(' + ') : 'No dataset'
+        sourceEl.hidden = showResultDropdown && !state.world.loaded
+      }
+
+      function syncResultSelect() {
+        const showResultDropdown = state.resultFiles.length > 1
+
+        resultSelect.hidden = !showResultDropdown
+
+        if (!showResultDropdown) {
+          resultSelect.innerHTML = ''
+          return
+        }
+
+        const selectedIndex = clamp(
+          Number.isInteger(state.selectedResultIndex) ? state.selectedResultIndex : 0,
+          0,
+          Math.max(0, state.resultFiles.length - 1)
+        )
+
+        if (state.selectedResultIndex !== selectedIndex) {
+          state.selectedResultIndex = selectedIndex
+        }
+
+        resultSelect.replaceChildren(...state.resultFiles.map((entry, index) => {
+          const option = document.createElement('option')
+          option.value = String(index)
+          option.textContent = entry.name
+          option.title = entry.name
+          return option
+        }))
+        resultSelect.value = String(selectedIndex)
       }
 
       function updateLegend() {
