@@ -1386,6 +1386,9 @@
         state.fullInfectionTileX = data.fullInfectionTileX
         state.fullInfectionTileY = data.fullInfectionTileY
         state.layout = data.layout
+        if (state.layoutMode === 'force' && !hasContactLayoutLinks()) {
+          state.layoutMode = defaultGraphLayoutMode()
+        }
         state.seirSeries = data.seirSeries
         state.minTime = data.minTime
         state.maxTime = data.maxTime
@@ -1539,7 +1542,7 @@
       }
 
       function setGraphLayout(mode) {
-        const nextMode = isLayoutModeAvailable(mode) ? mode : 'force'
+        const nextMode = isLayoutModeAvailable(mode) ? mode : defaultGraphLayoutMode()
 
         if (state.layoutMode === nextMode) {
           layoutSelect.value = state.layoutMode
@@ -1576,6 +1579,26 @@
         }
 
         return links
+      }
+
+      function hasContactLayoutLinks() {
+        return (state.layout?.source?.length || 0) > 0
+      }
+
+      function hasInfectionLayoutLinks() {
+        return state.fullInfectionSource.length > 0 && state.fullInfectionTarget.length > 0
+      }
+
+      function defaultGraphLayoutMode() {
+        if (hasContactLayoutLinks()) {
+          return 'force'
+        }
+
+        if (hasInfectionLayoutLinks()) {
+          return 'hierarchical'
+        }
+
+        return 'spherical'
       }
 
       function applyFixedLayout(mode, { animate }) {
@@ -1990,12 +2013,23 @@
         const count = state.npcs.length
         const children = Array.from({ length: count }, () => [])
         const parent = new Int32Array(count).fill(-1)
+        const initialRoot = new Uint8Array(count)
+
+        for (let index = 0; index < count; index += 1) {
+          const initialStateCode = state.initialStateCodes[index]
+
+          if (initialStateCode === 1 || initialStateCode === 2) {
+            initialRoot[index] = 1
+          }
+        }
 
         for (let index = 0; index < state.fullInfectionSource.length; index += 1) {
           const source = state.fullInfectionSource[index]
           const target = state.fullInfectionTarget[index]
 
-          if (source < 0 || target < 0 || source === target || parent[target] !== -1) {
+          if (source < 0 || target < 0 || source >= count || target >= count ||
+              source === target || initialRoot[target] || parent[target] !== -1 ||
+              wouldCreateHierarchyCycle(parent, source, target)) {
             continue
           }
 
@@ -2104,6 +2138,20 @@
         }
 
         return positions
+      }
+
+      function wouldCreateHierarchyCycle(parent, source, target) {
+        let current = source
+
+        for (let guard = 0; current >= 0 && guard < parent.length; guard += 1) {
+          if (current === target) {
+            return true
+          }
+
+          current = parent[current]
+        }
+
+        return false
       }
 
       function infectionComponent(root, children) {
@@ -4868,7 +4916,7 @@
         }
 
         if (!isLayoutModeAvailable(state.layoutMode)) {
-          state.layoutMode = 'force'
+          state.layoutMode = defaultGraphLayoutMode()
         }
 
         if (!isMatrixLayoutModeAvailable(state.matrixLayoutMode)) {
