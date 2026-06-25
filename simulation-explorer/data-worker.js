@@ -433,6 +433,8 @@ function postWindow({ requestId, datasetId = 'default', datasetIds, start, end, 
   const infectionTargetByKey = new Map()
   const pinnedPairKeys = new Set()
   const degrees = new Uint32Array(npcCount)
+  const contactNpcCounts = new Uint32Array(npcCount)
+  const infectionNpcCounts = new Uint32Array(npcCount)
   let contactEventCount = 0
   let infectionEventCount = 0
 
@@ -456,6 +458,8 @@ function postWindow({ requestId, datasetId = 'default', datasetIds, start, end, 
       contactEventCount += 1
       degrees[source] += 1
       degrees[target] += 1
+      contactNpcCounts[source] += 1
+      contactNpcCounts[target] += 1
     }
 
     for (let index = 0; index < data.infectionAt.length; index += 1) {
@@ -477,6 +481,8 @@ function postWindow({ requestId, datasetId = 'default', datasetIds, start, end, 
       infectionEventCount += 1
       degrees[source] += 1
       degrees[target] += 1
+      infectionNpcCounts[source] += 1
+      infectionNpcCounts[target] += 1
       pinnedPairKeys.add(pairKey)
     }
   }
@@ -559,6 +565,8 @@ function postWindow({ requestId, datasetId = 'default', datasetIds, start, end, 
     infectionSource.buffer,
     infectionTarget.buffer,
     infectionWeight.buffer,
+    contactNpcCounts.buffer,
+    infectionNpcCounts.buffer,
     currentStates.buffer,
     degreeCopy.buffer
   ]
@@ -577,6 +585,8 @@ function postWindow({ requestId, datasetId = 'default', datasetIds, start, end, 
     infectionSource,
     infectionTarget,
     infectionWeight,
+    contactNpcCounts,
+    infectionNpcCounts,
     currentStates,
     degrees: degreeCopy,
     contactEventCount,
