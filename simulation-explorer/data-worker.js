@@ -8,6 +8,7 @@ const STATE_CODE = {
 const STATE_NAME = ['susceptible', 'exposed', 'infectious', 'recovered']
 
 let dataset = null
+const datasets = new Map()
 
 self.onmessage = async (message) => {
   const data = message.data || {}
@@ -30,7 +31,7 @@ self.onmessage = async (message) => {
   }
 }
 
-async function loadDataset({ file, sourceName, maxLayoutLinks = 6000, maxVisibleContactEdges = 12000 }) {
+async function loadDataset({ file, sourceName, datasetId = 'default', maxLayoutLinks = 6000, maxVisibleContactEdges = 12000 }) {
   if (!file || typeof file.text !== 'function') {
     throw new Error('No result file was provided.')
   }
@@ -44,6 +45,7 @@ async function loadDataset({ file, sourceName, maxLayoutLinks = 6000, maxVisible
 
   self.postMessage({ type: 'status', message: 'Indexing events' })
   dataset = normalizeResults(results)
+  datasets.set(datasetId, dataset)
   results = null
 
   const layout = buildLayoutLinks(dataset, maxLayoutLinks)
@@ -71,6 +73,7 @@ async function loadDataset({ file, sourceName, maxLayoutLinks = 6000, maxVisible
 
   self.postMessage({
     type: 'loaded',
+    datasetId,
     sourceName,
     maxVisibleContactEdges,
     npcs: dataset.npcs,
@@ -411,100 +414,129 @@ function buildLayoutLinks(data, maxLayoutLinks) {
   return { source, target, count }
 }
 
-function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
-  if (!dataset) {
+function postWindow({ requestId, datasetId = 'default', datasetIds, start, end, maxVisibleContactEdges = 12000 }) {
+  const selectedDatasets = selectedWindowDatasets(datasetIds, datasetId)
+
+  if (selectedDatasets.length === 0) {
     throw new Error('Load a result file before filtering a time window.')
   }
 
   const windowStart = Math.min(Number(start), Number(end))
   const windowEnd = Math.max(Number(start), Number(end))
-  const pairCounts = dataset.pairCountsScratch
-  const degrees = dataset.degreeScratch
-  const activePairIds = []
-  const pinnedPairIds = []
-  const pinnedPairIdSet = new Set()
+  const firstDataset = selectedDatasets[0]
+  const npcCount = firstDataset.npcs.length
+  const pairCounts = new Map()
+  const pairSourceByKey = new Map()
+  const pairTargetByKey = new Map()
+  const infectionCounts = new Map()
+  const infectionSourceByKey = new Map()
+  const infectionTargetByKey = new Map()
+  const pinnedPairKeys = new Set()
+  const degrees = new Uint32Array(npcCount)
   let contactEventCount = 0
+  let infectionEventCount = 0
 
-  pairCounts.fill(0)
-  degrees.fill(0)
+  for (const data of selectedDatasets) {
+    for (let index = 0; index < data.contactStart.length; index += 1) {
+      if (data.contactEnd[index] < windowStart || data.contactStart[index] > windowEnd) {
+        continue
+      }
 
-  for (let index = 0; index < dataset.contactStart.length; index += 1) {
-    if (dataset.contactEnd[index] < windowStart || dataset.contactStart[index] > windowEnd) {
-      continue
+      const pairId = data.contactPair[index]
+      const source = data.pairSources[pairId]
+      const target = data.pairTargets[pairId]
+      const pairKey = nodePairKey(source, target, npcCount)
+
+      if (!pairCounts.has(pairKey)) {
+        pairSourceByKey.set(pairKey, source)
+        pairTargetByKey.set(pairKey, target)
+      }
+
+      pairCounts.set(pairKey, (pairCounts.get(pairKey) || 0) + 1)
+      contactEventCount += 1
+      degrees[source] += 1
+      degrees[target] += 1
     }
 
-    const pairId = dataset.contactPair[index]
+    for (let index = 0; index < data.infectionAt.length; index += 1) {
+      if (data.infectionAt[index] < windowStart || data.infectionAt[index] > windowEnd) {
+        continue
+      }
 
-    if (pairCounts[pairId] === 0) {
-      activePairIds.push(pairId)
+      const source = data.infectionSource[index]
+      const target = data.infectionTarget[index]
+      const directedKey = source * Math.max(1, npcCount) + target
+      const pairKey = nodePairKey(source, target, npcCount)
+
+      if (!infectionCounts.has(directedKey)) {
+        infectionSourceByKey.set(directedKey, source)
+        infectionTargetByKey.set(directedKey, target)
+      }
+
+      infectionCounts.set(directedKey, (infectionCounts.get(directedKey) || 0) + 1)
+      infectionEventCount += 1
+      degrees[source] += 1
+      degrees[target] += 1
+      pinnedPairKeys.add(pairKey)
     }
-
-    pairCounts[pairId] += 1
-    contactEventCount += 1
-    degrees[dataset.pairSources[pairId]] += 1
-    degrees[dataset.pairTargets[pairId]] += 1
   }
 
-  const infectionMatches = []
+  const activePairKeys = [...pairCounts.keys()]
+  const pinnedPairKeySet = new Set([...pinnedPairKeys].filter((pairKey) => pairCounts.has(pairKey)))
 
-  for (let index = 0; index < dataset.infectionAt.length; index += 1) {
-    if (dataset.infectionAt[index] < windowStart || dataset.infectionAt[index] > windowEnd) {
-      continue
-    }
-
-    infectionMatches.push(index)
-    degrees[dataset.infectionSource[index]] += 1
-    degrees[dataset.infectionTarget[index]] += 1
-
-    const pairId = dataset.infectionPair[index]
-
-    if (pairId >= 0 && pairCounts[pairId] > 0 && !pinnedPairIdSet.has(pairId)) {
-      pinnedPairIdSet.add(pairId)
-      pinnedPairIds.push(pairId)
-    }
-  }
-
-  if (activePairIds.length > maxVisibleContactEdges) {
-    activePairIds.sort((left, right) => (
-      pairCounts[right] - pairCounts[left] ||
-      dataset.globalPairCounts[right] - dataset.globalPairCounts[left]
+  if (activePairKeys.length > maxVisibleContactEdges) {
+    activePairKeys.sort((left, right) => (
+      pairCounts.get(right) - pairCounts.get(left) ||
+      pairSourceByKey.get(left) - pairSourceByKey.get(right) ||
+      pairTargetByKey.get(left) - pairTargetByKey.get(right)
     ))
   }
 
   const contactPairLimit = Math.max(0, maxVisibleContactEdges)
-  const visiblePairIds = activePairIds.length <= contactPairLimit
-    ? activePairIds
-    : selectVisibleContactPairs(activePairIds, pinnedPairIds, pinnedPairIdSet, contactPairLimit)
-  const visibleContactCount = visiblePairIds.length
+  const visiblePairKeys = activePairKeys.length <= contactPairLimit
+    ? activePairKeys
+    : selectVisibleContactPairs(activePairKeys, [...pinnedPairKeySet], pinnedPairKeySet, contactPairLimit)
+  const visibleContactCount = visiblePairKeys.length
   const contactSource = new Int32Array(visibleContactCount)
   const contactTarget = new Int32Array(visibleContactCount)
   const contactWeight = new Uint32Array(visibleContactCount)
-  const matrixPairCount = activePairIds.length
+  const matrixPairCount = activePairKeys.length
   const matrixSource = new Int32Array(matrixPairCount)
   const matrixTarget = new Int32Array(matrixPairCount)
   const matrixWeight = new Uint32Array(matrixPairCount)
+  let maxContactWeight = 0
 
   for (let index = 0; index < visibleContactCount; index += 1) {
-    const pairId = visiblePairIds[index]
-    contactSource[index] = dataset.pairSources[pairId]
-    contactTarget[index] = dataset.pairTargets[pairId]
-    contactWeight[index] = pairCounts[pairId]
+    const pairKey = visiblePairKeys[index]
+    const weight = pairCounts.get(pairKey) || 0
+
+    contactSource[index] = pairSourceByKey.get(pairKey)
+    contactTarget[index] = pairTargetByKey.get(pairKey)
+    contactWeight[index] = weight
+    maxContactWeight = Math.max(maxContactWeight, weight)
   }
 
   for (let index = 0; index < matrixPairCount; index += 1) {
-    const pairId = activePairIds[index]
-    matrixSource[index] = dataset.pairSources[pairId]
-    matrixTarget[index] = dataset.pairTargets[pairId]
-    matrixWeight[index] = pairCounts[pairId]
+    const pairKey = activePairKeys[index]
+    const weight = pairCounts.get(pairKey) || 0
+
+    matrixSource[index] = pairSourceByKey.get(pairKey)
+    matrixTarget[index] = pairTargetByKey.get(pairKey)
+    matrixWeight[index] = weight
+    maxContactWeight = Math.max(maxContactWeight, weight)
   }
 
-  const infectionSource = new Int32Array(infectionMatches.length)
-  const infectionTarget = new Int32Array(infectionMatches.length)
+  const infectionKeys = [...infectionCounts.keys()]
+  const infectionSource = new Int32Array(infectionKeys.length)
+  const infectionTarget = new Int32Array(infectionKeys.length)
+  const infectionWeight = new Uint32Array(infectionKeys.length)
 
-  for (let index = 0; index < infectionMatches.length; index += 1) {
-    const sourceIndex = infectionMatches[index]
-    infectionSource[index] = dataset.infectionSource[sourceIndex]
-    infectionTarget[index] = dataset.infectionTarget[sourceIndex]
+  for (let index = 0; index < infectionKeys.length; index += 1) {
+    const key = infectionKeys[index]
+
+    infectionSource[index] = infectionSourceByKey.get(key)
+    infectionTarget[index] = infectionTargetByKey.get(key)
+    infectionWeight[index] = infectionCounts.get(key) || 0
   }
 
   let activeNodeCount = 0
@@ -515,7 +547,7 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     }
   }
 
-  const currentStates = statesAtTime(dataset, windowEnd)
+  const currentStates = statesAtTime(firstDataset, windowEnd)
   const degreeCopy = degrees.slice()
   const transfer = [
     contactSource.buffer,
@@ -526,6 +558,7 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     matrixWeight.buffer,
     infectionSource.buffer,
     infectionTarget.buffer,
+    infectionWeight.buffer,
     currentStates.buffer,
     degreeCopy.buffer
   ]
@@ -543,37 +576,65 @@ function postWindow({ requestId, start, end, maxVisibleContactEdges = 12000 }) {
     matrixWeight,
     infectionSource,
     infectionTarget,
+    infectionWeight,
     currentStates,
     degrees: degreeCopy,
     contactEventCount,
     activeNodeCount,
-    totalContactPairCount: activePairIds.length,
+    totalContactPairCount: activePairKeys.length,
     visibleContactPairCount: visibleContactCount,
-    infectionEventCount: infectionMatches.length
+    infectionEventCount,
+    maxContactWeight
   }, transfer)
 }
 
-function selectVisibleContactPairs(activePairIds, pinnedPairIds, pinnedPairIdSet, contactPairLimit) {
-  const visiblePairIds = []
-  const targetCount = Math.max(contactPairLimit, pinnedPairIds.length)
+function selectedWindowDatasets(datasetIds, datasetId) {
+  const ids = Array.isArray(datasetIds) && datasetIds.length > 0 ? datasetIds : [datasetId]
+  const selected = []
 
-  for (const pairId of pinnedPairIds) {
-    visiblePairIds.push(pairId)
+  for (const id of ids) {
+    const selectedDataset = datasets.get(id)
+
+    if (selectedDataset) {
+      selected.push(selectedDataset)
+    }
   }
 
-  for (const pairId of activePairIds) {
-    if (visiblePairIds.length >= targetCount) {
+  if (selected.length === 0 && dataset) {
+    selected.push(dataset)
+  }
+
+  return selected
+}
+
+function selectVisibleContactPairs(activePairKeys, pinnedPairKeys, pinnedPairKeySet, contactPairLimit) {
+  const visiblePairKeys = []
+  const targetCount = Math.max(contactPairLimit, pinnedPairKeys.length)
+
+  for (const pairKey of pinnedPairKeys) {
+    visiblePairKeys.push(pairKey)
+  }
+
+  for (const pairKey of activePairKeys) {
+    if (visiblePairKeys.length >= targetCount) {
       break
     }
 
-    if (pinnedPairIdSet.has(pairId)) {
+    if (pinnedPairKeySet.has(pairKey)) {
       continue
     }
 
-    visiblePairIds.push(pairId)
+    visiblePairKeys.push(pairKey)
   }
 
-  return visiblePairIds
+  return visiblePairKeys
+}
+
+function nodePairKey(source, target, npcCount) {
+  const low = Math.min(source, target)
+  const high = Math.max(source, target)
+
+  return low * Math.max(1, npcCount) + high
 }
 
 function statesAtTime(data, time) {

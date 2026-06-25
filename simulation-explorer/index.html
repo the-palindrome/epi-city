@@ -108,15 +108,80 @@
         white-space: nowrap;
       }
 
-      .source-select {
+      .source-menu {
         min-width: 0;
-        max-width: min(42vw, 420px);
-        height: 30px;
-        color: var(--muted);
+        position: relative;
       }
 
-      .source-select[hidden] {
+      .source-menu[hidden] {
         display: none;
+      }
+
+      .source-menu summary {
+        display: inline-flex;
+        align-items: center;
+        max-width: min(42vw, 430px);
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.95);
+        color: var(--muted);
+        cursor: pointer;
+        list-style: none;
+        white-space: nowrap;
+      }
+
+      .source-menu summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .source-menu-panel {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        width: min(440px, 62vw);
+        max-height: min(420px, calc(100vh - 92px));
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel-strong);
+        box-shadow: 0 12px 30px rgba(32, 38, 35, 0.14);
+        z-index: 8;
+      }
+
+      .source-menu-actions {
+        display: flex;
+        gap: 8px;
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .source-menu-actions button {
+        height: 28px;
+        padding: 0 9px;
+      }
+
+      .source-checklist {
+        display: grid;
+        gap: 7px;
+      }
+
+      .dataset-option {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        color: var(--text);
+        text-transform: none;
+      }
+
+      .dataset-option span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .time-controls {
@@ -725,7 +790,16 @@
     <div class="topbar">
       <div class="brand">
         <h1>Simulation Explorer</h1>
-        <select id="resultSelect" class="source-select" aria-label="Loaded result dataset" hidden></select>
+        <details id="resultMenu" class="source-menu" hidden>
+          <summary id="resultMenuSummary">No datasets</summary>
+          <div class="source-menu-panel">
+            <div class="source-menu-actions">
+              <button id="selectAllResults" type="button">Select all</button>
+              <button id="deselectAllResults" type="button">Deselect all</button>
+            </div>
+            <div id="resultChecklist" class="source-checklist"></div>
+          </div>
+        </details>
         <div id="source" class="source">No dataset</div>
       </div>
       <div class="time-controls graph-control">
@@ -949,7 +1023,11 @@
       const edgeContext = edgeCanvas.getContext('2d')
       const svg = select('#viz')
       const sourceEl = document.getElementById('source')
-      const resultSelect = document.getElementById('resultSelect')
+      const resultMenu = document.getElementById('resultMenu')
+      const resultMenuSummary = document.getElementById('resultMenuSummary')
+      const resultChecklist = document.getElementById('resultChecklist')
+      const selectAllResultsButton = document.getElementById('selectAllResults')
+      const deselectAllResultsButton = document.getElementById('deselectAllResults')
       const statusEl = document.getElementById('status')
       const startRange = document.getElementById('startRange')
       const endRange = document.getElementById('endRange')
@@ -1113,7 +1191,7 @@
         loadStartedAt: 0,
         resultSourceName: '',
         resultFiles: [],
-        selectedResultIndex: -1,
+        pendingResultLoads: 0,
         loaded: false,
         npcs: [],
         initialStateCodes: new Int8Array(),
@@ -1122,11 +1200,13 @@
         contactSource: new Int32Array(),
         contactTarget: new Int32Array(),
         contactWeight: new Uint32Array(),
+        contactMaxWeight: 1,
         matrixSource: new Int32Array(),
         matrixTarget: new Int32Array(),
         matrixWeight: new Uint32Array(),
         infectionSource: new Int32Array(),
         infectionTarget: new Int32Array(),
+        infectionWeight: new Uint32Array(),
         familySource: new Int32Array(),
         familyTarget: new Int32Array(),
         friendshipSource: new Int32Array(),
@@ -1156,6 +1236,8 @@
         matrixHeatmapCacheKey: '',
         matrixOverlayKey: '',
         seirSeries: null,
+        seirSeriesList: [],
+        seirMaxCount: 1,
         nodeSelection: null,
         selectedNodeIndex: -1,
         selectedNeighborMask: new Uint8Array(),
@@ -1260,7 +1342,9 @@
       contactMatrixTab.addEventListener('click', () => setActiveTab('matrix'))
       seirCurveTab.addEventListener('click', () => setActiveTab('seir'))
       fileInput.addEventListener('change', loadSelectedFile)
-      resultSelect.addEventListener('change', selectResultDataset)
+      resultChecklist.addEventListener('change', handleResultChecklistChange)
+      selectAllResultsButton.addEventListener('click', () => setAllResultSelections(true))
+      deselectAllResultsButton.addEventListener('click', () => setAllResultSelections(false))
       worldFileInput.addEventListener('change', loadSelectedWorldFile)
       resize()
 
@@ -1272,34 +1356,19 @@
         }
 
         state.resultFiles = files.map((file, index) => ({
+          id: `dataset_${Date.now()}_${index}`,
           file,
-          name: file.name || `result-${index + 1}.json`
+          name: file.name || `result-${index + 1}.json`,
+          selected: true,
+          loaded: false,
+          data: null
         }))
-        state.selectedResultIndex = 0
-        syncResultSelect()
-        loadResultFile(state.resultFiles[0])
+        loadResultFiles(state.resultFiles)
         fileInput.value = ''
       }
 
-      function selectResultDataset() {
-        const nextIndex = Number(resultSelect.value)
-
-        if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= state.resultFiles.length ||
-            nextIndex === state.selectedResultIndex) {
-          resultSelect.value = String(Math.max(0, state.selectedResultIndex))
-          return
-        }
-
-        state.selectedResultIndex = nextIndex
-        syncResultSelect()
-        loadResultFile(state.resultFiles[nextIndex])
-      }
-
-      function loadResultFile(resultFile) {
-        const file = resultFile?.file
-        const sourceName = resultFile?.name || file?.name || 'result JSON'
-
-        if (!file) {
+      function loadResultFiles(entries) {
+        if (entries.length === 0) {
           return
         }
 
@@ -1313,17 +1382,22 @@
           state.worker = null
         }
         resetView()
-        state.resultSourceName = sourceName
+        state.pendingResultLoads = entries.length
+        state.resultSourceName = `${entries.length} dataset${entries.length === 1 ? '' : 's'}`
         updateSourceLabel()
-        setStatus(`Loading ${sourceName}`)
+        setStatus(`Loading 0/${entries.length} result dataset${entries.length === 1 ? '' : 's'}`)
         ensureWorker()
-        state.worker.postMessage({
-          type: 'load',
-          file,
-          sourceName,
-          maxLayoutLinks: state.maxLayoutLinks,
-          maxVisibleContactEdges: state.maxVisibleContactEdges
-        })
+
+        for (const entry of entries) {
+          state.worker.postMessage({
+            type: 'load',
+            datasetId: entry.id,
+            file: entry.file,
+            sourceName: entry.name,
+            maxLayoutLinks: state.maxLayoutLinks,
+            maxVisibleContactEdges: state.maxVisibleContactEdges
+          })
+        }
       }
 
       async function loadSelectedWorldFile() {
@@ -1389,7 +1463,7 @@
         }
 
         if (data.type === 'loaded') {
-          applyLoadedDataset(data)
+          applyLoadedResultDataset(data)
           return
         }
 
@@ -1398,10 +1472,54 @@
         }
       }
 
-      function applyLoadedDataset(data) {
+      function applyLoadedResultDataset(data) {
+        const entry = state.resultFiles.find((item) => item.id === data.datasetId)
+
+        if (!entry) {
+          return
+        }
+
+        entry.loaded = true
+        entry.data = data
+        state.pendingResultLoads = Math.max(0, state.pendingResultLoads - 1)
+        setStatus(`Loading ${state.resultFiles.length - state.pendingResultLoads}/${state.resultFiles.length} result dataset${state.resultFiles.length === 1 ? '' : 's'}`)
+
+        if (state.pendingResultLoads > 0) {
+          syncResultMenu()
+          return
+        }
+
+        state.loading = false
+        applySelectedDatasets({ resetWindow: true })
+      }
+
+      function applySelectedDatasets({ resetWindow = false } = {}) {
+        const selectedEntries = selectedLoadedResultEntries()
+        const previousMinTime = state.minTime
+        const previousMaxTime = state.maxTime
+        const previousStart = state.start
+        const previousEnd = state.end
+
+        if (selectedEntries.length === 0) {
+          resetView({ resetTime: false })
+          state.minTime = previousMinTime
+          state.maxTime = previousMaxTime
+          state.start = previousStart
+          state.end = previousEnd
+          state.resultSourceName = ''
+          configureControls()
+          updateSourceLabel()
+          updateStats()
+          setStatus(state.resultFiles.length > 0 ? 'Select at least one result dataset' : 'Load a headless result JSON')
+          return
+        }
+
+        const primaryData = selectedEntries[0].data
+
+        resetView()
         state.workerBusy = false
         state.queuedWindow = false
-        state.npcs = data.npcs.map((npc, index) => ({
+        state.npcs = primaryData.npcs.map((npc, index) => ({
           id: npc.id,
           index,
           initialSeirState: npc.initialSeirState,
@@ -1409,17 +1527,19 @@
           x: Math.cos(index * 2.399963) * Math.sqrt(index + 1) * 9,
           y: Math.sin(index * 2.399963) * Math.sqrt(index + 1) * 9
         }))
-        state.initialStateCodes = data.initialStateCodes
-        state.currentStateCodes = data.initialStateCodes.slice()
+        state.initialStateCodes = primaryData.initialStateCodes
+        state.currentStateCodes = primaryData.initialStateCodes.slice()
         state.degrees = new Uint32Array(state.npcs.length)
         state.contactSource = new Int32Array()
         state.contactTarget = new Int32Array()
         state.contactWeight = new Uint32Array()
+        state.contactMaxWeight = 1
         state.matrixSource = new Int32Array()
         state.matrixTarget = new Int32Array()
         state.matrixWeight = new Uint32Array()
         state.infectionSource = new Int32Array()
         state.infectionTarget = new Int32Array()
+        state.infectionWeight = new Uint32Array()
         state.familySource = new Int32Array()
         state.familyTarget = new Int32Array()
         state.friendshipSource = new Int32Array()
@@ -1436,30 +1556,44 @@
         state.selectedCoworkerEdgeCount = 0
         state.renderedNodeX = new Float64Array(state.npcs.length)
         state.renderedNodeY = new Float64Array(state.npcs.length)
-        state.fullInfectionSource = data.fullInfectionSource
-        state.fullInfectionTarget = data.fullInfectionTarget
-        state.fullInfectionTileX = data.fullInfectionTileX
-        state.fullInfectionTileY = data.fullInfectionTileY
-        state.layout = data.layout
+        state.fullInfectionSource = primaryData.fullInfectionSource
+        state.fullInfectionTarget = primaryData.fullInfectionTarget
+        state.fullInfectionTileX = primaryData.fullInfectionTileX
+        state.fullInfectionTileY = primaryData.fullInfectionTileY
+        state.layout = aggregateLayoutData(selectedEntries)
         if (state.layoutMode === 'force' && !hasContactLayoutLinks()) {
           state.layoutMode = defaultGraphLayoutMode()
         }
-        state.seirSeries = data.seirSeries
-        state.minTime = data.minTime
-        state.maxTime = data.maxTime
-        state.start = data.minTime
-        state.end = data.maxTime
+        state.seirSeries = primaryData.seirSeries
+        state.seirSeriesList = selectedEntries.map((entry) => entry.data.seirSeries)
+        state.seirMaxCount = Math.max(1, ...state.seirSeriesList.map((series) => series.maxCount || 1))
+        const selectedMinTime = Math.min(...selectedEntries.map((entry) => entry.data.minTime))
+        const selectedMaxTime = Math.max(...selectedEntries.map((entry) => entry.data.maxTime))
+
+        if (resetWindow) {
+          state.minTime = selectedMinTime
+          state.maxTime = selectedMaxTime
+          state.start = selectedMinTime
+          state.end = selectedMaxTime
+        } else {
+          state.minTime = Math.min(selectedMinTime, previousStart, previousEnd)
+          state.maxTime = Math.max(selectedMaxTime, previousStart, previousEnd)
+          state.start = previousStart
+          state.end = previousEnd
+        }
         state.graphTransform = centeredTransform()
         state.chartTransform = centeredTransform()
         state.matrixTransform = centeredTransform()
         invalidateMatrixOrder()
         state.loaded = true
         state.loading = false
-        state.stats.totalContactPairCount = data.contactPairCount
+        state.resultSourceName = selectedEntries.length === 1 ? selectedEntries[0].name : `${selectedEntries.length} datasets`
+        state.stats.totalContactPairCount = selectedEntries.reduce((sum, entry) => sum + (entry.data.contactPairCount || 0), 0)
         state.stats.visibleContactPairCount = 0
-        state.stats.contactEventCount = data.contactCount
+        state.stats.contactEventCount = selectedEntries.reduce((sum, entry) => sum + (entry.data.contactCount || 0), 0)
+        state.stats.infectionEventCount = selectedEntries.reduce((sum, entry) => sum + (entry.data.infectionCount || 0), 0)
         state.stats.activeNodeCount = 0
-        state.maxVisibleContactEdges = data.maxVisibleContactEdges || state.maxVisibleContactEdges
+        state.maxVisibleContactEdges = primaryData.maxVisibleContactEdges || state.maxVisibleContactEdges
         layoutSelect.value = state.layoutMode
 
         applyWorldMetadata()
@@ -1476,7 +1610,56 @@
         startFloatingAnimation()
       }
 
-      function resetView() {
+      function selectedLoadedResultEntries() {
+        return state.resultFiles.filter((entry) => entry.selected && entry.loaded && entry.data)
+      }
+
+      function selectedLoadedDatasetIds() {
+        return selectedLoadedResultEntries().map((entry) => entry.id)
+      }
+
+      function aggregateLayoutData(entries) {
+        const pairWeights = new Map()
+        const sourceByKey = new Map()
+        const targetByKey = new Map()
+        const npcCount = Math.max(1, entries[0]?.data?.npcs?.length || 1)
+
+        for (const entry of entries) {
+          const layout = entry.data.layout || {}
+          const source = layout.source || new Int32Array()
+          const target = layout.target || new Int32Array()
+          const count = layout.count || new Uint32Array()
+
+          for (let index = 0; index < source.length; index += 1) {
+            const pairKey = nodePairKey(source[index], target[index], npcCount)
+
+            if (!pairWeights.has(pairKey)) {
+              sourceByKey.set(pairKey, source[index])
+              targetByKey.set(pairKey, target[index])
+            }
+
+            pairWeights.set(pairKey, (pairWeights.get(pairKey) || 0) + (count[index] || 1))
+          }
+        }
+
+        const pairs = [...pairWeights.keys()].sort((left, right) => pairWeights.get(right) - pairWeights.get(left))
+        const limit = Math.min(state.maxLayoutLinks, pairs.length)
+        const source = new Int32Array(limit)
+        const target = new Int32Array(limit)
+        const count = new Uint32Array(limit)
+
+        for (let index = 0; index < limit; index += 1) {
+          const pairKey = pairs[index]
+
+          source[index] = sourceByKey.get(pairKey)
+          target[index] = targetByKey.get(pairKey)
+          count[index] = pairWeights.get(pairKey)
+        }
+
+        return { source, target, count }
+      }
+
+      function resetView({ resetTime = true } = {}) {
         stopFloatingAnimation()
         stopDragMotion()
         stopSimulation()
@@ -1518,10 +1701,14 @@
         state.fullInfectionTileY = new Float64Array()
         state.layout = null
         state.seirSeries = null
-        state.minTime = 0
-        state.maxTime = 0
-        state.start = 0
-        state.end = 0
+        state.seirSeriesList = []
+        state.seirMaxCount = 1
+        if (resetTime) {
+          state.minTime = 0
+          state.maxTime = 0
+          state.start = 0
+          state.end = 0
+        }
         state.workerBusy = false
         state.queuedWindow = false
         state.windowRequestId += 1
@@ -2399,6 +2586,8 @@
         state.matrixDataVersion += 1
         state.infectionSource = data.infectionSource
         state.infectionTarget = data.infectionTarget
+        state.infectionWeight = data.infectionWeight || new Uint32Array(state.infectionSource.length)
+        state.contactMaxWeight = Math.max(1, data.maxContactWeight || 1)
         rebuildVisibleInfectionPairKeys()
         state.currentStateCodes = data.currentStates
         state.degrees = data.degrees
@@ -2441,7 +2630,9 @@
       }
 
       function requestWindowData() {
-        if (!state.loaded || !state.worker) {
+        const datasetIds = selectedLoadedDatasetIds()
+
+        if (!state.loaded || !state.worker || datasetIds.length === 0) {
           return
         }
 
@@ -2456,6 +2647,7 @@
         state.worker.postMessage({
           type: 'window',
           requestId: state.windowRequestId,
+          datasetIds,
           start: state.start,
           end: state.end,
           maxVisibleContactEdges: state.maxVisibleContactEdges
@@ -2750,9 +2942,7 @@
       }
 
       function drawContactEdgeBatch(matchSelected, opacity, lineWidth) {
-        edgeContext.strokeStyle = rgba(edgeColors.contact[0], edgeColors.contact[1], edgeColors.contact[2], opacity)
         edgeContext.lineWidth = lineWidth
-        edgeContext.beginPath()
 
         for (let index = 0; index < state.contactSource.length; index += 1) {
           const sourceIndex = state.contactSource[index]
@@ -2768,12 +2958,22 @@
 
           const source = state.npcs[sourceIndex]
           const target = state.npcs[targetIndex]
+          const edgeOpacity = contactFrequencyOpacity(index, opacity)
 
+          edgeContext.strokeStyle = rgba(edgeColors.contact[0], edgeColors.contact[1], edgeColors.contact[2], edgeOpacity)
+          edgeContext.beginPath()
           edgeContext.moveTo(renderedNodeX(source), renderedNodeY(source))
           edgeContext.lineTo(renderedNodeX(target), renderedNodeY(target))
+          edgeContext.stroke()
         }
+      }
 
-        edgeContext.stroke()
+      function contactFrequencyOpacity(index, baseOpacity) {
+        const weight = Math.max(1, state.contactWeight[index] || 1)
+        const maxWeight = Math.max(1, state.contactMaxWeight || 1)
+        const amount = clamp(Math.log1p(weight) / Math.log1p(maxWeight), 0, 1)
+
+        return clamp(baseOpacity * (0.28 + amount * 0.92), 0.01, 0.95)
       }
 
       function drawInfectionEdgeBatch(matchSelected, opacity, scale, lineWidth) {
@@ -2840,6 +3040,20 @@
         }
 
         return clamp(maxOpacity / Math.sqrt(1 + edgeCount / softLimit), minOpacity, maxOpacity)
+      }
+
+      function cssColorToRgb(color) {
+        const value = String(color || '').trim()
+
+        if (/^#[0-9a-f]{6}$/i.test(value)) {
+          return [
+            Number.parseInt(value.slice(1, 3), 16),
+            Number.parseInt(value.slice(3, 5), 16),
+            Number.parseInt(value.slice(5, 7), 16)
+          ]
+        }
+
+        return [32, 38, 35]
       }
 
       function rgba(red, green, blue, alpha) {
@@ -3115,14 +3329,14 @@
         }
 
         const x = scaleLinear()
-          .domain([0, state.seirSeries.maxTime])
+          .domain([0, Math.max(1, state.maxTime)])
           .range([layout.innerLeft, layout.innerRight])
         const y = scaleLinear()
           .domain([0, 100])
           .nice()
           .range([layout.innerBottom, layout.innerTop])
         const timeAxisScale = scaleTime()
-          .domain([new Date(0), new Date(state.seirSeries.maxTime * 1000)])
+          .domain([new Date(0), new Date(Math.max(1, state.maxTime) * 1000)])
           .range([layout.innerLeft, layout.innerRight])
 
         renderTimeChartAxes(layout, timeAxisScale, y)
@@ -3154,6 +3368,11 @@
       }
 
       function renderLineChart(x, y, windowSeries) {
+        if (selectedSeirSeries().length > 1) {
+          renderDistributionLineChart(x, y)
+          return
+        }
+
         const times = windowSeries.time
         const curveLine = line()
           .x((_, index) => x(times[index]))
@@ -3174,6 +3393,11 @@
       }
 
       function renderFillChart(x, y, windowSeries) {
+        if (selectedSeirSeries().length > 1) {
+          renderDistributionFillChart(x, y)
+          return
+        }
+
         const times = windowSeries.time
         const enabledStateKeys = stateKeys.filter((stateKey) => state.showCurves[stateKey])
         const cumulative = new Float64Array(times.length)
@@ -3275,6 +3499,11 @@
           return
         }
 
+        if (selectedSeirSeries().length > 1) {
+          renderProfileDensity(x, y, xStateKey, yStateKey)
+          return
+        }
+
         const xValues = windowSeries[xStateKey]
         const yValues = windowSeries[yStateKey]
         const profileLine = line()
@@ -3288,6 +3517,316 @@
           .attr('stroke', colorByState[yStateKey])
           .attr('stroke-width', 2.4)
           .attr('d', profileLine)
+      }
+
+      function renderDistributionLineChart(x, y) {
+        const times = chartSampleTimes(150)
+        const bandArea = area()
+          .x((point) => x(point.time))
+          .y0((point) => y(point.low))
+          .y1((point) => y(point.high))
+          .curve(curveLinear)
+        const meanLine = line()
+          .x((point) => x(point.time))
+          .y((point) => y(point.mean))
+          .curve(curveLinear)
+
+        for (const stateKey of stateKeys) {
+          if (!state.showCurves[stateKey]) {
+            continue
+          }
+
+          const summaries = kdeSummariesForState(stateKey, times)
+          const wideBand = summaries.map((summary, index) => ({
+            time: times[index],
+            low: summary.band90.low,
+            high: summary.band90.high,
+            mean: summary.mean
+          }))
+          const tightBand = summaries.map((summary, index) => ({
+            time: times[index],
+            low: summary.band50.low,
+            high: summary.band50.high,
+            mean: summary.mean
+          }))
+
+          chartAreaGroup.append('path')
+            .datum(wideBand)
+            .attr('class', `curve-fill fill-${stateKey}`)
+            .attr('fill', colorByState[stateKey])
+            .attr('fill-opacity', 0.11)
+            .attr('d', bandArea)
+
+          chartAreaGroup.append('path')
+            .datum(tightBand)
+            .attr('class', `curve-fill fill-${stateKey}`)
+            .attr('fill', colorByState[stateKey])
+            .attr('fill-opacity', 0.24)
+            .attr('d', bandArea)
+
+          chartLineGroup.append('path')
+            .datum(wideBand)
+            .attr('class', `curve-line curve-${stateKey}`)
+            .attr('stroke', colorByState[stateKey])
+            .attr('stroke-width', 1.9)
+            .attr('d', meanLine)
+        }
+      }
+
+      function renderDistributionFillChart(x, y) {
+        const times = chartSampleTimes(150)
+        const enabledStateKeys = stateKeys.filter((stateKey) => state.showCurves[stateKey])
+        const boundaryArea = area()
+          .x((point) => x(point.time))
+          .y0((point) => y(point.low))
+          .y1((point) => y(point.high))
+          .curve(curveLinear)
+        const fillArea = area()
+          .x((point) => x(point.time))
+          .y0((point) => y(point.y0))
+          .y1((point) => y(point.y1))
+          .curve(curveLinear)
+        const boundaryLine = line()
+          .x((point) => x(point.time))
+          .y((point) => y(point.mean))
+          .curve(curveLinear)
+        let previousBoundary = times.map((time) => ({ time, mean: 0 }))
+        const cumulativeKeys = []
+
+        for (const stateKey of enabledStateKeys) {
+          cumulativeKeys.push(stateKey)
+
+          const summaries = kdeSummariesForCumulative(cumulativeKeys, times)
+          const boundary = summaries.map((summary, index) => ({
+            time: times[index],
+            low: summary.band90.low,
+            high: summary.band90.high,
+            mean: summary.mean
+          }))
+          const band = boundary.map((point, index) => ({
+            time: point.time,
+            y0: previousBoundary[index].mean,
+            y1: point.mean
+          }))
+
+          chartAreaGroup.append('path')
+            .datum(boundary)
+            .attr('class', `curve-fill fill-${stateKey}`)
+            .attr('fill', colorByState[stateKey])
+            .attr('fill-opacity', 0.08)
+            .attr('d', boundaryArea)
+
+          chartAreaGroup.append('path')
+            .datum(band)
+            .attr('class', `curve-fill fill-${stateKey}`)
+            .attr('fill', colorByState[stateKey])
+            .attr('fill-opacity', 0.23)
+            .attr('d', fillArea)
+
+          chartLineGroup.append('path')
+            .datum(boundary)
+            .attr('class', `curve-line curve-${stateKey}`)
+            .attr('stroke', colorByState[stateKey])
+            .attr('stroke-opacity', 0.8)
+            .attr('d', boundaryLine)
+
+          previousBoundary = boundary
+        }
+      }
+
+      function renderProfileDensity(x, y, xStateKey, yStateKey) {
+        const times = chartSampleTimes(100)
+        const seriesList = selectedSeirSeries()
+        const points = []
+        const meanPoints = []
+
+        for (const time of times) {
+          let xSum = 0
+          let ySum = 0
+          let count = 0
+
+          for (const series of seriesList) {
+            const point = {
+              x: seriesValuePercent(series, xStateKey, time),
+              y: seriesValuePercent(series, yStateKey, time)
+            }
+
+            points.push(point)
+            xSum += point.x
+            ySum += point.y
+            count += 1
+          }
+
+          meanPoints.push({
+            x: xSum / Math.max(1, count),
+            y: ySum / Math.max(1, count)
+          })
+        }
+
+        renderProfileDensityGrid(x, y, points, colorByState[yStateKey])
+
+        const meanLine = line()
+          .x((point) => x(point.x))
+          .y((point) => y(point.y))
+          .curve(curveLinear)
+
+        chartLineGroup.append('path')
+          .datum(meanPoints)
+          .attr('class', `curve-line curve-profile curve-${yStateKey}`)
+          .attr('stroke', colorByState[yStateKey])
+          .attr('stroke-width', 2.3)
+          .attr('d', meanLine)
+      }
+
+      function renderProfileDensityGrid(x, y, points, color) {
+        if (points.length === 0) {
+          return
+        }
+
+        const gridSize = 42
+        const cellSize = 100 / gridSize
+        const bandwidth = 5.5
+        const densities = []
+        let maxDensity = 0
+
+        for (let row = 0; row < gridSize; row += 1) {
+          const centerY = (row + 0.5) * cellSize
+
+          for (let column = 0; column < gridSize; column += 1) {
+            const centerX = (column + 0.5) * cellSize
+            let density = 0
+
+            for (const point of points) {
+              const dx = (centerX - point.x) / bandwidth
+              const dy = (centerY - point.y) / bandwidth
+
+              density += Math.exp(-0.5 * (dx * dx + dy * dy))
+            }
+
+            maxDensity = Math.max(maxDensity, density)
+            densities.push({ row, column, density })
+          }
+        }
+
+        const [red, green, blue] = cssColorToRgb(color)
+
+        chartAreaGroup.selectAll('rect.profile-density')
+          .data(densities.filter((cell) => cell.density > maxDensity * 0.025))
+          .join('rect')
+          .attr('class', 'profile-density')
+          .attr('x', (cell) => x(cell.column * cellSize))
+          .attr('y', (cell) => y((cell.row + 1) * cellSize))
+          .attr('width', Math.abs(x(cellSize) - x(0)))
+          .attr('height', Math.abs(y(0) - y(cellSize)))
+          .attr('fill', (cell) => rgba(red, green, blue, clamp(cell.density / Math.max(1, maxDensity), 0.04, 0.46)))
+          .attr('stroke', 'none')
+      }
+
+      function selectedSeirSeries() {
+        return state.seirSeriesList.length > 0 ? state.seirSeriesList : state.seirSeries ? [state.seirSeries] : []
+      }
+
+      function chartSampleTimes(sampleCount = 150) {
+        const maxTime = Math.max(0, state.maxTime)
+        const start = clamp(Math.min(state.start, state.end), 0, maxTime)
+        const end = clamp(Math.max(state.start, state.end), 0, maxTime)
+        const count = Math.max(2, sampleCount)
+
+        if (start === end) {
+          return [start]
+        }
+
+        return Array.from({ length: count }, (_, index) => start + ((end - start) * index) / (count - 1))
+      }
+
+      function kdeSummariesForState(stateKey, times) {
+        const seriesList = selectedSeirSeries()
+
+        return times.map((time) => kdeSummary(seriesList.map((series) => seriesValuePercent(series, stateKey, time))))
+      }
+
+      function kdeSummariesForCumulative(stateKeysForCumulative, times) {
+        const seriesList = selectedSeirSeries()
+
+        return times.map((time) => kdeSummary(seriesList.map((series) => (
+          stateKeysForCumulative.reduce((sum, stateKey) => sum + seriesValuePercent(series, stateKey, time), 0)
+        ))))
+      }
+
+      function seriesValuePercent(series, stateKey, time) {
+        return (seriesValueAtTime(series.time, series[stateKey], time) / Math.max(1, series.maxCount || state.seirMaxCount)) * 100
+      }
+
+      function kdeSummary(values) {
+        if (values.length === 0) {
+          return {
+            mean: 0,
+            band50: { low: 0, high: 0 },
+            band90: { low: 0, high: 0 }
+          }
+        }
+
+        const clampedValues = values.map((value) => clamp(value, 0, 100))
+        const mean = clampedValues.reduce((sum, value) => sum + value, 0) / clampedValues.length
+
+        if (clampedValues.length === 1) {
+          return {
+            mean,
+            band50: { low: mean, high: mean },
+            band90: { low: mean, high: mean }
+          }
+        }
+
+        const bandwidth = kdeBandwidth(clampedValues)
+        const bins = []
+        let totalDensity = 0
+
+        for (let index = 0; index <= 100; index += 1) {
+          const yValue = index
+          let density = 0
+
+          for (const value of clampedValues) {
+            const z = (yValue - value) / bandwidth
+
+            density += Math.exp(-0.5 * z * z)
+          }
+
+          bins.push({ y: yValue, density })
+          totalDensity += density
+        }
+
+        return {
+          mean,
+          band50: kdeHighestDensityBand(bins, totalDensity, 0.5),
+          band90: kdeHighestDensityBand(bins, totalDensity, 0.9)
+        }
+      }
+
+      function kdeBandwidth(values) {
+        const mean = values.reduce((sum, value) => sum + value, 0) / values.length
+        const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, values.length - 1)
+        const deviation = Math.sqrt(variance)
+
+        return clamp(1.06 * deviation * Math.pow(values.length, -0.2), 2.2, 18)
+      }
+
+      function kdeHighestDensityBand(bins, totalDensity, mass) {
+        const sorted = [...bins].sort((left, right) => right.density - left.density)
+        let accumulated = 0
+        let low = 100
+        let high = 0
+
+        for (const bin of sorted) {
+          accumulated += bin.density
+          low = Math.min(low, bin.y)
+          high = Math.max(high, bin.y)
+
+          if (accumulated / Math.max(1e-9, totalDensity) >= mass) {
+            break
+          }
+        }
+
+        return { low, high }
       }
 
       function chartWindowSeries() {
@@ -3409,7 +3948,7 @@
       }
 
       function seriesPercent(value) {
-        return (Number(value) / Math.max(1, state.seirSeries.maxCount)) * 100
+        return (Number(value) / Math.max(1, state.seirMaxCount || state.seirSeries?.maxCount || 1)) * 100
       }
 
       function formatPercentTick(value) {
@@ -3463,7 +4002,7 @@
       function formatChartTime(date) {
         const seconds = date.getTime() / 1000
 
-        if (state.seirSeries?.maxTime <= 86400) {
+        if (state.maxTime <= 86400) {
           if (seconds < 3600) {
             return `${Math.round(seconds / 60)}m`
           }
@@ -5083,7 +5622,7 @@
       }
 
       function updateSourceLabel() {
-        syncResultSelect()
+        syncResultMenu()
 
         const parts = []
         const showResultDropdown = state.resultFiles.length > 1
@@ -5100,34 +5639,62 @@
         sourceEl.hidden = showResultDropdown && !state.world.loaded
       }
 
-      function syncResultSelect() {
+      function syncResultMenu() {
         const showResultDropdown = state.resultFiles.length > 1
 
-        resultSelect.hidden = !showResultDropdown
+        resultMenu.hidden = !showResultDropdown
 
         if (!showResultDropdown) {
-          resultSelect.innerHTML = ''
+          resultChecklist.innerHTML = ''
           return
         }
 
-        const selectedIndex = clamp(
-          Number.isInteger(state.selectedResultIndex) ? state.selectedResultIndex : 0,
-          0,
-          Math.max(0, state.resultFiles.length - 1)
-        )
+        const selectedCount = state.resultFiles.filter((entry) => entry.selected).length
+        const loadedCount = state.resultFiles.filter((entry) => entry.loaded).length
 
-        if (state.selectedResultIndex !== selectedIndex) {
-          state.selectedResultIndex = selectedIndex
+        resultMenuSummary.textContent = `${selectedCount}/${state.resultFiles.length} datasets${loadedCount < state.resultFiles.length ? `, ${loadedCount} loaded` : ''}`
+        resultChecklist.replaceChildren(...state.resultFiles.map((entry, index) => {
+          const label = document.createElement('label')
+          const input = document.createElement('input')
+          const text = document.createElement('span')
+
+          label.className = 'dataset-option'
+          label.title = entry.name
+          input.type = 'checkbox'
+          input.dataset.index = String(index)
+          input.checked = Boolean(entry.selected)
+          input.disabled = !entry.loaded && state.loading
+          text.textContent = `${entry.name}${entry.loaded ? '' : ' (loading)'}`
+          label.append(input, text)
+          return label
+        }))
+      }
+
+      function handleResultChecklistChange(event) {
+        const input = event.target
+
+        if (!(input instanceof HTMLInputElement) || input.type !== 'checkbox') {
+          return
         }
 
-        resultSelect.replaceChildren(...state.resultFiles.map((entry, index) => {
-          const option = document.createElement('option')
-          option.value = String(index)
-          option.textContent = entry.name
-          option.title = entry.name
-          return option
-        }))
-        resultSelect.value = String(selectedIndex)
+        const index = Number(input.dataset.index)
+
+        if (!Number.isInteger(index) || index < 0 || index >= state.resultFiles.length) {
+          return
+        }
+
+        state.resultFiles[index].selected = input.checked
+        syncResultMenu()
+        applySelectedDatasets({ resetWindow: false })
+      }
+
+      function setAllResultSelections(selected) {
+        for (const entry of state.resultFiles) {
+          entry.selected = selected
+        }
+
+        syncResultMenu()
+        applySelectedDatasets({ resetWindow: false })
       }
 
       function updateLegend() {
