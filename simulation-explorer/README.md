@@ -1,6 +1,6 @@
 # Epi City Simulation Explorer
 
-The simulation explorer is a local tool for inspecting JSON exports from headless simulation runs. It includes a D3 contact graph and a D3 SEIR curve view. Large result files are parsed and indexed in a Web Worker so the UI stays responsive while the data loads.
+The simulation explorer is a local tool for inspecting JSON exports from headless simulation runs. It includes D3 contact graph, contact matrix, and SEIR curve views. Large result files are parsed and indexed in a Web Worker so the UI stays responsive while the data loads.
 
 ## Run
 
@@ -12,11 +12,11 @@ npm run simulation-explorer
 
 Open the local URL printed by the command. It starts at `http://localhost:5175` and tries the next port if that one is already in use.
 
-Use `Load JSON` in the browser to select a headless simulation result export. The explorer does not load a default result file.
+Use `Load results` in the browser to select a headless simulation result export. The explorer does not load a default result file.
 
 ## Views
 
-Use the bottom tab selector to switch between `Contact graph` and `SEIR curve`.
+Use the bottom tab selector to switch between `Contact graph`, `Contact matrix`, and `SEIR curve`. The header time-window control filters the displayed data in all views.
 
 ## Contact Graph Controls
 
@@ -34,5 +34,6 @@ For dense runs, contact and infection edges are drawn on a canvas layer instead 
 ## SEIR Curve Controls
 
 - Drag the plot to pan and scroll to zoom.
+- Set the header time window to draw only the selected portion of each curve. The time axis keeps the full simulation range for context.
 - Use `Display curves` to toggle S(t), E(t), I(t), and R(t) independently.
 - Curves are derived from each NPC's initial SEIR state plus `infection`, `incubation`, `recovery`, and `immunity_waned` events.

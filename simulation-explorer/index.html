@@ -386,16 +386,11 @@
       body[data-view="matrix"] .graph-settings,
       body[data-view="matrix"] .plot-settings,
       body[data-view="seir"] .matrix-settings,
-      body[data-view="seir"] .graph-control,
       body[data-view="seir"] .graph-settings,
       body[data-view="seir"] .stats,
       body[data-view="contact"] .curve-stat,
       body[data-view="matrix"] .curve-stat {
         display: none;
-      }
-
-      body[data-view="seir"] .actions {
-        grid-column: 2 / -1;
       }
 
       .stats {
@@ -2976,8 +2971,10 @@
         const layout = chartLayout()
         chartPlotGroup.attr('transform', `translate(${layout.plotLeft},${layout.plotTop})`)
 
+        const windowSeries = chartWindowSeries()
+
         if (state.plotLayout === 'profile') {
-          renderProfileChart(layout)
+          renderProfileChart(layout, windowSeries)
           return
         }
 
@@ -2995,9 +2992,9 @@
         renderTimeChartAxes(layout, timeAxisScale, y)
 
         if (state.plotLayout === 'fill') {
-          renderFillChart(x, y)
+          renderFillChart(x, y, windowSeries)
         } else {
-          renderLineChart(x, y)
+          renderLineChart(x, y, windowSeries)
         }
       }
 
@@ -3020,8 +3017,8 @@
           .call((group) => group.select('.domain').remove())
       }
 
-      function renderLineChart(x, y) {
-        const times = state.seirSeries.time
+      function renderLineChart(x, y, windowSeries) {
+        const times = windowSeries.time
         const curveLine = line()
           .x((_, index) => x(times[index]))
           .y((value) => y(seriesPercent(value)))
@@ -3033,15 +3030,15 @@
           }
 
           chartLineGroup.append('path')
-            .datum(state.seirSeries[stateKey])
+            .datum(windowSeries[stateKey])
             .attr('class', `curve-line curve-${stateKey}`)
             .attr('stroke', colorByState[stateKey])
             .attr('d', curveLine)
         }
       }
 
-      function renderFillChart(x, y) {
-        const times = state.seirSeries.time
+      function renderFillChart(x, y, windowSeries) {
+        const times = windowSeries.time
         const enabledStateKeys = stateKeys.filter((stateKey) => state.showCurves[stateKey])
         const cumulative = new Float64Array(times.length)
         const fillArea = area()
@@ -3055,7 +3052,7 @@
           .curve(curveLinear)
 
         for (const stateKey of enabledStateKeys) {
-          const values = state.seirSeries[stateKey]
+          const values = windowSeries[stateKey]
           const band = new Array(times.length)
 
           for (let index = 0; index < times.length; index += 1) {
@@ -3086,7 +3083,7 @@
         }
       }
 
-      function renderProfileChart(layout) {
+      function renderProfileChart(layout, windowSeries) {
         const selectedStateKeys = selectedCurveKeys()
         const x = scaleLinear()
           .domain([0, 100])
@@ -3142,19 +3139,137 @@
           return
         }
 
-        const xValues = state.seirSeries[xStateKey]
-        const yValues = state.seirSeries[yStateKey]
+        const xValues = windowSeries[xStateKey]
+        const yValues = windowSeries[yStateKey]
         const profileLine = line()
           .x((_, index) => x(seriesPercent(xValues[index])))
           .y((_, index) => y(seriesPercent(yValues[index])))
           .curve(curveLinear)
 
         chartLineGroup.append('path')
-          .datum(state.seirSeries.time)
+          .datum(windowSeries.time)
           .attr('class', `curve-line curve-profile curve-${yStateKey}`)
           .attr('stroke', colorByState[yStateKey])
           .attr('stroke-width', 2.4)
           .attr('d', profileLine)
+      }
+
+      function chartWindowSeries() {
+        const source = state.seirSeries
+
+        if (!source) {
+          return {
+            time: [],
+            susceptible: [],
+            exposed: [],
+            infectious: [],
+            recovered: []
+          }
+        }
+
+        const maxTime = Math.max(0, source.maxTime)
+        const start = clamp(Math.min(state.start, state.end), 0, maxTime)
+        const end = clamp(Math.max(state.start, state.end), 0, maxTime)
+        const sourceTimes = source.time
+        const windowSeries = {
+          time: [],
+          susceptible: [],
+          exposed: [],
+          infectious: [],
+          recovered: []
+        }
+
+        appendChartWindowPoint(windowSeries, start)
+
+        const firstInsideIndex = upperBound(sourceTimes, start)
+
+        for (let index = firstInsideIndex; index < sourceTimes.length && sourceTimes[index] < end; index += 1) {
+          appendChartWindowPoint(windowSeries, sourceTimes[index], index)
+        }
+
+        if (end !== start) {
+          appendChartWindowPoint(windowSeries, end)
+        }
+
+        return windowSeries
+      }
+
+      function appendChartWindowPoint(target, time, sourceIndex = -1) {
+        const source = state.seirSeries
+
+        target.time.push(time)
+
+        for (const stateKey of stateKeys) {
+          const value = sourceIndex >= 0
+            ? source[stateKey][sourceIndex]
+            : seriesValueAtTime(source.time, source[stateKey], time)
+
+          target[stateKey].push(value)
+        }
+      }
+
+      function seriesValueAtTime(times, values, time) {
+        if (times.length === 0) {
+          return 0
+        }
+
+        if (time <= times[0]) {
+          return values[0]
+        }
+
+        const lastIndex = times.length - 1
+
+        if (time >= times[lastIndex]) {
+          return values[lastIndex]
+        }
+
+        const rightIndex = lowerBound(times, time)
+
+        if (times[rightIndex] === time) {
+          return values[rightIndex]
+        }
+
+        const leftIndex = Math.max(0, rightIndex - 1)
+        const leftTime = times[leftIndex]
+        const rightTime = times[rightIndex]
+        const span = Math.max(1e-9, rightTime - leftTime)
+        const amount = (time - leftTime) / span
+
+        return values[leftIndex] + (values[rightIndex] - values[leftIndex]) * amount
+      }
+
+      function lowerBound(values, target) {
+        let low = 0
+        let high = values.length
+
+        while (low < high) {
+          const mid = (low + high) >> 1
+
+          if (values[mid] < target) {
+            low = mid + 1
+          } else {
+            high = mid
+          }
+        }
+
+        return low
+      }
+
+      function upperBound(values, target) {
+        let low = 0
+        let high = values.length
+
+        while (low < high) {
+          const mid = (low + high) >> 1
+
+          if (values[mid] <= target) {
+            low = mid + 1
+          } else {
+            high = mid
+          }
+        }
+
+        return low
       }
 
       function seriesPercent(value) {
@@ -3962,6 +4077,12 @@
         startNumber.value = String(Math.round(state.start))
         endNumber.value = String(Math.round(state.end))
         updateRangeSelection()
+        updateStats()
+
+        if (state.activeTab === 'seir') {
+          renderChart()
+        }
+
         scheduleWindowData()
       }
 
@@ -4170,6 +4291,8 @@
         updateLegend()
         if (state.activeTab === 'matrix') {
           scheduleMatrixDraw()
+        } else if (state.activeTab === 'seir') {
+          renderChart()
         } else {
           scheduleGraphDraw()
         }
