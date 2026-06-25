@@ -3520,7 +3520,7 @@
       }
 
       function renderDistributionLineChart(x, y) {
-        const times = chartSampleTimes(150)
+        const times = chartDistributionTimes()
         const bandArea = area()
           .x((point) => x(point.time))
           .y0((point) => y(point.low))
@@ -3549,23 +3549,25 @@
             high: summary.band50.high,
             mean: summary.mean
           }))
+          const visibleWideBand = clipSampledTimePoints(wideBand)
+          const visibleTightBand = clipSampledTimePoints(tightBand)
 
           chartAreaGroup.append('path')
-            .datum(wideBand)
+            .datum(visibleWideBand)
             .attr('class', `curve-fill fill-${stateKey}`)
             .attr('fill', colorByState[stateKey])
             .attr('fill-opacity', 0.11)
             .attr('d', bandArea)
 
           chartAreaGroup.append('path')
-            .datum(tightBand)
+            .datum(visibleTightBand)
             .attr('class', `curve-fill fill-${stateKey}`)
             .attr('fill', colorByState[stateKey])
             .attr('fill-opacity', 0.24)
             .attr('d', bandArea)
 
           chartLineGroup.append('path')
-            .datum(wideBand)
+            .datum(visibleWideBand)
             .attr('class', `curve-line curve-${stateKey}`)
             .attr('stroke', colorByState[stateKey])
             .attr('stroke-width', 1.9)
@@ -3574,7 +3576,7 @@
       }
 
       function renderDistributionFillChart(x, y) {
-        const times = chartSampleTimes(150)
+        const times = chartDistributionTimes()
         const enabledStateKeys = stateKeys.filter((stateKey) => state.showCurves[stateKey])
         const boundaryArea = area()
           .x((point) => x(point.time))
@@ -3608,23 +3610,25 @@
             y0: previousBoundary[index].mean,
             y1: point.mean
           }))
+          const visibleBoundary = clipSampledTimePoints(boundary)
+          const visibleBand = clipSampledTimePoints(band)
 
           chartAreaGroup.append('path')
-            .datum(boundary)
+            .datum(visibleBoundary)
             .attr('class', `curve-fill fill-${stateKey}`)
             .attr('fill', colorByState[stateKey])
             .attr('fill-opacity', 0.08)
             .attr('d', boundaryArea)
 
           chartAreaGroup.append('path')
-            .datum(band)
+            .datum(visibleBand)
             .attr('class', `curve-fill fill-${stateKey}`)
             .attr('fill', colorByState[stateKey])
             .attr('fill-opacity', 0.23)
             .attr('d', fillArea)
 
           chartLineGroup.append('path')
-            .datum(boundary)
+            .datum(visibleBoundary)
             .attr('class', `curve-line curve-${stateKey}`)
             .attr('stroke', colorByState[stateKey])
             .attr('stroke-opacity', 0.8)
@@ -3635,7 +3639,7 @@
       }
 
       function renderProfileDensity(x, y, xStateKey, yStateKey) {
-        const times = chartSampleTimes(100)
+        const times = chartProfileTimes()
         const seriesList = selectedSeirSeries()
         const points = []
         const meanPoints = []
@@ -3737,6 +3741,121 @@
         }
 
         return Array.from({ length: count }, (_, index) => start + ((end - start) * index) / (count - 1))
+      }
+
+      function chartProfileTimes(sampleCount = 180) {
+        const times = chartDistributionTimes(sampleCount)
+        const { start, end } = selectedChartWindowBounds()
+        const windowTimes = times.filter((time) => time >= start && time <= end)
+
+        if (windowTimes.length > 0) {
+          return windowTimes
+        }
+
+        if (start === end) {
+          return [start]
+        }
+
+        return []
+      }
+
+      function chartDistributionTimes(sampleCount = 240) {
+        const maxTime = Math.max(0, state.maxTime)
+        const count = Math.max(2, sampleCount)
+
+        if (maxTime === 0) {
+          return [0]
+        }
+
+        return Array.from({ length: count }, (_, index) => (maxTime * index) / (count - 1))
+      }
+
+      function selectedChartWindowBounds() {
+        const maxTime = Math.max(0, state.maxTime)
+
+        return {
+          start: clamp(Math.min(state.start, state.end), 0, maxTime),
+          end: clamp(Math.max(state.start, state.end), 0, maxTime)
+        }
+      }
+
+      function clipSampledTimePoints(points) {
+        if (points.length === 0) {
+          return []
+        }
+
+        const { start, end } = selectedChartWindowBounds()
+
+        if (start === end) {
+          return [interpolateSampledTimePoint(points, start)]
+        }
+
+        const clipped = [interpolateSampledTimePoint(points, start)]
+
+        for (const point of points) {
+          if (point.time > start && point.time < end) {
+            clipped.push(point)
+          }
+        }
+
+        clipped.push(interpolateSampledTimePoint(points, end))
+
+        return clipped
+      }
+
+      function interpolateSampledTimePoint(points, time) {
+        if (points.length === 0) {
+          return { time }
+        }
+
+        if (time <= points[0].time) {
+          return { ...points[0], time }
+        }
+
+        const lastIndex = points.length - 1
+
+        if (time >= points[lastIndex].time) {
+          return { ...points[lastIndex], time }
+        }
+
+        let low = 0
+        let high = points.length
+
+        while (low < high) {
+          const mid = (low + high) >> 1
+
+          if (points[mid].time < time) {
+            low = mid + 1
+          } else {
+            high = mid
+          }
+        }
+
+        const right = points[low]
+
+        if (right.time === time) {
+          return { ...right, time }
+        }
+
+        const left = points[Math.max(0, low - 1)]
+        const span = Math.max(1e-9, right.time - left.time)
+        const amount = (time - left.time) / span
+        const point = { time }
+
+        for (const key of Object.keys(left)) {
+          if (key === 'time') {
+            continue
+          }
+
+          const leftValue = left[key]
+          const rightValue = right[key]
+
+          point[key] = typeof leftValue === 'number' && typeof rightValue === 'number'
+            ? leftValue + (rightValue - leftValue) * amount
+            : leftValue
+        }
+
+        return point
       }
 
       function kdeSummariesForState(stateKey, times) {
