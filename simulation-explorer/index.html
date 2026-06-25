@@ -1259,6 +1259,8 @@
         state.loadStartedAt = performance.now()
         state.loaded = false
         if (state.worker) {
+          state.worker.onmessage = null
+          state.worker.onerror = null
           state.worker.terminate()
           state.worker = null
         }
@@ -1321,6 +1323,10 @@
       }
 
       function handleWorkerMessage(message) {
+        if (message.target && message.target !== state.worker) {
+          return
+        }
+
         const data = message.data || {}
 
         if (data.type === 'status') {
@@ -1346,6 +1352,8 @@
       }
 
       function applyLoadedDataset(data) {
+        state.workerBusy = false
+        state.queuedWindow = false
         state.npcs = data.npcs.map((npc, index) => ({
           id: npc.id,
           index,
@@ -1425,6 +1433,9 @@
         stopFloatingAnimation()
         stopDragMotion()
         stopSimulation()
+        cancelPendingFrame('drawFrame')
+        cancelPendingFrame('matrixFrame')
+        cancelPendingFrame('windowFrame')
         nodeGroup.selectAll('*').remove()
         chartGridGroup.selectAll('*').remove()
         chartAxisGroup.selectAll('*').remove()
@@ -1436,6 +1447,7 @@
         state.npcs = []
         state.loaded = false
         state.resultSourceName = ''
+        state.initialStateCodes = new Int8Array()
         state.currentStateCodes = new Int8Array()
         state.degrees = new Uint32Array()
         state.contactSource = new Int32Array()
@@ -1457,6 +1469,28 @@
         state.fullInfectionTarget = new Int32Array()
         state.fullInfectionTileX = new Float64Array()
         state.fullInfectionTileY = new Float64Array()
+        state.layout = null
+        state.seirSeries = null
+        state.minTime = 0
+        state.maxTime = 0
+        state.start = 0
+        state.end = 0
+        state.workerBusy = false
+        state.queuedWindow = false
+        state.windowRequestId += 1
+        state.matrixDataVersion += 1
+        state.matrixLayoutCache = null
+        state.matrixLayoutCacheKey = ''
+        state.matrixHeatmapCache = null
+        state.matrixHeatmapCacheKey = ''
+        state.matrixOverlayKey = ''
+        state.stats = {
+          contactEventCount: 0,
+          infectionEventCount: 0,
+          activeNodeCount: 0,
+          totalContactPairCount: 0,
+          visibleContactPairCount: 0
+        }
         state.selectedNodeIndex = -1
         state.selectedNeighborMask = new Uint8Array()
         state.selectedContactEdgeCount = 0
@@ -1472,6 +1506,13 @@
         updateSourceLabel()
         updateLegend()
         updateStats()
+      }
+
+      function cancelPendingFrame(name) {
+        if (state[name]) {
+          cancelAnimationFrame(state[name])
+          state[name] = 0
+        }
       }
 
       function buildGraph() {
