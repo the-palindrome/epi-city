@@ -26,6 +26,10 @@ describe('headless config normalization', () => {
       },
       run: { durationHours: 2, stepSeconds: 5 },
       infection: { distanceMeters: 3, transmissionProbabilityPerMinute: 0.4 },
+      export: {
+        events: ['infection', 'recovery', 'infection'],
+        omitEvents: 'recovery,policy_effect_change'
+      },
       policies: []
     })
 
@@ -41,6 +45,10 @@ describe('headless config normalization', () => {
     expect(config.infection.distanceMeters).toBe(3)
     expect(config.infection.distanceWorldUnits).toBe(metersToWorldUnits(3))
     expect(config.infection.transmissionProbabilityPerMinute).toBe(0.4)
+    expect(config.export).toEqual({
+      events: ['infection', 'recovery'],
+      omitEvents: ['recovery', 'policy_effect_change']
+    })
   })
 
   it('does not add an implicit seed to run configs', () => {
@@ -52,6 +60,18 @@ describe('headless config normalization', () => {
     })
 
     expect(config.seed).toBeUndefined()
+    expect(config.export).toEqual({
+      events: [],
+      omitEvents: []
+    })
+  })
+
+  it('rejects unknown run config export event types', () => {
+    expect(() => normalizeRunConfig({
+      export: {
+        events: ['infection', 'made_up_event']
+      }
+    })).toThrow(/Unknown headless event type "made_up_event" for export\.events/)
   })
 
   it('rejects overlapping explicit initial SEIR ids', () => {

@@ -8,7 +8,7 @@
     "inoculatedNpcIds": []
   },
   "run": {
-    "durationSeconds": 864000,
+    "durationSeconds": 1864000,
     "stepSeconds": 2
   },
   "infection": {
@@ -17,6 +17,10 @@
     "incubationDays": 1,
     "infectiousDays": 3,
     "immunityDays": 5
+  },
+  "export": {
+    "events": [],
+    "omitEvents": ["contact"]
   },
   "policies": []
 }

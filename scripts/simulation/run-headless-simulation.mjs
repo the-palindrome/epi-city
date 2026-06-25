@@ -2,7 +2,7 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { runHeadlessSimulation } from '../../src/headless/simulation.js'
+import { HEADLESS_EVENT_TYPES, runHeadlessSimulation } from '../../src/headless/simulation.js'
 import { createProgressBar } from './progress-bar.mjs'
 
 function printUsage() {
@@ -19,7 +19,12 @@ Options:
   --duration-hours <number> Override run duration in simulation hours
   --duration-seconds <num>  Override run duration in simulation seconds
   --step <number>           Override run step in simulation seconds
+  --events <list>           Export only these event types, comma-separated; repeatable
+  --omit-events <list>      Omit these event types from export, comma-separated; repeatable
   --help, -h                Show this help
+
+Event types:
+  ${HEADLESS_EVENT_TYPES.join(', ')}
 `)
 }
 
@@ -29,6 +34,10 @@ function parseArgs(argv) {
     worldPath: null,
     output: path.resolve('tmp', 'epi-city-results.json'),
     overrides: {},
+    eventFilter: {
+      events: null,
+      omitEvents: null
+    },
     help: false
   }
 
@@ -72,6 +81,14 @@ function parseArgs(argv) {
         args.overrides.stepSeconds = positiveNumber(next, '--step')
         index += 1
         break
+      case '--events':
+        args.eventFilter.events = appendEventTypeList(args.eventFilter.events, next, '--events')
+        index += 1
+        break
+      case '--omit-events':
+        args.eventFilter.omitEvents = appendEventTypeList(args.eventFilter.omitEvents, next, '--omit-events')
+        index += 1
+        break
       default:
         throw new Error(`Unknown argument: ${arg}`)
     }
@@ -105,6 +122,7 @@ async function main() {
     const results = await runHeadlessSimulation(config, {
       worldPath: args.worldPath,
       overrides: args.overrides,
+      eventFilter: args.eventFilter,
       onProgress: ({ progress: value, message }) => progress.update(value * 0.95, message)
     })
 
@@ -127,6 +145,29 @@ function positiveNumber(value, label) {
   }
 
   return number
+}
+
+function appendEventTypeList(existing, value, label) {
+  const nextValues = parseEventTypeList(value, label)
+
+  return existing ? existing.concat(nextValues) : nextValues
+}
+
+function parseEventTypeList(value, label) {
+  if (value == null || String(value).startsWith('--')) {
+    throw new Error(`${label} requires a comma-separated event type list.`)
+  }
+
+  const values = String(value)
+    .split(',')
+    .map((eventType) => eventType.trim())
+    .filter(Boolean)
+
+  if (values.length === 0) {
+    throw new Error(`${label} requires at least one event type.`)
+  }
+
+  return values
 }
 
 main().catch((error) => {

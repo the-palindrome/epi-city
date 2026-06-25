@@ -4,6 +4,7 @@ import {
   NPC_CONFIG
 } from '../core/constants.js'
 import { metersToWorldUnits } from '../core/scale.js'
+import { normalizeEventFilter } from './event-filter.js'
 import { normalizePolicyList } from './policies.js'
 
 export const HEADLESS_WORLD_CONFIG_FORMAT = 'epi-city-headless-world-config'
@@ -34,6 +35,7 @@ export function normalizeRunConfig(input = {}, overrides = {}) {
     initialSeir: normalizeInitialSeir(source.initialSeir),
     run: normalizeRunBlock(source.run, overrides),
     infection: normalizeInfectionBlock(source.infection),
+    export: normalizeExportBlock(source.export),
     policies: normalizePolicyList(source.policies)
   }
 }
@@ -130,6 +132,17 @@ export function normalizeInfectionBlock(infection = {}) {
       INFECTION_CONFIG.immunityDaysRange.max
     )
   }
+}
+
+export function normalizeExportBlock(exportConfig = {}) {
+  const source = exportConfig && typeof exportConfig === 'object' && !Array.isArray(exportConfig)
+    ? exportConfig
+    : {}
+
+  return normalizeEventFilter(source, {
+    events: 'export.events',
+    omitEvents: 'export.omitEvents'
+  })
 }
 
 function parseObjectInput(input, label) {

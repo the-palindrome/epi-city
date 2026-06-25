@@ -1,4 +1,5 @@
 import { normalizeRunConfig } from './config.js'
+import { filterEvents, mergeEventFilters } from './event-filter.js'
 import { HeadlessEventRecorder } from './event-recorder.js'
 import { loadDefaultHeadlessCity } from './map-loader.js'
 import { createHeadlessRuntime } from './runtime.js'
@@ -6,12 +7,18 @@ import { readHeadlessWorldFile } from './world.js'
 
 export const HEADLESS_RESULTS_FORMAT = 'epi-city-headless-results'
 export const HEADLESS_RESULTS_VERSION = 1
+export { HEADLESS_EVENT_TYPES, filterEvents, normalizeEventFilter } from './event-filter.js'
 
 export async function runHeadlessSimulation(runConfigInput, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null
 
   emitProgress(onProgress, 0, 'Normalizing config')
   const config = normalizeRunConfig(runConfigInput, options.overrides || {})
+  const optionEventFilter = options.eventFilter || {
+    events: options.events,
+    omitEvents: options.omitEvents
+  }
+  const eventFilter = mergeEventFilters(config.export, optionEventFilter)
 
   if (!options.worldPath) {
     throw new Error('Headless simulation requires a generated world file. Pass --world <path>.')
@@ -49,12 +56,13 @@ export async function runHeadlessSimulation(runConfigInput, options = {}) {
     eventRecorder.flushContacts(runtime.simulationClock.getElapsedSimulationSeconds())
 
     emitProgress(onProgress, 0.98, 'Creating results')
+    const events = filterEvents(eventRecorder.getEvents(), eventFilter)
     const results = createResultsFile({
       config,
       world,
       worldPath: options.worldPath,
       runtime,
-      events: eventRecorder.getEvents()
+      events
     })
 
     emitProgress(onProgress, 1, 'Simulation complete')

@@ -74,8 +74,36 @@ Runner options:
 - `--duration-hours <number>`: override run duration.
 - `--duration-seconds <number>`: override run duration.
 - `--step <number>`: override simulation step seconds.
+- `--events <list>`: export only the listed event types. Values are comma-separated and the flag can be repeated.
+- `--omit-events <list>`: omit the listed event types from export. Values are comma-separated and the flag can be repeated.
 
 Use only one duration override at a time.
+
+Event filtering happens only at export time. The simulation still runs with the same internal logic. The same filtering can be set in the run config under `export.events` and `export.omitEvents`. CLI flags override the corresponding config fields when supplied. If both include and omit lists are set, the runner first keeps the include set, then removes the omit set.
+
+Valid event types:
+
+```text
+contact, infection, incubation, recovery, immunity_waned, policy_effect_change
+```
+
+Examples:
+
+```bash
+node scripts/simulation/run-headless-simulation.mjs \
+  --config ./scripts/simulation/headless-run-config.example.json \
+  --world ./scripts/simulation/epi-city-world.json \
+  --output ./tmp/epi-city-infection-events.json \
+  --events infection,incubation,recovery,immunity_waned
+```
+
+```bash
+node scripts/simulation/run-headless-simulation.mjs \
+  --config ./scripts/simulation/headless-run-config.example.json \
+  --world ./scripts/simulation/epi-city-world.json \
+  --output ./tmp/epi-city-without-contacts.json \
+  --omit-events contact
+```
 
 ## World Config
 
@@ -154,6 +182,10 @@ The generated world does not contain `config` or `initialSeir`. The runner deriv
     "infectiousDays": 7,
     "immunityDays": 90
   },
+  "export": {
+    "events": [],
+    "omitEvents": []
+  },
   "policies": []
 }
 ```
@@ -188,6 +220,11 @@ Infection fields:
 - `infection.incubationDays`: exposed-to-infectious delay, clamped to `0..14`.
 - `infection.infectiousDays`: infectious-to-recovered delay, clamped to `0..21`.
 - `infection.immunityDays`: recovered-to-susceptible delay, clamped to `0..365`.
+
+Export fields:
+
+- `export.events`: event types to include in the result JSON. Empty or omitted means all event types.
+- `export.omitEvents`: event types to omit after the include filter. Empty or omitted means omit nothing.
 
 ## Result Format
 

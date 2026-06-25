@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { runHeadlessSimulation } from './simulation.js'
+import { filterEvents, normalizeEventFilter, runHeadlessSimulation } from './simulation.js'
 import { createHeadlessWorldFile } from './world.js'
 
 const SECONDS_PER_DAY = 24 * 60 * 60
@@ -106,6 +106,105 @@ describe('headless simulation runner', () => {
     })
   }, HEADLESS_TEST_TIMEOUT_MS)
 
+  it('filters exported events by requested event types', async () => {
+    const worldPath = await writeTestWorld('headless-filtered-events-world.test.json', {
+      population: { npcCount: 100, carCount: 0 }
+    })
+
+    const results = await runHeadlessSimulation(createRunConfig({
+      infectedNpcIds: ['npc_0']
+    }, {
+      run: { durationSeconds: 3, stepSeconds: 3 },
+      infection: {
+        infectiousDays: 1 / SECONDS_PER_DAY,
+        immunityDays: 1 / SECONDS_PER_DAY
+      }
+    }), {
+      worldPath,
+      eventFilter: {
+        events: ['recovery']
+      }
+    })
+
+    expect(results.events.map((event) => event.event)).toEqual(['recovery'])
+    expect(results.summary.eventCount).toBe(1)
+  }, HEADLESS_TEST_TIMEOUT_MS)
+
+  it('uses the run config export event filter', async () => {
+    const worldPath = await writeTestWorld('headless-config-filtered-events-world.test.json', {
+      population: { npcCount: 100, carCount: 0 }
+    })
+
+    const results = await runHeadlessSimulation(createRunConfig({
+      infectedNpcIds: ['npc_0']
+    }, {
+      export: {
+        omitEvents: ['immunity_waned']
+      },
+      run: { durationSeconds: 3, stepSeconds: 3 },
+      infection: {
+        infectiousDays: 1 / SECONDS_PER_DAY,
+        immunityDays: 1 / SECONDS_PER_DAY
+      }
+    }), { worldPath })
+
+    expect(results.config.export).toEqual({
+      events: [],
+      omitEvents: ['immunity_waned']
+    })
+    expect(results.events.map((event) => event.event)).toEqual(['recovery'])
+  }, HEADLESS_TEST_TIMEOUT_MS)
+
+  it('lets CLI-style event options override run config export fields', async () => {
+    const worldPath = await writeTestWorld('headless-cli-filtered-events-world.test.json', {
+      population: { npcCount: 100, carCount: 0 }
+    })
+
+    const results = await runHeadlessSimulation(createRunConfig({
+      infectedNpcIds: ['npc_0']
+    }, {
+      export: {
+        events: ['recovery'],
+        omitEvents: ['immunity_waned']
+      },
+      run: { durationSeconds: 3, stepSeconds: 3 },
+      infection: {
+        infectiousDays: 1 / SECONDS_PER_DAY,
+        immunityDays: 1 / SECONDS_PER_DAY
+      }
+    }), {
+      worldPath,
+      eventFilter: {
+        events: ['recovery', 'immunity_waned']
+      }
+    })
+
+    expect(results.events.map((event) => event.event)).toEqual([
+      'recovery'
+    ])
+  }, HEADLESS_TEST_TIMEOUT_MS)
+
+  it('omits requested event types after applying the include filter', () => {
+    expect(filterEvents([
+      { event: 'contact', id: 'contact_1' },
+      { event: 'infection', id: 'infection_1' },
+      { event: 'recovery', id: 'recovery_1' },
+      { event: 'immunity_waned', id: 'immunity_waned_1' }
+    ], {
+      events: ['infection', 'recovery', 'immunity_waned'],
+      omitEvents: ['recovery']
+    })).toEqual([
+      { event: 'infection', id: 'infection_1' },
+      { event: 'immunity_waned', id: 'immunity_waned_1' }
+    ])
+  })
+
+  it('rejects unknown event filter types', () => {
+    expect(() => normalizeEventFilter({
+      events: ['contact', 'made_up_event']
+    })).toThrow(/Unknown headless event type "made_up_event"/)
+  })
+
   it('rejects explicit initial SEIR ids outside the supplied world', async () => {
     const worldPath = await writeTestWorld('headless-invalid-seir-world.test.json', {
       population: { npcCount: 100, carCount: 0 }
@@ -170,6 +269,7 @@ function createRunConfig(initialSeir = {}, overrides = {}) {
       immunityDays: 90,
       ...(overrides.infection || {})
     },
+    ...(overrides.export === undefined ? {} : { export: overrides.export }),
     policies: overrides.policies || []
   }
 }
