@@ -288,6 +288,7 @@ function createSimulation(seed, city = createCity(), options = {}) {
     immunityDays: options.immunityDays ?? 90,
     infectionColors: options.infectionColors,
     entityDebugOptions: options.entityDebugOptions,
+    eventRecorder: options.eventRecorder,
     clock: options.clock,
     random: createSeededRandom(seed)
   })
@@ -949,6 +950,125 @@ describe('NPC simulation randomness', () => {
     simulation.destroy()
   })
 
+  it('does not spread infection between NPCs in different indoor sublocations of the same building', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const office = city.buildings.find((building) => building.id === 'office')
+    const location = {
+      x: office.entrance.x,
+      y: office.entrance.y,
+      index: city.index(office.entrance.x, office.entrance.y)
+    }
+    const simulation = createSimulation('infection-indoor-different-offices', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 1,
+      initialUpdate: false,
+      entityDebugOptions: {
+        contactEdgesVisible: true,
+        contactEdgeDurationSeconds: 60
+      }
+    })
+
+    for (let index = 0; index < 2; index += 1) {
+      const npc = simulation.npcs[index]
+      const indoorState = { type: 'office', id: `office_${index}` }
+
+      npc.manualControl = true
+      npc.present = false
+      npc.work = office.id
+      npc.officeId = indoorState.id
+      npc.position = {
+        x: (location.x + 0.5) * city.tileSize,
+        y: (location.y + 0.5) * city.tileSize
+      }
+      npc.tile = { ...location }
+      npc.locationState = {
+        timetableElementId: 'work',
+        buildingId: office.id,
+        highLevelLocation: { type: 'building', id: office.id },
+        indoorState,
+        indoorTargetState: indoorState,
+        location: { ...location }
+      }
+    }
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.setNpcState(1, 'susceptible')
+
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[1].infection).toBe('susceptible')
+    expect(simulation.infection.getRecentContactEvents()).toEqual([])
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([])
+
+    simulation.destroy()
+  })
+
+  it('records contacts and spreads infection between NPCs in the same indoor sublocation', () => {
+    const city = createCityWithDailyLifeBuildings()
+    const office = city.buildings.find((building) => building.id === 'office')
+    const location = {
+      x: office.entrance.x,
+      y: office.entrance.y,
+      index: city.index(office.entrance.x, office.entrance.y)
+    }
+    const indoorState = { type: 'office', id: 'office_1' }
+    const simulation = createSimulation('infection-indoor-same-office', city, {
+      count: 2,
+      initialInfectiousCount: 0,
+      infectionDistance: 10,
+      infectionProbability: 1,
+      initialUpdate: false,
+      entityDebugOptions: {
+        contactEdgesVisible: true,
+        contactEdgeDurationSeconds: 60
+      }
+    })
+
+    for (const npc of simulation.npcs) {
+      npc.manualControl = true
+      npc.present = false
+      npc.work = office.id
+      npc.officeId = indoorState.id
+      npc.position = {
+        x: (location.x + 0.5) * city.tileSize,
+        y: (location.y + 0.5) * city.tileSize
+      }
+      npc.tile = { ...location }
+      npc.locationState = {
+        timetableElementId: 'work',
+        buildingId: office.id,
+        highLevelLocation: { type: 'building', id: office.id },
+        indoorState,
+        indoorTargetState: indoorState,
+        location: { ...location }
+      }
+    }
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.setNpcState(1, 'susceptible')
+
+    simulation.update(1 / 60)
+
+    expect(simulation.npcs[1].infection).toBe('exposed')
+    expect(simulation.infection.getRecentContactEvents()).toEqual([
+      expect.objectContaining({
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        distance: 0
+      })
+    ])
+    expect(simulation.infection.getRecentTransmissionEvents()).toEqual([
+      expect.objectContaining({
+        sourceNpcId: simulation.npcs[0].id,
+        targetNpcId: simulation.npcs[1].id,
+        distance: 0,
+        targetState: 'exposed'
+      })
+    ])
+
+    simulation.destroy()
+  })
+
   it('applies policy transmission multipliers without changing the base infection probability', () => {
     const city = createCity({
       width: 2,
@@ -1309,6 +1429,75 @@ describe('NPC simulation randomness', () => {
       infectious: 0,
       recovered: 0
     })
+
+    simulation.destroy()
+  })
+
+  it('emits every SEIR event when one update crosses multiple phases', () => {
+    const oneTickDays = 0.1 / SECONDS_PER_DAY
+    const events = []
+    const eventRecorder = {
+      recordIncubation: (npc, at) => events.push({ event: 'incubation', npc: npc.id, at }),
+      recordRecovery: (npc, at) => events.push({ event: 'recovery', npc: npc.id, at }),
+      recordImmunityWaned: (npc, at) => events.push({ event: 'immunity_waned', npc: npc.id, at })
+    }
+    const simulation = createSimulation('infection-multi-phase-events', createCity(), {
+      count: 1,
+      initialInfectiousCount: 0,
+      infectionProbability: 0,
+      incubationDays: oneTickDays,
+      infectionDays: oneTickDays,
+      immunityDays: oneTickDays,
+      eventRecorder,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    simulation.infection.setNpcState(0, 'exposed')
+    simulation.infection.update(0.35)
+
+    expect(npc.infection).toBe('susceptible')
+    expect(simulation.infection.getStats()).toMatchObject({
+      susceptible: 1,
+      exposed: 0,
+      infectious: 0,
+      recovered: 0
+    })
+    expect(events).toEqual([
+      { event: 'incubation', npc: npc.id, at: 0.35 },
+      { event: 'recovery', npc: npc.id, at: 0.35 },
+      { event: 'immunity_waned', npc: npc.id, at: 0.35 }
+    ])
+
+    simulation.destroy()
+  })
+
+  it('emits recovered before susceptible when immunity duration is zero', () => {
+    const oneTickDays = 0.1 / SECONDS_PER_DAY
+    const events = []
+    const eventRecorder = {
+      recordRecovery: (npc, at) => events.push({ event: 'recovery', npc: npc.id, at }),
+      recordImmunityWaned: (npc, at) => events.push({ event: 'immunity_waned', npc: npc.id, at })
+    }
+    const simulation = createSimulation('infection-zero-immunity-events', createCity(), {
+      count: 1,
+      initialInfectiousCount: 0,
+      infectionProbability: 0,
+      infectionDays: oneTickDays,
+      immunityDays: 0,
+      eventRecorder,
+      initialUpdate: false
+    })
+    const npc = simulation.npcs[0]
+
+    simulation.infection.setNpcState(0, 'infectious')
+    simulation.infection.update(0.1)
+
+    expect(npc.infection).toBe('susceptible')
+    expect(events).toEqual([
+      { event: 'recovery', npc: npc.id, at: 0.1 },
+      { event: 'immunity_waned', npc: npc.id, at: 0.1 }
+    ])
 
     simulation.destroy()
   })
@@ -1775,7 +1964,33 @@ describe('NPC simulation randomness', () => {
     repeated.destroy()
   })
 
-  it('generates whole families under one home and stores only per-NPC attributes', () => {
+  it('assigns indoor office and class groups during app simulation generation', () => {
+    const officeSimulation = createSimulation('indoor-office-groups', createCityWithSharedBuildings(), {
+      count: 10,
+      familyTypeWeights: SINGLE_ADULT_FAMILIES,
+      initialUpdate: false
+    })
+    const schoolCase = createSimulationWithNpc('indoor-class-groups', createCityWithBuildingTypes(), {
+      count: 8,
+      familyTypeWeights: MARRIED_WITH_CHILDREN_FAMILIES,
+      familyChildCountWeights: [
+        { count: 4, weight: 1 }
+      ],
+      initialUpdate: false
+    }, (candidate) => candidate.school)
+    const schoolSimulation = schoolCase.simulation
+    const students = schoolSimulation.npcs.filter((npc) => npc.school)
+
+    expect(officeSimulation.npcs.every((npc) => npc.work === 'work-1')).toBe(true)
+    expect(officeSimulation.npcs.every((npc) => typeof npc.officeId === 'string' && npc.officeId.startsWith('office_'))).toBe(true)
+    expect(students.length).toBeGreaterThan(0)
+    expect(students.every((npc) => typeof npc.classId === 'string' && npc.classId.startsWith('class_'))).toBe(true)
+
+    officeSimulation.destroy()
+    schoolSimulation.destroy()
+  })
+
+  it('generates whole families under one home and preserves family metadata', () => {
     const city = createCityWithBuildingTypes()
     const simulation = createSimulation('family-household', city, {
       count: 4,
@@ -1786,14 +2001,17 @@ describe('NPC simulation randomness', () => {
     const homes = new Set(simulation.npcs.map((npc) => npc.home))
     const adults = simulation.npcs.filter((npc) => npc.age >= 18)
     const children = simulation.npcs.filter((npc) => npc.age < 18)
+    const familyIds = new Set(simulation.npcs.map((npc) => npc.familyId))
 
     expect(simulation.npcs).toHaveLength(4)
     expect(homes.size).toBe(1)
+    expect(familyIds.size).toBe(1)
     expect(adults).toHaveLength(2)
     expect(children).toHaveLength(2)
     expect(simulation.npcs.every((npc) => Number.isInteger(npc.age))).toBe(true)
-    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'familyType'))).toBe(true)
-    expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'familyId'))).toBe(true)
+    expect(simulation.npcs.every((npc) => npc.familyType === 'marriedWithChildren')).toBe(true)
+    expect(adults.every((npc) => npc.familyRole === 'parent')).toBe(true)
+    expect(children.every((npc) => npc.familyRole === 'child')).toBe(true)
     expect(simulation.npcs.every((npc) => !Object.prototype.hasOwnProperty.call(npc, 'children'))).toBe(true)
 
     simulation.destroy()

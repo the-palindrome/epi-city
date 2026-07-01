@@ -15,11 +15,11 @@ import {
   getPngPipeFfmpegInputArgs,
   getRawVideoFfmpegInputArgs,
   normalizeRgbaFramePayload
-} from '../src/render/video-frame-transport.js'
+} from '../../src/render/video-frame-transport.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const projectRoot = path.resolve(__dirname, '..')
+const projectRoot = path.resolve(__dirname, '..', '..')
 
 const DEFAULT_FPS = 30
 const DEFAULT_WIDTH = 1920
@@ -29,8 +29,8 @@ const PAGE_GOTO_TIMEOUT_MS = 60000
 
 function printUsage() {
   console.log(`Usage:
-  node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json [options]
-  node scripts/render-epi-video.mjs --recording ./tmp/epi-city-recording.json [options]
+  node scripts/render/render-epi-video.mjs --script ./scripts/render/epi-city-video.example.json [options]
+  node scripts/render/render-epi-video.mjs --recording ./tmp/epi-city-recording.json [options]
 
 Required:
   Provide --script, --recording, or both

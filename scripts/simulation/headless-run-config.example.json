@@ -1,0 +1,26 @@
+{
+  "format": "epi-city-headless-run-config",
+  "version": 1,
+  "initialSeir": {
+    "initialInfectiousCount": 1,
+    "inoculatedPercent": 0,
+    "infectedNpcIds": [],
+    "inoculatedNpcIds": []
+  },
+  "run": {
+    "durationSeconds": 1864000,
+    "stepSeconds": 2
+  },
+  "infection": {
+    "distanceMeters": 2,
+    "transmissionProbabilityPerMinute": 0.001,
+    "incubationDays": 1,
+    "infectiousDays": 3,
+    "immunityDays": 5
+  },
+  "export": {
+    "events": [],
+    "omitEvents": ["contact"]
+  },
+  "policies": []
+}

@@ -900,11 +900,22 @@ export function compileCityMap(data) {
     getPedestrianComponentIndexByIndex,
     arePedestrianConnectedByIndex,
     navigationCacheKey: navigation.cacheKey,
+    setRouteFieldCacheLimit: (limit) => {
+      navigation.routeFields.limit = Math.max(1, Math.round(Number(limit)) || ROUTE_FIELD_CACHE_LIMIT)
+    },
+    setRouteFieldPersistentStore: (store) => {
+      navigation.routeFields.setPersistentStore(store)
+    },
+    flushRouteFieldPersistentStore: () => {
+      navigation.routeFields.flushPersistentStore()
+    },
     getNavigationCacheStats: () => ({
       cacheKey: navigation.cacheKey,
       routeFields: navigation.routeFields.size,
       routeFieldHits: navigation.routeFields.hits,
       routeFieldMisses: navigation.routeFields.misses,
+      routeFieldPersistentHits: navigation.routeFields.persistentHits,
+      routeFieldPersistentMisses: navigation.routeFields.persistentMisses,
       routeFieldLimit: navigation.routeFields.limit
     })
   }
@@ -1294,10 +1305,13 @@ function getStepMasksForProperty(navigation, property, signalState) {
 function createRouteFieldCache(length, offsets) {
   const fields = new Map()
   const scratch = createPathScratch(length)
+  let persistentStore = null
   const cache = {
     limit: ROUTE_FIELD_CACHE_LIMIT,
     hits: 0,
     misses: 0,
+    persistentHits: 0,
+    persistentMisses: 0,
     get size() {
       return fields.size
     },
@@ -1312,14 +1326,27 @@ function createRouteFieldCache(length, offsets) {
         return cached
       }
 
+      const persistentField = persistentStore?.get?.(fieldKey, length, offsets)
+
+      if (persistentField) {
+        fields.set(fieldKey, persistentField)
+        cache.hits += 1
+        cache.persistentHits += 1
+        evictRouteFields(fields, cache.limit)
+        return persistentField
+      }
+
+      if (persistentStore) {
+        cache.persistentMisses += 1
+      }
+
       const field = buildRouteField(endIndex, incomingMasks, scratch, offsets, length)
 
       fields.set(fieldKey, field)
       cache.misses += 1
+      persistentStore?.put?.(fieldKey, field)
 
-      while (fields.size > ROUTE_FIELD_CACHE_LIMIT) {
-        fields.delete(fields.keys().next().value)
-      }
+      evictRouteFields(fields, cache.limit)
 
       return field
     },
@@ -1337,10 +1364,22 @@ function createRouteFieldCache(length, offsets) {
       }
 
       return field.handle
+    },
+    setPersistentStore(store) {
+      persistentStore = store || null
+    },
+    flushPersistentStore() {
+      persistentStore?.flush?.()
     }
   }
 
   return cache
+}
+
+function evictRouteFields(fields, limit) {
+  while (fields.size > limit) {
+    fields.delete(fields.keys().next().value)
+  }
 }
 
 function buildRouteField(endIndex, incomingMasks, scratch, offsets, length) {

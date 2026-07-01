@@ -14,8 +14,8 @@ npm run render:video
 The command writes `tmp/epi-city-video.mp4`. You can also call the renderer directly:
 
 ```bash
-node scripts/render-epi-video.mjs \
-  --script ./scripts/epi-city-video.example.json \
+node scripts/render/render-epi-video.mjs \
+  --script ./scripts/render/epi-city-video.example.json \
   --output ./tmp/epi-city-video.mp4 \
   --fps 30 \
   --width 1920 \
@@ -25,8 +25,8 @@ node scripts/render-epi-video.mjs \
 For a short smoke test, render the small script:
 
 ```bash
-node scripts/render-epi-video.mjs \
-  --script ./scripts/epi-city-video.smoke.json \
+node scripts/render/render-epi-video.mjs \
+  --script ./scripts/render/epi-city-video.smoke.json \
   --output ./tmp/epi-city-smoke.mp4 \
   --fps 1 \
   --width 480 \
@@ -46,7 +46,7 @@ The playback app loads the normal Epi City app inside an iframe, generates a rec
 The playback page can load a script or recording from a URL after the dev server starts:
 
 ```text
-http://localhost:5173/playback.html?script=/scripts/epi-city-video.example.json
+http://localhost:5173/playback.html?script=/scripts/render/epi-city-video.example.json
 http://localhost:5173/playback.html?recording=/recordings/epi-city-recording.json
 ```
 
@@ -58,7 +58,7 @@ The rendering flow has three parts:
 
 1. `src/main.js` creates the normal Epi City runtime and exposes `window.citySim`.
 2. `playback.html` loads the normal app as `index.html?embed=1&playback=1&render=1`, then exposes `window.epiCityVideo`.
-3. `scripts/render-epi-video.mjs` opens `playback.html`, calls `epiCityVideo.runScript()`, seeks each frame, captures raw RGBA pixels, and encodes the MP4 with ffmpeg.
+3. `scripts/render/render-epi-video.mjs` opens `playback.html`, calls `epiCityVideo.runScript()`, seeks each frame, captures raw RGBA pixels, and encodes the MP4 with ffmpeg.
 
 During playback and rendering, the iframe uses `preserveDrawingBuffer` so canvas captures are stable. The normal dashboards and hover/context menus are hidden in render mode. The city map also switches to pre-rasterized full-map canvas layers by z-order, so scripted camera motion moves static map textures instead of redrawing every visible tile on every frame while still letting entities render between ground and building layers.
 
@@ -80,7 +80,7 @@ window.epiCityVideo = {
 
 `runScript()` normalizes the JSON script, applies simulation parameters, restarts the city, generates all simulation snapshots first, and seeks to render time `0`.
 
-`loadRecording()` loads a JSON recording bundle created by `scripts/run-simulation.mjs`. If a second render script is provided, its render duration, camera actions, and visual calls override the bundle's script while the recorded simulation snapshots stay fixed.
+`loadRecording()` loads a JSON recording bundle created by `scripts/simulation/run-simulation.mjs`. If a second render script is provided, its render duration, camera actions, and visual calls override the bundle's script while the recorded simulation snapshots stay fixed.
 
 `seek(renderSeconds)` reconstructs a frame from the precomputed recording. It applies the recorded simulation snapshot, render-time API calls, scripted NPC/car position overrides, and scripted camera state.
 
@@ -90,19 +90,19 @@ window.epiCityVideo = {
 
 ## Renderer CLI
 
-Use `scripts/render-epi-video.mjs` for MP4 generation.
+Use `scripts/render/render-epi-video.mjs` for MP4 generation.
 
 Provide one of `--script` or `--recording`:
 
 ```bash
-node scripts/render-epi-video.mjs --script ./scripts/epi-city-video.example.json [options]
-node scripts/render-epi-video.mjs --recording ./tmp/epi-city-recording.json [options]
+node scripts/render/render-epi-video.mjs --script ./scripts/render/epi-city-video.example.json [options]
+node scripts/render/render-epi-video.mjs --recording ./tmp/epi-city-recording.json [options]
 ```
 
 Options:
 
 - `--script, -s <path>`: JSON script file. Required when `--recording` is not supplied. When used with `--recording`, this is a render/camera override.
-- `--recording, -r <path>`: pre-recorded simulation JSON from `scripts/run-simulation.mjs`.
+- `--recording, -r <path>`: pre-recorded simulation JSON from `scripts/simulation/run-simulation.mjs`.
 - `--output, -o <path>`: output MP4 path. Defaults to `./tmp/epi-city-video.mp4`.
 - `--fps <number>`: frame rate. Defaults to `30`.
 - `--width <number>`: browser viewport width. Defaults to `1920`.
@@ -121,11 +121,11 @@ If a recording has no embedded script and no override script is supplied, Epi Ci
 
 ## Simulation Recording CLI
 
-Use `scripts/run-simulation.mjs` to run a deterministic epidemic simulation once and save the snapshots to disk:
+Use `scripts/simulation/run-simulation.mjs` to run a deterministic epidemic simulation once and save the snapshots to disk:
 
 ```bash
-node scripts/run-simulation.mjs \
-  --script ./scripts/epi-city-video.example.json \
+node scripts/simulation/run-simulation.mjs \
+  --script ./scripts/render/epi-city-video.example.json \
   --output ./tmp/epi-city-recording.json \
   --duration-days 20
 ```
@@ -181,7 +181,7 @@ The output file is a self-contained recording bundle with a normalized script an
 Render from the saved recording without regenerating the simulation:
 
 ```bash
-node scripts/render-epi-video.mjs \
+node scripts/render/render-epi-video.mjs \
   --recording ./tmp/epi-city-recording.json \
   --output ./tmp/epi-city-video.mp4 \
   --fps 30 \
@@ -192,9 +192,9 @@ node scripts/render-epi-video.mjs \
 You can also supply a render-only override script:
 
 ```bash
-node scripts/render-epi-video.mjs \
+node scripts/render/render-epi-video.mjs \
   --recording ./tmp/epi-city-recording.json \
-  --script ./scripts/top-to-bottom-map.json \
+  --script ./scripts/render/top-to-bottom-map.json \
   --output ./tmp/epi-city-video.mp4
 ```
 

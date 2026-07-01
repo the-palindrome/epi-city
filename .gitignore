@@ -11,6 +11,7 @@ process_gta_map/output/
 
 # Local scratch/output
 tmp/
+scripts/simulation/epi-city-world.json
 
 # Logs
 logs/
